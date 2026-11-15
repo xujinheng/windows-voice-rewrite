@@ -214,12 +214,13 @@ final class WorkspaceModel: ObservableObject {
 
     private func sideMouseHeld(_ action: SideMouseAction, targetPID: Int32?) {
         guard !isRecording && !isStarting && !isProcessing && activeSideAction == nil else { return }
-        activeSideAction = action
-        pendingSideRelease = nil
         switch action {
         case .dictation: toggleRecording(from: targetPID)
         case .rewrite: toggleVoiceSelectedText(from: targetPID)
         }
+        // Starting a new task invalidates the previous task's input ownership.
+        activeSideAction = action
+        pendingSideRelease = nil
     }
 
     private func sideMouseReleased(_ action: SideMouseAction) {
