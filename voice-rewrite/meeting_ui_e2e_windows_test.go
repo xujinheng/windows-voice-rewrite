@@ -141,7 +141,7 @@ func TestMeetingWindowsE2E(t *testing.T) {
 			}
 		}
 	}
-	stored, err := loadMeetingPreferences(meetingPreferencesPath())
+	stored, err := meetingcore.LoadPreferences(meetingPreferencesPath())
 	if err != nil || stored.Panes != p.paneWeights {
 		t.Fatalf("dragged panel layout was not persisted: saved=%v current=%v err=%v", stored.Panes, p.paneWeights, err)
 	}
