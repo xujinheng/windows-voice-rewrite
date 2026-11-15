@@ -2,6 +2,13 @@ import XCTest
 @testable import VoiceRewriteInteraction
 
 final class SideMouseStateTests: XCTestCase {
+    func testMacAuxiliaryButtonNumbers() {
+        XCTAssertEqual(SideMouseAction(rawValue: 3), .dictation)
+        XCTAssertEqual(SideMouseAction(rawValue: 4), .rewrite)
+        XCTAssertNil(SideMouseAction(rawValue: 2))
+        XCTAssertNil(SideMouseAction(rawValue: 5))
+    }
+
     func testShortPressReplaysAndExpiredTimerCannotActivate() {
         var state = SideButtonHoldState()
         let token = state.press(3)

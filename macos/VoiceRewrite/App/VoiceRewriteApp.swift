@@ -3,6 +3,8 @@ import AppKit
 
 final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
     var onTerminate: (() -> Void)?
+    var onActivate: (() -> Void)?
+    func applicationDidBecomeActive(_ notification: Notification) { onActivate?() }
     func applicationWillTerminate(_ notification: Notification) { onTerminate?() }
 }
 
@@ -17,6 +19,7 @@ struct VoiceRewriteApp: App {
                 .frame(minWidth: 670, minHeight: 510)
                 .onAppear {
                     lifecycle.onTerminate = { [weak workspace] in workspace?.shutdown() }
+                    lifecycle.onActivate = { [weak workspace] in workspace?.refreshSideMouse() }
                     workspace.launch()
                 }
         }

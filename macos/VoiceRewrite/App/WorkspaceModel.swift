@@ -25,6 +25,7 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var llmProbeStatus = "尚未检测"
     @Published private(set) var isCheckingServices = false
     @Published private(set) var interactionStatus = "全局快捷键尚未注册"
+    @Published private(set) var sideMouseStatus = "尚未检查鼠标侧键监听"
     @Published private(set) var settingsStatus = ""
     @Published private(set) var transcription: String?
     @Published private(set) var processedText: String?
@@ -70,8 +71,7 @@ final class WorkspaceModel: ObservableObject {
     func launch() {
         if case .disconnected = connection { connect() }
         if hotKeys == nil { registerHotKeys() }
-        accessibilityAuthorized = InteractionSession.accessibilityPermissionGranted()
-        if accessibilityAuthorized { registerSideMouse() }
+        refreshSideMouse()
     }
 
     func connect() {
@@ -160,7 +160,7 @@ final class WorkspaceModel: ObservableObject {
         interactionStatus = accessibilityAuthorized
             ? "辅助功能已授权"
             : "请在系统设置的辅助功能权限中授权 VoiceRewrite"
-        if accessibilityAuthorized { registerSideMouse() }
+        refreshSideMouse()
     }
 
     private func registerHotKeys() {
@@ -189,9 +189,16 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func registerSideMouse() {
-        guard sideMouse == nil else { return }
-        let driver = SideMouseButtonDriver(
+    func refreshSideMouse() {
+        accessibilityAuthorized = InteractionSession.accessibilityPermissionGranted()
+        guard accessibilityAuthorized else {
+            sideMouse?.shutdown()
+            sideMouse = nil
+            sideMouseStatus = "未授权辅助功能；请在系统设置授权后返回应用"
+            return
+        }
+        let isFreshStart = sideMouse == nil
+        let driver = sideMouse ?? SideMouseButtonDriver(
             onHold: { [weak self] action, pid in
                 self?.sideMouseHeld(action, targetPID: pid)
             },
@@ -200,20 +207,31 @@ final class WorkspaceModel: ObservableObject {
             },
             onCancel: { [weak self] in
                 self?.cancelCurrent()
+            },
+            onObservedButton: { [weak self] button in
+                if let action = SideMouseAction(rawValue: button) {
+                    self?.sideMouseStatus = action == .dictation
+                        ? "已收到 Mouse4 按下；继续按住以开始听写"
+                        : "已收到 Mouse5 按下；继续按住以开始改写"
+                } else {
+                    self?.sideMouseStatus = "检测到辅助鼠标按钮 \(button)；当前绑定按钮 3/4"
+                }
             }
         )
         do {
             try driver.start()
             sideMouse = driver
-            interactionStatus = "Mouse4 按住听写，Mouse5 按住改写；短按保留鼠标导航"
+            if isFreshStart { sideMouseStatus = "监听已启动；等待 Mouse4/Mouse5 事件" }
         } catch {
             driver.shutdown()
-            interactionStatus = "鼠标侧键未启用：\(error.localizedDescription)；键盘快捷键仍可用"
+            sideMouse = nil
+            sideMouseStatus = "监听失败：\(error.localizedDescription)；键盘快捷键仍可用"
         }
     }
 
     private func sideMouseHeld(_ action: SideMouseAction, targetPID: Int32?) {
         guard !isRecording && !isStarting && !isProcessing && activeSideAction == nil else { return }
+        sideMouseStatus = action == .dictation ? "Mouse4 长按已触发" : "Mouse5 长按已触发"
         switch action {
         case .dictation: toggleRecording(from: targetPID)
         case .rewrite: toggleVoiceSelectedText(from: targetPID)
@@ -671,6 +689,7 @@ final class WorkspaceModel: ObservableObject {
         cancelCurrent()
         sideMouse?.shutdown()
         sideMouse = nil
+        sideMouseStatus = "鼠标侧键监听已停止"
         hotKeys?.shutdown()
         hotKeyDriver?.shutdown()
         hotKeys = nil
