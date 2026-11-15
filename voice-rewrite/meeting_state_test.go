@@ -1,12 +1,13 @@
 package main
 
 import (
-	meetingcore "voicerewrite/internal/core/meeting"
 	"context"
 	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	meetingcore "voicerewrite/internal/core/meeting"
 )
 
 func TestMeetingStableTail(t *testing.T) {
