@@ -484,11 +484,12 @@ func runApp() {
 		app.busy.Store(true) // no second operation until the worker is finished
 		app.setStatus(trayTranscribing)
 		l.Print("recording stop requested; selection/model processing moved to worker")
-		if cfg.RecordMode == "hold" && holdIsDictation {
+		if cfg.RecordMode == "hold" && (holdIsDictation || holdMeeting != nil) {
 			app.postHandyPhase(statusProcessing, holdGeneration)
 			if holdMeeting != nil {
 				if holdMeeting.ctx.Err() == nil {
-					go holdMeeting.express(app, rec, holdGeneration)
+					mode := meetingVoiceMode(holdIsDictation)
+					go holdMeeting.express(app, rec, holdGeneration, mode)
 				} else {
 					go func() { <-rec.result }()
 					app.busy.Store(false)
@@ -516,7 +517,7 @@ func runApp() {
 		holdButton = button
 		holdIsDictation = dictation
 		holdMeeting = nil
-		if dictation && app.meeting != nil && !app.meeting.demo {
+		if app.meeting != nil && !app.meeting.demo {
 			holdMeeting = app.meeting
 		}
 		holdGeneration = app.epoch.start()
@@ -542,7 +543,11 @@ func runApp() {
 			statusMode = "听写"
 		}
 		if holdMeeting != nil {
-			statusMode = "会议表达"
+			if dictation {
+				statusMode = "会议直译"
+			} else {
+				statusMode = "会议意图"
+			}
 		}
 		// Promote the immediate mouse-down preview without recreating its HWND.
 		// Keyboard hold has no preview and uses the usual status path.

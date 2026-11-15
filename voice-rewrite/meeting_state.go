@@ -22,18 +22,18 @@ type meetingMetrics struct {
 }
 
 type meetingView struct {
-	status                             string
-	captions                           []meetingCaption
-	replies                            [3]meetingLine
-	tip, replySource, expressionStatus string
-	expression                         meetingLine
-	sourceName, asrMode                string
-	level                              int
-	capturePaused                      bool
-	metrics                            meetingMetrics
-	pendingReplies                     [3]meetingLine
-	pendingReplySource, pendingTip     string
-	replyPending                       bool
+	status                                               string
+	captions                                             []meetingCaption
+	replies                                              [3]meetingLine
+	tip, replySource, expressionStatus, expressionSource string
+	expression                                           meetingLine
+	sourceName, asrMode                                  string
+	level                                                int
+	capturePaused                                        bool
+	metrics                                              meetingMetrics
+	pendingReplies                                       [3]meetingLine
+	pendingReplySource, pendingTip                       string
+	replyPending                                         bool
 }
 
 func reviseMeetingCaption(old meetingCaption, id uint64, text string, final bool) meetingCaption {
@@ -116,6 +116,14 @@ func meetingTranslationFitsSource(source, translated string) bool {
 		return false
 	}
 	return len([]rune(translated)) <= max(48, len([]rune(source))*2)
+}
+
+// A meeting has two independent speaking actions, neither requiring a selection.
+func meetingVoiceMode(dictation bool) string {
+	if dictation {
+		return "express"
+	}
+	return "compose"
 }
 
 func meetingFollowLatest(current, moved, atBottom bool) bool {

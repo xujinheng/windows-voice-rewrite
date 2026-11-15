@@ -380,7 +380,13 @@ func updateMeetingHUD(view meetingView) {
 	expression := view.expressionStatus
 	p.copyExpression = ""
 	if expression == "" && view.expression.english != "" {
-		expression = view.expression.english + "\r\n" + view.expression.chinese
+		expression = view.expression.english
+		if view.expression.chinese != "" {
+			expression += "\r\n" + view.expression.chinese
+		}
+		if view.expressionSource != "" {
+			expression += "\r\n\r\n语音原文 · " + view.expressionSource
+		}
 		if view.expression.complete {
 			p.copyExpression = view.expression.english
 		} else {
@@ -388,7 +394,7 @@ func updateMeetingHUD(view meetingView) {
 		}
 	}
 	if expression == "" {
-		expression = "按住听写键说中文，松开后显示可直接说出的英文。"
+		expression = "会议中：按听写键直接翻成英文；按改写键说你的意图，生成可直接说出的英文。"
 	}
 	if view.expression.complete || time.Since(p.lastExpression) >= 280*time.Millisecond {
 		p.setText(p.expression, expression, true)
