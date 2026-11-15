@@ -22,9 +22,6 @@ type meetingSession struct {
 	mu                         sync.Mutex
 	view                       meetingView
 	prior                      []string
-	stopReply                  context.CancelFunc
-	stopCaption                context.CancelFunc
-	captionID                  uint64
 	captureErr                 error
 	dirty, demo                bool
 	modelMu                    sync.Mutex
@@ -80,12 +77,6 @@ func (s *meetingSession) resetViewLocked() {
 	s.view.captions = meetingcore.KeepCompletedCaptions(s.view.captions)
 	if s.view.expressionStatus != "" {
 		s.view.expressionStatus = "处理已取消"
-	}
-	if s.stopReply != nil {
-		s.stopReply()
-	}
-	if s.stopCaption != nil {
-		s.stopCaption()
 	}
 	s.view.level = 0
 	s.view.metrics.Pending = 0
@@ -250,9 +241,7 @@ func (s *meetingSession) transcribeTurn(turn meetingAudioTurn, state *meetingcor
 		}
 		s.view.status = "正在聆听 · 按住听写键说中文"
 		// An obsolete translation of the same utterance must not hold up its final.
-		if s.stopCaption != nil && s.captionID == turn.id {
-			s.stopCaption()
-		}
+		s.runtime.CancelCaption(turn.id)
 	})
 	if job.ctx == nil {
 		return
@@ -291,7 +280,7 @@ func (s *meetingSession) translateTurns(jobs <-chan meetingCaptionJob) {
 				continue
 			}
 			ctx, cancel := context.WithTimeout(job.ctx, 16*time.Second)
-			s.applyWork(job.epoch, func() { s.stopCaption = cancel; s.captionID = job.id })
+			s.applyWork(job.epoch, func() { s.runtime.TrackCaption(job.epoch, job.id, cancel) })
 			var displayed bool
 			started := time.Now()
 			err := s.complete(ctx, meetingcore.PriorityCaption, meetingcore.Query{Mode: "caption", Prior: job.prior, Latest: job.latest}, func(line meetingLine) {
@@ -350,13 +339,12 @@ func (s *meetingSession) queueReplies(job meetingCaptionJob) {
 		s.mu.Unlock()
 		return
 	}
-	if s.stopReply != nil {
-		s.stopReply()
+	ctx, cancel, ok := s.runtime.ReplyContext(job.epoch, 30*time.Second)
+	if !ok {
+		s.mu.Unlock()
+		return
 	}
 	serial := s.view.reply.Next()
-	work, _, _ := s.runtime.Snapshot()
-	ctx, cancel := context.WithTimeout(work, 30*time.Second)
-	s.stopReply = cancel
 	s.view.status = "正在准备回复建议…"
 	s.dirty = true
 	s.mu.Unlock()
@@ -515,9 +503,7 @@ func (s *meetingSession) start(source audio.FrameSource) {
 						id, _ = s.runtime.NextTurn(epoch)
 						s.view.reply.DiscardPartial()
 						s.view.reply.Next()
-						if s.stopReply != nil {
-							s.stopReply()
-						}
+						s.runtime.CancelReply()
 					})
 				}
 				if event.PCM != nil {
