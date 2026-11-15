@@ -40,7 +40,7 @@ type meetingSession struct {
 	scheduler                    meetingcore.Scheduler
 	lastVoice                    time.Time
 	onConfig                     func(Config)
-	saveConfiguration             func(Config) error
+	saveConfiguration            func(Config) error
 }
 
 type meetingAudioTurn struct {
