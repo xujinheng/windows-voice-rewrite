@@ -1,7 +1,6 @@
 package meeting
 
 import (
-	coreconfig "voicerewrite/internal/core/config"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	coreconfig "voicerewrite/internal/core/config"
 )
 
 func TestMeetingASRStreamsAndRollsBackExactTokens(t *testing.T) {
