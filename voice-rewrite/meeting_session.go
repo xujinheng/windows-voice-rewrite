@@ -288,7 +288,7 @@ func (s *meetingSession) transcribeTurn(turn meetingAudioTurn, state *meetingcor
 	s.applyWork(turn.epoch, func() {
 		s.upsertSourceLocked(turn.id, latest, turn.final, true)
 		if !turn.final && cfg.MeetingASRMode != "multipart" {
-			s.setSourcePrefixLocked(turn.id, state.fixed)
+			s.setSourcePrefixLocked(turn.id, state.StablePrefix())
 		}
 		job = meetingCaptionJob{final: turn.final, id: turn.id, epoch: turn.epoch, prior: append([]string(nil), s.prior...), latest: latest, ended: turn.ended, ctx: turn.ctx}
 		if turn.final {
