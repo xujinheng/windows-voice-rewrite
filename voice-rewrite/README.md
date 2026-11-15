@@ -31,7 +31,7 @@ Up to ten recent results are available from the tray during the current session.
 
 ## Meeting mode
 
-On Windows 11, start Zoom or another conference app. From the tray choose **开始会议模式 · 选择音频来源** and select the app. The topmost, resizable window separates provisional recognition from completed captions. Confirmed text for the current ASR continuation stays separate from the revisable tail; the final utterance is archived with Chinese translation. Completed history keeps its text selection and scroll position during live updates.
+On Windows 11, start Zoom or another conference app. From the tray choose **开始会议模式 · 选择音频来源** and select the app. The topmost, resizable meeting window uses the same native light/dark palette as the main app. A single transcript pane displays completed bilingual captions and the currently recognized sentence in order. Provisional text is refreshed at a readable cadence; previously displayed translations remain visible while recognition catches up. Scroll up to read or select older captions without being pulled back to the bottom, and choose **回到最新** to resume following the conversation.
 
 **会议资料** stores your role, actual experience, constraints and terminology. Terms guide Qwen ASR spelling; background and terms also accompany translation and reply requests. Leave unknown facts blank. Suggestions must not invent experience or commitments. The profile pane also selects the meeting ASR protocol:
 
@@ -42,11 +42,11 @@ Recognition snapshots adapt between 0.8 and 2.4 seconds according to measured AS
 
 Meeting ASR and LLM requests share a single scheduler, suitable for both models residing on one GPU. Your spoken expression and manual refinement have highest priority, followed by final recognition, translation, provisional recognition and reply suggestions. Lower-priority suggestions yield when subtitles need the GPU. Cancellation stops the client request; how promptly GPU computation stops depends on the backend. Meeting requests send `chat_template_kwargs.enable_thinking=false`; the server's chat template must honor it.
 
-The status area shows the audio source, peak input level, processing stage, pending/skipped work, and ASR/translation first-text and complete-request timings. Timings include scheduler wait but exclude audio collection before the snapshot. They are measurements, not latency guarantees.
+The compact status header shows the audio source and processing state, with a notice when obsolete tasks were skipped. Speech recognition and translation timings remain available in the application logs for troubleshooting.
 
-After an utterance, translation also assesses whether the speaker is handing over the floor using recent context. Automatic suggestions wait for a quiet gap. **生成建议** explicitly requests suggestions for the latest transcript. The displayed batch remains readable when another batch is prepared; **切换新建议** switches to it. Select **1 / 2 / 3** to read and copy a completed reply. Enter a refinement instruction and choose **改写所选** to place the revised English in **我的英文表达**. Nothing is sent into a meeting chat automatically.
+After an utterance, translation also assesses whether the speaker is handing over the floor using recent context. Automatic suggestions wait for a quiet gap. **生成建议** explicitly requests suggestions for the latest transcript. The displayed batch remains readable when another batch is prepared; **查看新建议** switches to it. Select **1 / 2 / 3** to read and copy a completed reply. Enter a refinement instruction and choose **改写回复** to place the revised English in **我的英文表达**. Nothing is sent into a meeting chat automatically.
 
-Hold the configured dictation shortcut (Mouse4 by default), say your intended meaning in Chinese, and release it to produce English. **暂停显示** freezes reading while processing continues; **暂停采集** releases meeting capture and cancels its outstanding work. Close the window to stop the session. **仅字幕**, **A− / A+**, and the normal window position/size are remembered in `%APPDATA%\VoiceRewrite\meeting-ui.json`.
+Hold the configured dictation shortcut (Mouse4 by default), say your intended meaning in Chinese, and release it to produce English. **冻结画面** keeps the current captions and suggestions in place while processing continues; **暂停采集** releases meeting capture and cancels its outstanding work. Close the window to stop the session. **专注字幕**, **A− / A+**, and the normal window position/size are remembered in `%APPDATA%\VoiceRewrite\meeting-ui.json`.
 
 Choose **查看会议模式演示** or run `VoiceRewrite.exe --meeting-demo` for offline sample data. Live mode uses only the configured endpoints. Browser capture can include multiple tabs in the selected app's process tree. See [privacy](../PRIVACY.md).
 
