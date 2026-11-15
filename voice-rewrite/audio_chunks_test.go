@@ -1,7 +1,6 @@
 package main
 
 import (
-	"voicerewrite/internal/core/audio"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"voicerewrite/internal/core/audio"
 )
 
 func TestLongAudioChunksNeverDropSamples(t *testing.T) {
