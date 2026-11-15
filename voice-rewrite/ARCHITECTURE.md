@@ -1,10 +1,6 @@
 # Architecture
 
-VoiceRewrite's runnable desktop application is a native Go/Win32 Windows application.
-Portable Go packages under `internal/core` contain reusable processing, model
-protocols and task orchestration. Platform adapters own device access, UI,
-input, configuration files and OS credential storage. There is no native
-macOS application in this repository.
+VoiceRewrite has native Windows (Go/Win32) and macOS (SwiftUI/AppKit with a bundled Go `voicebridge`) desktop hosts. Portable Go packages under `internal/core` contain shared processing, provider protocols, connection probing and task orchestration. Platform adapters own device access, UI, input, configuration files and OS credential storage.
 
 ## Portable core
 
@@ -14,6 +10,7 @@ macOS application in this repository.
 | `internal/core/config` | Application settings schema and defaults, JSON parsing/serialization, normalization, API base-URL validation and credential-field transformation callbacks. No filesystem access or OS encryption implementation. |
 | `internal/core/provider` | Safe HTTP clients, redirect blocking, bounded responses, model discovery, HTTP errors and reasoning-tag removal. |
 | `internal/core/speech` | WAV/multipart ASR requests, transcript processing, chunking and request cancellation. |
+| `internal/core/serviceprobe` | Shared ASR silent-WAV upload and LLM model-list connection probing for both desktop hosts. |
 | `internal/core/textedit` | Selected-text length/cancellation validation, intent classification and parsing, explicit-command write authorization, routing, plain-text rewrite and shared model completion transport. |
 | `internal/core/meeting` | Stream segmentation, adaptive ASR previews, session epochs/pause/resume/cancellation (`SessionRuntime`), bounded final/preview queues and revision-fenced caption translation (`Pipeline`), captions, replies, inference priorities, history and layout policies. |
 
@@ -21,8 +18,7 @@ Core packages are built and tested without Win32, WASAPI, COM or native GUI
 imports. The CI boundary check compares core source/test file sets and direct
 platform API imports on Linux, Darwin and Windows. Linux runs race-enabled Go
 tests; a real macOS runner executes core tests and compiles the core for Darwin
-amd64 and arm64. These checks establish portable core compatibility, not a
-working macOS desktop application.
+amd64 and arm64. Xcode CI also builds and tests the native macOS application on Apple Silicon and Intel runners. Hardware audio, Keychain and cross-app Accessibility permissions require physical-device verification.
 
 ## Native Windows integration
 
@@ -52,11 +48,11 @@ API endpoints. Text replacement requires an explicit editing command and
 passes the native foreground/selection guard. Windows credentials are stored
 using the current user's DPAPI protection.
 
-A macOS host requires native audio/process capture, microphone, global input,
-Accessibility-based text selection and insertion, clipboard, Keychain,
-menu-bar/window UI and application lifecycle integrations. It must validate
-permissions, device behavior, native UI E2E and distribution signing on macOS
-before it can be considered a native application.
+## Native macOS integration
+
+`macos/VoiceRewrite.xcodeproj` builds the SwiftUI/AppKit host and bundles native Go `voicebridge`. The Helper calls the same `internal/core` packages as Windows; `probe_asr` and `probe_llm` expose identical service diagnostics. `Microphone` captures audio, `VoiceRewriteStorage` owns private settings and Keychain credentials, and `VoiceRewriteInteraction` owns Carbon shortcuts and guarded Accessibility insertion. Swift only handles the user interface, platform permissions and lifecycle.
+
+macOS Meeting application-audio capture remains a separate integration requirement. Physical microphone, Keychain and Accessibility behavior plus distribution signing must be verified before public macOS release.
 
 For setup see [README](README.md); for platform and manual checks see
 [TESTING](TESTING.md) and [visual testing](VISUAL-TESTING.md).
