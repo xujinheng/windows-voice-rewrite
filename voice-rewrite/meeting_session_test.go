@@ -76,14 +76,14 @@ func TestMeetingAdaptiveInterval(t *testing.T) {
 }
 func TestMeetingSerialInference(t *testing.T) {
 	var g meetingcore.Scheduler
-	ctx, release, err := g.acquire(context.Background(), meetingcore.PriorityCaption)
+	ctx, release, err := g.Acquire(context.Background(), meetingcore.PriorityCaption)
 	defer release()
 	if err != nil || ctx.Err() != nil {
 		t.Fatal(err)
 	}
 	waiting, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if _, _, err = g.acquire(waiting, meetingcore.PriorityPreview); err == nil {
+	if _, _, err = g.Acquire(waiting, meetingcore.PriorityPreview); err == nil {
 		t.Fatal("parallel work admitted")
 	}
 }
