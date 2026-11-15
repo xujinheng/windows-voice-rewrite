@@ -69,12 +69,6 @@ func (s *meetingSession) applyWork(epoch uint64, update func()) {
 		}
 	})
 }
-func (s *meetingSession) workSnapshot() (context.Context, uint64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	work, epoch, _ := s.runtime.Snapshot()
-	return work, epoch
-}
 func (s *meetingSession) configSnapshot() Config { s.mu.Lock(); defer s.mu.Unlock(); return s.cfg }
 // resetViewLocked runs with the host state mutex held after the runtime
 // invalidates its epoch. Presentation never survives a canceled partial task.
@@ -429,7 +423,7 @@ func (s *meetingSession) refineReply(index int, instruction string) {
 		s.mu.Unlock()
 		return
 	}
-	ctx, cancel, epoch, serial := s.expressionContextLocked(30 * time.Second)
+	ctx, cancel, epoch, serial := s.runtime.NewExpression(30 * time.Second)
 	s.view.expressionStatus = "正在微调所选回复…"
 	s.dirty = true
 	s.mu.Unlock()
