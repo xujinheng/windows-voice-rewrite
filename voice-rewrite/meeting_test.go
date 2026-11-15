@@ -61,6 +61,32 @@ func TestMeetingStream(t *testing.T) {
 	}
 }
 
+func TestMeetingShortPauseDoesNotSplitSentence(t *testing.T) {
+	var seg meetingSegmenter
+	voice := make([]byte, meetingFrameBytes)
+	for i := 0; i < len(voice); i += 2 {
+		binary.LittleEndian.PutUint16(voice[i:], 2500)
+	}
+	quiet := make([]byte, meetingFrameBytes)
+	for i := 0; i < 12; i++ {
+		seg.push(voice)
+	}
+	for i := 0; i < 25; i++ {
+		if _, done := seg.push(quiet); done != nil {
+			t.Fatal("split sentence after a natural half-second pause")
+		}
+	}
+	for i := 0; i < 6; i++ {
+		seg.push(voice)
+	}
+	for i := 0; i < meetingPauseFrames; i++ {
+		if _, done := seg.push(quiet); done != nil {
+			return
+		}
+	}
+	t.Fatal("full pause never finalized the utterance")
+}
+
 func TestMeetingPCMConverter(t *testing.T) {
 	var c meetingPCMConverter
 	stereo := make([]byte, 44100*4)
