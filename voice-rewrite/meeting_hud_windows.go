@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -30,6 +31,7 @@ type meetingHUD struct {
 	displayedReplies                                            [3]meetingLine
 	displayedSource, displayedTip, copyExpression               string
 	selectedReply                                               int
+	lastTranscript, lastReply, lastExpression                    time.Time
 	rendered                                                    map[uintptr]string
 }
 
@@ -111,14 +113,14 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	}
 	// Native tab stops include selectable read-only text and the rewrite input.
 	p.status = child("STATIC", "", 0, 0, false)
-	for i, title := range []string{"暂停显示", "仅字幕", "A−", "A+", "复制所选", "复制我的英文", "生成建议", "暂停采集", "会议资料", "1 直接回应", "2 澄清一下", "3 争取时间", "切换新建议", "改写所选"} {
-		p.buttons[i] = child("BUTTON", title, 0x00010000, uintptr(7100+i), false)
+	for i, title := range []string{"冻结画面", "专注字幕", "A−", "A+", "复制回复", "复制英文", "生成建议", "暂停采集", "会议资料", "1 直接回应", "2 澄清一下", "3 争取时间", "查看新建议", "改写回复"} {
+		p.buttons[i] = child("BUTTON", title, 0x00010000|uxBSOwnerDraw, uintptr(7100+i), false)
 	}
-	p.labels[0] = child("STATIC", "实时字幕 · 已确认片段 / 仍在识别", 0, 0, false)
+	p.labels[0] = child("STATIC", "会议字幕", 0, 0, false)
 	editStyle := uintptr(WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_BORDER | 0x00010000)
-	p.live = child("EDIT", "", editStyle, 0, true)
+	p.live = child("STATIC", "● 等待音频", 0, 0, false)
 	p.captions = child("EDIT", "", editStyle, 0, true)
-	p.labels[1] = child("STATIC", "回复建议 · 选择 1 / 2 / 3 阅读", 0, 0, false)
+	p.labels[1] = child("STATIC", "回复建议", 0, 0, false)
 	p.responses = child("EDIT", "", editStyle, 0, true)
 	p.instruction = child("EDIT", "", WS_BORDER|0x00010000|0x0080, 0, true)
 	procSendMessage.Call(p.instruction, 0x00C5, 600, 0) // EM_LIMITTEXT
@@ -144,8 +146,8 @@ func (p *meetingHUD) move(control uintptr, x, y, w, h int32) {
 func (p *meetingHUD) layout() {
 	var bounds rect32
 	procGetClientRect.Call(p.window, uintptr(unsafe.Pointer(&bounds)))
-	margin, gap, label, button := p.px(12), p.px(6), p.px(23), p.px(29)
-	width := bounds.Right - 2*margin
+	margin, gap, label, button := p.px(16), p.px(8), p.px(24), p.px(32)
+	width := max(p.px(200), bounds.Right-2*margin)
 	for _, control := range p.mainControls {
 		procShowWindow.Call(control, meetingShow(!p.profileOpen))
 	}
@@ -156,57 +158,58 @@ func (p *meetingHUD) layout() {
 		p.layoutProfile(width, bounds.Bottom)
 		return
 	}
-	y := p.px(8)
-	p.move(p.status, margin, y, width, p.px(80))
-	y += p.px(84)
+
+	y := p.px(10)
+	p.move(p.status, margin, y, width, p.px(46))
+	y += p.px(50) + gap
 	x := margin
 	for _, item := range []struct {
 		index int
 		width int32
-	}{{0, 84}, {7, 84}, {1, 70}, {2, 32}, {3, 32}, {6, 80}, {8, 80}} {
+	}{{7, 96}, {1, 92}, {0, 90}, {2, 36}, {3, 36}, {8, 92}} {
 		p.move(p.buttons[item.index], x, y, p.px(item.width), button)
 		x += p.px(item.width) + gap
 	}
-	y += button + gap
+	y += button + gap + p.px(2)
+	p.move(p.labels[0], margin, y, width-p.px(140), label)
+	p.move(p.live, margin+width-p.px(140), y, p.px(140), label)
+	y += label + gap
+
 	remaining := bounds.Bottom - y - margin
-	captionsHeight := remaining * 42 / 100
-	if p.captionsOnly {
-		captionsHeight = remaining
+	captionHeight := remaining
+	if !p.captionsOnly {
+		captionHeight = max(p.px(140), remaining*45/100)
 	}
-	p.move(p.labels[0], margin, y, width, label)
-	y += label
-	liveHeight := min(p.px(74), max(p.px(40), captionsHeight/3))
-	p.move(p.live, margin, y, width, liveHeight)
-	y += liveHeight + gap
-	historyHeight := max(p.px(36), captionsHeight-label-liveHeight-gap)
-	p.move(p.captions, margin, y, width, historyHeight)
-	y += historyHeight + gap
-	for _, control := range []uintptr{p.labels[1], p.labels[2], p.responses, p.expression, p.instruction, p.buttons[4], p.buttons[5], p.buttons[9], p.buttons[10], p.buttons[11], p.buttons[12], p.buttons[13]} {
+	p.move(p.captions, margin, y, width, max(p.px(90), captionHeight))
+	y += captionHeight + gap
+	for _, control := range []uintptr{p.labels[1], p.labels[2], p.responses, p.expression, p.instruction, p.buttons[4], p.buttons[5], p.buttons[6], p.buttons[9], p.buttons[10], p.buttons[11], p.buttons[12], p.buttons[13]} {
 		procShowWindow.Call(control, meetingShow(!p.captionsOnly))
 	}
 	if !p.captionsOnly {
-		p.move(p.labels[1], margin, y, width, label)
-		y += label
+		p.move(p.labels[1], margin, y, width-p.px(316), button)
+		p.move(p.buttons[6], margin+width-p.px(310), y, p.px(92), button)
+		p.move(p.buttons[12], margin+width-p.px(210), y, p.px(108), button)
+		p.move(p.buttons[4], margin+width-p.px(94), y, p.px(94), button)
+		y += button + gap
 		x = margin
-		// Three choices remain visible while the selected reply is read or edited.
 		for _, item := range []struct {
 			index int
 			width int32
-		}{{9, 98}, {10, 98}, {11, 98}, {4, 86}, {12, 110}} {
+		}{{9, 112}, {10, 112}, {11, 112}} {
 			p.move(p.buttons[item.index], x, y, p.px(item.width), button)
 			x += p.px(item.width) + gap
 		}
 		y += button + gap
 		space := bounds.Bottom - y - margin - button - label - 3*gap
-		replyHeight := max(p.px(54), space*58/100)
-		expressionHeight := max(p.px(38), space-replyHeight)
+		replyHeight := max(p.px(66), space*55/100)
+		expressionHeight := max(p.px(54), space-replyHeight)
 		p.move(p.responses, margin, y, width, replyHeight)
 		y += replyHeight + gap
-		p.move(p.instruction, margin, y, width-p.px(98)-gap, button)
-		p.move(p.buttons[13], margin+width-p.px(98), y, p.px(98), button)
+		p.move(p.instruction, margin, y, width-p.px(106)-gap, button)
+		p.move(p.buttons[13], margin+width-p.px(106), y, p.px(106), button)
 		y += button + gap
-		p.move(p.labels[2], margin, y, width-p.px(130), label)
-		p.move(p.buttons[5], margin+width-p.px(126), y, p.px(126), label)
+		p.move(p.labels[2], margin, y, width-p.px(116), label)
+		p.move(p.buttons[5], margin+width-p.px(112), y, p.px(112), label)
 		y += label
 		p.move(p.expression, margin, y, width, expressionHeight)
 	}
@@ -237,7 +240,7 @@ func (p *meetingHUD) resizeText(delta int32) {
 	}
 	old := p.bodyFont
 	p.bodyFont, p.fontSize = font, size
-	for _, control := range []uintptr{p.live, p.captions, p.responses, p.expression, p.instruction, p.profileBackground, p.profileTerms} {
+	for _, control := range []uintptr{p.captions, p.responses, p.expression, p.instruction, p.profileBackground, p.profileTerms} {
 		if control != 0 {
 			setFont(control, font)
 		}
@@ -246,24 +249,37 @@ func (p *meetingHUD) resizeText(delta int32) {
 	p.savePreferences()
 }
 
-// EDIT replaces reset selection and scroll. Snapshot both around history updates;
-// live recognition has its own control so token updates never touch history.
+// Preserve the reader's scroll anchor while reading older captions. Auto-follow
+// is only active near the bottom with no text selected.
+func (p *meetingHUD) transcriptAtBottom(control uintptr) bool {
+	info := uxScrollInfo{Size: uint32(unsafe.Sizeof(uxScrollInfo{})), Mask: uxSIFRange | uxSIFPage | uxSIFPos}
+	ok, _, _ := procGetScrollInfoUX.Call(control, uxSBVert, uintptr(unsafe.Pointer(&info)))
+	return ok == 0 || info.Max-info.Pos-int32(info.Page) <= 2
+}
+
 func (p *meetingHUD) setText(control uintptr, value string, preserve bool) {
 	if value == p.rendered[control] {
 		return
 	}
 	var start, end uint32
 	var first uintptr
+	follow := false
 	if preserve {
-		procSendMessage.Call(control, 0x00B0, uintptr(unsafe.Pointer(&start)), uintptr(unsafe.Pointer(&end)))
-		first, _, _ = procSendMessage.Call(control, 0x00CE, 0, 0)
-		procSendMessage.Call(control, 0x000B, 0, 0)
+		procSendMessage.Call(control, 0x00B0, uintptr(unsafe.Pointer(&start)), uintptr(unsafe.Pointer(&end))) // EM_GETSEL
+		first, _, _ = procSendMessage.Call(control, 0x00CE, 0, 0) // EM_GETFIRSTVISIBLELINE
+		follow = control == p.captions && start == end && p.transcriptAtBottom(control)
+		procSendMessage.Call(control, 0x000B, 0, 0) // WM_SETREDRAW off
 	}
 	uxSetText(control, value)
 	if preserve {
-		procSendMessage.Call(control, 0x00B1, uintptr(start), uintptr(end))
-		now, _, _ := procSendMessage.Call(control, 0x00CE, 0, 0)
-		procSendMessage.Call(control, 0x00B6, 0, uintptr(int64(first)-int64(now)))
+		if follow {
+			procSendMessage.Call(control, 0x00B1, ^uintptr(0), ^uintptr(0)) // EM_SETSEL to end
+			procSendMessage.Call(control, 0x00B7, 0, 0) // EM_SCROLLCARET
+		} else {
+			procSendMessage.Call(control, 0x00B1, uintptr(start), uintptr(end))
+			now, _, _ := procSendMessage.Call(control, 0x00CE, 0, 0)
+			procSendMessage.Call(control, 0x00B6, 0, uintptr(int64(first)-int64(now))) // EM_LINESCROLL
+		}
 		procSendMessage.Call(control, 0x000B, 1, 0)
 	}
 	p.rendered[control] = value
@@ -283,67 +299,54 @@ func updateMeetingHUD(view meetingView) {
 		return
 	}
 	p.latest = view
-	mode := "multipart 分段识别"
-	if view.asrMode == "llama-prefix" {
-		mode = "llama 累积音频 / 前缀续写"
-	}
-	source := view.sourceName
+	source := strings.Join(strings.Fields(view.sourceName), " ")
 	if source == "" {
 		source = "等待音频源"
 	}
-	source = strings.Join(strings.Fields(source), " ")
-	if runes := []rune(source); len(runes) > 36 {
-		source = string(runes[:35]) + "…"
+	if runes := []rune(source); len(runes) > 48 {
+		source = string(runes[:47]) + "…"
 	}
 	state := view.status
-	if p.paused {
-		state = "显示已暂停（处理继续） · " + state
-	}
 	if view.capturePaused {
-		state = "采集已暂停 · " + state
+		state = "采集已暂停 · 不再接收音频"
+	} else if p.paused {
+		state = "画面已冻结 · 后台继续处理"
+	} else if state == "" {
+		state = "正在聆听"
 	}
-	m := view.metrics
-	status := fmt.Sprintf("%s\r\n%s · 音量 %d%%\r\n%s · %s · 排队 %d / 丢弃 %d\r\n识别请求 首字/完成 %s / %s · 翻译请求 首字/完成 %s / %s", state, source, view.level, mode, m.Stage, m.Pending, m.Dropped, meetingLatency(m.ASRFirstMS), meetingLatency(m.ASRDoneMS), meetingLatency(m.TranslationFirstMS), meetingLatency(m.TranslationDoneMS))
-	p.setText(p.status, status, false)
-	p.setText(p.buttons[0], map[bool]string{false: "暂停显示", true: "恢复显示"}[p.paused], false)
+	detail := source
+	if view.metrics.Stage != "" {
+		detail += "  ·  " + view.metrics.Stage
+	}
+	if view.metrics.Dropped > 0 {
+		detail += fmt.Sprintf("  ·  跳过 %d 个过期片段", view.metrics.Dropped)
+	}
+	p.setText(p.status, state+"\r\n"+detail, false)
+	p.setText(p.buttons[0], map[bool]string{false: "冻结画面", true: "恢复画面"}[p.paused], false)
 	p.setText(p.buttons[7], map[bool]string{false: "暂停采集", true: "恢复采集"}[view.capturePaused], false)
-	p.setText(p.buttons[1], map[bool]string{false: "仅字幕", true: "完整视图"}[p.captionsOnly], false)
+	p.setText(p.buttons[1], map[bool]string{false: "专注字幕", true: "完整视图"}[p.captionsOnly], false)
 	for _, i := range []int{6, 7, 8} {
 		meetingEnableWindow.Call(p.buttons[i], meetingBool(p.owner != 0))
 	}
 	meetingEnableWindow.Call(p.buttons[12], meetingBool(p.owner != 0 && view.replyPending && !p.paused))
-	p.setText(p.buttons[12], map[bool]string{false: "暂无新建议", true: "切换新建议"}[view.replyPending], false)
-	meetingEnableWindow.Call(p.buttons[13], meetingBool(p.owner != 0 && p.displayedReplies[p.selectedReply].complete && p.displayedReplies[p.selectedReply].english != "" && !p.paused))
+	p.setText(p.buttons[12], map[bool]string{false: "无新建议", true: "查看新建议"}[view.replyPending], false)
 	if p.paused {
 		return
 	}
-	var history, live []string
-	for _, line := range view.captions {
-		translation := line.chinese
-		if translation == "" {
-			translation = "正在翻译…"
-		}
-		if line.final {
-			history = append(history, translation+"\r\n"+line.source)
-			continue
-		}
-		text := "已确认 · " + line.stable
-		if line.live != "" {
-			text += "\r\n识别中 · " + line.live
-		}
-		if line.stable == "" && line.live == "" {
-			text = "识别中 · " + line.source
-		}
-		live = append(live, text+"\r\n"+translation)
+	transcript, live := meetingTranscript(view.captions)
+	activity := "● 已同步"
+	if live {
+		activity = "● 正在识别"
+	} else if view.capturePaused {
+		activity = "● 已暂停"
+	} else if len(view.captions) == 0 {
+		activity = "● 等待发言"
 	}
-	if len(live) == 0 {
-		live = append(live, "等待对方说话 · 实时识别显示在这里。")
+	p.setText(p.live, activity, false)
+	if !live || time.Since(p.lastTranscript) >= 280*time.Millisecond {
+		p.setText(p.captions, transcript, true)
+		p.lastTranscript = time.Now()
 	}
-	if len(history) == 0 {
-		history = append(history, "已结束的字幕保留在这里，可选择复制。")
-	}
-	p.setText(p.live, strings.Join(live, "\r\n\r\n"), true)
-	p.setText(p.captions, strings.Join(history, "\r\n\r\n"), true)
 	p.displayedReplies, p.displayedSource, p.displayedTip = view.replies, view.replySource, view.tip
 	p.renderReply()
 	expression := view.expressionStatus
@@ -353,13 +356,16 @@ func updateMeetingHUD(view meetingView) {
 		if view.expression.complete {
 			p.copyExpression = view.expression.english
 		} else {
-			expression += "\r\n正在生成…（完成后可复制）"
+			expression += "\r\n正在生成…"
 		}
 	}
 	if expression == "" {
-		expression = "按住听写键说中文，松开后显示英文。"
+		expression = "按住听写键说中文，松开后显示可直接说出的英文。"
 	}
-	p.setText(p.expression, expression, true)
+	if view.expression.complete || time.Since(p.lastExpression) >= 280*time.Millisecond {
+		p.setText(p.expression, expression, true)
+		p.lastExpression = time.Now()
+	}
 	meetingEnableWindow.Call(p.buttons[5], meetingBool(p.copyExpression != ""))
 }
 
@@ -386,7 +392,10 @@ func (p *meetingHUD) renderReply() {
 	if p.displayedTip != "" {
 		text += "\r\n技术提示 · " + p.displayedTip
 	}
-	p.setText(p.responses, text, true)
+	if reply.complete || time.Since(p.lastReply) >= 280*time.Millisecond {
+		p.setText(p.responses, text, true)
+		p.lastReply = time.Now()
+	}
 	meetingEnableWindow.Call(p.buttons[4], meetingBool(reply.complete && reply.english != ""))
 	meetingEnableWindow.Call(p.buttons[13], meetingBool(p.owner != 0 && reply.complete && reply.english != "" && !p.paused))
 }
@@ -441,6 +450,19 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			w, h := desktopFitSize(p.px(600), p.px(640), work, 0)
 			info.MinSize = trayPoint{X: w, Y: h}
 			return 0
+
+		case uxWMDrawItem:
+			if lParam != 0 {
+				item := (*drawItemStruct)(unsafe.Pointer(lParam))
+				if item.CtlID >= 7100 && item.CtlID <= 7113 {
+					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(p.buttons[item.CtlID-7100]), item.CtlID == 7106 || item.CtlID == 7112 && p.latest.replyPending)
+					return 1
+				}
+				if item.CtlID == 7205 || item.CtlID == 7206 {
+					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(item.HwndItem), item.CtlID == 7205)
+					return 1
+				}
+			}
 		case WM_COMMAND:
 			if wParam>>16 != 0 {
 				break
@@ -516,7 +538,11 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			}
 			return 0
 		case WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC:
-			procSetTextColor.Call(wParam, p.palette.color(p.palette.text))
+			if lParam == p.live {
+				procSetTextColor.Call(wParam, p.palette.color(p.palette.primary))
+			} else {
+				procSetTextColor.Call(wParam, p.palette.color(p.palette.text))
+			}
 			if lParam == p.captions || lParam == p.live || lParam == p.responses || lParam == p.expression || lParam == p.instruction || lParam == p.profileBackground || lParam == p.profileTerms {
 				procSetBkColor.Call(wParam, p.palette.color(p.palette.surface))
 				return p.surface
