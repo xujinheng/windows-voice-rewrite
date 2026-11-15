@@ -60,6 +60,13 @@ jobs:
         run: |
           GOOS=darwin GOARCH=arm64 go build ./internal/core/...
           GOOS=darwin GOARCH=amd64 go build ./internal/core/...
+      - name: Verify Swift-to-Go local process handshake on macOS
+        working-directory: voice-rewrite
+        run: |
+          go build -o "$RUNNER_TEMP/voicebridge" ./cmd/voicebridge
+          swift ../scripts/macos-bridge-probe.swift "$RUNNER_TEMP/voicebridge"
+          GOOS=darwin GOARCH=amd64 go build ./cmd/voicebridge
+          GOOS=darwin GOARCH=arm64 go build ./cmd/voicebridge
   build:
     runs-on: windows-latest
     timeout-minutes: 30
