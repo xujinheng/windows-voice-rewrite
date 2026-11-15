@@ -1,6 +1,7 @@
 package main
 
 import (
+	"voicerewrite/internal/core/provider"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -127,7 +128,7 @@ func completeSelectedTask(ctx context.Context, cfg Config, selected, instruction
 	if err != nil {
 		return AssistantResult{}, err
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint(cfg.LLMBaseURL, "/chat/completions"), bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(ctx, "POST", provider.Endpoint(cfg.LLMBaseURL, "/chat/completions"), bytes.NewReader(raw))
 	if err != nil {
 		return AssistantResult{}, err
 	}
@@ -135,13 +136,13 @@ func completeSelectedTask(ctx context.Context, cfg Config, selected, instruction
 	if cfg.LLMAPIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.LLMAPIKey)
 	}
-	resp, err := requestClient(120 * time.Second).Do(req)
+	resp, err := provider.RequestClient(120 * time.Second).Do(req)
 	if err != nil {
 		return AssistantResult{}, fmt.Errorf("LLM request: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return AssistantResult{}, providerHTTPError("LLM", resp.StatusCode)
+		return AssistantResult{}, provider.HTTPError("LLM", resp.StatusCode)
 	}
 	var v struct {
 		Choices []struct {
