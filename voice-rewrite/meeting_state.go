@@ -183,6 +183,42 @@ func meetingTranslationFitsSource(source, translated string) bool {
 }
 
 // A meeting has two independent speaking actions, neither requiring a selection.
+// The rewrite shortcut is a general-purpose speaking tool. When the
+// instruction explicitly asks to ANSWER, do not feed it to a question-composer.
+func meetingSpeechTask(mode, spoken string) string {
+	if mode != "compose" {
+		return mode
+	}
+	lower := strings.ToLower(strings.TrimSpace(spoken))
+	for _, phrase := range []string{
+		"我需要回答", "我想回答", "帮我回答", "请回答", "回答一下", "回答这个",
+		"回答问题", "给我答案", "给个答案", "帮我解答", "怎么回答", "告诉我答案",
+		"i need to answer", "help me answer", "give me an answer",
+	} {
+		if strings.Contains(lower, phrase) {
+			return "answer"
+		}
+	}
+	return mode
+}
+
+// Conversation is useful for pronouns and references, not general knowledge.
+// Strip it for standalone requests so a project-specific profile cannot
+// monopolize factual answers or casual speaking tasks.
+func meetingUsesConversationContext(spoken string) bool {
+	lower := strings.ToLower(spoken)
+	for _, phrase := range []string{
+		"刚才", "上面", "之前说", "刚提到", "他说", "她说", "他们说",
+		"这两个方案", "这几个方案", "这个方案", "这些方案", "对方", "这个问题",
+		"those options", "these options", "that proposal", "earlier in the meeting",
+	} {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
 func meetingVoiceMode(dictation bool) string {
 	if dictation {
 		return "express"
