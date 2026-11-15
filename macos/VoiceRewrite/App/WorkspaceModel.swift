@@ -433,10 +433,13 @@ final class WorkspaceModel: ObservableObject {
                         generation: generation, intent: .insertAtCaret)
                     if resultGeneration.accepts(token) {
                         activeInsert = (snapshot, generation)
+                        interactionStatus = "已锁定原应用光标；识别后将验证并写入"
                     }
                 } catch {
-                    interactionStatus = "未获得可验证的插入位置；仅显示识别结果"
+                    interactionStatus = Self.captureErrorMessage(error)
                 }
+            } else {
+                interactionStatus = "未指定外部文本框；本次录音仅显示识别结果。请在目标软件中按 Mouse4 开始听写"
             }
             guard resultGeneration.accepts(token) else { return }
             do {
@@ -653,6 +656,32 @@ final class WorkspaceModel: ObservableObject {
             llmProbeStatus = "LLM：实际文本任务失败或已取消"
             if spoken { recordingStatus = "语音选区处理失败" }
             Task { await interaction.cancelTask(generation: generation) }
+        }
+    }
+
+    private static func captureErrorMessage(_ error: Error) -> String {
+        guard let failure = error as? InteractionFailure else {
+            return "读取外部文本框失败：\(error.localizedDescription)"
+        }
+        switch failure {
+        case .accessibilityPermissionDenied:
+            return "缺少辅助功能权限；请授权当前 VoiceRewrite.app 并重新打开"
+        case .noFrontmostApplication, .noFocusedElement, .notEditable, .selectionUnavailable:
+            return "未识别到可编辑文本框或光标；请先点击目标软件的输入框"
+        case .invalidSelection:
+            return "听写需要空光标位置；如有选中文字，请先取消选择"
+        case .secureField:
+            return "密码或安全输入框禁止自动输入"
+        case .monitoringUnavailable:
+            return "该输入框不支持必要的焦点/选区监测；已保留安全限制"
+        case .unsupportedNativeWrite:
+            return "该输入框不支持可验证的写入；结果仅在本应用显示"
+        case .applicationChanged, .focusChanged, .selectionChanged:
+            return "录音开始时焦点或选区已变化；未锁定写入位置"
+        case .systemError(let code):
+            return "读取目标文本框失败（Accessibility 错误 \(code)）"
+        default:
+            return "无法安全锁定外部光标（\(failure)）；本次仅显示识别结果"
         }
     }
 
