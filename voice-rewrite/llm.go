@@ -58,7 +58,7 @@ func rewrite(ctx context.Context, cfg Config, original, instruction string) (str
 	if len(result.Choices) == 0 {
 		return "", errors.New("文本模型返回空 choices")
 	}
-	text := strings.TrimSpace(thinkingTag.ReplaceAllString(result.Choices[0].Message.Content, ""))
+	text := strings.TrimSpace(provider.ThinkingTag.ReplaceAllString(result.Choices[0].Message.Content, ""))
 	if strings.HasPrefix(text, "```") {
 		text = strings.TrimPrefix(text, "```")
 		if j := strings.IndexByte(text, '\n'); j >= 0 {
