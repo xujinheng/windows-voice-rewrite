@@ -20,7 +20,7 @@ type meetingHUD struct {
 	palette                                                     uiPalette
 	background, surface                                         uintptr
 	labels                                                      [3]uintptr
-	buttons                                                     [14]uintptr
+	buttons                                                     [15]uintptr
 	mainControls                                                []uintptr
 	profileControls                                             []uintptr
 	profileBackground, profileTerms, profileMode, profileStatus uintptr
@@ -113,7 +113,7 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	}
 	// Native tab stops include selectable read-only text and the rewrite input.
 	p.status = child("STATIC", "", 0, 0, false)
-	for i, title := range []string{"冻结画面", "专注字幕", "A−", "A+", "复制回复", "复制英文", "生成建议", "暂停采集", "会议资料", "1 直接回应", "2 澄清一下", "3 争取时间", "查看新建议", "改写回复"} {
+	for i, title := range []string{"冻结画面", "专注字幕", "A−", "A+", "复制回复", "复制英文", "生成建议", "暂停采集", "会议资料", "1 直接回应", "2 澄清一下", "3 争取时间", "查看新建议", "改写回复", "回到最新"} {
 		p.buttons[i] = child("BUTTON", title, 0x00010000|uxBSOwnerDraw, uintptr(7100+i), false)
 	}
 	p.labels[0] = child("STATIC", "会议字幕", 0, 0, false)
@@ -171,8 +171,9 @@ func (p *meetingHUD) layout() {
 		x += p.px(item.width) + gap
 	}
 	y += button + gap + p.px(2)
-	p.move(p.labels[0], margin, y, width-p.px(140), label)
-	p.move(p.live, margin+width-p.px(140), y, p.px(140), label)
+	p.move(p.labels[0], margin, y, width-p.px(252), label)
+	p.move(p.live, margin+width-p.px(248), y, p.px(136), label)
+	p.move(p.buttons[14], margin+width-p.px(104), y-p.px(3), p.px(104), button)
 	y += label + gap
 
 	remaining := bounds.Bottom - y - margin
@@ -303,8 +304,8 @@ func updateMeetingHUD(view meetingView) {
 	if source == "" {
 		source = "等待音频源"
 	}
-	if runes := []rune(source); len(runes) > 48 {
-		source = string(runes[:47]) + "…"
+	if runes := []rune(source); len(runes) > 34 {
+		source = string(runes[:33]) + "…"
 	}
 	state := view.status
 	if view.capturePaused {
@@ -454,7 +455,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		case uxWMDrawItem:
 			if lParam != 0 {
 				item := (*drawItemStruct)(unsafe.Pointer(lParam))
-				if item.CtlID >= 7100 && item.CtlID <= 7113 {
+				if item.CtlID >= 7100 && item.CtlID <= 7114 {
 					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(p.buttons[item.CtlID-7100]), item.CtlID == 7106 || item.CtlID == 7112 && p.latest.replyPending)
 					return 1
 				}
@@ -506,7 +507,11 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				p.openProfile()
 			case 7109, 7110, 7111:
 				p.selectedReply = int(wParam&0xffff) - 7109
+				p.lastReply = time.Time{}
 				p.renderReply()
+			case 7114:
+				procSendMessage.Call(p.captions, 0x00B1, ^uintptr(0), ^uintptr(0))
+				procSendMessage.Call(p.captions, 0x00B7, 0, 0)
 			case 7112:
 				if p.app != nil && p.app.meeting != nil && !p.paused {
 					p.app.meeting.acceptPendingReplies()
