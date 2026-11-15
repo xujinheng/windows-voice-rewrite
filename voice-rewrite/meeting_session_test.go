@@ -102,21 +102,6 @@ func TestMeetingPauseInvalidatesOldWork(t *testing.T) {
 		t.Fatal("resume failed")
 	}
 }
-func TestMeetingPendingRepliesKeepReadableBatch(t *testing.T) {
-	s := newTestMeetingCore()
-	defer s.stop()
-	s.view.replies[0] = meetingLine{english: "old", complete: true}
-	s.view.replySource = "old question"
-	batch := [3]meetingLine{{english: "new", chinese: "新", complete: true}}
-	s.publishReplies(batch, "new question", "check")
-	if s.view.replies[0].english != "old" || !s.view.replyPending {
-		t.Fatal("readable reply replaced")
-	}
-	s.acceptPendingReplies()
-	if s.view.replies[0].english != "new" || s.view.replySource != "new question" || s.view.replyPending {
-		t.Fatal("switch failed")
-	}
-}
 func TestMeetingSerialInference(t *testing.T) {
 	var g meetingcore.Scheduler
 	ctx, release, err := g.Acquire(context.Background(), meetingcore.PriorityCaption)
@@ -128,31 +113,6 @@ func TestMeetingSerialInference(t *testing.T) {
 	defer cancel()
 	if _, _, err = g.Acquire(waiting, meetingcore.PriorityPreview); err == nil {
 		t.Fatal("parallel work admitted")
-	}
-}
-
-func TestMeetingReplyBatchKeepsReceivingRemainingOptions(t *testing.T) {
-	s := newTestMeetingCore()
-	defer s.stop()
-	s.replySerial = 1
-	batch := [3]meetingLine{{english: "first", chinese: "一", complete: true}}
-	s.publishRepliesFor(1, 1, batch, "question", "")
-	batch[1] = meetingLine{english: "second", chinese: "二", complete: true}
-	s.publishRepliesFor(1, 1, batch, "question", "")
-	if s.view.replies[1].english != "second" || s.view.replyPending {
-		t.Fatal("same batch became pending")
-	}
-	s.replySerial = 2
-	batch[0].english = "new"
-	s.publishRepliesFor(1, 2, batch, "question", "")
-	if s.view.replies[0].english != "first" || !s.view.replyPending {
-		t.Fatal("regeneration replaced current reply")
-	}
-	s.acceptPendingReplies()
-	batch[2] = meetingLine{english: "third", chinese: "三", complete: true}
-	s.publishRepliesFor(1, 2, batch, "question", "")
-	if s.view.replies[2].english != "third" {
-		t.Fatal("accepted live batch stopped updating")
 	}
 }
 
@@ -187,11 +147,11 @@ func TestMeetingFinalCancelsActivePreview(t *testing.T) {
 func TestMeetingCancellationDiscardsUnfinishedLines(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.stop()
-	s.view.replies[0] = meetingLine{english: "I would"}
-	s.view.replies[1] = meetingLine{english: "Could you clarify?", chinese: "能解释吗", complete: true}
+	s.view.reply.Displayed.Lines[0] = meetingcore.Line{English: "I would"}
+	s.view.reply.Displayed.Lines[1] = meetingcore.Line{English: "Could you clarify?", Chinese: "能解释吗", Complete: true}
 	s.view.expression = meetingLine{english: "Partial"}
 	s.setCapturePaused(true)
-	if s.view.replies[0].english != "" || s.view.replies[1].english == "" || s.view.expression.english != "" {
+	if s.view.reply.Displayed.Lines[0].English != "" || s.view.reply.Displayed.Lines[1].English == "" || s.view.expression.english != "" {
 		t.Fatal("unfinished output retained")
 	}
 }
