@@ -3,6 +3,7 @@
 package main
 
 import (
+	meetingcore "voicerewrite/internal/core/meeting"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -27,8 +28,8 @@ type meetingHUD struct {
 	profileBackground, profileTerms, profileMode, profileStatus uintptr
 	scale                                                       float64
 	fontSize                                                    int32
-	paneWeights                                                 meetingPaneWeights
-	paneHeights                                                 [meetingPaneCount]int32
+	paneWeights                                                 meetingcore.PaneWeights
+	paneHeights                                                 [meetingcore.PaneCount]int32
 	splitterY                                                   [5]int32
 	splitterVisible                                             [5]bool
 	dragDivider                                                 int
@@ -231,23 +232,23 @@ func (p *meetingHUD) layout() {
 		overhead = 4*8 + 24 + 8 + 24
 	}
 	space := int32(float64(footer-y)/p.scale) - overhead
-	p.paneHeights = meetingPaneHeights(space, p.paneWeights, p.captionsOnly, p.expressionExpanded)
+	p.paneHeights = meetingcore.PaneHeights(space, p.paneWeights, p.captionsOnly, p.expressionExpanded)
 	divider := func(index int) {
 		p.splitterY[index] = y + p.px(4)
 		p.splitterVisible[index] = true
 		y += p.px(8)
 	}
-	p.move(p.currentChinese, margin, y, width, p.px(p.paneHeights[meetingPaneChinese]))
-	y += p.px(p.paneHeights[meetingPaneChinese])
+	p.move(p.currentChinese, margin, y, width, p.px(p.paneHeights[meetingcore.PaneChinese]))
+	y += p.px(p.paneHeights[meetingcore.PaneChinese])
 	divider(0)
-	p.move(p.currentEnglish, margin, y, width, p.px(p.paneHeights[meetingPaneEnglish]))
-	y += p.px(p.paneHeights[meetingPaneEnglish])
+	p.move(p.currentEnglish, margin, y, width, p.px(p.paneHeights[meetingcore.PaneEnglish]))
+	y += p.px(p.paneHeights[meetingcore.PaneEnglish])
 	divider(1)
 	p.move(p.labels[3], margin, y, width-p.px(114), label)
 	p.move(p.buttons[14], margin+width-p.px(110), y-p.px(3), p.px(110), button)
 	y += label + gap
-	p.move(p.captions, margin, y, width, p.px(p.paneHeights[meetingPaneHistory]))
-	y += p.px(p.paneHeights[meetingPaneHistory])
+	p.move(p.captions, margin, y, width, p.px(p.paneHeights[meetingcore.PaneHistory]))
+	y += p.px(p.paneHeights[meetingcore.PaneHistory])
 
 	for _, control := range []uintptr{p.labels[1], p.responses, p.instruction, p.buttons[4], p.buttons[6], p.buttons[9], p.buttons[10], p.buttons[11], p.buttons[12], p.buttons[13]} {
 		procShowWindow.Call(control, meetingShow(!p.captionsOnly && !p.expressionExpanded))
@@ -276,8 +277,8 @@ func (p *meetingHUD) layout() {
 			x += p.px(item.width) + gap
 		}
 		y += button + gap
-		p.move(p.responses, margin, y, width, p.px(p.paneHeights[meetingPaneReply]))
-		y += p.px(p.paneHeights[meetingPaneReply]) + gap
+		p.move(p.responses, margin, y, width, p.px(p.paneHeights[meetingcore.PaneReply]))
+		y += p.px(p.paneHeights[meetingcore.PaneReply]) + gap
 		p.move(p.instruction, margin, y, width-p.px(112)-gap, button)
 		p.move(p.buttons[13], margin+width-p.px(112), y, p.px(112), button)
 		y += button
@@ -288,10 +289,10 @@ func (p *meetingHUD) layout() {
 	p.move(p.buttons[15], margin+width-p.px(226), y-p.px(4), p.px(110), button)
 	p.move(p.buttons[5], margin+width-p.px(112), y-p.px(4), p.px(112), button)
 	y += label
-	p.move(p.expression, margin, y, width, p.px(p.paneHeights[meetingPaneExpression]))
-	y += p.px(p.paneHeights[meetingPaneExpression])
+	p.move(p.expression, margin, y, width, p.px(p.paneHeights[meetingcore.PaneExpression]))
+	y += p.px(p.paneHeights[meetingcore.PaneExpression])
 	divider(4)
-	p.move(p.expressionSource, margin, y, width, p.px(p.paneHeights[meetingPaneSource]))
+	p.move(p.expressionSource, margin, y, width, p.px(p.paneHeights[meetingcore.PaneSource]))
 	meetingInvalidateRect.Call(p.window, 0, 1)
 }
 
@@ -318,7 +319,7 @@ func (p *meetingHUD) dragSplitterTo(y int32) {
 		return
 	}
 	p.dragY = y
-	weights := meetingDragPaneWeights(p.paneWeights, p.paneHeights, p.captionsOnly, p.expressionExpanded, p.dragDivider, delta)
+	weights := meetingcore.DragPaneWeights(p.paneWeights, p.paneHeights, p.captionsOnly, p.expressionExpanded, p.dragDivider, delta)
 	if weights != p.paneWeights {
 		p.paneWeights = weights
 		p.layout()
