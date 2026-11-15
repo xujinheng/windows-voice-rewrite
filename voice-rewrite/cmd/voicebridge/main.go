@@ -21,12 +21,12 @@ import (
 )
 
 const (
-	protocolVersion  = 1
-	maxRequestBytes  = 8 << 20
-	maxPCMBytes      = 16000 * 2 * 60
-	maxSelectedBytes = 1 << 20
+	protocolVersion     = 1
+	maxRequestBytes     = 8 << 20
+	maxPCMBytes         = 16000 * 2 * 60
+	maxSelectedBytes    = 1 << 20
 	maxInstructionBytes = 32 << 10
-	maxSeenIDs       = 65536
+	maxSeenIDs          = 65536
 )
 
 var errFrameTooLarge = errors.New("frame exceeds limit")
@@ -56,7 +56,7 @@ type response struct {
 }
 
 type bridgeOptions struct {
-	MaxInFlight      int
+	MaxInFlight       int
 	TranscribeTimeout time.Duration
 	SelectedTimeout   time.Duration
 }
@@ -71,11 +71,11 @@ type bridgeTask struct {
 }
 
 type bridgeServer struct {
-	mu       sync.Mutex
-	active   map[string]*bridgeTask
-	seen     map[string]struct{}
-	wg       sync.WaitGroup
-	options  bridgeOptions
+	mu      sync.Mutex
+	active  map[string]*bridgeTask
+	seen    map[string]struct{}
+	wg      sync.WaitGroup
+	options bridgeOptions
 
 	input    io.Reader
 	output   io.Writer
@@ -321,7 +321,7 @@ func processRequest(ctx context.Context, req request) response {
 			MayAttemptReplace bool   `json:"may_attempt_replace"`
 		}{
 			Intent: result.Intent, Text: result.Result,
-			PreviewOnly: result.PreviewOnly || !mayAttempt,
+			PreviewOnly:       result.PreviewOnly || !mayAttempt,
 			MayAttemptReplace: mayAttempt,
 		})
 	}
