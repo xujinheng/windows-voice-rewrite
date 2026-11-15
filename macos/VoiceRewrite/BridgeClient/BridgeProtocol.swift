@@ -37,6 +37,11 @@ enum JSONValue: Codable, Equatable {
         return nil
     }
 
+    var boolValue: Bool? {
+        if case .boolean(let value) = self { return value }
+        return nil
+    }
+
     var int: Int? {
         if case .number(let value) = self, value.isFinite, value.rounded() == value,
            value >= Double(Int.min), value < Double(Int.max) { return Int(value) }

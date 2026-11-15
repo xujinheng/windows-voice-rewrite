@@ -17,7 +17,7 @@ struct VoiceRewriteApp: App {
                 .frame(minWidth: 670, minHeight: 510)
                 .onAppear {
                     lifecycle.onTerminate = { [weak workspace] in workspace?.shutdown() }
-                    if case .disconnected = workspace.connection { workspace.connect() }
+                    workspace.launch()
                 }
         }
         .defaultSize(width: 840, height: 600)

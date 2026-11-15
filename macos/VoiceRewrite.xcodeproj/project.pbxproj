@@ -13,6 +13,9 @@
 		1C0000000000000000000005 /* BridgeProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000005 /* BridgeProtocol.swift */; };
 		1C0000000000000000000006 /* BridgeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000006 /* BridgeClient.swift */; };
 		1C0000000000000000000007 /* BridgeClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000007 /* BridgeClientTests.swift */; };
+		1C0000000000000000000008 /* Microphone in Frameworks */ = {isa = PBXBuildFile; productRef = 1D0000000000000000000011 /* Microphone */; };
+		1C0000000000000000000009 /* VoiceRewriteStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 1D0000000000000000000012 /* VoiceRewriteStorage */; };
+		1C000000000000000000000A /* VoiceRewriteInteraction in Frameworks */ = {isa = PBXBuildFile; productRef = 1D0000000000000000000013 /* VoiceRewriteInteraction */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -33,7 +36,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		1A0000000000000000000013 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		1A0000000000000000000013 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (1C0000000000000000000008, 1C0000000000000000000009, 1C000000000000000000000A); runOnlyForDeploymentPostprocessing = 0; };
 		1A0000000000000000000014 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
@@ -49,7 +52,7 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		1A000000000000000000000A /* VoiceRewrite */ = {isa = PBXNativeTarget; buildConfigurationList = 1A0000000000000000000018; buildPhases = ( 1A000000000000000000000E, 1A0000000000000000000013, 1A000000000000000000000F, 1A0000000000000000000010 ); buildRules = (); dependencies = (  ); name = VoiceRewrite; productName = VoiceRewrite; productReference = 1A000000000000000000000C; productType = "com.apple.product-type.application"; };
+		1A000000000000000000000A /* VoiceRewrite */ = {isa = PBXNativeTarget; buildConfigurationList = 1A0000000000000000000018; buildPhases = ( 1A000000000000000000000E, 1A0000000000000000000013, 1A000000000000000000000F, 1A0000000000000000000010 ); buildRules = (); dependencies = (  ); name = VoiceRewrite; productName = VoiceRewrite; productReference = 1A000000000000000000000C; packageProductDependencies = ( 1D0000000000000000000011, 1D0000000000000000000012, 1D0000000000000000000013 ); productType = "com.apple.product-type.application"; };
 		1A000000000000000000000B /* VoiceRewriteTests */ = {isa = PBXNativeTarget; buildConfigurationList = 1A0000000000000000000019; buildPhases = ( 1A0000000000000000000011, 1A0000000000000000000014, 1A0000000000000000000012 ); buildRules = (); dependencies = ( 1A0000000000000000000016 ); name = VoiceRewriteTests; productName = VoiceRewriteTests; productReference = 1A000000000000000000000D; productType = "com.apple.product-type.bundle.unit-test"; };
 /* End PBXNativeTarget section */
 
@@ -67,11 +70,24 @@
     knownRegions = (zh_CN, en, Base);
     mainGroup = 1A0000000000000000000002;
     productRefGroup = 1A0000000000000000000003;
+    packageReferences = ( 1D0000000000000000000001, 1D0000000000000000000002, 1D0000000000000000000003 );
     projectDirPath = "";
     projectRoot = "";
     targets = ( 1A000000000000000000000A, 1A000000000000000000000B );
 };
 /* End PBXProject section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		1D0000000000000000000001 = {isa = XCLocalSwiftPackageReference; relativePath = Modules/Microphone; };
+		1D0000000000000000000002 = {isa = XCLocalSwiftPackageReference; relativePath = Modules/Storage; };
+		1D0000000000000000000003 = {isa = XCLocalSwiftPackageReference; relativePath = Modules/Interaction; };
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1D0000000000000000000011 = {isa = XCSwiftPackageProductDependency; package = 1D0000000000000000000001; productName = Microphone; };
+		1D0000000000000000000012 = {isa = XCSwiftPackageProductDependency; package = 1D0000000000000000000002; productName = VoiceRewriteStorage; };
+		1D0000000000000000000013 = {isa = XCSwiftPackageProductDependency; package = 1D0000000000000000000003; productName = VoiceRewriteInteraction; };
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin PBXResourcesBuildPhase section */
 		1A000000000000000000000F = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
@@ -113,6 +129,7 @@
 			MACOSX_DEPLOYMENT_TARGET = 14.0;
 			SDKROOT = macosx;
 			SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+			ONLY_ACTIVE_ARCH = YES;
 			SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			SWIFT_VERSION = 5.0;
 		}; name = Debug; };
@@ -146,6 +163,7 @@
 			PRODUCT_NAME = "$(TARGET_NAME)";
 			SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 			SWIFT_EMIT_LOC_STRINGS = YES;
+			ONLY_ACTIVE_ARCH = YES;
 			SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			SWIFT_VERSION = 5.0;
 		}; name = Debug; };
@@ -181,6 +199,7 @@
 			PRODUCT_BUNDLE_IDENTIFIER = com.xujinheng.VoiceRewriteTests;
 			PRODUCT_NAME = "$(TARGET_NAME)";
 			SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+			ONLY_ACTIVE_ARCH = YES;
 			SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			SWIFT_VERSION = 5.0;
 			TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VoiceRewrite.app/Contents/MacOS/VoiceRewrite";
