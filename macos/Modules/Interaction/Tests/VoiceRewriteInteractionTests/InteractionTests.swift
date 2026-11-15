@@ -318,6 +318,9 @@ final class TextWriteVerificationTests: XCTestCase {
         XCTAssertNil(TextWriteVerification.expectedValue(
             original: "hello", selectedText: "lo",
             range: .init(location: 9, length: 2), replacement: "new"))
+        XCTAssertNil(TextWriteVerification.expectedValue(
+            original: "A😀B", selectedText: "",
+            range: .init(location: 2, length: 0), replacement: "bad"))
         XCTAssertFalse(TextWriteVerification.confirms(actual: "A", expected: "AB"))
     }
 
