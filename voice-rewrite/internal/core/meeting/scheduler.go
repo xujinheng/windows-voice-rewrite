@@ -75,6 +75,7 @@ func (g *Scheduler) Acquire(ctx context.Context, priority int) (context.Context,
 		return run, release, nil
 	}
 }
+
 // Run serializes inference with higher-priority work. An interrupted ASR or
 // caption attempt retries after its replacement releases the GPU; background
 // reply suggestions instead stop so they do not delay fresher speech.
