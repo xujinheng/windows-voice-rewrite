@@ -3,7 +3,6 @@
 package main
 
 import (
-	meetingcore "voicerewrite/internal/core/meeting"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -11,6 +10,8 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	meetingcore "voicerewrite/internal/core/meeting"
 )
 
 type meetingHUD struct {
