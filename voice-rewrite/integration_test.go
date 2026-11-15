@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"voicerewrite/internal/core/speech"
 )
 
 func TestOneClickLanguagePrefixAllLanguages(t *testing.T) {
@@ -24,8 +26,8 @@ func TestOneClickLanguagePrefixAllLanguages(t *testing.T) {
 		{"I said language Chinese without a marker", "I said language Chinese without a marker"},
 	}
 	for _, tc := range cases {
-		if got := cleanASR(tc.input); got != tc.expected {
-			t.Errorf("cleanASR(%q) = %q, expected %q", tc.input, got, tc.expected)
+		if got := speech.CleanASR(tc.input); got != tc.expected {
+			t.Errorf("speech.CleanASR(%q) = %q, expected %q", tc.input, got, tc.expected)
 		}
 	}
 }
@@ -43,7 +45,7 @@ func TestParseASRResponseFormats(t *testing.T) {
 		{`<html>Error</html>`, "text/html", "", true},
 	}
 	for _, c := range cases {
-		got, e := parseASRResponse([]byte(c.body), c.ct)
+		got, e := speech.ParseASRResponse([]byte(c.body), c.ct)
 		if (e != nil) != c.bad || (!c.bad && got != c.expect) {
 			t.Errorf("parse %q: %q / %v", c.body, got, e)
 		}

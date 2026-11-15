@@ -14,6 +14,7 @@ import (
 
 	"voicerewrite/internal/core/audio"
 	meetingcore "voicerewrite/internal/core/meeting"
+	"voicerewrite/internal/core/speech"
 )
 
 const (
@@ -149,7 +150,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 	cfg := s.configSnapshot()
 	err := s.runInference(ctx, meetingcore.PriorityExpress, "正在识别你的中文", func(active context.Context) error {
 		var e error
-		points, e = transcribe(active, cfg, result.pcm)
+		points, e = speech.Transcribe(active, cfg, result.pcm)
 		return e
 	})
 	if !app.epoch.valid(generation) || ctx.Err() != nil {
@@ -175,7 +176,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 		s.mu.Unlock()
 	}
 	app.logger.Printf("meeting expression mode=%s recognized_chars=%d", mode, len([]rune(points)))
-	err = s.complete(ctx, meetingcore.PriorityExpress, meetingQuery{Mode: mode, Prior: prior, UserPoints: points}, func(line meetingLine) {
+	err = s.complete(ctx, meetingcore.PriorityExpress, meetingcore.Query{Mode: mode, Prior: prior, UserPoints: points}, func(line meetingLine) {
 		if !app.epoch.valid(generation) || line.kind != "SAY" {
 			return
 		}

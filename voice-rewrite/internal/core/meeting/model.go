@@ -1,4 +1,4 @@
-package main
+package meeting
 
 import (
 	"bufio"
@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	meetingcore "voicerewrite/internal/core/meeting"
+	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
 )
 
@@ -48,32 +48,32 @@ For mode refine, edit selected_reply according to user_points without inventing 
 For mode express, output one line: SAY<TAB>natural spoken English for user_points<TAB>Simplified Chinese meaning. Preserve the user's intended conditions without adding commitments.
 Use literal tabs and plain lines, with no markdown. Put the requested first line first.`
 
-type meetingLine struct {
-	kind, english, chinese string
-	complete               bool
+type Line struct {
+	Kind, English, Chinese string
+	Complete               bool
 }
 
-func parseMeetingLine(raw string) (meetingLine, bool) {
+func ParseLine(raw string) (Line, bool) {
 	parts := strings.SplitN(strings.TrimSpace(raw), "\t", 3)
 	if len(parts) < 2 {
-		return meetingLine{}, false
+		return Line{}, false
 	}
-	line := meetingLine{kind: strings.TrimSpace(parts[0]), complete: true}
-	switch line.kind {
+	line := Line{Kind: strings.TrimSpace(parts[0]), Complete: true}
+	switch line.Kind {
 	case "ZH", "TIP", "GATE":
-		line.chinese = strings.TrimSpace(parts[1])
-		return line, line.chinese != ""
+		line.Chinese = strings.TrimSpace(parts[1])
+		return line, line.Chinese != ""
 	case "ONE", "TWO", "THREE", "SAY":
 		if len(parts) == 3 {
-			line.english = strings.TrimSpace(parts[1])
-			line.chinese = strings.TrimSpace(parts[2])
-			return line, line.english != "" && line.chinese != ""
+			line.English = strings.TrimSpace(parts[1])
+			line.Chinese = strings.TrimSpace(parts[2])
+			return line, line.English != "" && line.Chinese != ""
 		}
 	}
-	return meetingLine{}, false
+	return Line{}, false
 }
 
-type meetingCompletion struct {
+type completion struct {
 	Error   *json.RawMessage `json:"error"`
 	Choices []struct {
 		FinishReason string `json:"finish_reason"`
@@ -86,8 +86,8 @@ type meetingCompletion struct {
 	} `json:"choices"`
 }
 
-func visibleMeetingText(text string) string {
-	text = thinkingTag.ReplaceAllString(text, "")
+func VisibleText(text string) string {
+	text = provider.ThinkingTag.ReplaceAllString(text, "")
 	if at := strings.Index(text, "<think>"); at >= 0 {
 		text = text[:at]
 	}
@@ -101,7 +101,7 @@ func visibleMeetingText(text string) string {
 	return text
 }
 
-func readMeetingStream(r io.Reader, emit func(meetingLine), textSink ...func(string)) error {
+func ReadStream(r io.Reader, emit func(Line), textSink ...func(string)) error {
 	scan := bufio.NewScanner(io.LimitReader(r, 1<<20))
 	scan.Buffer(make([]byte, 8192), 128<<10)
 	var content strings.Builder
@@ -117,7 +117,7 @@ func readMeetingStream(r io.Reader, emit func(meetingLine), textSink ...func(str
 			done = true
 			break
 		}
-		var chunk meetingCompletion
+		var chunk completion
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			return errors.New("无法解析会议模型的流式响应")
 		}
@@ -135,9 +135,9 @@ func readMeetingStream(r io.Reader, emit func(meetingLine), textSink ...func(str
 			textSink[0](delta)
 		}
 		content.WriteString(delta)
-		lines := strings.Split(visibleMeetingText(content.String()), "\n")
+		lines := strings.Split(VisibleText(content.String()), "\n")
 		for emitted < len(lines)-1 {
-			if line, ok := parseMeetingLine(lines[emitted]); ok {
+			if line, ok := ParseLine(lines[emitted]); ok {
 				emit(line)
 			}
 			emitted++
@@ -152,9 +152,9 @@ func readMeetingStream(r io.Reader, emit func(meetingLine), textSink ...func(str
 	if !done {
 		return errors.New("会议模型响应提前结束")
 	}
-	lines := strings.Split(visibleMeetingText(content.String()), "\n")
+	lines := strings.Split(VisibleText(content.String()), "\n")
 	for emitted < len(lines) {
-		if line, ok := parseMeetingLine(lines[emitted]); ok {
+		if line, ok := ParseLine(lines[emitted]); ok {
 			emit(line)
 		}
 		emitted++
@@ -162,7 +162,7 @@ func readMeetingStream(r io.Reader, emit func(meetingLine), textSink ...func(str
 	return nil
 }
 
-type meetingQuery struct {
+type Query struct {
 	Mode          string   `json:"mode"`
 	Prior         []string `json:"prior,omitempty"`
 	Latest        string   `json:"latest,omitempty"`
@@ -172,8 +172,8 @@ type meetingQuery struct {
 	SelectedReply string   `json:"selected_reply,omitempty"`
 }
 
-func completeMeeting(ctx context.Context, cfg Config, query meetingQuery, emit func(meetingLine)) error {
-	model, err := discoverModel(ctx, cfg)
+func Complete(ctx context.Context, cfg coreconfig.Config, query Query, emit func(Line)) error {
+	model, err := provider.DiscoverModel(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -186,7 +186,7 @@ func completeMeeting(ctx context.Context, cfg Config, query meetingQuery, emit f
 			query.Background, query.Terms = "", ""
 		}
 	} else if query.Mode == "compose" {
-		if !meetingcore.UsesConversationContext(query.UserPoints) {
+		if !UsesConversationContext(query.UserPoints) {
 			query.Prior = nil
 			query.Background, query.Terms = "", ""
 		}
@@ -209,7 +209,7 @@ func completeMeeting(ctx context.Context, cfg Config, query meetingQuery, emit f
 		"model": model, "stream": true, "temperature": 0.2, "max_tokens": limit,
 		"chat_template_kwargs": map[string]any{"enable_thinking": false},
 		"messages": []map[string]string{
-			{"role": "system", "content": meetingSystemPrompt(query.Mode)},
+			{"role": "system", "content": SystemPrompt(query.Mode)},
 			{"role": "user", "content": string(prompt)},
 		},
 	})
@@ -235,21 +235,21 @@ func completeMeeting(ctx context.Context, cfg Config, query meetingQuery, emit f
 
 	var caption strings.Builder
 	seen := map[string]bool{}
-	last := map[string]meetingLine{}
-	handle := func(line meetingLine) {
-		isReply := query.Mode == "replies" && (line.kind == "TWO" || line.kind == "THREE" || line.kind == "TIP")
-		allowed := line.kind == wanted || isReply
-		if ctx.Err() == nil && allowed && last[line.kind] != line {
-			if line.complete || query.Mode == "caption" {
-				seen[line.kind] = true
+	last := map[string]Line{}
+	handle := func(line Line) {
+		isReply := query.Mode == "replies" && (line.Kind == "TWO" || line.Kind == "THREE" || line.Kind == "TIP")
+		allowed := line.Kind == wanted || isReply
+		if ctx.Err() == nil && allowed && last[line.Kind] != line {
+			if line.Complete || query.Mode == "caption" {
+				seen[line.Kind] = true
 			}
-			last[line.kind] = line
+			last[line.Kind] = line
 			emit(line)
 		}
 	}
 	mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if mediaType == "application/json" {
-		var data meetingCompletion
+		var data completion
 		if err = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&data); err != nil {
 			return err
 		}
@@ -262,14 +262,14 @@ func completeMeeting(ctx context.Context, cfg Config, query meetingQuery, emit f
 			}
 			caption.WriteString(data.Choices[0].Message.Content)
 			if query.Mode != "caption" && query.Mode != "express" && query.Mode != "compose" {
-				for _, raw := range strings.Split(visibleMeetingText(data.Choices[0].Message.Content), "\n") {
-					if line, ok := parseMeetingLine(raw); ok {
+				for _, raw := range strings.Split(VisibleText(data.Choices[0].Message.Content), "\n") {
+					if line, ok := ParseLine(raw); ok {
 						handle(line)
 					}
 				}
 			}
 		}
-	} else if err = readMeetingStream(resp.Body, func(line meetingLine) {
+	} else if err = ReadStream(resp.Body, func(line Line) {
 		if query.Mode != "caption" && query.Mode != "express" && query.Mode != "compose" {
 			handle(line)
 		}
@@ -278,15 +278,15 @@ func completeMeeting(ctx context.Context, cfg Config, query meetingQuery, emit f
 		if query.Mode != "caption" && query.Mode != "express" && query.Mode != "compose" {
 			text := caption.String()
 			if !strings.Contains(text, "<think>") || strings.Contains(text, "</think>") {
-				text = thinkingTag.ReplaceAllString(text, "")
+				text = provider.ThinkingTag.ReplaceAllString(text, "")
 				tail := text[strings.LastIndex(text, "\n")+1:]
 				parts := strings.SplitN(tail, "\t", 3)
 				if len(parts) >= 2 {
-					line := meetingLine{kind: parts[0], english: parts[1]}
+					line := Line{Kind: parts[0], English: parts[1]}
 					if len(parts) == 3 {
-						line.chinese = parts[2]
+						line.Chinese = parts[2]
 					}
-					if line.english != "" {
+					if line.English != "" {
 						handle(line)
 					}
 				}
@@ -302,14 +302,14 @@ func completeMeeting(ctx context.Context, cfg Config, query meetingQuery, emit f
 	// tokens are repeatedly decoded from the beginning and must never replace
 	// text that somebody is in the middle of reading.
 	if query.Mode == "caption" && !seen["ZH"] {
-		text := cleanMeetingCaption(caption.String())
+		text := CleanCaption(caption.String())
 		if text != "" {
-			handle(meetingLine{kind: "ZH", chinese: text})
+			handle(Line{Kind: "ZH", Chinese: text})
 		}
 	}
 	if query.Mode == "express" || query.Mode == "compose" {
-		if english := meetingEnglishExpression(caption.String()); english != "" {
-			handle(meetingLine{kind: "SAY", english: english, complete: true})
+		if english := EnglishExpression(caption.String()); english != "" {
+			handle(Line{Kind: "SAY", English: english, Complete: true})
 		} else {
 			return errors.New("LLM 没有返回可用英文，请检查文本模型或切换到 Instruct 模型")
 		}
@@ -322,7 +322,7 @@ func completeMeeting(ctx context.Context, cfg Config, query meetingQuery, emit f
 
 // A separate instruction prevents reply/turn-taking protocol tokens from
 // being sampled as captions, even when the same model serves both modes.
-func meetingSystemPrompt(mode string) string {
+func SystemPrompt(mode string) string {
 	switch mode {
 	case "caption":
 		return meetingCaptionPrompt
@@ -337,8 +337,8 @@ func meetingSystemPrompt(mode string) string {
 
 // Spoken-English modes accept a natural-language answer, not just legacy
 // tab-delimited SAY/English/Chinese, which many models do not produce.
-func meetingEnglishExpression(raw string) string {
-	text := strings.TrimSpace(visibleMeetingText(raw))
+func EnglishExpression(raw string) string {
+	text := strings.TrimSpace(VisibleText(raw))
 	if strings.HasPrefix(text, "```") {
 		if i := strings.IndexByte(text, '\n'); i >= 0 {
 			text = strings.TrimSpace(text[i+1:])
@@ -377,8 +377,8 @@ func meetingEnglishExpression(raw string) string {
 			continue
 		}
 		line = strings.TrimSpace(strings.Trim(line, "\"“”"))
-		if strings.HasPrefix(strings.ToLower(line), "english:") {
-			line = strings.TrimSpace(line[len("english:"):])
+		if strings.HasPrefix(strings.ToLower(line), "English:") {
+			line = strings.TrimSpace(line[len("English:"):])
 		}
 		if strings.ContainsAny(line, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") {
 			lines = append(lines, line)
@@ -390,8 +390,8 @@ func meetingEnglishExpression(raw string) string {
 var meetingCaptionGateMarker = regexp.MustCompile(`(?i)\bGATE(?:\s*<TAB>\s*|[\t ]+)(?:YES|NO)\b`)
 var meetingCaptionLeadingMarker = regexp.MustCompile(`(?i)^(?:ZH|SAY|ONE|TWO|THREE|TIP)(?:\s*<TAB>\s*|\t+)\s*`)
 
-func cleanMeetingCaption(text string) string {
-	text = strings.TrimSpace(visibleMeetingText(text))
+func CleanCaption(text string) string {
+	text = strings.TrimSpace(VisibleText(text))
 	if strings.Contains(text, "<think>") || strings.HasPrefix("<think>", text) {
 		return ""
 	}

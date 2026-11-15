@@ -1,4 +1,4 @@
-package main
+package meeting
 
 import (
 	"bufio"
@@ -13,12 +13,17 @@ import (
 	"strings"
 	"time"
 
+	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
+	"voicerewrite/internal/core/speech"
 )
 
-type meetingASRState struct{ raw, fixed string }
+type ASRState struct{ raw, fixed string }
 
-func meetingJSON(ctx context.Context, cfg Config, url string, body any, out any) error {
+// StablePrefix is the rollback-safe confirmed transcript prefix.
+func (s *ASRState) StablePrefix() string { return s.fixed }
+
+func meetingJSON(ctx context.Context, cfg coreconfig.Config, url string, body any, out any) error {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return err
@@ -47,7 +52,7 @@ func meetingASRHTTPError(status int) error {
 	}
 	return provider.HTTPError("ASR", status)
 }
-func (s *meetingASRState) prefix(ctx context.Context, cfg Config) (string, error) {
+func (s *ASRState) prefix(ctx context.Context, cfg coreconfig.Config) (string, error) {
 	marker := strings.Index(s.raw, "<asr_text>")
 	if marker < 0 {
 		return "", nil
@@ -80,9 +85,9 @@ func (s *meetingASRState) prefix(ctx context.Context, cfg Config) (string, error
 
 // llama.cpp consumes a bounded cumulative audio window. Text prefix rollback
 // reduces decoder work; it does not provide incremental audio encoder caching.
-func (s *meetingASRState) transcribe(ctx context.Context, cfg Config, pcm []byte, emit func(string)) (string, error) {
+func (s *ASRState) Transcribe(ctx context.Context, cfg coreconfig.Config, pcm []byte, emit func(string)) (string, error) {
 	if cfg.MeetingASRMode == "multipart" {
-		result, err := transcribe(ctx, cfg, pcm)
+		result, err := speech.Transcribe(ctx, cfg, pcm)
 		if err == nil {
 			emit(result)
 		}
@@ -92,8 +97,8 @@ func (s *meetingASRState) transcribe(ctx context.Context, cfg Config, pcm []byte
 	if err != nil {
 		return "", err
 	}
-	s.fixed = cleanASR(prefix)
-	wav, err := encodeWAV(pcm)
+	s.fixed = speech.CleanASR(prefix)
+	wav, err := speech.EncodeWAV(pcm)
 	if err != nil {
 		return "", err
 	}
@@ -134,12 +139,12 @@ func (s *meetingASRState) transcribe(ctx context.Context, cfg Config, pcm []byte
 		if (strings.HasPrefix(strings.TrimSpace(text), "language") || strings.HasPrefix("language ", strings.TrimSpace(text))) && !strings.Contains(text, "<asr_text>") {
 			return
 		}
-		if clean := cleanASR(text); clean != "" && ctx.Err() == nil {
+		if clean := speech.CleanASR(text); clean != "" && ctx.Err() == nil {
 			emit(clean)
 		}
 	}
 	if strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json") {
-		var result meetingCompletion
+		var result completion
 		if err = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
 			return "", err
 		}
@@ -168,7 +173,7 @@ func (s *meetingASRState) transcribe(ctx context.Context, cfg Config, pcm []byte
 				done = true
 				break
 			}
-			var chunk meetingCompletion
+			var chunk completion
 			if err = json.Unmarshal([]byte(data), &chunk); err != nil {
 				return "", errors.New("ASR 流式响应格式错误")
 			}
@@ -197,7 +202,7 @@ func (s *meetingASRState) transcribe(ctx context.Context, cfg Config, pcm []byte
 	if !observed {
 		return "", errors.New("ASR 返回空响应，未提交转录")
 	}
-	text := cleanASR(raw.String())
+	text := speech.CleanASR(raw.String())
 	if text == "" || strings.HasPrefix(text, "language") {
 		return "", errors.New("ASR 未返回有效转录")
 	}

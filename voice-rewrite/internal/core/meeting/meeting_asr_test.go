@@ -1,4 +1,4 @@
-package main
+package meeting
 
 import (
 	"context"
@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	coreconfig "voicerewrite/internal/core/config"
 )
 
 func TestMeetingASRStreamsAndRollsBackExactTokens(t *testing.T) {
@@ -59,13 +61,13 @@ func TestMeetingASRStreamsAndRollsBackExactTokens(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	cfg := defaults()
+	cfg := coreconfig.Defaults()
 	cfg.ASRBaseURL = server.URL + "/v1"
-	var state meetingASRState
+	var state ASRState
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	for i := 0; i < 2; i++ {
-		result, err := state.transcribe(ctx, cfg, make([]byte, 3200), func(s string) {
+		result, err := state.Transcribe(ctx, cfg, make([]byte, 3200), func(s string) {
 			if strings.Contains(s, "<asr_text>") {
 				t.Error("metadata leaked")
 			}
@@ -82,10 +84,10 @@ func TestMeetingASRStreamsAndRollsBackExactTokens(t *testing.T) {
 func TestMeetingASRUnsupportedDoesNotSilentlyChangeMode(t *testing.T) {
 	server := httptest.NewServer(http.NotFoundHandler())
 	defer server.Close()
-	var state meetingASRState
-	cfg := defaults()
+	var state ASRState
+	cfg := coreconfig.Defaults()
 	cfg.ASRBaseURL = server.URL
-	_, err := state.transcribe(context.Background(), cfg, make([]byte, 3200), func(string) {})
+	_, err := state.Transcribe(context.Background(), cfg, make([]byte, 3200), func(string) {})
 	if err == nil || !strings.Contains(err.Error(), "分段") {
 		t.Fatalf("%v", err)
 	}
@@ -111,11 +113,11 @@ func TestMeetingASREmptyContinuationCannotCommitPrefix(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			cfg := defaults()
+			cfg := coreconfig.Defaults()
 			cfg.ASRBaseURL = server.URL
 			original := "language English<asr_text>Retained and still provisional words"
-			state := meetingASRState{raw: original}
-			if _, err := state.transcribe(context.Background(), cfg, make([]byte, 3200), func(string) {}); err == nil {
+			state := ASRState{raw: original}
+			if _, err := state.Transcribe(context.Background(), cfg, make([]byte, 3200), func(string) {}); err == nil {
 				t.Fatal("empty response committed prefix")
 			}
 			if state.raw != original {

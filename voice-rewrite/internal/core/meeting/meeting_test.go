@@ -1,4 +1,4 @@
-package main
+package meeting
 
 import (
 	"context"
@@ -9,16 +9,16 @@ import (
 	"testing"
 	"time"
 
-	meetingcore "voicerewrite/internal/core/meeting"
+	coreconfig "voicerewrite/internal/core/config"
 )
 
 func TestMeetingStream(t *testing.T) {
-	var got []meetingLine
+	var got []Line
 	body := "data: {\"choices\":[{\"delta\":{\"content\":\"ONE\\tWhat changed?\"}}]}\n\n" +
 		"data: {\"choices\":[{\"delta\":{\"content\":\"\\t有什么变化？\\nTIP\\t确认改动\\n\"}}]}\n\n" +
 		"data: [DONE]\n\n"
-	err := readMeetingStream(strings.NewReader(body), func(line meetingLine) { got = append(got, line) })
-	if err != nil || len(got) != 2 || got[0].english != "What changed?" || got[0].chinese != "有什么变化？" {
+	err := ReadStream(strings.NewReader(body), func(line Line) { got = append(got, line) })
+	if err != nil || len(got) != 2 || got[0].English != "What changed?" || got[0].Chinese != "有什么变化？" {
 		t.Fatalf("got %#v, %v", got, err)
 	}
 }
@@ -30,7 +30,7 @@ func TestMeetingCaptionPlainText(t *testing.T) {
 		"<think>reasoning</think>这是翻译。": "这是翻译。",
 		"<think>unfinished":             "",
 	} {
-		if got := cleanMeetingCaption(input); got != want {
+		if got := CleanCaption(input); got != want {
 			t.Errorf("%q: got %q, want %q", input, got, want)
 		}
 	}
@@ -47,7 +47,7 @@ func TestMeetingCaptionProtocolFromRealTranscript(t *testing.T) {
 		"GATE<TAB>YES": "",
 	}
 	for input, want := range cases {
-		if got := cleanMeetingCaption(input); got != want {
+		if got := CleanCaption(input); got != want {
 			t.Errorf("%q => %q, want %q", input, got, want)
 		}
 	}
@@ -57,13 +57,13 @@ func TestMeetingTranslationDoesNotRepeatPriorParagraph(t *testing.T) {
 	source := "Playing games and being competitive, so I think that side of me is similar to him."
 	good := "喜欢玩游戏，也有竞争心，所以我觉得自己这一方面和他很像。"
 	recap := strings.Repeat("不过我觉得我也继承了爸爸的一些特质，我父亲是个理性的人。", 13)
-	if !meetingcore.TranslationFitsSource(source, good) {
+	if !TranslationFitsSource(source, good) {
 		t.Fatal("normal translation rejected")
 	}
-	if meetingcore.TranslationFitsSource(source, recap) {
+	if TranslationFitsSource(source, recap) {
 		t.Fatal("model recap of prior turns accepted as current caption")
 	}
-	if !meetingcore.TranslationFitsSource("A pretty.", "一个漂亮的。") {
+	if !TranslationFitsSource("A pretty.", "一个漂亮的。") {
 		t.Fatal("short incomplete phrase rejected")
 	}
 }
@@ -87,10 +87,10 @@ func TestMeetingCaptionWaitsForCompleteStream(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	out := make(chan meetingLine, 3)
+	out := make(chan Line, 3)
 	done := make(chan error, 1)
 	go func() {
-		done <- completeMeeting(ctx, Config{LLMBaseURL: server.URL, TextModel: "test"}, meetingQuery{Mode: "caption", Latest: "Hello world"}, func(line meetingLine) {
+		done <- Complete(ctx, coreconfig.Config{LLMBaseURL: server.URL, TextModel: "test"}, Query{Mode: "caption", Latest: "Hello world"}, func(line Line) {
 			out <- line
 		})
 	}()
@@ -110,7 +110,7 @@ func TestMeetingCaptionWaitsForCompleteStream(t *testing.T) {
 	}
 	select {
 	case line := <-out:
-		if line.chinese != "你好世界" {
+		if line.Chinese != "你好世界" {
 			t.Fatalf("unexpected committed translation: %#v", line)
 		}
 	default:

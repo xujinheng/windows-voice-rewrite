@@ -1,4 +1,4 @@
-package main
+package meeting
 
 import (
 	"context"
@@ -8,11 +8,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	coreconfig "voicerewrite/internal/core/config"
 )
 
 func TestMeetingCaptionGateDoesNotLeak(t *testing.T) {
 	for input, want := range map[string]string{"中文翻译\nG": "中文翻译", "中文翻译\nGATE\tYES": "中文翻译", "中文翻译\nGA": "中文翻译"} {
-		if got := cleanMeetingCaption(input); got != want {
+		if got := CleanCaption(input); got != want {
 			t.Errorf("%q got %q", input, got)
 		}
 	}
@@ -42,13 +44,13 @@ func TestMeetingCaptionPromptCannotEchoPriorOrControlTags(t *testing.T) {
 		fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", chunk)
 	}))
 	defer server.Close()
-	cfg := defaults()
+	cfg := coreconfig.Defaults()
 	cfg.LLMBaseURL, cfg.TextModel = server.URL, "test"
-	var got []meetingLine
-	err := completeMeeting(context.Background(), cfg, meetingQuery{
+	var got []Line
+	err := Complete(context.Background(), cfg, Query{
 		Mode: "caption", Prior: []string{"Previous phrase that must not be recapped"}, Latest: "A pretty.",
-	}, func(line meetingLine) { got = append(got, line) })
-	if err != nil || len(got) != 1 || got[0].kind != "ZH" || got[0].chinese != "一个漂亮的。" {
+	}, func(line Line) { got = append(got, line) })
+	if err != nil || len(got) != 1 || got[0].Kind != "ZH" || got[0].Chinese != "一个漂亮的。" {
 		t.Fatalf("caption protocol contamination: %#v, %v", got, err)
 	}
 }
@@ -66,7 +68,7 @@ func TestMeetingEnglishExpressionFormats(t *testing.T) {
 		{"GATE<TAB>YES", ""},
 		{"只返回中文", ""},
 	} {
-		if got := meetingEnglishExpression(tc.raw); got != tc.want {
+		if got := EnglishExpression(tc.raw); got != tc.want {
 			t.Errorf("%q -> %q, want %q", tc.raw, got, tc.want)
 		}
 	}
@@ -105,13 +107,13 @@ func TestMeetingLiteralAndIntentEnglishDoNotRequireSAYProtocol(t *testing.T) {
 				fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", data)
 			}))
 			defer server.Close()
-			cfg := defaults()
+			cfg := coreconfig.Defaults()
 			cfg.LLMBaseURL, cfg.TextModel = server.URL, "test"
-			var got []meetingLine
-			err := completeMeeting(context.Background(), cfg, meetingQuery{
+			var got []Line
+			err := Complete(context.Background(), cfg, Query{
 				Mode: tc.mode, UserPoints: tc.spoken, Prior: []string{"old meeting text"},
-			}, func(line meetingLine) { got = append(got, line) })
-			if err != nil || len(got) != 1 || !got[0].complete || got[0].kind != "SAY" || got[0].english != tc.expected {
+			}, func(line Line) { got = append(got, line) })
+			if err != nil || len(got) != 1 || !got[0].Complete || got[0].Kind != "SAY" || got[0].English != tc.expected {
 				t.Fatalf("English response = %#v, err=%v", got, err)
 			}
 		})
@@ -152,7 +154,7 @@ func TestMeetingGeneralPurposeSpokenEnglishRequests(t *testing.T) {
 					!strings.Contains(instruction, "proactively join in") {
 					t.Error("prompt presupposes a single question/answer workflow")
 				}
-				var query meetingQuery
+				var query Query
 				if err := json.Unmarshal([]byte(request.Messages[1].Content), &query); err != nil {
 					t.Error(err)
 				}
@@ -170,14 +172,14 @@ func TestMeetingGeneralPurposeSpokenEnglishRequests(t *testing.T) {
 				fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", data)
 			}))
 			defer server.Close()
-			cfg := defaults()
+			cfg := coreconfig.Defaults()
 			cfg.LLMBaseURL, cfg.TextModel = server.URL, "test"
 			cfg.MeetingBackground, cfg.MeetingTerms = "Milvus project milestones", "Milvus"
-			var got []meetingLine
-			err := completeMeeting(context.Background(), cfg, meetingQuery{
+			var got []Line
+			err := Complete(context.Background(), cfg, Query{
 				Mode: "compose", UserPoints: tc.spoken, Prior: []string{"Two proposals were discussed"},
-			}, func(line meetingLine) { got = append(got, line) })
-			if err != nil || len(got) != 1 || got[0].english != tc.reply || !got[0].complete {
+			}, func(line Line) { got = append(got, line) })
+			if err != nil || len(got) != 1 || got[0].English != tc.reply || !got[0].Complete {
 				t.Fatalf("wrong spoken response: %#v, %v", got, err)
 			}
 		})
@@ -204,28 +206,28 @@ func TestMeetingPartialReplyAndNoThinking(t *testing.T) {
 		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer server.Close()
-	cfg := defaults()
+	cfg := coreconfig.Defaults()
 	cfg.LLMBaseURL = server.URL
 	cfg.TextModel = "qwen"
 	cfg.MeetingTerms = "Milvus"
-	var got []meetingLine
-	err := completeMeeting(context.Background(), cfg, meetingQuery{Mode: "replies", Latest: "What should we check?"}, func(l meetingLine) { got = append(got, l) })
-	if err != nil || len(got) < 2 || got[0].complete || !got[len(got)-1].complete {
+	var got []Line
+	err := Complete(context.Background(), cfg, Query{Mode: "replies", Latest: "What should we check?"}, func(l Line) { got = append(got, l) })
+	if err != nil || len(got) < 2 || got[0].Complete || !got[len(got)-1].Complete {
 		t.Fatalf("%#v %v", got, err)
 	}
 }
 
 func TestMeetingStreamRejectsTruncationAndHidesThoughtLines(t *testing.T) {
 	truncated := "data: {\"choices\":[{\"delta\":{\"content\":\"ONE\\tReady\\t好\\n\"}}]}\n\n"
-	if err := readMeetingStream(strings.NewReader(truncated), func(meetingLine) {}); err == nil {
+	if err := ReadStream(strings.NewReader(truncated), func(Line) {}); err == nil {
 		t.Error("truncated stream accepted")
 	}
-	var got []meetingLine
+	var got []Line
 	thought := "data: {\"choices\":[{\"delta\":{\"content\":\"<think>\\nONE\\tHidden\\t不显示\\n</think>\\nONE\\tReady\\t好\\n\"}}]}\n\ndata: [DONE]\n\n"
-	if err := readMeetingStream(strings.NewReader(thought), func(l meetingLine) { got = append(got, l) }); err != nil {
+	if err := ReadStream(strings.NewReader(thought), func(l Line) { got = append(got, l) }); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].english != "Ready" {
+	if len(got) != 1 || got[0].English != "Ready" {
 		t.Fatalf("thoughts leaked: %#v", got)
 	}
 }

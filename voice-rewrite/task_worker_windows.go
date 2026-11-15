@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"voicerewrite/internal/core/speech"
 )
 
 func watchMouseHoldTimeout(hwnd, session uintptr, canceled <-chan struct{}, timeout time.Duration, logger *log.Logger) {
@@ -112,7 +114,7 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	ctx, cancel := context.WithTimeout(app.epoch.contextFor(generation), 220*time.Second)
 	defer cancel()
 	start := time.Now()
-	text, err := transcribe(ctx, app.cfg, r.pcm)
+	text, err := speech.Transcribe(ctx, app.cfg, r.pcm)
 	if !app.epoch.valid(generation) {
 		return
 	}
@@ -266,7 +268,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	ctx, cancel := context.WithTimeout(app.epoch.contextFor(generation), 240*time.Second)
 	defer cancel()
 	startedASR := time.Now()
-	instruction, e := transcribe(ctx, app.cfg, r.pcm)
+	instruction, e := speech.Transcribe(ctx, app.cfg, r.pcm)
 	if !app.epoch.valid(generation) {
 		return
 	}

@@ -78,7 +78,7 @@ func routeTask(result AssistantResult, instruction string, safelyEditable, brows
 }
 
 func parseAssistantResult(text string) (AssistantResult, error) {
-	text = strings.TrimSpace(thinkingTag.ReplaceAllString(text, ""))
+	text = strings.TrimSpace(provider.ThinkingTag.ReplaceAllString(text, ""))
 	if strings.HasPrefix(text, "```") {
 		text = strings.TrimPrefix(text, "```")
 		if i := strings.Index(text, "\n"); i >= 0 {
@@ -111,7 +111,7 @@ func parseAssistantResult(text string) (AssistantResult, error) {
 // intent and generates the answer. Invalid JSON is returned as a non-destructive
 // preview by the caller; it is never pasted into another application.
 func completeSelectedTask(ctx context.Context, cfg Config, selected, instruction string) (AssistantResult, error) {
-	model, err := discoverModel(ctx, cfg)
+	model, err := provider.DiscoverModel(ctx, cfg)
 	if err != nil {
 		return AssistantResult{}, err
 	}
@@ -158,7 +158,7 @@ func completeSelectedTask(ctx context.Context, cfg Config, selected, instruction
 	if len(v.Choices) == 0 {
 		return AssistantResult{}, errors.New("LLM returned no choices")
 	}
-	rawText := strings.TrimSpace(thinkingTag.ReplaceAllString(v.Choices[0].Message.Content, ""))
+	rawText := strings.TrimSpace(provider.ThinkingTag.ReplaceAllString(v.Choices[0].Message.Content, ""))
 	result, parseErr := parseAssistantResult(rawText)
 	if parseErr != nil {
 		// Preserve the useful text, but never allow an unparseable answer to trigger replacement.

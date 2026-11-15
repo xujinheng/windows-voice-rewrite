@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"voicerewrite/internal/core/provider"
+	"voicerewrite/internal/core/speech"
 )
 
 func uxValidURL(s string) bool {
@@ -131,7 +132,7 @@ func uxProbeASRAudio(ctx context.Context, base, apiKey, model string) string {
 	cfg := Config{ASRBaseURL: strings.TrimRight(strings.TrimSpace(base), "/"), ASRModel: strings.TrimSpace(model), ASRAPIKey: apiKey}
 	// Exactly one second of 16-kHz 16-bit mono silence. Valid WAV and multipart
 	// headers, but contains no actual voice or private information.
-	req, err := newASRRequest(ctx, cfg, make([]byte, 16000*2))
+	req, err := speech.NewASRRequest(ctx, cfg, make([]byte, 16000*2))
 	if err != nil {
 		return prefix + "无法生成测试音频请求"
 	}

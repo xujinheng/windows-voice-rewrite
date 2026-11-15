@@ -1,4 +1,4 @@
-package main
+package speech
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"voicerewrite/internal/core/audio"
+	coreconfig "voicerewrite/internal/core/config"
 )
 
 func TestASRChunksMergeAndRespectCancel(t *testing.T) {
@@ -22,16 +23,16 @@ func TestASRChunksMergeAndRespectCancel(t *testing.T) {
 		fmt.Fprintf(w, `{"text":"segment %d"}`, i)
 	}))
 	defer srv.Close()
-	cfg := defaults()
+	cfg := coreconfig.Defaults()
 	cfg.ASRBaseURL = srv.URL + "/v1"
-	got, err := transcribe(context.Background(), cfg, make([]byte, 55*audio.PCMBytesPerSecond))
+	got, err := Transcribe(context.Background(), cfg, make([]byte, 55*audio.PCMBytesPerSecond))
 	if err != nil || !strings.Contains(got, "segment 1") || !strings.Contains(got, "segment 2") || calls.Load() < 2 {
 		t.Fatalf("got=%q err=%v calls=%d", got, err, calls.Load())
 	}
 	canceled, stop := context.WithCancel(context.Background())
 	stop()
 	before := calls.Load()
-	if _, err = transcribe(canceled, cfg, make([]byte, 55*audio.PCMBytesPerSecond)); err == nil || calls.Load() != before {
+	if _, err = Transcribe(canceled, cfg, make([]byte, 55*audio.PCMBytesPerSecond)); err == nil || calls.Load() != before {
 		t.Fatalf("canceled task contacted server: %v", err)
 	}
 }

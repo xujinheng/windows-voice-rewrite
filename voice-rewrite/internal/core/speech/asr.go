@@ -1,4 +1,4 @@
-package main
+package speech
 
 import (
 	"bytes"
@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"voicerewrite/internal/core/audio"
+	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
 )
 
@@ -22,9 +23,8 @@ import (
 // and <asr_text>. Multiple delimiters may occur in one transcript.
 var asrMarker = regexp.MustCompile(`(?i)language[ \t]+[a-z][a-z0-9 ,_+\-/]{0,79}[ \t]*<asr_text>`)
 var standaloneMarker = regexp.MustCompile(`(?i)^\s*<asr_text>\s*`)
-var thinkingTag = regexp.MustCompile(`(?s)<think>.*?</think>\s*`)
 
-func cleanASR(s string) string {
+func CleanASR(s string) string {
 	s = asrMarker.ReplaceAllString(s, "")
 	s = standaloneMarker.ReplaceAllString(s, "")
 	s = strings.ReplaceAll(s, "<|endoftext|>", "")
@@ -34,7 +34,7 @@ func cleanASR(s string) string {
 // OneClick and some llama.cpp/faster-whisper endpoints return JSON, while
 // other OpenAI-compatible servers return plain text. Never silently treat
 // malformed JSON as a dictated sentence.
-func parseASRResponse(data []byte, contentType string) (string, error) {
+func ParseASRResponse(data []byte, contentType string) (string, error) {
 	var payload struct {
 		Text string `json:"text"`
 	}
@@ -54,7 +54,7 @@ func parseASRResponse(data []byte, contentType string) (string, error) {
 	return "", errors.New("ASR 响应不是有效的 JSON {text:...} 或 text/plain")
 }
 
-func encodeWAV(pcm []byte) ([]byte, error) {
+func EncodeWAV(pcm []byte) ([]byte, error) {
 	if len(pcm) == 0 || len(pcm)%2 != 0 {
 		return nil, errors.New("录音为空或 PCM 长度无效")
 	}
@@ -79,8 +79,8 @@ func encodeWAV(pcm []byte) ([]byte, error) {
 	return b, nil
 }
 
-// transcribe sends the exact multipart request expected by Handy-compatible ASR.
-func transcribe(ctx context.Context, cfg Config, pcm []byte) (string, error) {
+// Transcribe sends the exact multipart request expected by Handy-compatible ASR.
+func Transcribe(ctx context.Context, cfg coreconfig.Config, pcm []byte) (string, error) {
 	chunks := audio.SplitPCMForASR(pcm)
 	results := make([]string, 0, len(chunks))
 	for i, chunk := range chunks {
@@ -101,8 +101,8 @@ func transcribe(ctx context.Context, cfg Config, pcm []byte) (string, error) {
 
 // transcribeChunk is one HTTP request; taskEpoch cancellation propagates
 // through the request context to stop outstanding network I/O immediately.
-func newASRRequest(ctx context.Context, cfg Config, pcm []byte) (*http.Request, error) {
-	wav, err := encodeWAV(pcm)
+func NewASRRequest(ctx context.Context, cfg coreconfig.Config, pcm []byte) (*http.Request, error) {
+	wav, err := EncodeWAV(pcm)
 	if err != nil {
 		return nil, err
 	}
@@ -135,8 +135,8 @@ func newASRRequest(ctx context.Context, cfg Config, pcm []byte) (*http.Request, 
 	return req, nil
 }
 
-func transcribeChunk(ctx context.Context, cfg Config, pcm []byte) (string, error) {
-	req, err := newASRRequest(ctx, cfg, pcm)
+func transcribeChunk(ctx context.Context, cfg coreconfig.Config, pcm []byte) (string, error) {
+	req, err := NewASRRequest(ctx, cfg, pcm)
 	if err != nil {
 		return "", err
 	}
@@ -152,11 +152,11 @@ func transcribeChunk(ctx context.Context, cfg Config, pcm []byte) (string, error
 	if e != nil {
 		return "", fmt.Errorf("读取 ASR 响应失败: %w", e)
 	}
-	transcript, e := parseASRResponse(response, resp.Header.Get("Content-Type"))
+	transcript, e := ParseASRResponse(response, resp.Header.Get("Content-Type"))
 	if e != nil {
 		return "", e
 	}
-	result := cleanASR(transcript)
+	result := CleanASR(transcript)
 	if result == "" {
 		return "", errors.New("ASR 没有识别到语音，请检查麦克风输入设备")
 	}
