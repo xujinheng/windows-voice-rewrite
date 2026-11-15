@@ -208,7 +208,7 @@ func (s *meetingSession) runInference(ctx context.Context, priority int, stage s
 }
 
 func (s *meetingSession) transcribeTurns(turns, previews <-chan meetingAudioTurn, captions chan meetingCaptionJob) {
-	var state meetingASRState
+	var state meetingcore.ASRState
 	var currentID, currentEpoch, finalized uint64
 	for {
 		var turn meetingAudioTurn
@@ -228,7 +228,7 @@ func (s *meetingSession) transcribeTurns(turns, previews <-chan meetingAudioTurn
 			continue
 		}
 		if currentID != turn.id || currentEpoch != turn.epoch {
-			state = meetingASRState{}
+			state = meetingcore.ASRState{}
 			currentID, currentEpoch = turn.id, turn.epoch
 		}
 		s.transcribeTurn(turn, &state, captions)
@@ -237,7 +237,7 @@ func (s *meetingSession) transcribeTurns(turns, previews <-chan meetingAudioTurn
 		}
 	}
 }
-func (s *meetingSession) transcribeTurn(turn meetingAudioTurn, state *meetingASRState, captions chan meetingCaptionJob) {
+func (s *meetingSession) transcribeTurn(turn meetingAudioTurn, state *meetingcore.ASRState, captions chan meetingCaptionJob) {
 	ctx, cancel := context.WithTimeout(turn.ctx, 16*time.Second)
 	defer cancel()
 	s.mu.Lock()
@@ -260,7 +260,7 @@ func (s *meetingSession) transcribeTurn(turn meetingAudioTurn, state *meetingASR
 	began := time.Now()
 	err := s.runInference(ctx, priority, "正在识别", func(active context.Context) error {
 		var err error
-		latest, err = state.transcribe(active, cfg, turn.pcm, func(text string) {
+		latest, err = state.Transcribe(active, cfg, turn.pcm, func(text string) {
 			if active.Err() != nil {
 				return
 			}
@@ -377,7 +377,7 @@ func (s *meetingSession) translateTurns(jobs <-chan meetingCaptionJob) {
 			s.applyWork(job.epoch, func() { s.stopCaption = cancel; s.captionID = job.id })
 			var displayed bool
 			started := time.Now()
-			err := s.complete(ctx, meetingcore.PriorityCaption, meetingQuery{Mode: "caption", Prior: job.prior, Latest: job.latest}, func(line meetingLine) {
+			err := s.complete(ctx, meetingcore.PriorityCaption, meetingcore.Query{Mode: "caption", Prior: job.prior, Latest: job.latest}, func(line meetingLine) {
 				if line.kind != "ZH" {
 					return
 				}
@@ -399,7 +399,7 @@ func (s *meetingSession) translateTurns(jobs <-chan meetingCaptionJob) {
 		}
 	}
 }
-func (s *meetingSession) complete(ctx context.Context, priority int, query meetingQuery, emit func(meetingLine)) error {
+func (s *meetingSession) complete(ctx context.Context, priority int, query meetingcore.Query, emit func(meetingLine)) error {
 	cfg := s.configSnapshot()
 	stage := "正在翻译"
 	if query.Mode == "replies" {
@@ -420,9 +420,9 @@ func (s *meetingSession) complete(ctx context.Context, priority int, query meeti
 		}
 		cfg.TextModel = s.model
 		s.modelMu.Unlock()
-		return completeMeeting(active, cfg, query, func(line meetingLine) {
+		return meetingcore.Complete(active, cfg, query, func(line meetingcore.Line) {
 			if active.Err() == nil {
-				emit(line)
+				emit(meetingLine{kind: line.Kind, english: line.English, chinese: line.Chinese, complete: line.Complete})
 			}
 		})
 	})
@@ -447,7 +447,7 @@ func (s *meetingSession) queueReplies(job meetingCaptionJob) {
 		defer cancel()
 		var batch [3]meetingLine
 		tip := ""
-		err := s.complete(ctx, meetingcore.PriorityReply, meetingQuery{Mode: "replies", Latest: job.latest, Prior: job.prior}, func(line meetingLine) {
+		err := s.complete(ctx, meetingcore.PriorityReply, meetingcore.Query{Mode: "replies", Latest: job.latest, Prior: job.prior}, func(line meetingLine) {
 			switch line.kind {
 			case "ONE":
 				batch[0] = line
@@ -557,7 +557,7 @@ func (s *meetingSession) refineReply(index int, instruction string) {
 	s.mu.Unlock()
 	go func() {
 		defer cancel()
-		err := s.complete(ctx, meetingcore.PriorityExpress, meetingQuery{Mode: "refine", SelectedReply: selected, UserPoints: instruction}, func(line meetingLine) {
+		err := s.complete(ctx, meetingcore.PriorityExpress, meetingcore.Query{Mode: "refine", SelectedReply: selected, UserPoints: instruction}, func(line meetingLine) {
 			s.applyExpression(epoch, serial, func() { s.view.expression = line; s.view.expressionStatus = "" })
 		})
 		if err != nil && ctx.Err() == nil {
