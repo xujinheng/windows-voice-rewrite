@@ -1,7 +1,6 @@
 package main
 
 import (
-	coreconfig "voicerewrite/internal/core/config"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
 )
 
