@@ -392,36 +392,23 @@ func TestBridgePrivateErrorsDoNotEchoInputs(t *testing.T) {
 	defer srv.Close()
 	cfg := configFor(srv.URL)
 	cfg["llm_api_key"] = privateKey
-	var raw bytes.Buffer
-	input, err := json.Marshal(map[string]any{
+	h := startBridge(t, defaultOptions())
+	h.send(map[string]any{
 		"v": 1, "id": "private", "op": "selected_task", "config": cfg,
 		"selected_text": privateText, "instruction": "rewrite this",
 	})
+	reply := h.receive()
+	data, err := json.Marshal(reply)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Keep input open until the asynchronous task replies.
-	reader, writer := io.Pipe()
-	done := make(chan error, 1)
-	go func() { done <- serve(reader, &raw) }()
-	if _, err := writer.Write(append(input, '\n')); err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for !bytes.Contains(raw.Bytes(), []byte(`"id":"private"`)) && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
-	_ = writer.Close()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	output := raw.String()
-	if strings.Contains(output, privateKey) || strings.Contains(output, privateText) {
+	if bytes.Contains(data, []byte(privateKey)) || bytes.Contains(data, []byte(privateText)) {
 		t.Fatal("bridge error leaked credentials or selected text")
 	}
-	if !strings.Contains(output, `"code":"textedit_failed"`) {
-		t.Fatalf("expected sanitized error, got %s", output)
+	if reply.OK || reply.Error == nil || reply.Error.Code != "textedit_failed" {
+		t.Fatalf("expected sanitized error: %#v", reply)
 	}
+	h.close()
 }
 
 func TestBridgeEOFAndOutputFailureReleaseTasks(t *testing.T) {
