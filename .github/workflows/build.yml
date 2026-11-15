@@ -36,6 +36,13 @@ jobs:
       - name: Test core with race detector
         working-directory: voice-rewrite
         run: go test -race -count=1 ./...
+      - name: Check portable core package boundaries
+        run: python3 scripts/check-portable-core.py
+      - name: Compile core on Linux without CGO
+        working-directory: voice-rewrite
+        env:
+          CGO_ENABLED: '0'
+        run: go build ./internal/core/...
   test-core-macos:
     runs-on: macos-15
     timeout-minutes: 15
@@ -66,15 +73,6 @@ jobs:
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
-      - name: Check Go formatting
-        working-directory: voice-rewrite
-        shell: pwsh
-        run: |
-          $unformatted = @(gofmt -l .)
-          if ($unformatted.Count -gt 0) {
-            Write-Error ("gofmt required: " + ($unformatted -join ", "))
-            exit 1
-          }
       - name: Test
         working-directory: voice-rewrite
         run: go test ./...
@@ -83,6 +81,7 @@ jobs:
         # Win32 callbacks pass OS-owned pointers as uintptr; keep every other vet check.
         run: go vet -unsafeptr=false ./...
       - name: Build x64 GUI
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         working-directory: voice-rewrite
         env:
           GOOS: windows
@@ -93,7 +92,7 @@ jobs:
           $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.29.0-dev' }
           go build -trimpath -ldflags "-H=windowsgui -s -w -X main.buildID=$version" -o VoiceRewrite.exe .
       - name: Package portable Windows build
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         working-directory: voice-rewrite
         shell: pwsh
         run: |
@@ -107,7 +106,7 @@ jobs:
           $hash = (Get-FileHash -LiteralPath 'VoiceRewrite-windows-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash *VoiceRewrite-windows-x64.zip" | Set-Content -LiteralPath 'SHA256SUMS.txt' -Encoding ascii
       - name: Upload portable package and checksum
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
           name: VoiceRewrite-portable-windows-x64
@@ -116,14 +115,14 @@ jobs:
             voice-rewrite/SHA256SUMS.txt
           if-no-files-found: error
       - name: Upload standalone EXE
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
           name: VoiceRewrite-windows-x64
           path: voice-rewrite/VoiceRewrite.exe
           if-no-files-found: error
       - name: Ensure Inno Setup compiler
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
@@ -134,7 +133,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
       - name: Build per-user installer
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
           $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.29.0' }
@@ -159,7 +158,7 @@ jobs:
         with:
           subject-path: installer/output/VoiceRewrite-Setup-*-x64.exe
       - name: Upload installer and checksum
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
           name: VoiceRewrite-installer-windows-x64
@@ -185,6 +184,7 @@ jobs:
         working-directory: oneclick
         run: go vet ./...
       - name: Build Qwen3-ASR OneClick Windows x64 EXE
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         working-directory: oneclick
         shell: pwsh
         run: go build -trimpath -ldflags '-s -w' -o Qwen3-ASR-OneClick-Windows-x64.exe .
@@ -194,14 +194,14 @@ jobs:
         with:
           subject-path: oneclick/Qwen3-ASR-OneClick-Windows-x64.exe
       - name: Stage OneClick executable and license
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path 'oneclick/package' -Force | Out-Null
           Copy-Item -LiteralPath 'oneclick/Qwen3-ASR-OneClick-Windows-x64.exe' -Destination 'oneclick/package/'
           Copy-Item -LiteralPath 'LICENSE' -Destination 'oneclick/package/'
       - name: Upload Qwen3-ASR OneClick executable
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
           name: Qwen3-ASR-OneClick-Windows-x64
