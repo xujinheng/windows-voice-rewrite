@@ -13,25 +13,15 @@ import (
 )
 
 type meetingSession struct {
-	expressionSerial           uint64
-	stopExpression             context.CancelFunc
 	activeASRCancel            context.CancelFunc
 	activeASRID, latestFinalID uint64
 	activeASRFinal             bool
-	ctx                        context.Context
-	stop                       context.CancelFunc
+	runtime                    *meetingcore.SessionRuntime
 	cfg                        Config
 	logger                     func(string, ...any)
 	mu                         sync.Mutex
 	view                       meetingView
 	prior                      []string
-	turnID, epoch              uint64
-	work                       context.Context
-	cancelWork                 context.CancelFunc
-	wake                       chan struct{}
-	stopReply                  context.CancelFunc
-	stopCaption                context.CancelFunc
-	captionID                  uint64
 	captureErr                 error
 	dirty, demo                bool
 	modelMu                    sync.Mutex
@@ -58,14 +48,12 @@ type meetingCaptionJob struct {
 }
 
 func newMeetingCore(cfg Config, logger func(string, ...any), saveConfiguration func(Config) error) *meetingSession {
-	ctx, stop := context.WithCancel(context.Background())
-	work, cancel := context.WithCancel(ctx)
-	return &meetingSession{ctx: ctx, stop: stop, cfg: cfg, logger: logger, work: work, cancelWork: cancel, wake: make(chan struct{}, 1), epoch: 1, saveConfiguration: saveConfiguration}
+	return &meetingSession{runtime: meetingcore.NewSessionRuntime(), cfg: cfg, logger: logger, saveConfiguration: saveConfiguration}
 }
 func (s *meetingSession) mutate(update func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.ctx.Err() != nil {
+	if s.runtime.Context().Err() != nil {
 		return
 	}
 	update()
@@ -73,19 +61,16 @@ func (s *meetingSession) mutate(update func()) {
 }
 func (s *meetingSession) applyWork(epoch uint64, update func()) {
 	s.mutate(func() {
-		if epoch == s.epoch && !s.view.capturePaused {
+		if s.runtime.Active(epoch) {
 			update()
 		}
 	})
 }
-func (s *meetingSession) workSnapshot() (context.Context, uint64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.work, s.epoch
-}
 func (s *meetingSession) configSnapshot() Config { s.mu.Lock(); defer s.mu.Unlock(); return s.cfg }
-func (s *meetingSession) resetWorkLocked() {
-	s.cancelWork()
+
+// resetViewLocked runs with the host state mutex held after the runtime
+// invalidates its epoch. Presentation never survives a canceled partial task.
+func (s *meetingSession) resetViewLocked() {
 	s.view.reply.ResetWork()
 	if !s.view.expression.complete {
 		s.view.expression = meetingLine{}
@@ -94,31 +79,22 @@ func (s *meetingSession) resetWorkLocked() {
 	if s.view.expressionStatus != "" {
 		s.view.expressionStatus = "处理已取消"
 	}
-	s.epoch++
-	s.turnID++
-	if s.stopReply != nil {
-		s.stopReply()
-	}
-	if s.stopCaption != nil {
-		s.stopCaption()
-	}
-	s.work, s.cancelWork = context.WithCancel(s.ctx)
 	s.view.level = 0
 	s.view.metrics.Pending = 0
-	select {
-	case s.wake <- struct{}{}:
-	default:
-	}
+}
+
+func (s *meetingSession) resetWorkLocked() {
+	s.runtime.ResetWork()
+	s.resetViewLocked()
 }
 func (s *meetingSession) setCapturePaused(paused bool) {
 	s.mutate(func() {
-		if s.view.capturePaused == paused {
+		if !s.runtime.SetPaused(paused) {
 			return
 		}
 		s.view.capturePaused = paused
-		s.resetWorkLocked()
+		s.resetViewLocked()
 		if paused {
-			s.cancelWork()
 			s.view.status = "采集已暂停 · 不发送音频"
 			s.view.metrics.Stage = "已暂停"
 		} else {
@@ -140,9 +116,6 @@ func (s *meetingSession) saveMeetingConfig(change func(*Config)) error {
 		s.cfg = cfg
 		s.resetWorkLocked()
 		s.view.asrMode = cfg.MeetingASRMode
-		if s.view.capturePaused {
-			s.cancelWork()
-		}
 	})
 	if s.onConfig != nil {
 		s.onConfig(cfg)
@@ -183,12 +156,12 @@ func (s *meetingSession) transcribeTurns(turns, previews <-chan meetingAudioTurn
 	for {
 		var turn meetingAudioTurn
 		select {
-		case <-s.ctx.Done():
+		case <-s.runtime.Context().Done():
 			return
 		case turn = <-turns:
 		default:
 			select {
-			case <-s.ctx.Done():
+			case <-s.runtime.Context().Done():
 				return
 			case turn = <-turns:
 			case turn = <-previews:
@@ -269,9 +242,7 @@ func (s *meetingSession) transcribeTurn(turn meetingAudioTurn, state *meetingcor
 		}
 		s.view.status = "正在聆听 · 按住听写键说中文"
 		// An obsolete translation of the same utterance must not hold up its final.
-		if s.stopCaption != nil && s.captionID == turn.id {
-			s.stopCaption()
-		}
+		s.runtime.CancelCaption(turn.id)
 	})
 	if job.ctx == nil {
 		return
@@ -303,14 +274,14 @@ func (s *meetingSession) updateCaption(epoch, id uint64, source, chinese string)
 func (s *meetingSession) translateTurns(jobs <-chan meetingCaptionJob) {
 	for {
 		select {
-		case <-s.ctx.Done():
+		case <-s.runtime.Context().Done():
 			return
 		case job := <-jobs:
 			if job.ctx.Err() != nil {
 				continue
 			}
 			ctx, cancel := context.WithTimeout(job.ctx, 16*time.Second)
-			s.applyWork(job.epoch, func() { s.stopCaption = cancel; s.captionID = job.id })
+			s.applyWork(job.epoch, func() { s.runtime.TrackCaption(job.epoch, job.id, cancel) })
 			var displayed bool
 			started := time.Now()
 			err := s.complete(ctx, meetingcore.PriorityCaption, meetingcore.Query{Mode: "caption", Prior: job.prior, Latest: job.latest}, func(line meetingLine) {
@@ -365,16 +336,16 @@ func (s *meetingSession) complete(ctx context.Context, priority int, query meeti
 }
 func (s *meetingSession) queueReplies(job meetingCaptionJob) {
 	s.mu.Lock()
-	if s.ctx.Err() != nil || s.view.capturePaused || job.epoch != s.epoch {
+	if !s.runtime.Active(job.epoch) {
 		s.mu.Unlock()
 		return
 	}
-	if s.stopReply != nil {
-		s.stopReply()
+	ctx, cancel, ok := s.runtime.ReplyContext(job.epoch, 30*time.Second)
+	if !ok {
+		s.mu.Unlock()
+		return
 	}
 	serial := s.view.reply.Next()
-	ctx, cancel := context.WithTimeout(s.work, 30*time.Second)
-	s.stopReply = cancel
 	s.view.status = "正在准备回复建议…"
 	s.dirty = true
 	s.mu.Unlock()
@@ -425,7 +396,8 @@ func (s *meetingSession) requestReplies() {
 	if len(prior) > 0 && strings.TrimSpace(prior[len(prior)-1]) == strings.TrimSpace(last.Source) {
 		prior = prior[:len(prior)-1]
 	}
-	job := meetingCaptionJob{latest: last.Source, id: last.ID, epoch: s.epoch, ctx: s.work, prior: prior, ended: time.Now()}
+	work, epoch, _ := s.runtime.Snapshot()
+	job := meetingCaptionJob{latest: last.Source, id: last.ID, epoch: epoch, ctx: work, prior: prior, ended: time.Now()}
 	s.mu.Unlock()
 	s.queueReplies(job)
 }
@@ -440,7 +412,7 @@ func (s *meetingSession) refineReply(index int, instruction string) {
 		s.mu.Unlock()
 		return
 	}
-	ctx, cancel, epoch, serial := s.expressionContextLocked(30 * time.Second)
+	ctx, cancel, epoch, serial := s.runtime.NewExpression(30 * time.Second)
 	s.view.expressionStatus = "正在微调所选回复…"
 	s.dirty = true
 	s.mu.Unlock()
@@ -488,18 +460,9 @@ func (s *meetingSession) queueAudio(queue chan meetingAudioTurn, job meetingAudi
 	default:
 	}
 }
-func (s *meetingSession) expressionContextLocked(timeout time.Duration) (context.Context, context.CancelFunc, uint64, uint64) {
-	if s.stopExpression != nil {
-		s.stopExpression()
-	}
-	s.expressionSerial++
-	ctx, cancel := context.WithTimeout(s.work, timeout)
-	s.stopExpression = cancel
-	return ctx, cancel, s.epoch, s.expressionSerial
-}
 func (s *meetingSession) applyExpression(epoch, serial uint64, update func()) {
 	s.applyWork(epoch, func() {
-		if serial == s.expressionSerial {
+		if s.runtime.CurrentExpression(epoch, serial) {
 			update()
 		}
 	})
@@ -512,16 +475,15 @@ func (s *meetingSession) start(source audio.FrameSource) {
 	go s.transcribeTurns(turns, previews, captions)
 	go s.translateTurns(captions)
 	go func() {
-		for s.ctx.Err() == nil {
+		for s.runtime.Context().Err() == nil {
 			s.mu.Lock()
-			paused := s.view.capturePaused
-			work, epoch := s.work, s.epoch
+			work, epoch, paused := s.runtime.Snapshot()
 			s.mu.Unlock()
 			if paused {
 				select {
-				case <-s.ctx.Done():
+				case <-s.runtime.Context().Done():
 					return
-				case <-s.wake:
+				case <-s.runtime.Wake():
 					continue
 				}
 			}
@@ -539,13 +501,10 @@ func (s *meetingSession) start(source audio.FrameSource) {
 				}
 				if event.UtteranceStarted {
 					s.applyWork(epoch, func() {
-						s.turnID++
-						id = s.turnID
+						id, _ = s.runtime.NextTurn(epoch)
 						s.view.reply.DiscardPartial()
 						s.view.reply.Next()
-						if s.stopReply != nil {
-							s.stopReply()
-						}
+						s.runtime.CancelReply()
 					})
 				}
 				if event.PCM != nil {
