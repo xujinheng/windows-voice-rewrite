@@ -3,6 +3,7 @@
 package main
 
 import (
+	meetingcore "voicerewrite/internal/core/meeting"
 	"voicerewrite/internal/core/audio"
 	"context"
 	"errors"
@@ -138,7 +139,7 @@ func (s *meetingSession) start(pid uint32) {
 				seg.SetPreviewInterval(meetingPreviewInterval(elapsed))
 				if now.Sub(lastMeter) >= 150*time.Millisecond {
 					lastMeter = now
-					pending := len(turns) + len(previews) + len(captions) + s.scheduler.pending()
+					pending := len(turns) + len(previews) + len(captions) + s.scheduler.Pending()
 					s.applyWork(epoch, func() { s.view.level = level; s.view.metrics.Pending = pending })
 				}
 				started, pcm := seg.Push(frame)
@@ -213,7 +214,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 
 	var points string
 	cfg := s.configSnapshot()
-	err := s.runInference(ctx, meetingPriorityExpress, "正在识别你的中文", func(active context.Context) error {
+	err := s.runInference(ctx, meetingcore.PriorityExpress, "正在识别你的中文", func(active context.Context) error {
 		var e error
 		points, e = transcribe(active, cfg, result.pcm)
 		return e
@@ -241,7 +242,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 		s.mu.Unlock()
 	}
 	app.logger.Printf("meeting expression mode=%s recognized_chars=%d", mode, len([]rune(points)))
-	err = s.complete(ctx, meetingPriorityExpress, meetingQuery{Mode: mode, Prior: prior, UserPoints: points}, func(line meetingLine) {
+	err = s.complete(ctx, meetingcore.PriorityExpress, meetingQuery{Mode: mode, Prior: prior, UserPoints: points}, func(line meetingLine) {
 		if !app.epoch.valid(generation) || line.kind != "SAY" {
 			return
 		}
