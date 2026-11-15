@@ -102,6 +102,21 @@ func TestMeetingReadingPanelsEmptyOrLongSession(t *testing.T) {
 	}
 }
 
+func TestMeetingUnreadHistoryDoesNotStealFocus(t *testing.T) {
+	if meetingUnreadHistory(0, 3, 5, false) != 2 {
+		t.Fatal("missing unread count while reading old captions")
+	}
+	if meetingUnreadHistory(2, 5, 6, false) != 3 {
+		t.Fatal("unread count must accumulate only newly finished turns")
+	}
+	if meetingUnreadHistory(3, 6, 6, false) != 3 {
+		t.Fatal("current caption revisions must not count as new history")
+	}
+	if meetingUnreadHistory(3, 6, 6, true) != 0 {
+		t.Fatal("returning to newest should reset unread count")
+	}
+}
+
 func TestMeetingTextChangeUTF16AndHistory(t *testing.T) {
 	cases := []struct {
 		old, next  string
