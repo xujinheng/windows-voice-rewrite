@@ -212,6 +212,7 @@ func meetingUsesConversationContext(spoken string) bool {
 	for _, phrase := range []string{
 		"刚才", "上面", "之前说", "刚提到", "他说", "她说", "他们说",
 		"这两个方案", "这几个方案", "这个方案", "这些方案", "对方", "这个问题",
+		"这个观点", "这点", "这件事", "这个说法", "我想补充", "我要回应", "我想插一句",
 		"those options", "these options", "that proposal", "earlier in the meeting",
 	} {
 		if strings.Contains(lower, phrase) {
