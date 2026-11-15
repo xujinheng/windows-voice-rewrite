@@ -156,6 +156,7 @@ public final class KeychainCredentials: CredentialReading {
 public enum HelperOperation: Sendable {
     case transcribe
     case selectedTask
+    case spokenSelectedTask
 }
 
 public struct HelperConfigFactory {
@@ -189,6 +190,9 @@ public struct HelperConfigFactory {
             llm = ""
         case .selectedTask:
             asr = ""
+            llm = try credentialOrEmpty(.llm)
+        case .spokenSelectedTask:
+            asr = try credentialOrEmpty(.asr)
             llm = try credentialOrEmpty(.llm)
         }
         return try performRequest([
