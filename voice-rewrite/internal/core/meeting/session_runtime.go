@@ -36,7 +36,7 @@ func NewSessionRuntime() *SessionRuntime {
 
 // Context and Wake remain stable over the runtime's lifetime.
 func (s *SessionRuntime) Context() context.Context { return s.ctx }
-func (s *SessionRuntime) Wake() <-chan struct{} { return s.wake }
+func (s *SessionRuntime) Wake() <-chan struct{}    { return s.wake }
 
 func (s *SessionRuntime) Stop() {
 	s.mu.Lock()
@@ -150,7 +150,6 @@ func (s *SessionRuntime) CurrentExpression(epoch, serial uint64) bool {
 	defer s.mu.Unlock()
 	return s.activeLocked(epoch) && serial != 0 && s.expressionSerial == serial
 }
-
 
 // ReplyContext cancels any earlier reply task and binds a new one to the
 // active epoch. A paused or superseded epoch cannot start a reply request.
