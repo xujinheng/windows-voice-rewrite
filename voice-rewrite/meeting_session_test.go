@@ -61,7 +61,7 @@ func TestMeetingSettingsRejectMissingStore(t *testing.T) {
 func TestMeetingHistoryIsNotDiscardedAfterTwelveTurns(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.stop()
-	for ID := uint64(1); id <= 30; id++ {
+	for id := uint64(1); id <= 30; id++ {
 		s.view.captions = meetingcore.UpsertCaption(s.view.captions, id, "test sentence", true, true)
 	}
 	if len(s.view.captions) != 30 || s.view.captions[0].ID != 1 {
