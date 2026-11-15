@@ -20,6 +20,9 @@ import (
 
 type ASRState struct{ raw, fixed string }
 
+// StablePrefix is the rollback-safe confirmed transcript prefix.
+func (s *ASRState) StablePrefix() string { return s.fixed }
+
 func meetingJSON(ctx context.Context, cfg coreconfig.Config, url string, body any, out any) error {
 	data, err := json.Marshal(body)
 	if err != nil {
