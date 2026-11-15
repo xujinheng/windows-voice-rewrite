@@ -37,8 +37,8 @@ type meetingHUD struct {
 	dragY                                                       int32
 	paused, captionsOnly, profileOpen, expressionExpanded       bool
 	latest                                                      meetingView
-	displayedReplies                                            [3]meetingLine
-	displayedSource, displayedTip, copyExpression               string
+	displayedReplies                                            [3]meetingcore.Line
+	displayedTip, copyExpression                                string
 	selectedReply                                               int
 	followLatest                                                bool
 	transcriptDrawn                                             bool
@@ -478,8 +478,8 @@ func updateMeetingHUD(view meetingView) {
 	for _, i := range []int{6, 7, 8} {
 		meetingEnableWindow.Call(p.buttons[i], meetingBool(p.owner != 0))
 	}
-	meetingEnableWindow.Call(p.buttons[12], meetingBool(p.owner != 0 && view.replyPending && !p.paused))
-	p.setText(p.buttons[12], map[bool]string{false: "无新建议", true: "查看新建议"}[view.replyPending], false)
+	meetingEnableWindow.Call(p.buttons[12], meetingBool(p.owner != 0 && view.reply.PendingAvailable && !p.paused))
+	p.setText(p.buttons[12], map[bool]string{false: "无新建议", true: "查看新建议"}[view.reply.PendingAvailable], false)
 	if p.paused {
 		return
 	}
@@ -513,7 +513,7 @@ func updateMeetingHUD(view meetingView) {
 		historyLabel += fmt.Sprintf(" · %d 条新内容", p.unreadHistory)
 	}
 	p.setText(p.labels[3], historyLabel, false)
-	p.displayedReplies, p.displayedSource, p.displayedTip = view.replies, view.replySource, view.tip
+	p.displayedReplies, p.displayedTip = view.reply.Displayed.Lines, view.reply.Displayed.Tip
 	p.renderReply()
 	newEnglish := view.expression.complete && view.expression.english != "" && view.expression.english != p.copyExpression
 	captionsOnly, expanded := meetingcore.ExpressionFocus(view.expression.complete, newEnglish, p.captionsOnly, p.expressionExpanded)
@@ -555,22 +555,22 @@ func (p *meetingHUD) renderReply() {
 		}
 		p.setText(p.buttons[9+i], title, false)
 	}
-	text := reply.english + "\r\n" + reply.chinese
-	if reply.english != "" && !reply.complete {
+	text := reply.English + "\r\n" + reply.Chinese
+	if reply.English != "" && !reply.Complete {
 		text += "\r\n正在生成…（完成后可复制或改写）"
 	}
-	if reply.english == "" {
+	if reply.English == "" {
 		text = "听到提问后生成建议；新建议可点击“查看新建议”后阅读。"
 	}
 	if p.displayedTip != "" {
 		text += "\r\n提示 · " + p.displayedTip
 	}
-	if reply.complete || time.Since(p.lastReply) >= 280*time.Millisecond {
+	if reply.Complete || time.Since(p.lastReply) >= 280*time.Millisecond {
 		p.setText(p.responses, text, true)
 		p.lastReply = time.Now()
 	}
-	meetingEnableWindow.Call(p.buttons[4], meetingBool(reply.complete && reply.english != ""))
-	meetingEnableWindow.Call(p.buttons[13], meetingBool(p.owner != 0 && reply.complete && reply.english != "" && !p.paused))
+	meetingEnableWindow.Call(p.buttons[4], meetingBool(reply.Complete && reply.English != ""))
+	meetingEnableWindow.Call(p.buttons[13], meetingBool(p.owner != 0 && reply.Complete && reply.English != "" && !p.paused))
 }
 
 func (p *meetingHUD) savePreferences() {
@@ -628,7 +628,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			if lParam != 0 {
 				item := (*drawItemStruct)(unsafe.Pointer(lParam))
 				if item.CtlID >= 7100 && item.CtlID <= 7115 {
-					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(p.buttons[item.CtlID-7100]), item.CtlID == 7106 || item.CtlID == 7112 && p.latest.replyPending || item.CtlID == 7115 && p.expressionExpanded)
+					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(p.buttons[item.CtlID-7100]), item.CtlID == 7106 || item.CtlID == 7112 && p.latest.reply.PendingAvailable || item.CtlID == 7115 && p.expressionExpanded)
 					return 1
 				}
 				if item.CtlID == 7205 || item.CtlID == 7206 {
@@ -689,8 +689,8 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			case 7103:
 				p.resizeText(2)
 			case 7104, 7105:
-				value := p.displayedReplies[p.selectedReply].english
-				if !p.displayedReplies[p.selectedReply].complete {
+				value := p.displayedReplies[p.selectedReply].English
+				if !p.displayedReplies[p.selectedReply].Complete {
 					value = ""
 				}
 				if wParam&0xffff == 7105 {
@@ -729,7 +729,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				}
 			case 7113:
 				instruction := strings.TrimSpace(uxWinText(p.instruction))
-				if instruction != "" && p.displayedReplies[p.selectedReply].complete && p.app != nil && p.app.meeting != nil && !p.paused {
+				if instruction != "" && p.displayedReplies[p.selectedReply].Complete && p.app != nil && p.app.meeting != nil && !p.paused {
 					p.app.meeting.refineReply(p.selectedReply, instruction)
 				}
 			case 7205:
@@ -795,13 +795,15 @@ func demoMeeting() meetingView {
 			{Final: true, Source: "The impact seems to be limited to peak hours.", Chinese: "影响似乎仅限于高峰时段。"},
 			{Final: true, Source: "We're seeing high tail latency on vector search. How would you start investigating?", Chinese: "向量检索的尾延迟偏高。你会从哪里开始排查？"},
 		},
-		replies: [3]meetingLine{
-			{kind: "ONE", complete: true, english: "I'd start by separating time spent waiting in the queue from time spent running the search.", chinese: "我会先把排队耗时和实际检索耗时分开看。"},
-			{kind: "TWO", complete: true, english: "Is the spike limited to certain queries, or does it affect the whole cluster?", chinese: "是部分查询出现尖峰，还是整个集群都受影响？"},
-			{kind: "THREE", complete: true, english: "Let me take a moment to think through where we'd get the clearest signal.", chinese: "我先理一下从哪里入手能最快弄清情况。"},
-		},
-		replySource: "We're seeing high tail latency on vector search. How would you start investigating?",
-		tip:         "先对照高峰期的 p99 排队时间与分片耗时，再核对是否集中在特定索引或查询类型。",
+		reply: meetingcore.ReplyState{Displayed: meetingcore.ReplyBatch{
+			Lines: [3]meetingcore.Line{
+				{Kind: "ONE", Complete: true, English: "I'd start by separating time spent waiting in the queue from time spent running the search.", Chinese: "我会先把排队耗时和实际检索耗时分开看。"},
+				{Kind: "TWO", Complete: true, English: "Is the spike limited to certain queries, or does it affect the whole cluster?", Chinese: "是部分查询出现尖峰，还是整个集群都受影响？"},
+				{Kind: "THREE", Complete: true, English: "Let me take a moment to think through where we'd get the clearest signal.", Chinese: "我先理一下从哪里入手能最快弄清情况。"},
+			},
+			Source: "We're seeing high tail latency on vector search. How would you start investigating?",
+			Tip: "先对照高峰期的 p99 排队时间与分片耗时，再核对是否集中在特定索引或查询类型。",
+		}},
 		expression:  meetingLine{kind: "SAY", complete: true, english: "We can do that, but by Friday I can only share an initial version.", chinese: "可以做，但周五前我只能给初版。"},
 	}
 }
