@@ -16,10 +16,10 @@ struct SettingsView: View {
                     .accessibilityLabel("LLM 模型名称")
             }
             Section("集成状态") {
-                Text("这些值可以编辑，但目前只保存在内存中。服务调用、持久化和 Keychain 将由后续集成接入；当前不会把设置发送给 Helper。")
+                Text("API 基础 URL 和模型名称仅在当前运行期间保存在内存中。桥接连接检查不使用这些字段。")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                Text("录音和全局快捷键需要系统麦克风、辅助功能等权限；此版本不会主动请求未使用的权限。")
+                Text("此页面不请求麦克风或辅助功能权限。使用相应的系统功能前，需要在系统设置中授权。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

@@ -5,8 +5,12 @@ import Darwin
 
 final class BridgeClientTests: XCTestCase {
     private func bundledHelper() throws -> URL {
-        let products = Bundle(for: Self.self).bundleURL.deletingLastPathComponent()
-        let executable = products.appendingPathComponent("VoiceRewrite.app/Contents/MacOS/voicebridge")
+        guard let hostExecutable = Bundle.main.executableURL else {
+            XCTFail("Test host executable not found")
+            throw BridgeFailure.helperMissing
+        }
+        let executable = hostExecutable.deletingLastPathComponent()
+            .appendingPathComponent("voicebridge")
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
             XCTFail("Bundled Go helper missing: \(executable.path)")
             throw BridgeFailure.helperMissing

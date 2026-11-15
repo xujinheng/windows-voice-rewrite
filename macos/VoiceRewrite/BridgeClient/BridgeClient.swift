@@ -30,7 +30,7 @@ final class BridgeClient {
                 throw BridgeFailure.helperMissing
             }
             let child = Process()
-            child.executableURL = executableURL  // never /bin/sh, env, or PATH lookup
+            child.executableURL = executableURL
             child.arguments = []
             let stdin = Pipe()
             let stdout = Pipe()
@@ -91,8 +91,7 @@ final class BridgeClient {
     }
 
     /// Retires the original ID immediately, so a late success can never reach the UI.
-    /// The Go cancel control frame from issue #42 is sent best-effort; its own reply
-    /// is correlated separately, and a pre-#42 helper may report unsupported_op.
+    /// The cancellation frame is sent best-effort; its reply has its own request ID.
     @discardableResult
     func cancel(id: String) -> Bool {
         let removed = state.sync { replies.cancel(id: id) }
