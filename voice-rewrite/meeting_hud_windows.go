@@ -296,8 +296,8 @@ func (p *meetingHUD) setText(control uintptr, value string, preserve bool) {
 	procSendMessage.Call(control, 0x00B0, uintptr(unsafe.Pointer(&start)), uintptr(unsafe.Pointer(&end))) // EM_GETSEL
 	change := meetingTextChange(previous, value)
 
-	procSendMessage.Call(control, 0x000B, 0, 0) // WM_SETREDRAW off
-	procSendMessage.Call(control, 0x00CF, 0, 0) // EM_SETREADONLY off for programmatic edit
+	procSendMessage.Call(control, 0x000B, 0, 0)                                       // WM_SETREDRAW off
+	procSendMessage.Call(control, 0x00CF, 0, 0)                                       // EM_SETREADONLY off for programmatic edit
 	procSendMessage.Call(control, 0x00B1, uintptr(change.start), uintptr(change.end)) // EM_SETSEL
 	insert := uxPtr(change.insert)
 	procSendMessage.Call(control, 0x00C2, 0, uintptr(unsafe.Pointer(insert))) // EM_REPLACESEL
