@@ -10,12 +10,20 @@ struct SettingsView: View {
                     .accessibilityLabel("ASR 基础 URL")
                 TextField("ASR 模型", text: $model.settings.asrModel)
                 SecureField("ASR API Key（本地服务可留空；留空保留旧值）", text: $model.asrKeyInput)
+                Button("测试 ASR 连接") { model.checkASRService() }
+                    .disabled(model.isCheckingServices)
+                Text(model.asrProbeStatus).font(.footnote).foregroundStyle(.secondary)
+                    .textSelection(.enabled)
             }
             Section("文本模型（LLM）") {
                 TextField("LLM 基础 URL", text: $model.settings.llmBaseURL)
                     .accessibilityLabel("LLM 基础 URL")
                 TextField("LLM 模型", text: $model.settings.textModel)
                 SecureField("LLM API Key（本地服务可留空；留空保留旧值）", text: $model.llmKeyInput)
+                Button("测试 LLM 连接") { model.checkLLMService() }
+                    .disabled(model.isCheckingServices)
+                Text(model.llmProbeStatus).font(.footnote).foregroundStyle(.secondary)
+                    .textSelection(.enabled)
             }
             Section("录音配置") {
                 Stepper("最长录音：\(model.settings.maxRecordSeconds) 秒",
@@ -27,7 +35,7 @@ struct SettingsView: View {
                 Button("保存设置和 Keychain 凭据") { model.saveSettings() }
                 Text(model.settingsStatus).foregroundStyle(.secondary)
                     .font(.footnote).textSelection(.enabled)
-                Text("API Key 为可选项；仅有需要认证的服务才需填写。密钥保存在 Keychain，单次任务仅通过私有 Pipe 传递所需密钥。")
+                Text("API Key 为可选项；需要认证时先保存再检测。连接检测共用 Windows 的 Go Core 规则：ASR 发送生成的静音 WAV，LLM 查询 /models，不发送用户录音或文本。密钥仅保存在 Keychain。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
