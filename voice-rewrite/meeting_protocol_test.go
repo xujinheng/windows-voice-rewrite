@@ -126,7 +126,7 @@ func TestMeetingGeneralPurposeSpokenEnglishRequests(t *testing.T) {
 		usePrior            bool
 	}{
 		{"factual information", "有多少印度人会说英语", "India's 2011 census counted around 129 million English speakers, about 10.6% of the population.", false},
-		{"unsolicited response", "我不想等他问我，我想补充这个观点", "I'd like to add something here.", false},
+		{"unsolicited response", "我不想等他问我，我想补充这个观点", "I'd like to add something here.", true},
 		{"clarifying no answer required", "我想问别人周末去哪里玩", "Where are you thinking of going this weekend?", false},
 		{"independent topic", "我想说这部电影的结局很有趣", "I thought the ending of that movie was interesting.", false},
 		{"reference to context", "问他这两个方案的 schedule", "Could you explain the timeline for both options?", true},
