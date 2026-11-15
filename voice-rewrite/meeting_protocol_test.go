@@ -96,7 +96,7 @@ func TestMeetingLiteralAndIntentEnglishDoNotRequireSAYProtocol(t *testing.T) {
 					if strings.Contains(request.Messages[1].Content, "old meeting text") || !strings.Contains(request.Messages[0].Content, "Translate") {
 						t.Error("literal translation used previous meeting or intent prompt")
 					}
-				} else if !strings.Contains(request.Messages[0].Content, "INSTRUCTION") || !strings.Contains(request.Messages[1].Content, "old meeting text") {
+				} else if !strings.Contains(request.Messages[0].Content, "general-purpose reasoning") || !strings.Contains(request.Messages[1].Content, "old meeting text") {
 					t.Error("intent expression lost meeting context or instruction semantics")
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
@@ -112,6 +112,72 @@ func TestMeetingLiteralAndIntentEnglishDoNotRequireSAYProtocol(t *testing.T) {
 			}, func(line meetingLine) { got = append(got, line) })
 			if err != nil || len(got) != 1 || !got[0].complete || got[0].kind != "SAY" || got[0].english != tc.expected {
 				t.Fatalf("English response = %#v, err=%v", got, err)
+			}
+		})
+	}
+}
+
+// The rewrite hotkey must not require the user's speech to contain an "ask"
+// or "answer" keyword: that meaning belongs in the model's interpretation.
+func TestMeetingGeneralPurposeSpokenEnglishRequests(t *testing.T) {
+	cases := []struct {
+		name, spoken, reply string
+		usePrior bool
+	}{
+		{"factual information", "有多少印度人会说英语", "India's 2011 census counted around 129 million English speakers, about 10.6% of the population.", false},
+		{"unsolicited response", "我不想等他问我，我想补充这个观点", "I'd like to add something here.", false},
+		{"clarifying no answer required", "我想问别人周末去哪里玩", "Where are you thinking of going this weekend?", false},
+		{"independent topic", "我想说这部电影的结局很有趣", "I thought the ending of that movie was interesting.", false},
+		{"reference to context", "问他这两个方案的 schedule", "Could you explain the timeline for both options?", true},
+		{"information to say", "我需要回答有多少印度人会说英语", "Based on India's 2011 census, around 129 million people reported speaking English.", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request struct {
+					Messages []struct {
+						Content string `json:"content"`
+					} `json:"messages"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Error(err)
+				}
+				if len(request.Messages) != 2 {
+					t.Fatalf("unexpected chat body: %+v", request)
+				}
+				instruction := request.Messages[0].Content
+				if !strings.Contains(instruction, "not from fixed command words") ||
+					!strings.Contains(instruction, "substantive answer") ||
+					!strings.Contains(instruction, "proactively join in") {
+					t.Error("prompt presupposes a single question/answer workflow")
+				}
+				var query meetingQuery
+				if err := json.Unmarshal([]byte(request.Messages[1].Content), &query); err != nil {
+					t.Error(err)
+				}
+				if query.Mode != "compose" || query.UserPoints != tc.spoken {
+					t.Errorf("incorrect route or input: %+v", query)
+				}
+				if tc.usePrior != (len(query.Prior) > 0) {
+					t.Errorf("context relevance failed for %q: %+v", tc.spoken, query)
+				}
+				if !tc.usePrior && (query.Background != "" || query.Terms != "") {
+					t.Errorf("independent speech contaminated by meeting project profile: %+v", query)
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				data, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": map[string]string{"content": tc.reply}}}})
+				fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", data)
+			}))
+			defer server.Close()
+			cfg := defaults()
+			cfg.LLMBaseURL, cfg.TextModel = server.URL, "test"
+			cfg.MeetingBackground, cfg.MeetingTerms = "Milvus project milestones", "Milvus"
+			var got []meetingLine
+			err := completeMeeting(context.Background(), cfg, meetingQuery{
+				Mode: "compose", UserPoints: tc.spoken, Prior: []string{"Two proposals were discussed"},
+			}, func(line meetingLine) { got = append(got, line) })
+			if err != nil || len(got) != 1 || got[0].english != tc.reply || !got[0].complete {
+				t.Fatalf("wrong spoken response: %#v, %v", got, err)
 			}
 		})
 	}
