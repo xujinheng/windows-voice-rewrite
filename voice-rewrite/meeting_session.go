@@ -308,7 +308,7 @@ func (s *meetingSession) transcribeTurn(turn meetingAudioTurn, state *meetingASR
 	case captions <- job:
 	default:
 		select {
-		case old := <-captions:
+		case <-captions:
 			s.applyWork(turn.epoch, func() { s.view.metrics.Dropped++ })
 		default:
 		}
