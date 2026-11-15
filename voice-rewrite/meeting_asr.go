@@ -1,6 +1,7 @@
 package main
 
 import (
+	"voicerewrite/internal/core/speech"
 	"bufio"
 	"bytes"
 	"context"
@@ -80,9 +81,9 @@ func (s *meetingASRState) prefix(ctx context.Context, cfg Config) (string, error
 
 // llama.cpp consumes a bounded cumulative audio window. Text prefix rollback
 // reduces decoder work; it does not provide incremental audio encoder caching.
-func (s *meetingASRState) transcribe(ctx context.Context, cfg Config, pcm []byte, emit func(string)) (string, error) {
+func (s *meetingASRState) speech.Transcribe(ctx context.Context, cfg Config, pcm []byte, emit func(string)) (string, error) {
 	if cfg.MeetingASRMode == "multipart" {
-		result, err := transcribe(ctx, cfg, pcm)
+		result, err := speech.Transcribe(ctx, cfg, pcm)
 		if err == nil {
 			emit(result)
 		}
@@ -92,8 +93,8 @@ func (s *meetingASRState) transcribe(ctx context.Context, cfg Config, pcm []byte
 	if err != nil {
 		return "", err
 	}
-	s.fixed = cleanASR(prefix)
-	wav, err := encodeWAV(pcm)
+	s.fixed = speech.CleanASR(prefix)
+	wav, err := speech.EncodeWAV(pcm)
 	if err != nil {
 		return "", err
 	}
@@ -134,7 +135,7 @@ func (s *meetingASRState) transcribe(ctx context.Context, cfg Config, pcm []byte
 		if (strings.HasPrefix(strings.TrimSpace(text), "language") || strings.HasPrefix("language ", strings.TrimSpace(text))) && !strings.Contains(text, "<asr_text>") {
 			return
 		}
-		if clean := cleanASR(text); clean != "" && ctx.Err() == nil {
+		if clean := speech.CleanASR(text); clean != "" && ctx.Err() == nil {
 			emit(clean)
 		}
 	}
@@ -197,7 +198,7 @@ func (s *meetingASRState) transcribe(ctx context.Context, cfg Config, pcm []byte
 	if !observed {
 		return "", errors.New("ASR 返回空响应，未提交转录")
 	}
-	text := cleanASR(raw.String())
+	text := speech.CleanASR(raw.String())
 	if text == "" || strings.HasPrefix(text, "language") {
 		return "", errors.New("ASR 未返回有效转录")
 	}
