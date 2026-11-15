@@ -295,6 +295,36 @@ func (p *meetingHUD) layout() {
 	meetingInvalidateRect.Call(p.window, 0, 1)
 }
 
+// Divider hit regions are the unobstructed eight-pixel bands between
+// independent EDIT controls. Capture keeps the drag active outside the band.
+func (p *meetingHUD) splitterAt(y int32) int {
+	if p.profileOpen {
+		return -1
+	}
+	for index, visible := range p.splitterVisible {
+		if visible && y >= p.splitterY[index]-p.px(4) && y < p.splitterY[index]+p.px(4) {
+			return index
+		}
+	}
+	return -1
+}
+
+func (p *meetingHUD) dragSplitterTo(y int32) {
+	if p.dragDivider < 0 {
+		return
+	}
+	delta := int32(float64(y-p.dragY) / p.scale)
+	if delta == 0 {
+		return
+	}
+	p.dragY = y
+	weights := meetingDragPaneWeights(p.paneWeights, p.paneHeights, p.captionsOnly, p.expressionExpanded, p.dragDivider, delta)
+	if weights != p.paneWeights {
+		p.paneWeights = weights
+		p.layout()
+	}
+}
+
 func meetingShow(show bool) uintptr {
 	if show {
 		return SW_SHOWNOACTIVATE
@@ -604,6 +634,41 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 					return 1
 				}
 			}
+		case 0x0020: // WM_SETCURSOR
+			if wParam == hwnd {
+				var mouse trayPoint
+				if ok, _, _ := meetingGetCursorPos.Call(uintptr(unsafe.Pointer(&mouse))); ok != 0 {
+					meetingScreenToClient.Call(hwnd, uintptr(unsafe.Pointer(&mouse)))
+					if p.dragDivider >= 0 || p.splitterAt(mouse.Y) >= 0 {
+						cursor, _, _ := meetingLoadCursor.Call(0, 32645) // IDC_SIZENS
+						meetingSetCursor.Call(cursor)
+						return 1
+					}
+				}
+			}
+		case 0x0201: // WM_LBUTTONDOWN
+			y := int32(int16(uint16(lParam >> 16)))
+			if divider := p.splitterAt(y); divider >= 0 {
+				p.dragDivider = divider
+				p.dragY = y
+				meetingSetCapture.Call(hwnd)
+				return 0
+			}
+		case 0x0200: // WM_MOUSEMOVE
+			if p.dragDivider >= 0 {
+				p.dragSplitterTo(int32(int16(uint16(lParam >> 16))))
+				return 0
+			}
+		case 0x0202: // WM_LBUTTONUP
+			if p.dragDivider >= 0 {
+				p.dragSplitterTo(int32(int16(uint16(lParam >> 16))))
+				p.dragDivider = -1
+				meetingReleaseCapture.Call()
+				p.savePreferences()
+				return 0
+			}
+		case 0x0215: // WM_CAPTURECHANGED
+			p.dragDivider = -1
 		case WM_COMMAND:
 			if wParam>>16 != 0 {
 				break
@@ -701,6 +766,17 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			var bounds rect32
 			procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds)))
 			procFillRect.Call(wParam, uintptr(unsafe.Pointer(&bounds)), p.background)
+			if !p.profileOpen {
+				for index, shown := range p.splitterVisible {
+					if !shown {
+						continue
+					}
+					for offset := int32(-2); offset <= 2; offset += 4 {
+						rail := rect32{Left: bounds.Right/2 - p.px(22), Top: p.splitterY[index] + offset, Right: bounds.Right/2 + p.px(22), Bottom: p.splitterY[index] + offset + p.px(1)}
+						procFillRect.Call(wParam, uintptr(unsafe.Pointer(&rail)), p.surface)
+					}
+				}
+			}
 			return 1
 		}
 	}
