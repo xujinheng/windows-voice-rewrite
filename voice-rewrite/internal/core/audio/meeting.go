@@ -67,46 +67,6 @@ func (s *Segmenter) Push(frame []byte) (started bool, completed []byte) {
 	return false, completed
 }
 
-// PCMConverter averages the source interval for each output sample.
-// Keeping the fractional remainder across packets prevents timing drift.
-type PCMConverter struct {
-	remaining, sum int32
-	frame          [FrameBytes]byte
-	used           int
-}
-
-func (c *PCMConverter) Consume(stereo []byte, frames int, push func([]byte)) {
-	const inputRate = 44100
-	const outputRate = 16000
-	if c.remaining == 0 {
-		c.remaining = inputRate
-	}
-	for index := 0; index < frames; index++ {
-		var mono int32
-		if stereo != nil {
-			pos := index * 4
-			left := int32(int16(binary.LittleEndian.Uint16(stereo[pos:])))
-			right := int32(int16(binary.LittleEndian.Uint16(stereo[pos+2:])))
-			mono = (left + right) / 2
-		}
-		span := int32(outputRate)
-		if span >= c.remaining {
-			c.sum += mono * c.remaining
-			span -= c.remaining
-			binary.LittleEndian.PutUint16(c.frame[c.used:], uint16(int16(c.sum/inputRate)))
-			c.used += 2
-			if c.used == len(c.frame) {
-				push(c.frame[:])
-				c.used = 0
-			}
-			c.remaining = inputRate
-			c.sum = 0
-		}
-		c.sum += mono * span
-		c.remaining -= span
-	}
-}
-
 // preview copies the unfinished utterance at the current service budget.
 func (s *Segmenter) Preview() []byte {
 	frames := s.previewFrames
