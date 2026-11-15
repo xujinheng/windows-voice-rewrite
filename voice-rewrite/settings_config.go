@@ -42,17 +42,17 @@ func uxUpdatedConfig(old Config, values [6]string) (Config, error) {
 
 // Windows surfaces the shared Core probe result in native Win32 settings.
 func uxProbe(ctx context.Context, kind, base string) string {
-    return uxProbeWithKey(ctx, kind, base, "")
+	return uxProbeWithKey(ctx, kind, base, "")
 }
 
 func uxProbeWithKey(ctx context.Context, kind, base, apiKey string) string {
-    return uxProbeModel(ctx, kind, base, apiKey, "")
+	return uxProbeModel(ctx, kind, base, apiKey, "")
 }
 
 func uxProbeModel(ctx context.Context, kind, base, apiKey, configuredModel string) string {
-    return serviceprobe.ProbeModel(ctx, kind, base, apiKey, configuredModel)
+	return serviceprobe.ProbeModel(ctx, kind, base, apiKey, configuredModel)
 }
 
 func uxProbeASRAudio(ctx context.Context, base, apiKey, model string) string {
-    return serviceprobe.ProbeASRAudio(ctx, base, apiKey, model)
+	return serviceprobe.ProbeASRAudio(ctx, base, apiKey, model)
 }

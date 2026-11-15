@@ -4,18 +4,18 @@
 package serviceprobe
 
 import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "io"
-    "net/http"
-    "net/url"
-    "strings"
-    "time"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
 
-    coreconfig "voicerewrite/internal/core/config"
-    "voicerewrite/internal/core/provider"
-    "voicerewrite/internal/core/speech"
+	coreconfig "voicerewrite/internal/core/config"
+	"voicerewrite/internal/core/provider"
+	"voicerewrite/internal/core/speech"
 )
 
 func validURL(value string) bool { return coreconfig.ValidateBaseURL(value) == nil }
