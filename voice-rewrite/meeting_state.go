@@ -186,7 +186,7 @@ type meetingAssistantHeights struct {
 
 func meetingPanelHeights(space int32, expanded bool) meetingAssistantHeights {
 	if expanded {
-		history := max(int32(52), space*24/100)
+		history := max(int32(52), space*22/100)
 		expression := max(int32(70), space-history-32)
 		return meetingAssistantHeights{history: history, expression: expression, source: 48}
 	}
