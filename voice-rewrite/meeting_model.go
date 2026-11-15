@@ -183,17 +183,16 @@ func completeMeeting(ctx context.Context, cfg Config, query meetingQuery, emit f
 	}
 	query.Background, query.Terms = cfg.MeetingBackground, cfg.MeetingTerms
 	if query.Mode == "caption" || query.Mode == "express" || query.Mode == "answer" {
-		// Pure translation must never rewrite the user's intended words based
-		// on older meeting speech.
+		// Pure translation and factual answers must not be anchored to old
+		// project conversation or profile instructions.
 		query.Prior = nil
-		if query.Mode == "answer" {
-			// Background often describes a project and steers unrelated factual
-			// answers into generic workplace clarifying questions.
+		if query.Mode != "caption" {
 			query.Background, query.Terms = "", ""
 		}
 	} else if query.Mode == "compose" {
 		if !meetingUsesConversationContext(query.UserPoints) {
 			query.Prior = nil
+			query.Background, query.Terms = "", ""
 		}
 		if len(query.Prior) > 3 {
 			query.Prior = query.Prior[len(query.Prior)-3:]
