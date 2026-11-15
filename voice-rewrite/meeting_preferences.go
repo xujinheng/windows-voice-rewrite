@@ -8,7 +8,8 @@ import (
 )
 
 type meetingPreferences struct {
-	FontSize     int32 `json:"font_size"`
+	FontSize     int32              `json:"font_size"`
+	Panes        meetingPaneWeights `json:"panes"`
 	CaptionsOnly bool  `json:"captions_only"`
 	X            int32 `json:"x"`
 	Y            int32 `json:"y"`
@@ -17,7 +18,7 @@ type meetingPreferences struct {
 }
 
 func loadMeetingPreferences(path string) (meetingPreferences, error) {
-	p := meetingPreferences{FontSize: 16}
+	p := meetingPreferences{FontSize: 16, Panes: meetingDefaultPaneWeights}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return p, nil
@@ -26,14 +27,16 @@ func loadMeetingPreferences(path string) (meetingPreferences, error) {
 		return p, err
 	}
 	if err = json.Unmarshal(data, &p); err != nil {
-		return meetingPreferences{FontSize: 16}, err
+		return meetingPreferences{FontSize: 16, Panes: meetingDefaultPaneWeights}, err
 	}
 	p.FontSize = max(12, min(28, p.FontSize))
+	p.Panes = meetingValidPaneWeights(p.Panes)
 	return p, nil
 }
 
 func saveMeetingPreferences(path string, p meetingPreferences) error {
 	p.FontSize = max(12, min(28, p.FontSize))
+	p.Panes = meetingValidPaneWeights(p.Panes)
 	data, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		return err
