@@ -10,11 +10,11 @@ import (
 type meetingPreferences struct {
 	FontSize     int32              `json:"font_size"`
 	Panes        meetingPaneWeights `json:"panes"`
-	CaptionsOnly bool              `json:"captions_only"`
-	X            int32             `json:"x"`
-	Y            int32             `json:"y"`
-	Width        int32             `json:"width"`
-	Height       int32             `json:"height"`
+	CaptionsOnly bool               `json:"captions_only"`
+	X            int32              `json:"x"`
+	Y            int32              `json:"y"`
+	Width        int32              `json:"width"`
+	Height       int32              `json:"height"`
 }
 
 func loadMeetingPreferences(path string) (meetingPreferences, error) {
