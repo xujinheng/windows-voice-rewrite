@@ -107,7 +107,7 @@ var meetingEnumCallback = syscall.NewCallback(func(hwnd, statePtr uintptr) uintp
 })
 
 func newMeetingSession(app *appState, demo bool) *meetingSession {
-	s := newMeetingCore(app.cfg, app.logger.Printf)
+	s := newMeetingCore(app.cfg, app.logger.Printf, saveConfig)
 	s.demo = demo
 	s.onConfig = func(cfg Config) { app.cfg = cfg }
 	return s
