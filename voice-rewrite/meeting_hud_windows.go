@@ -16,10 +16,11 @@ type meetingHUD struct {
 	app                                                         *appState
 	window, owner                                               uintptr
 	status, live, captions, responses, expression, instruction  uintptr
-	labelFont, bodyFont                                         uintptr
+	currentEnglish, currentChinese                                uintptr
+	labelFont, bodyFont, englishFont, chineseFont                uintptr
 	palette                                                     uiPalette
 	background, surface                                         uintptr
-	labels                                                      [3]uintptr
+	labels                                                      [4]uintptr
 	buttons                                                     [15]uintptr
 	mainControls                                                []uintptr
 	profileControls                                             []uintptr
@@ -34,6 +35,7 @@ type meetingHUD struct {
 	followLatest                                                bool
 	transcriptDrawn                                             bool
 	transcriptFirstLine                                         uintptr
+	historyCount, unreadHistory                                 int
 	lastTranscript, lastReply, lastExpression                   time.Time
 	rendered                                                    map[uintptr]string
 }
@@ -98,7 +100,10 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	activeMeetingHUD = p
 	p.background, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.background))
 	p.surface, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.surface))
-	p.labelFont, p.bodyFont = popupFont(p.px(14), 600), popupFont(p.px(p.fontSize), 400)
+	p.labelFont = meetingUIFont(p.px(14), 600)
+	p.bodyFont = meetingUIFont(p.px(p.fontSize), 400)
+	p.englishFont = popupFont(-p.px(p.fontSize+4), 500)
+	p.chineseFont = meetingUIFont(p.px(p.fontSize+2), 500)
 	applyWindowPalette(hwnd, p.palette)
 	child := func(class, text string, style uintptr, id uintptr, body bool) uintptr {
 		if err != nil {
@@ -119,9 +124,15 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	for i, title := range []string{"冻结画面", "专注字幕", "A−", "A+", "复制回复", "复制英文", "生成建议", "暂停采集", "会议资料", "1 直接回应", "2 澄清一下", "3 争取时间", "查看新建议", "改写回复", "回到最新"} {
 		p.buttons[i] = child("BUTTON", title, 0x00010000|uxBSOwnerDraw, uintptr(7100+i), false)
 	}
-	p.labels[0] = child("STATIC", "会议字幕", 0, 0, false)
+	p.labels[0] = child("STATIC", "当前发言", 0, 0, false)
 	editStyle := uintptr(WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_BORDER | 0x00010000)
-	p.live = child("STATIC", "● 等待音频", 0, 0, false)
+	p.live = child("STATIC", "● 等待发言", 0, 0, false)
+	currentStyle := uintptr(ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL)
+	p.currentEnglish = child("EDIT", "", currentStyle, 0, false)
+	p.currentChinese = child("EDIT", "", currentStyle, 0, false)
+	setFont(p.currentEnglish, p.englishFont)
+	setFont(p.currentChinese, p.chineseFont)
+	p.labels[3] = child("STATIC", "之前的对话", 0, 0, false)
 	p.captions = child("EDIT", "", editStyle, 0, true)
 	procSendMessage.Call(p.captions, 0x00C5, 1<<20, 0) // EM_LIMITTEXT: retain in-session history
 	p.labels[1] = child("STATIC", "回复建议", 0, 0, false)
@@ -141,6 +152,15 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	updateMeetingHUD(view)
 	procShowWindow.Call(hwnd, SW_SHOWNOACTIVATE)
 	return nil
+}
+
+// A Chinese-capable sans-serif avoids the SimSun fallback visible on older
+// Windows installations when Segoe UI Variable is used for mixed CJK text.
+func meetingUIFont(height, weight int32) uintptr {
+	name, _ := syscall.UTF16PtrFromString("Microsoft YaHei UI")
+	font, _, _ := procCreateFont.Call(uintptr(-height), 0, 0, 0, uintptr(weight), 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(name)))
+	runtime.KeepAlive(name)
+	return font
 }
 
 func (p *meetingHUD) px(v int32) int32 { return int32(float64(v)*p.scale + .5) }
