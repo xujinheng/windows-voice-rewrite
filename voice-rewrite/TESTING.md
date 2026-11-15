@@ -1,4 +1,20 @@
-# Windows testing
+# Testing
+
+## Automated CI
+
+`.github/workflows/build.yml` runs for every pull request, pushes to `main`, version tags matching `v*`, and manual dispatches. Its checks are:
+
+- Ubuntu: verify Go formatting, run `go test -race -count=1 ./...` across the `voice-rewrite` module (including every `internal/core` package), check the portable core source/import boundary across Linux, macOS and Windows, and compile `./internal/core/...` with `CGO_ENABLED=0`.
+- Real `macos-15` runner: run `go test -count=1 ./internal/core/...`, then compile those packages for both Darwin arm64 and amd64.
+- Windows: run `go test ./...` and `go vet -unsafeptr=false ./...` for `voice-rewrite`; run `go test ./...` and `go vet ./...` for `oneclick`.
+
+The portable core boundary check requires the same Go and test source files across Linux, Darwin and Windows and forbids native OS syscall imports in `internal/core`. A Windows-specific source file under `internal/core` is not a substitute for a platform adapter outside that directory.
+
+PRs do not build or upload general-purpose GUI/OneClick executables, installers or release archives in the build workflow. Pushes to `main` and version tags build and upload the Windows executables, portable ZIP, and installer; version tags also perform artifact attestations and publish releases when the release notes are present.
+
+`.github/workflows/meeting-ui.yml` runs the Win32 Meeting E2E Go test and a real GUI screenshot/interaction script on matching pull requests, pushes to `meeting-preview`, or manual dispatch. `.github/workflows/direct2d-result.yml` runs native Direct2D result-card tests on matching pull requests, pushes to `main`, or manual dispatch. These UI jobs build temporary test executables on Windows, not distributable packages. `.github/workflows/visual-matrix.yml` captures the Windows UI on relevant `main` pushes or manual dispatch; `.github/workflows/demo-video.yml` renders demo media on its configured `main` paths or manual dispatch.
+
+## Local Windows checks
 
 Run the Go test suite and Windows GUI build before merging:
 

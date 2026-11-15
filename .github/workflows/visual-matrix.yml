@@ -1,6 +1,7 @@
 name: Windows UI screenshots
 on:
   push:
+    branches: [main]
     paths:
       - 'voice-rewrite/appearance_windows.go'
       - 'voice-rewrite/visual_skin_windows.go'
