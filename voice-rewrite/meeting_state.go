@@ -182,4 +182,3 @@ func meetingLastCompletedCaption(captions []meetingCaption) (meetingCaption, boo
 	}
 	return meetingCaption{}, false
 }
-
