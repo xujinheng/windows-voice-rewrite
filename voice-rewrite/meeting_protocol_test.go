@@ -21,7 +21,7 @@ func TestMeetingCaptionPromptCannotEchoPriorOrControlTags(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Messages []struct {
-				Role string `json:"role"`
+				Role    string `json:"role"`
 				Content string `json:"content"`
 			} `json:"messages"`
 		}
