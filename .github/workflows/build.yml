@@ -8,6 +8,8 @@ on:
 permissions:
   contents: read
 
+# PRs validate code and compile native executables without producing release
+# archives or installers. Main and tags still create complete download artifacts.
 # Cancel superseded branch/PR builds, but never cancel a tagged release.
 concurrency:
   group: build-${{ github.event.pull_request.number || github.ref }}
@@ -91,6 +93,7 @@ jobs:
           $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.29.0-dev' }
           go build -trimpath -ldflags "-H=windowsgui -s -w -X main.buildID=$version" -o VoiceRewrite.exe .
       - name: Package portable Windows build
+        if: github.event_name != 'pull_request'
         working-directory: voice-rewrite
         shell: pwsh
         run: |
@@ -104,6 +107,7 @@ jobs:
           $hash = (Get-FileHash -LiteralPath 'VoiceRewrite-windows-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash *VoiceRewrite-windows-x64.zip" | Set-Content -LiteralPath 'SHA256SUMS.txt' -Encoding ascii
       - name: Upload portable package and checksum
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: VoiceRewrite-portable-windows-x64
@@ -112,12 +116,14 @@ jobs:
             voice-rewrite/SHA256SUMS.txt
           if-no-files-found: error
       - name: Upload standalone EXE
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: VoiceRewrite-windows-x64
           path: voice-rewrite/VoiceRewrite.exe
           if-no-files-found: error
       - name: Ensure Inno Setup compiler
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
@@ -128,6 +134,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
       - name: Build per-user installer
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.29.0' }
@@ -152,6 +159,7 @@ jobs:
         with:
           subject-path: installer/output/VoiceRewrite-Setup-*-x64.exe
       - name: Upload installer and checksum
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: VoiceRewrite-installer-windows-x64
@@ -186,12 +194,14 @@ jobs:
         with:
           subject-path: oneclick/Qwen3-ASR-OneClick-Windows-x64.exe
       - name: Stage OneClick executable and license
+        if: github.event_name != 'pull_request'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path 'oneclick/package' -Force | Out-Null
           Copy-Item -LiteralPath 'oneclick/Qwen3-ASR-OneClick-Windows-x64.exe' -Destination 'oneclick/package/'
           Copy-Item -LiteralPath 'LICENSE' -Destination 'oneclick/package/'
       - name: Upload Qwen3-ASR OneClick executable
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: Qwen3-ASR-OneClick-Windows-x64
