@@ -1,26 +1,33 @@
-package main
+package textedit
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"regexp"
 	"strings"
-	"time"
 
+	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
 )
 
-// AssistantResult is a single model call's intent classification plus answer.
-// The program, not the model, decides whether a destructive action is permitted.
+// AssistantResult contains the generated result and its model-classified intent.
+// PreviewOnly is set when the model returned unparseable content; such content
+// never grants permission to alter a selection.
 type AssistantResult struct {
-	Intent string `json:"intent"`
-	Result string `json:"result"`
+	Intent      string `json:"intent"`
+	Result      string `json:"result"`
+	PreviewOnly bool   `json:"-"`
 }
+
+type Action string
+
+const (
+	Popup      Action = "popup"
+	Replace    Action = "replace"
+	TryReplace Action = "try_replace"
+)
 
 const unifiedPrompt = `你是 Windows 桌面 AI 划词助手。收到用户的语音指令和他选中的文字。
 一次完成意图判定和内容生成；意图可以是 edit、translate、answer、summarize、ambiguous。
@@ -40,13 +47,14 @@ var editCuePattern = regexp.MustCompile(`(?i)(改写|改成|修改|润色|重写
 var translationCuePattern = regexp.MustCompile(`(?i)(翻译成|译成|写成.{0,10}(英|中|日|法|德|西|韩|文)|改成.{0,10}(英|中|日|法|德|西|韩|文)|用.{0,10}(英文|中文|日文|法文|德文|西班牙文|韩文).{0,10}(写|表达)|translate (this |it |the selected text )?(to|into)|write (this |it )?in (english|chinese|japanese|french|german|spanish|korean))`)
 var questionCuePattern = regexp.MustCompile(`(?i)(什么意思|是什么|为什么|怎么回事|怎么用|怎么翻译|如何|解释|讲解|请问|告诉我|什么叫|怎么说|what (does|is|are)|why |how |explain|define|meaning of|summari[sz]e|总结|概括|摘要)`)
 
-// Independent lexical guard: the LLM never grants write permission by itself.
+// Independent lexical guards prevent the model from granting write permission.
 func clearlyRequestsEdit(instruction string) bool {
 	if questionCuePattern.MatchString(instruction) {
 		return false
 	}
 	return editCuePattern.MatchString(instruction)
 }
+
 func clearlyRequestsTranslation(instruction string) bool {
 	if questionCuePattern.MatchString(instruction) {
 		return false
@@ -54,27 +62,29 @@ func clearlyRequestsTranslation(instruction string) bool {
 	return translationCuePattern.MatchString(instruction)
 }
 
-// Edit-first routing restores the original cross-application workflow.
-// Read-only and editable controls frequently share the same top-level HWND in
-// Chrome/Electron, VS Code and WeChat. A class-name check is NOT a reliable
-// prerequisite for attempting Ctrl+V. Explicit edit/translation requests and
-// model-classified text transformations try to replace the existing selection.
-// The paste path must independently check foreground HWND and selection text.
-// Questions/definitions/summaries and unrecognized tasks remain popup-only.
-func routeTask(result AssistantResult, instruction string, safelyEditable, browserSurface bool) string {
-	_ = browserSurface // Diagnostic only: do not gate write behavior on app class.
+func validIntent(intent string) bool {
+	switch intent {
+	case "edit", "answer", "summarize", "translate", "ambiguous":
+		return true
+	default:
+		return false
+	}
+}
+
+// RouteTask decides whether a voice command authorizes replacement. A model
+// classification alone never authorizes a write. Unknown window classes are
+// eligible only for a guarded attempt in the platform layer.
+func RouteTask(result AssistantResult, instruction string, safelyEditable bool) Action {
+	if result.PreviewOnly || !validIntent(result.Intent) || strings.TrimSpace(result.Result) == "" {
+		return Popup
+	}
 	if clearlyRequestsEdit(instruction) || clearlyRequestsTranslation(instruction) {
 		if safelyEditable {
-			return "replace"
+			return Replace
 		}
-		return "try_replace"
+		return TryReplace
 	}
-	if questionCuePattern.MatchString(instruction) {
-		return "popup"
-	}
-	// A model classification is useful for rendering a preview, but it cannot
-	// independently authorize a destructive cross-application paste.
-	return "popup"
+	return Popup
 }
 
 func parseAssistantResult(text string) (AssistantResult, error) {
@@ -95,9 +105,7 @@ func parseAssistantResult(text string) (AssistantResult, error) {
 	if err := json.Unmarshal([]byte(text), &v); err != nil {
 		return v, fmt.Errorf("model JSON: %w", err)
 	}
-	switch v.Intent {
-	case "edit", "answer", "summarize", "translate", "ambiguous":
-	default:
+	if !validIntent(v.Intent) {
 		return v, fmt.Errorf("unrecognized intent: %q", v.Intent)
 	}
 	v.Result = strings.TrimSpace(v.Result)
@@ -107,12 +115,10 @@ func parseAssistantResult(text string) (AssistantResult, error) {
 	return v, nil
 }
 
-// completeSelectedTask sends ONE inference request that classifies the user's
-// intent and generates the answer. Invalid JSON is returned as a non-destructive
-// preview by the caller; it is never pasted into another application.
-func completeSelectedTask(ctx context.Context, cfg Config, selected, instruction string) (AssistantResult, error) {
-	model, err := provider.DiscoverModel(ctx, cfg)
-	if err != nil {
+// CompleteSelectedTask makes one inference call for classification and output.
+// Malformed nonempty output is returned as a preview rather than an edit.
+func CompleteSelectedTask(ctx context.Context, cfg coreconfig.Config, selected, instruction string) (AssistantResult, error) {
+	if err := validateRequest(ctx, cfg, selected, instruction); err != nil {
 		return AssistantResult{}, err
 	}
 	system := strings.TrimSpace(cfg.SystemPrompt)
@@ -124,48 +130,37 @@ func completeSelectedTask(ctx context.Context, cfg Config, selected, instruction
 	if maxTokens <= 0 {
 		maxTokens = 1200
 	}
-	body := map[string]any{"model": model, "stream": false, "temperature": 0.2, "max_tokens": maxTokens, "messages": []map[string]string{{"role": "system", "content": system}, {"role": "user", "content": prompt}}}
-	raw, err := json.Marshal(body)
+	if maxTokens > 4096 {
+		maxTokens = 4096
+	}
+	rawText, err := completionText(ctx, cfg, system, prompt, maxTokens, "LLM")
 	if err != nil {
 		return AssistantResult{}, err
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", provider.Endpoint(cfg.LLMBaseURL, "/chat/completions"), bytes.NewReader(raw))
+	result, err := parseAssistantResult(rawText)
 	if err != nil {
-		return AssistantResult{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if cfg.LLMAPIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+cfg.LLMAPIKey)
-	}
-	resp, err := provider.RequestClient(120 * time.Second).Do(req)
-	if err != nil {
-		return AssistantResult{}, fmt.Errorf("LLM request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return AssistantResult{}, provider.HTTPError("LLM", resp.StatusCode)
-	}
-	var v struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err = json.NewDecoder(io.LimitReader(resp.Body, 5<<20)).Decode(&v); err != nil {
-		return AssistantResult{}, fmt.Errorf("LLM JSON response: %w", err)
-	}
-	if len(v.Choices) == 0 {
-		return AssistantResult{}, errors.New("LLM returned no choices")
-	}
-	rawText := strings.TrimSpace(provider.ThinkingTag.ReplaceAllString(v.Choices[0].Message.Content, ""))
-	result, parseErr := parseAssistantResult(rawText)
-	if parseErr != nil {
-		// Preserve the useful text, but never allow an unparseable answer to trigger replacement.
 		if rawText == "" {
-			return AssistantResult{}, parseErr
+			return AssistantResult{}, err
 		}
-		return AssistantResult{Intent: "ambiguous", Result: rawText}, nil
+		return AssistantResult{Intent: "ambiguous", Result: rawText, PreviewOnly: true}, nil
+	}
+	return result, nil
+}
+
+// ResolveSelectedTask handles the conflict between explicit voice edits and
+// model classifications before the platform decides whether to paste.
+func ResolveSelectedTask(ctx context.Context, cfg coreconfig.Config, selected, instruction string) (AssistantResult, error) {
+	result, err := CompleteSelectedTask(ctx, cfg, selected, instruction)
+	if err != nil {
+		return AssistantResult{}, err
+	}
+	if (clearlyRequestsEdit(instruction) || clearlyRequestsTranslation(instruction)) &&
+		result.Intent != "edit" && result.Intent != "translate" {
+		replacement, rewriteErr := Rewrite(ctx, cfg, selected, instruction)
+		if rewriteErr != nil {
+			return AssistantResult{}, fmt.Errorf("模型误判意图，重新生成改写文字失败: %w", rewriteErr)
+		}
+		return AssistantResult{Intent: "edit", Result: replacement}, nil
 	}
 	return result, nil
 }

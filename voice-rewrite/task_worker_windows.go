@@ -282,7 +282,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	app.postHandyPhase(statusRewriting, generation)
 	app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(instruction))
 	startedLLM := time.Now()
-	answer, e := completeSelectedTask(ctx, app.cfg, sel.Text, instruction)
+	answer, e := textedit.ResolveSelectedTask(ctx, app.cfg, sel.Text, instruction)
 	if !app.epoch.valid(generation) {
 		return
 	}
@@ -291,35 +291,17 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		app.fail(e)
 		return
 	}
-	// The selected text is the user's editing surface regardless of its Win32
-	// class (WeChat/VS Code/Chrome may expose only a renderer HWND). The voice
-	// command remains the primary signal. If a model mislabels a clear edit as
-	// an answer, regenerate as plain replacement text before touching the editor.
-	if (clearlyRequestsEdit(instruction) || clearlyRequestsTranslation(instruction)) &&
-		answer.Intent != "edit" && answer.Intent != "translate" {
-		app.logger.Printf("intent conflict; voice requires edit but model returned %s; retrying rewrite", answer.Intent)
-		fixed, rewriteErr := textedit.Rewrite(ctx, app.cfg, sel.Text, instruction)
-		if rewriteErr != nil {
-			app.fail(fmt.Errorf("模型误判意图，重新生成改写文字失败: %w", rewriteErr))
-			return
-		}
-		if !app.epoch.valid(generation) {
-			return
-		}
-		answer.Result = fixed
-		answer.Intent = "edit"
-	}
 	editable := isSafelyEditableControl(sel.TargetWindow)
 	browserSurface := isBrowserEditorSurface(sel.TargetWindow)
-	action := routeTask(answer, instruction, editable, browserSurface)
-	app.logger.Printf("route=%s intent=%s native_editable=%t browser_surface=%t voice_edit=%t voice_translate=%t", action, answer.Intent, editable, browserSurface, clearlyRequestsEdit(instruction), clearlyRequestsTranslation(instruction))
-	allowApply := action == "replace" || action == "try_replace" || answer.Intent == "edit" || answer.Intent == "translate"
+	action := textedit.RouteTask(answer, instruction, editable)
+	app.logger.Printf("route=%s intent=%s native_editable=%t browser_surface=%t", action, answer.Intent, editable, browserSurface)
+	allowApply := action == textedit.Replace || action == textedit.TryReplace
 	app.rememberResult("AI "+answer.Intent, answer.Result)
-	if action == "replace" || action == "try_replace" {
+	if allowApply {
 		app.postHandyPhase(statusApplying, generation)
 		startedPaste := time.Now()
 		// All unknown controls receive the same pre/post paste checks as a browser.
-		e = replaceSelectionWithGuard(app.Window, sel, answer.Result, app.cfg, action == "try_replace", func() bool { return app.epoch.valid(generation) })
+		e = replaceSelectionWithGuard(app.Window, sel, answer.Result, app.cfg, action == textedit.TryReplace, func() bool { return app.epoch.valid(generation) })
 		app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
 		if e == nil {
 			app.setStatus(traySuccess)
