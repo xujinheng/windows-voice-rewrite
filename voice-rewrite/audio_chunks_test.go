@@ -26,7 +26,7 @@ func TestLongAudioChunksNeverDropSamples(t *testing.T) {
 		t.Fatal("lost or reordered samples")
 	}
 	for _, part := range parts {
-		if len(part) == 0 || len(part) > asrChunkSeconds*audio.PCMBytesPerSecond || len(part)%2 != 0 {
+		if len(part) == 0 || len(part) > audio.ASRChunkSeconds*audio.PCMBytesPerSecond || len(part)%2 != 0 {
 			t.Fatalf("invalid PCM chunk length: %d", len(part))
 		}
 	}
