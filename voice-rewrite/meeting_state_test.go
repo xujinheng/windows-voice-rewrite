@@ -1,6 +1,7 @@
 package main
 
 import (
+	meetingcore "voicerewrite/internal/core/meeting"
 	"context"
 	"errors"
 	"strings"
@@ -150,14 +151,14 @@ func TestMeetingAdjustablePaneLayout(t *testing.T) {
 		{"captions only", true, false},
 	} {
 		for _, space := range []int32{300, 440, 700} {
-			heights := meetingPaneHeights(space, meetingDefaultPaneWeights, mode.captionsOnly, mode.expanded)
-			visible := meetingVisiblePanes(mode.captionsOnly, mode.expanded)
+			heights := meetingcore.PaneHeights(space, meetingcore.DefaultPaneWeights, mode.captionsOnly, mode.expanded)
+			visible := meetingcore.VisiblePanes(mode.captionsOnly, mode.expanded)
 			var total int32
 			for i, height := range heights {
 				if !visible[i] && height != 0 {
 					t.Fatalf("%s: hidden pane %d took %d px", mode.name, i, height)
 				}
-				if visible[i] && height < meetingPaneMinimums[i] {
+				if visible[i] && height < meetingcore.PaneMinimums[i] {
 					t.Fatalf("%s: pane %d too short %d", mode.name, i, height)
 				}
 				total += height
@@ -180,33 +181,33 @@ func TestMeetingDraggableDividersAreIndependentAndConstrained(t *testing.T) {
 		{true, false, []int{0, 1}},
 	} {
 		for _, divider := range mode.dividers {
-			weights := meetingDefaultPaneWeights
-			before := meetingPaneHeights(600, weights, mode.captionsOnly, mode.expanded)
-			a, b, ok := meetingDividerPair(divider, mode.captionsOnly, mode.expanded)
+			weights := meetingcore.DefaultPaneWeights
+			before := meetingcore.PaneHeights(600, weights, mode.captionsOnly, mode.expanded)
+			a, b, ok := meetingcore.DividerPair(divider, mode.captionsOnly, mode.expanded)
 			if !ok {
 				t.Fatalf("divider %d unavailable", divider)
 			}
-			weights = meetingDragPaneWeights(weights, before, mode.captionsOnly, mode.expanded, divider, 16)
-			after := meetingPaneHeights(600, weights, mode.captionsOnly, mode.expanded)
+			weights = meetingcore.DragPaneWeights(weights, before, mode.captionsOnly, mode.expanded, divider, 16)
+			after := meetingcore.PaneHeights(600, weights, mode.captionsOnly, mode.expanded)
 			if after[a] != before[a]+16 || after[b] != before[b]-16 {
 				t.Fatalf("divider %d moved wrong panes: before %v after %v", divider, before, after)
 			}
-			for i := 0; i < meetingPaneCount; i++ {
+			for i := 0; i < meetingcore.PaneCount; i++ {
 				if i != a && i != b && before[i] != after[i] {
 					t.Fatalf("divider %d disturbed pane %d: %v -> %v", divider, i, before, after)
 				}
 			}
-			weights = meetingDragPaneWeights(weights, after, mode.captionsOnly, mode.expanded, divider, 10000)
-			clamped := meetingPaneHeights(600, weights, mode.captionsOnly, mode.expanded)
-			if clamped[b] < meetingPaneMinimums[b] {
+			weights = meetingcore.DragPaneWeights(weights, after, mode.captionsOnly, mode.expanded, divider, 10000)
+			clamped := meetingcore.PaneHeights(600, weights, mode.captionsOnly, mode.expanded)
+			if clamped[b] < meetingcore.PaneMinimums[b] {
 				t.Fatalf("divider %d violated min height: %v", divider, clamped)
 			}
 		}
 	}
-	if _, _, ok := meetingDividerPair(3, false, true); ok {
+	if _, _, ok := meetingcore.DividerPair(3, false, true); ok {
 		t.Fatal("reply divider must hide when English is expanded")
 	}
-	if _, _, ok := meetingDividerPair(2, true, false); ok {
+	if _, _, ok := meetingcore.DividerPair(2, true, false); ok {
 		t.Fatal("assistant divider must hide in captions-only mode")
 	}
 }
