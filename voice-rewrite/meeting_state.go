@@ -138,6 +138,13 @@ func buildMeetingReadingPanels(captions []meetingCaption) meetingReadingPanels {
 		result.hint = "识别中 · 内容可能微调"
 	case meetingNeedsReply(current.source):
 		result.hint = "可能在提问 · 可准备回复"
+	case strings.Contains(strings.ToLower(current.source), "schedule") ||
+		strings.Contains(strings.ToLower(current.source), "timeline") ||
+		strings.Contains(strings.ToLower(current.source), "deadline"):
+		result.hint = "提到了时间安排"
+	case strings.Contains(strings.ToLower(current.source), "delay") ||
+		strings.Contains(strings.ToLower(current.source), "risk"):
+		result.hint = "提到了风险或延期"
 	default:
 		result.hint = "已完成 · 当前发言"
 	}
@@ -179,6 +186,14 @@ func meetingVoiceMode(dictation bool) string {
 		return "express"
 	}
 	return "compose"
+}
+
+// Only new completed history turns count as unread while a reader is away.
+func meetingUnreadHistory(unread, priorCount, nextCount int, following bool) int {
+	if following {
+		return 0
+	}
+	return unread + max(0, nextCount-priorCount)
 }
 
 func meetingFollowLatest(current, moved, atBottom bool) bool {
