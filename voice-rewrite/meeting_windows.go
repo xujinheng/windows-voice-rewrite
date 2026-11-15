@@ -3,6 +3,7 @@
 package main
 
 import (
+	"voicerewrite/internal/core/audio"
 	"context"
 	"errors"
 	"fmt"
@@ -119,7 +120,7 @@ func (s *meetingSession) start(pid uint32) {
 					continue
 				}
 			}
-			var seg meetingSegmenter
+			var seg audio.Segmenter
 			var id uint64
 			var lastMeter time.Time
 			err := captureMeetingAudio(work, pid, func() { s.applyWork(epoch, func() { s.view.status = "正在聆听 · 按住听写键说中文" }) }, func(frame []byte) {
@@ -127,20 +128,20 @@ func (s *meetingSession) start(pid uint32) {
 					return
 				}
 				now := time.Now()
-				level := meetingAudioLevel(frame)
+				level := audio.Level(frame)
 				s.mu.Lock()
 				if level >= 4 {
 					s.lastVoice = now
 				}
 				elapsed := time.Duration(s.view.metrics.ASRDoneMS+s.view.metrics.TranslationDoneMS) * time.Millisecond
 				s.mu.Unlock()
-				seg.setPreviewInterval(meetingPreviewInterval(elapsed))
+				seg.SetPreviewInterval(meetingPreviewInterval(elapsed))
 				if now.Sub(lastMeter) >= 150*time.Millisecond {
 					lastMeter = now
 					pending := len(turns) + len(previews) + len(captions) + s.scheduler.pending()
 					s.applyWork(epoch, func() { s.view.level = level; s.view.metrics.Pending = pending })
 				}
-				started, pcm := seg.push(frame)
+				started, pcm := seg.Push(frame)
 				if started {
 					s.applyWork(epoch, func() {
 						s.turnID++
@@ -154,7 +155,7 @@ func (s *meetingSession) start(pid uint32) {
 				}
 				final := pcm != nil
 				if !final {
-					pcm = seg.preview()
+					pcm = seg.Preview()
 				}
 				if pcm != nil {
 					job := meetingAudioTurn{final: final, id: id, epoch: epoch, ctx: work, pcm: pcm, ended: now}
