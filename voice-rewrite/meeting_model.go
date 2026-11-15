@@ -297,8 +297,8 @@ func meetingSystemPrompt(mode string) string {
 	return meetingPrompt
 }
 
-var meetingCaptionGateMarker = regexp.MustCompile(`(?i)\\bGATE(?:\\s*<TAB>\\s*|[\\t ]+)(?:YES|NO)\\b`)
-var meetingCaptionLeadingMarker = regexp.MustCompile(`(?i)^(?:ZH|SAY|ONE|TWO|THREE|TIP)(?:\\s*<TAB>\\s*|\\t+)\\s*`)
+var meetingCaptionGateMarker = regexp.MustCompile(`(?i)\bGATE(?:\s*<TAB>\s*|[\t ]+)(?:YES|NO)\b`)
+var meetingCaptionLeadingMarker = regexp.MustCompile(`(?i)^(?:ZH|SAY|ONE|TWO|THREE|TIP)(?:\s*<TAB>\s*|\t+)\s*`)
 
 func cleanMeetingCaption(text string) string {
 	text = strings.TrimSpace(visibleMeetingText(text))
