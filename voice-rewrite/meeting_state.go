@@ -220,6 +220,31 @@ func meetingUsesConversationContext(spoken string) bool {
 
 // A finished voice request must be visible even if the user is listening in
 // captions-only mode. A background update never steals the user's view.
+// Keep progress/error details subordinate to the last copyable English.
+func meetingExpressionHeading(status string, hasResult bool) string {
+	if strings.TrimSpace(status) == "" {
+		return "我的英文表达"
+	}
+	if hasResult {
+		return "我的英文表达 · 上次结果仍可复制"
+	}
+	return "我的英文表达 · 正在准备"
+}
+
+func meetingExpressionDetail(status, source string) string {
+	status, source = strings.TrimSpace(status), strings.TrimSpace(source)
+	switch {
+	case status != "" && source != "":
+		return status + "\r\n已识别 · " + source
+	case status != "":
+		return status
+	case source != "":
+		return "已识别 · " + source
+	default:
+		return "语音原话会显示在这里"
+	}
+}
+
 func meetingExpressionFocus(completed, newResult, captionsOnly, expanded bool) (bool, bool) {
 	if !completed || !newResult {
 		return captionsOnly, expanded
