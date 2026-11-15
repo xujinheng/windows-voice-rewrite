@@ -182,7 +182,28 @@ func meetingTranslationFitsSource(source, translated string) bool {
 	return len([]rune(translated)) <= max(48, len([]rune(source))*2)
 }
 
-// A meeting has two independent speaking actions, neither requiring a selection.
+// The English answer can take most of the window while the user reads it.
+// Heights are in logical 96-DPI pixels, so the layout can be regression-tested.
+type meetingAssistantHeights struct {
+	history, reply, expression, source int32
+}
+
+func meetingPanelHeights(space int32, expanded bool) meetingAssistantHeights {
+	if expanded {
+		history := max(int32(52), space*24/100)
+		expression := max(int32(70), space-history-32)
+		return meetingAssistantHeights{history: history, expression: expression, source: 32}
+	}
+	// Normal mode: reserve three button rows, one label and spacing.
+	budget := max(int32(110), space-160-52)
+	reply := min(int32(90), max(int32(42), budget/3))
+	expression := min(int32(172), max(int32(72), budget-reply))
+	return meetingAssistantHeights{
+		history: max(int32(30), space-160-reply-expression),
+		reply: reply, expression: expression, source: 28,
+	}
+}
+
 // Conversation is useful for pronouns and references, not general knowledge.
 // Strip it for standalone requests so a project-specific profile cannot
 // monopolize factual answers or casual speaking tasks.
