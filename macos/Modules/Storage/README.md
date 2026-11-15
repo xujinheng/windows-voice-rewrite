@@ -34,14 +34,14 @@ entitlements at integration time. No insecure fallback is provided.
     // On removal: try keychain.delete(.asr)
 
     let factory = HelperConfigFactory(credentials: keychain)
-    try factory.withEphemeralConfig(settings: settings) { config in
+    try factory.withEphemeralConfig(settings: settings, operation: .transcribe) { config in
         // Add config to one in-memory Go Helper IPC request.
         // Serialize only to the pipe, never disk/logs/UserDefaults.
     }
 
 Core applies the remaining platform-neutral defaults. The SettingsStore only
 accepts MacSettings and cannot persist an ephemeral Helper config dictionary.
-Missing Keychain entries fail closed before invoking the Helper.
+Missing API keys are represented as empty strings for local unauthenticated providers. A transcription reads only the ASR credential; a selected-text task reads only the LLM credential. Locked, denied, corrupt or unavailable Keychain access still fails closed before invoking the Helper.
 
 ## Security boundaries
 
@@ -63,7 +63,7 @@ locked/interaction-required, denied, unavailable and unknown OSStatus errors
 are surfaced distinctly. The implementation never silently falls back to
 plaintext or a fake cipher.
 
-The ephemeral IPC config is deliberately not Codable. Never print, log, persist
+The ephemeral IPC config is deliberately not Codable. Only the relevant provider key is sent per operation; the other key is empty. Never print, log, persist
 or embed it in crash reports. macOS host app signing and sandbox Keychain
 entitlements are outside this module's file ownership and must be verified
 during integration. The opt-in integration test requires real macOS access.
