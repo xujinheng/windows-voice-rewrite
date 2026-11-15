@@ -262,7 +262,7 @@ func TestMeetingTranslationVersionIsVisibleToReader(t *testing.T) {
 	if ready.hint != "已确认 · 可以放心阅读" {
 		t.Fatalf("completed translation incorrectly marked pending: %q", ready.hint)
 	}
-	changed := reviseMeetingCaption(meetingCaption{source: "I can start Monday", chinese: "我周一可以开始", translatedFrom: "I can start Monday"}, 1, "I can start Tuesday", true)
+	changed := reviseMeetingCaption(meetingCaption{id: 1, source: "I can start Monday", chinese: "我周一可以开始", translatedFrom: "I can start Monday"}, 1, "I can start Tuesday", true)
 	if changed.chinese != translated.chinese || changed.translatedFrom != translated.translatedFrom {
 		t.Fatalf("changing ASR erased the last readable Chinese version: %#v", changed)
 	}
