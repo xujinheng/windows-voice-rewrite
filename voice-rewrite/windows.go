@@ -489,7 +489,7 @@ func runApp() {
 		if cfg.RecordMode == "hold" && (holdIsDictation || holdMeeting != nil) {
 			app.postHandyPhase(statusProcessing, holdGeneration)
 			if holdMeeting != nil {
-				if holdMeeting.ctx.Err() == nil {
+				if holdMeeting.runtime.Context().Err() == nil {
 					mode := meetingcore.VoiceMode(holdIsDictation)
 					go holdMeeting.express(app, rec, holdGeneration, mode)
 				} else {
