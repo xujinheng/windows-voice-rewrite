@@ -233,7 +233,7 @@ func TestMeetingSchedulerCanceledWaiterRemoved(t *testing.T) {
 		t.Fatal("accepted canceled job")
 	}
 	release()
-	if g.pending() != 0 {
+	if g.Pending() != 0 {
 		t.Fatal("leaked waiter")
 	}
 }
