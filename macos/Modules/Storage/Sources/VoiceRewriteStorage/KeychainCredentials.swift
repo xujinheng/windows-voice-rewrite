@@ -181,8 +181,16 @@ public struct HelperConfigFactory {
     ) throws -> Result {
         try settings.validateForPersistence()
         // Do not read or transmit a credential that the requested operation will not use.
-        let asr = operation == .transcribe ? try credentialOrEmpty(.asr) : ""
-        let llm = operation == .selectedTask ? try credentialOrEmpty(.llm) : ""
+        let asr: String
+        let llm: String
+        switch operation {
+        case .transcribe:
+            asr = try credentialOrEmpty(.asr)
+            llm = ""
+        case .selectedTask:
+            asr = ""
+            llm = try credentialOrEmpty(.llm)
+        }
         return try performRequest([
             "asr_base_url": settings.asrBaseURL,
             "llm_base_url": settings.llmBaseURL,
