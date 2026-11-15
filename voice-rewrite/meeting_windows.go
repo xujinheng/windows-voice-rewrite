@@ -195,7 +195,8 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 		label = "正在理解表达意图…"
 	}
 	s.applyExpression(epoch, serial, func() {
-		s.view.expression = meetingLine{}
+		// Keep the previous completed English available to read and copy
+		// while the next recognition/model request is running.
 		s.view.expressionSource = ""
 		s.view.expressionStatus = label
 	})
@@ -265,12 +266,7 @@ func (s *meetingSession) expressionFailed(app *appState, generation, epoch, seri
 	message := label + "：" + cause.Error()
 	s.applyExpression(epoch, serial, func() {
 		s.view.expressionStatus = message
-		if s.view.expressionSource != "" {
-			s.view.expressionStatus += "\r\n\r\n已识别 · " + s.view.expressionSource
-		}
-		if !s.view.expression.complete {
-			s.view.expression = meetingLine{}
-		}
+
 	})
 	app.fail(fmt.Errorf("%s: %w", label, cause))
 	app.postHandyPhase(statusError, generation)
