@@ -29,7 +29,7 @@ macOS CI also compiles the core for Darwin amd64 and arm64.
 | Application orchestration | `meeting_session.go`, `meeting_state.go`, `intent.go` | Session lifecycle, native Meeting HUD view records and top-level dictation/edit coordination; consumes core speech, text-edit and Meeting services |
 | Configuration/credentials | `config.go`, `config_store.go`, `secrets_windows.go` | Platform storage paths, credential persistence and Windows DPAPI; settings data type lives in `core/config` |
 
-The native application session lifecycle and HUD view data remain in `package main`; the ASR, text-edit and Meeting model clients are reusable core packages. The Meeting session receives configuration persistence as a callback supplied by its host application. A macOS application can use the shared services directly with its own audio source, GUI, input and secrets adapter. Reusing the entire Meeting session orchestration independently still requires separating its configuration persistence and native presentation state.
+The native application session lifecycle and HUD view data remain in `package main`; the ASR, text-edit and Meeting model clients are reusable core packages. The Meeting session receives configuration persistence as a callback supplied by its host application. A macOS application can use the shared services directly with its own audio source, GUI, input and secrets adapter. Reusing the entire Meeting session lifecycle on macOS still requires extracting the orchestration and HUD view state from `package main`.
 
 ## Data flow
 
