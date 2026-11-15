@@ -40,7 +40,8 @@ func reviseMeetingCaption(old meetingCaption, id uint64, text string, final bool
 		return old
 	}
 	out := meetingCaption{id: id, source: text, final: final}
-	if old.source == text {
+	if old.id == id {
+		// Keep the last readable translation until the replacement arrives.
 		out.chinese = old.chinese
 	}
 	if final {
@@ -64,9 +65,44 @@ func reviseMeetingCaption(old meetingCaption, id uint64, text string, final bool
 		if end > 0 {
 			out.stable = string(b[:end])
 		}
+		if strings.HasPrefix(text, old.stable) && len([]rune(old.stable)) > len([]rune(out.stable)) {
+			out.stable = old.stable
+		}
 	}
 	out.live = strings.TrimPrefix(text, out.stable)
 	return out
+}
+
+// meetingTranscript is one continuous reading surface. An unfinished line stays
+// at the bottom of the timeline instead of jumping between two text boxes.
+func meetingTranscript(captions []meetingCaption) (string, bool) {
+	var entries []string
+	listening := false
+	for _, line := range captions {
+		source := strings.TrimSpace(line.source)
+		if source == "" {
+			continue
+		}
+		translation := strings.TrimSpace(line.chinese)
+		if line.final {
+			if translation != "" {
+				entries = append(entries, translation+"\r\n"+source)
+			} else {
+				entries = append(entries, source)
+			}
+			continue
+		}
+		listening = true
+		if translation != "" {
+			entries = append(entries, translation+"\r\n"+source+"  · 识别中")
+		} else {
+			entries = append(entries, source+"  · 识别中")
+		}
+	}
+	if len(entries) == 0 {
+		return "等待会议音频…", false
+	}
+	return strings.Join(entries, "\r\n\r\n"), listening
 }
 
 func meetingShouldReply(latest string, prior []string, semantic bool) bool {
