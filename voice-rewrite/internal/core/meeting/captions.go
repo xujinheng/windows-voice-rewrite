@@ -16,6 +16,8 @@ type Caption struct {
 	Live           string
 	Final          bool
 }
+
+// ReviseCaption keeps the most recent readable translation while ASR evolves.
 func ReviseCaption(old Caption, id uint64, text string, final bool) Caption {
 	if old.ID == id && old.Final {
 		return old
@@ -55,9 +57,8 @@ func ReviseCaption(old Caption, id uint64, text string, final bool) Caption {
 	return out
 }
 
-// ReadingPanels keeps the active utterance outside the scrollable
-// history, so recognition and translation updates cannot move older text.
-// ReadingPanels keeps ongoing ASR and prior completed history separate.
+// ReadingPanels keeps current recognition outside scrollable history, so
+// interim transcription and translation cannot move older text.
 type ReadingPanels struct {
 	English      string
 	Chinese      string
@@ -130,7 +131,7 @@ func LatestCompletedCaption(captions []Caption) (Caption, bool) {
 }
 
 // UpsertCaption keeps completed utterances immutable and preserves the last
-	// readable translation while interim ASR revises the source transcript.
+// readable translation while interim ASR revises the source transcript.
 func UpsertCaption(captions []Caption, id uint64, text string, final, confirmed bool) []Caption {
 	if strings.TrimSpace(text) == "" {
 		return captions
