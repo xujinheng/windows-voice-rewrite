@@ -1,0 +1,67 @@
+name: Windows Meeting E2E
+
+on:
+  pull_request:
+    paths:
+      - 'voice-rewrite/**'
+      - 'scripts/test-meeting-ui.ps1'
+      - '.github/workflows/meeting-ui.yml'
+  push:
+    branches: [meeting-preview]
+    paths:
+      - 'voice-rewrite/**'
+      - 'scripts/test-meeting-ui.ps1'
+      - '.github/workflows/meeting-ui.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meeting-ui-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  meeting-ui:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: voice-rewrite/go.mod
+      - name: Verify Go formatting
+        working-directory: voice-rewrite
+        shell: pwsh
+        run: |
+          $unformatted = @(gofmt -l .)
+          if ($unformatted.Count -gt 0) {
+            gofmt -d $unformatted
+            throw "Go files need formatting: $($unformatted -join ', ')"
+          }
+      - name: Drive production Win32 Meeting controls with live transcript updates
+        working-directory: voice-rewrite
+        shell: pwsh
+        env:
+          VOICEREWRITE_MEETING_E2E: '1'
+        run: |
+          go test -count=1 -timeout 3m -run '^TestMeetingWindowsE2E$' -v .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build actual Windows GUI executable
+        working-directory: voice-rewrite
+        shell: pwsh
+        run: |
+          go build -trimpath -ldflags '-H=windowsgui' -o VoiceRewrite.exe .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Exercise Meeting window buttons and capture screenshots
+        shell: pwsh
+        run: ./scripts/test-meeting-ui.ps1
+      - name: Upload native Meeting screenshots and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-Meeting-E2E-${{ github.run_id }}
+          path: meeting-e2e/
+          if-no-files-found: warn
+          retention-days: 7
