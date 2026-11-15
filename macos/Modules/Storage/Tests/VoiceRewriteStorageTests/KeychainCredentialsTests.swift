@@ -30,6 +30,10 @@ final class KeychainCredentialsTests: XCTestCase {
             XCTAssertEqual(config["asr_api_key"] as? String, "")
             XCTAssertEqual(config["llm_api_key"] as? String, "fixture-llm-only")
         }
+        try factory.withEphemeralConfig(settings: settings, operation: .spokenSelectedTask) { config in
+            XCTAssertEqual(config["asr_api_key"] as? String, "fixture-asr-only")
+            XCTAssertEqual(config["llm_api_key"] as? String, "fixture-llm-only")
+        }
         let stored = String(decoding: try JSONEncoder().encode(settings), as: UTF8.self)
         XCTAssertFalse(stored.contains("api_key"))
         XCTAssertFalse(stored.contains("fixture-"))
@@ -40,7 +44,7 @@ final class KeychainCredentialsTests: XCTestCase {
             func read(_ account: CredentialAccount) throws -> String { throw CredentialError.notFound }
         }
         let factory = HelperConfigFactory(credentials: Missing())
-        for operation in [HelperOperation.transcribe, .selectedTask] {
+        for operation in [HelperOperation.transcribe, .selectedTask, .spokenSelectedTask] {
             try factory.withEphemeralConfig(settings: .defaults, operation: operation) { config in
                 XCTAssertEqual(config["asr_api_key"] as? String, "")
                 XCTAssertEqual(config["llm_api_key"] as? String, "")
