@@ -289,9 +289,7 @@ func (p *meetingHUD) setText(control uintptr, value string, preserve bool) {
 	// and avoids the top-of-document jump during active transcription.
 	first, _, _ := procSendMessage.Call(control, 0x00CE, 0, 0) // EM_GETFIRSTVISIBLELINE
 	if control == p.captions && p.transcriptDrawn {
-		if p.transcriptFirstLine != first {
-			p.followLatest = p.transcriptAtBottom(control)
-		}
+		p.followLatest = meetingFollowLatest(p.followLatest, p.transcriptFirstLine != first, p.transcriptAtBottom(control))
 	}
 	follow := control == p.captions && p.followLatest
 	var start, end uint32
