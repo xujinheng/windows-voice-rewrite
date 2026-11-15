@@ -179,7 +179,7 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         observer = created
         observedApplication = app
         observedElement = identity.element
-        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), kCFRunLoopCommonModes)
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), CFRunLoopMode.commonModes)
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: nil
         ) { [tracker] _ in tracker.invalidate() }
@@ -224,7 +224,7 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
 
     func stopMonitoring() {
         if let observer {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), kCFRunLoopCommonModes)
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), CFRunLoopMode.commonModes)
         }
         if let workspaceObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)
