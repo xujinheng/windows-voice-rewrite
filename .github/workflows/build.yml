@@ -34,6 +34,23 @@ jobs:
       - name: Test core with race detector
         working-directory: voice-rewrite
         run: go test -race -count=1 ./...
+  test-core-macos:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: voice-rewrite/go.mod
+      - name: Execute portable core tests on real macOS
+        working-directory: voice-rewrite
+        run: go test -count=1 ./internal/core/...
+      - name: Verify portable core compiles for Apple Silicon and Intel
+        working-directory: voice-rewrite
+        run: |
+          GOOS=darwin GOARCH=arm64 go build ./internal/core/...
+          GOOS=darwin GOARCH=amd64 go build ./internal/core/...
   build:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -182,7 +199,7 @@ jobs:
           if-no-files-found: error
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test-core, build, build-oneclick]
+    needs: [test-core, test-core-macos, build, build-oneclick]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
