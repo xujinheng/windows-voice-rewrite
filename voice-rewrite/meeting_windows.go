@@ -112,85 +112,6 @@ func newMeetingSession(app *appState, demo bool) *meetingSession {
 	return s
 }
 
-func (s *meetingSession) start(pid uint32) {
-	turns := make(chan meetingAudioTurn, 2)
-	previews := make(chan meetingAudioTurn, 1)
-	captions := make(chan meetingCaptionJob, 1)
-	go s.transcribeTurns(turns, previews, captions)
-	go s.translateTurns(captions)
-	go func() {
-		for s.ctx.Err() == nil {
-			s.mu.Lock()
-			paused := s.view.capturePaused
-			work, epoch := s.work, s.epoch
-			s.mu.Unlock()
-			if paused {
-				select {
-				case <-s.ctx.Done():
-					return
-				case <-s.wake:
-					continue
-				}
-			}
-			var seg audio.Segmenter
-			var id uint64
-			var lastMeter time.Time
-			var stream audio.FrameSource = windowsProcessAudioSource{pid: pid}
-			err := stream.Stream(work, func() { s.applyWork(epoch, func() { s.view.status = "正在聆听 · 按住听写键说中文" }) }, func(frame []byte) {
-				if work.Err() != nil {
-					return
-				}
-				now := time.Now()
-				level := audio.Level(frame)
-				s.mu.Lock()
-				if level >= 4 {
-					s.lastVoice = now
-				}
-				elapsed := time.Duration(s.view.metrics.ASRDoneMS+s.view.metrics.TranslationDoneMS) * time.Millisecond
-				s.mu.Unlock()
-				seg.SetPreviewInterval(meetingPreviewInterval(elapsed))
-				if now.Sub(lastMeter) >= 150*time.Millisecond {
-					lastMeter = now
-					pending := len(turns) + len(previews) + len(captions) + s.scheduler.Pending()
-					s.applyWork(epoch, func() { s.view.level = level; s.view.metrics.Pending = pending })
-				}
-				started, pcm := seg.Push(frame)
-				if started {
-					s.applyWork(epoch, func() {
-						s.turnID++
-						id = s.turnID
-						s.replySerial++
-						s.discardPartialLocked()
-						if s.stopReply != nil {
-							s.stopReply()
-						}
-					})
-				}
-				final := pcm != nil
-				if !final {
-					pcm = seg.Preview()
-				}
-				if pcm != nil {
-					job := meetingAudioTurn{final: final, id: id, epoch: epoch, ctx: work, pcm: pcm, ended: now}
-					if final {
-						s.queueAudio(turns, job)
-					} else {
-						s.queueAudio(previews, job)
-					}
-				}
-			})
-			if work.Err() != nil {
-				continue
-			}
-			if err == nil {
-				err = errors.New("音频采集意外结束")
-			}
-			s.applyWork(epoch, func() { s.captureErr = err })
-			return
-		}
-	}()
-}
-
 func (s *meetingSession) express(app *appState, rec *audioRecorder, generation uint64, mode string) {
 	defer app.busy.Store(false)
 	result := <-rec.result
@@ -319,7 +240,7 @@ func (a *appState) beginMeeting(pid uint32, demo bool) {
 	activeMeetingHUD.app = a
 	procSetTimer.Call(activeMeetingHUD.window, 1, 100, 0)
 	if !demo {
-		s.start(pid)
+		s.start(windowsProcessAudioSource{pid: pid})
 	}
 }
 
