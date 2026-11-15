@@ -10,9 +10,9 @@ import (
 )
 
 type meetingCaption struct {
-	id                            uint64
+	id                                            uint64
 	source, chinese, translatedFrom, stable, live string
-	final                         bool
+	final                                         bool
 }
 
 type meetingMetrics struct {
