@@ -13,32 +13,32 @@ import (
 )
 
 type meetingSession struct {
-	expressionSerial             uint64
-	stopExpression               context.CancelFunc
-	activeASRCancel              context.CancelFunc
-	activeASRID, latestFinalID   uint64
-	activeASRFinal               bool
-	ctx                          context.Context
-	stop                         context.CancelFunc
-	cfg                          Config
-	logger                       func(string, ...any)
-	mu                           sync.Mutex
-	view                         meetingView
-	prior                        []string
-	turnID, epoch uint64
-	work                         context.Context
-	cancelWork                   context.CancelFunc
-	wake                         chan struct{}
-	stopReply                    context.CancelFunc
-	stopCaption                  context.CancelFunc
-	captionID                    uint64
-	captureErr                   error
-	dirty, demo                  bool
-	modelMu                      sync.Mutex
-	model                        string
-	scheduler                    meetingcore.Scheduler
-	onConfig                     func(Config)
-	saveConfiguration            func(Config) error
+	expressionSerial           uint64
+	stopExpression             context.CancelFunc
+	activeASRCancel            context.CancelFunc
+	activeASRID, latestFinalID uint64
+	activeASRFinal             bool
+	ctx                        context.Context
+	stop                       context.CancelFunc
+	cfg                        Config
+	logger                     func(string, ...any)
+	mu                         sync.Mutex
+	view                       meetingView
+	prior                      []string
+	turnID, epoch              uint64
+	work                       context.Context
+	cancelWork                 context.CancelFunc
+	wake                       chan struct{}
+	stopReply                  context.CancelFunc
+	stopCaption                context.CancelFunc
+	captionID                  uint64
+	captureErr                 error
+	dirty, demo                bool
+	modelMu                    sync.Mutex
+	model                      string
+	scheduler                  meetingcore.Scheduler
+	onConfig                   func(Config)
+	saveConfiguration          func(Config) error
 }
 
 type meetingAudioTurn struct {
