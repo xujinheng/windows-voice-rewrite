@@ -1,7 +1,6 @@
 package meeting
 
 import (
-	coreconfig "voicerewrite/internal/core/config"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	coreconfig "voicerewrite/internal/core/config"
 )
 
 func TestMeetingCaptionGateDoesNotLeak(t *testing.T) {
