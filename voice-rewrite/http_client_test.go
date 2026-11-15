@@ -1,6 +1,7 @@
 package main
 
 import (
+	"voicerewrite/internal/core/provider"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +18,7 @@ func TestProviderRefusesRedirectsToUnconfiguredHosts(t *testing.T) {
 		http.Redirect(w, r, dest.URL, http.StatusTemporaryRedirect)
 	}))
 	defer source.Close()
-	response, err := requestClient(time.Second).Post(source.URL, "text/plain", strings.NewReader("private transcript"))
+	response, err := provider.RequestClient(time.Second).Post(source.URL, "text/plain", strings.NewReader("private transcript"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,16 +31,16 @@ func TestProviderRefusesRedirectsToUnconfiguredHosts(t *testing.T) {
 
 func TestServerURLsRejectSecretBearingComponents(t *testing.T) {
 	for _, bad := range []string{"http://a:pass@127.0.0.1:8080/v1", "http://localhost:1234/v1?api_key=secret", "http://localhost/v1#fragment", "file:///tmp/voice"} {
-		if validateServerBaseURL(bad) == nil {
+		if provider.ValidateBaseURL(bad) == nil {
 			t.Errorf("accepted %q", bad)
 		}
 	}
-	if err := validateServerBaseURL("http://127.0.0.1:8080/v1"); err != nil {
+	if err := provider.ValidateBaseURL("http://127.0.0.1:8080/v1"); err != nil {
 		t.Fatal(err)
 	}
 }
 func TestHTTPErrorDoesNotEchoProviderBody(t *testing.T) {
-	if strings.Contains(providerHTTPError("ASR", 415).Error(), "secret") {
+	if strings.Contains(provider.HTTPError("ASR", 415).Error(), "secret") {
 		t.Fatal("leaked error body")
 	}
 }
