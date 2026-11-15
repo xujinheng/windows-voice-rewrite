@@ -123,7 +123,7 @@ func TestMeetingLiteralAndIntentEnglishDoNotRequireSAYProtocol(t *testing.T) {
 func TestMeetingGeneralPurposeSpokenEnglishRequests(t *testing.T) {
 	cases := []struct {
 		name, spoken, reply string
-		usePrior bool
+		usePrior            bool
 	}{
 		{"factual information", "有多少印度人会说英语", "India's 2011 census counted around 129 million English speakers, about 10.6% of the population.", false},
 		{"unsolicited response", "我不想等他问我，我想补充这个观点", "I'd like to add something here.", false},
