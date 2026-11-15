@@ -3,6 +3,7 @@
 package main
 
 import (
+	"voicerewrite/internal/core/speech"
 	"context"
 	"errors"
 	"fmt"
@@ -149,7 +150,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 	cfg := s.configSnapshot()
 	err := s.runInference(ctx, meetingcore.PriorityExpress, "正在识别你的中文", func(active context.Context) error {
 		var e error
-		points, e = transcribe(active, cfg, result.pcm)
+		points, e = speech.Transcribe(active, cfg, result.pcm)
 		return e
 	})
 	if !app.epoch.valid(generation) || ctx.Err() != nil {
