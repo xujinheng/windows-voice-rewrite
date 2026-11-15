@@ -1,6 +1,7 @@
 package main
 
 import (
+	"voicerewrite/internal/core/provider"
 	"bufio"
 	"bytes"
 	"context"
@@ -213,7 +214,7 @@ func completeMeeting(ctx context.Context, cfg Config, query meetingQuery, emit f
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint(cfg.LLMBaseURL, "/chat/completions"), bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", provider.Endpoint(cfg.LLMBaseURL, "/chat/completions"), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -221,13 +222,13 @@ func completeMeeting(ctx context.Context, cfg Config, query meetingQuery, emit f
 	if cfg.LLMAPIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.LLMAPIKey)
 	}
-	resp, err := requestClient(30 * time.Second).Do(req)
+	resp, err := provider.RequestClient(30 * time.Second).Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return providerHTTPError("LLM", resp.StatusCode)
+		return provider.HTTPError("LLM", resp.StatusCode)
 	}
 
 	var caption strings.Builder
