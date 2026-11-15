@@ -1,55 +1,62 @@
 # Architecture
 
-VoiceRewrite runs a native Go/Win32 Windows application. Its reusable algorithms
-are organized as **platform-independent Go packages**, and Windows-specific
-capture, GUI, input, clipboard and encryption stay in the Windows shell.
+VoiceRewrite's runnable desktop application is a native Go/Win32 Windows application.
+Portable Go packages under `internal/core` contain reusable processing, model
+protocols and task orchestration. Platform adapters own device access, UI,
+input, configuration files and OS credential storage. There is no native
+macOS application in this repository.
 
 ## Portable core
 
-| Package | Owns | Dependencies |
-| --- | --- | --- |
-| `internal/core/audio` | 16 kHz PCM framing, voice segmentation, preview timing, stereo-to-mono resampling, chunking and transcript joining; `FrameSource` contract | Go standard library |
-| `internal/core/config` | Shared application settings schema and defaults; no persistence or credentials access | Go standard library |
-| `internal/core/speech` | WAV serialization, multipart ASR uploads, transcript cleaning, chunking and cancellation | `core/audio`, `core/config`, `core/provider` |
-| `internal/core/textedit` | Selected-text rewrite requests and response validation | `core/config`, `core/provider` |
-| `internal/core/meeting` | Streaming meeting ASR, completion protocol and prompts, caption/English interpretation, versioned caption state and reading projections, streamed reply batches and generation fencing, session work epochs, pause/resume and task cancellation, cross-platform audio stream segmentation and adaptive previews, history follow/unread policy, pane sizing/preferences and inference scheduler with priority preemption | `core/config`, `core/provider`, `core/speech` |
-| `internal/core/provider` | HTTP timeouts, redirect blocking, safe errors, URL validation, model discovery and reasoning-token stripping | `core/config` |
+| Package | Responsibility |
+| --- | --- |
+| `internal/core/audio` | Validate interleaved PCM16 formats and packet sizes; mix channels, resample to 16 kHz and assemble 20 ms mono frames; provide audio framing, voice segmentation, preview timing, transcript chunking and the `FrameSource` contract. |
+| `internal/core/config` | Application settings schema and defaults, JSON parsing/serialization, normalization, API base-URL validation and credential-field transformation callbacks. No filesystem access or OS encryption implementation. |
+| `internal/core/provider` | Safe HTTP clients, redirect blocking, bounded responses, model discovery, HTTP errors and reasoning-tag removal. |
+| `internal/core/speech` | WAV/multipart ASR requests, transcript processing, chunking and request cancellation. |
+| `internal/core/textedit` | Selected-text length/cancellation validation, intent classification and parsing, explicit-command write authorization, routing, plain-text rewrite and shared model completion transport. |
+| `internal/core/meeting` | Stream segmentation, adaptive ASR previews, session epochs/pause/resume/cancellation (`SessionRuntime`), bounded final/preview queues and revision-fenced caption translation (`Pipeline`), captions, replies, inference priorities, history and layout policies. |
 
-The core packages are tested as independent packages under Linux, Windows
-and macOS CI. No core package imports Win32, WASAPI, COM, user32 or a GUI API.
-macOS CI also compiles the core for Darwin amd64 and arm64.
+Core packages are built and tested without Win32, WASAPI, COM or native GUI
+imports. The CI boundary check compares core source/test file sets and direct
+platform API imports on Linux, Darwin and Windows. Linux runs race-enabled Go
+tests; a real macOS runner executes core tests and compiles the core for Darwin
+amd64 and arm64. These checks establish portable core compatibility, not a
+working macOS desktop application.
 
-## Platform integration
+## Native Windows integration
 
-| Layer | Current source | Responsibility |
-| --- | --- | --- |
-| Native audio adapter | `meeting_capture_windows.go`, `meeting_windows.go`, `microphone_windows.go` | WASAPI process loopback and microphone capture; expose normalized PCM frames through `audio.FrameSource` |
-| Native input/output | `mouse_windows.go`, `recording_windows.go`, `clipboard_windows.go`, `unicode_input_windows.go`, `uia_password_windows.go` | Global keys, selection, secure text insertion and clipboard |
-| Native UI | `meeting_hud_windows.go`, `settings_windows.go`, `popup_windows.go`, `tray_windows.go` | Win32 event loop, layout presentation and control dispatch |
-| Application orchestration | `meeting_session.go`, `meeting_state.go`, `intent.go` | Windows Meeting pipeline orchestration, native HUD view records and text-edit coordination; maps portable session, caption and reply state into Win32 controls |
-| Configuration/credentials | `config.go`, `config_store.go`, `secrets_windows.go` | Platform storage paths, credential persistence and Windows DPAPI; settings data type lives in `core/config` |
+| Area | Implementation and ownership |
+| --- | --- |
+| Meeting audio | `meeting_capture_windows.go` owns WASAPI process-loopback activation, COM buffers, events and process lifetime. It validates native packets before passing PCM16 data to `audio.PCMConverter`. `meeting_windows.go` and `microphone_windows.go` retain host device integration. |
+| Meeting coordinator | `meeting_session.go` constructs `meeting.Pipeline` and supplies inference, caption, metrics and HUD hooks. It retains host configuration snapshots, model scheduling, UI state and native presentation; `meeting_state.go` holds host view state. |
+| Text selection and insertion | `task_worker_windows.go` invokes `textedit.ResolveSelectedTask` and `textedit.RouteTask`. `clipboard_windows.go`, `uia_password_windows.go`, `unicode_input_windows.go`, `mouse_windows.go` and related Win32 code own foreground checks, clipboard restoration, guarded paste and input. |
+| Windows UI | `meeting_hud_windows.go`, `settings_windows.go`, `popup_windows.go`, `result_direct2d_windows.go`, `tray_windows.go` and their supporting Win32/Direct2D code render and dispatch native controls. |
+| Configuration and credentials | `config.go` exposes the shared settings model to the host. `config_store.go` owns user paths and private/atomic file operations; `secrets_windows.go` encrypts/decrypts credentials with Windows DPAPI. `secrets_other.go` is not a macOS Keychain adapter. |
 
-The Meeting work epoch, capture pause/resume state, expression generations and reply/translation cancellation are owned by `core/meeting.SessionRuntime`. Native HUD view data and audio/model orchestration remain in `package main`; ASR, text-edit and Meeting model clients are reusable core packages. The Meeting session receives configuration persistence as a callback supplied by its host application. A macOS application can use the shared services directly with its own audio source, GUI, input and secrets adapter. Reusing the complete Meeting pipeline on macOS requires moving the remaining audio/model orchestration out of `package main` and providing macOS-native UI and audio adapters.
-
-## Data flow
+## Meeting data flow
 
 ```text
-Win32 meeting process selector
-    -> Windows WASAPI FrameSource adapter
-    -> core/audio (PCM conversion)
-    -> core/meeting (audio stream segmentation, adaptive snapshots)
-    -> core/meeting (session runtime, epoch and cancellation control)
-    -> meeting_session (caption/reply inference queues and native HUD state)
-    -> core/speech + core/meeting (ASR, translation, English expression)
-    -> core/provider (model discovery, safe HTTP client)
-    -> core/meeting (caption/reply state, reading panels, English, scheduling, layout policies)
-    -> Windows Meeting HUD (native EDIT controls and drag dividers)
+Windows process selection and WASAPI capture
+    -> core/audio PCM16 validation, channel mixing and 16 kHz framing
+    -> core/meeting stream segmentation and adaptive audio turns
+    -> core/meeting SessionRuntime and Pipeline (epochs, ASR priority, revisions)
+    -> host inference hooks using core/speech, core/meeting and core/provider
+    -> core/meeting caption, translation and reply state
+    -> Windows native Meeting HUD
 ```
 
-The original application enforces its editor/selection target and task
-generation before text insertion. Text-selection content and meeting transcripts
-are untrusted input to the configured model services. Redirects to unconfigured
-model hosts are rejected. API keys are protected with Windows DPAPI.
+Selected text and meeting transcripts are untrusted model input. The HTTP
+client rejects cross-host redirects, and configuration validates the chosen
+API endpoints. Text replacement requires an explicit editing command and
+passes the native foreground/selection guard. Windows credentials are stored
+using the current user's DPAPI protection.
 
-For local setup see [README](README.md); for platform testing see
+A macOS host requires native audio/process capture, microphone, global input,
+Accessibility-based text selection and insertion, clipboard, Keychain,
+menu-bar/window UI and application lifecycle integrations. It must validate
+permissions, device behavior, native UI E2E and distribution signing on macOS
+before it can be considered a native application.
+
+For setup see [README](README.md); for platform and manual checks see
 [TESTING](TESTING.md) and [visual testing](VISUAL-TESTING.md).
