@@ -13,7 +13,7 @@ final class KeychainCredentialsTests: XCTestCase {
         XCTAssertEqual(CredentialError.from(status: -7), .osStatus(-7))
     }
 
-    func testHelperConfigIsEphemeralAndNeverInSettingsJSON() throws {
+    func testHelperConfigIsScopedAndNeverPersisted() throws {
         struct Fixtures: CredentialReading {
             func read(_ account: CredentialAccount) throws -> String {
                 account == .asr ? "fixture-asr-only" : "fixture-llm-only"
@@ -21,25 +21,70 @@ final class KeychainCredentialsTests: XCTestCase {
         }
         let settings = MacSettings.defaults
         let factory = HelperConfigFactory(credentials: Fixtures())
-        try factory.withEphemeralConfig(settings: settings) { config in
+        try factory.withEphemeralConfig(settings: settings, operation: .transcribe) { config in
             XCTAssertEqual(config["asr_api_key"] as? String, "fixture-asr-only")
-            XCTAssertEqual(config["llm_api_key"] as? String, "fixture-llm-only")
+            XCTAssertEqual(config["llm_api_key"] as? String, "")
             XCTAssertEqual(config["max_record_seconds"] as? Int, 60)
+        }
+        try factory.withEphemeralConfig(settings: settings, operation: .selectedTask) { config in
+            XCTAssertEqual(config["asr_api_key"] as? String, "")
+            XCTAssertEqual(config["llm_api_key"] as? String, "fixture-llm-only")
         }
         let stored = String(decoding: try JSONEncoder().encode(settings), as: UTF8.self)
         XCTAssertFalse(stored.contains("api_key"))
         XCTAssertFalse(stored.contains("fixture-"))
     }
 
-    func testMissingCredentialStopsHelperRequest() {
+    func testMissingProviderKeysAllowLocalServersWithoutBearerTokens() throws {
         struct Missing: CredentialReading {
             func read(_ account: CredentialAccount) throws -> String { throw CredentialError.notFound }
         }
-        var called = false
-        XCTAssertThrowsError(try HelperConfigFactory(credentials: Missing()).withEphemeralConfig(settings: .defaults) { _ in
-            called = true
-        }) { XCTAssertEqual($0 as? CredentialError, .notFound) }
-        XCTAssertFalse(called)
+        let factory = HelperConfigFactory(credentials: Missing())
+        for operation in [HelperOperation.transcribe, .selectedTask] {
+            try factory.withEphemeralConfig(settings: .defaults, operation: operation) { config in
+                XCTAssertEqual(config["asr_api_key"] as? String, "")
+                XCTAssertEqual(config["llm_api_key"] as? String, "")
+            }
+        }
+    }
+
+    func testUnrelatedKeychainAccountCannotBlockAnOperation() throws {
+        struct ForbidOther: CredentialReading {
+            let forbidden: CredentialAccount
+            func read(_ account: CredentialAccount) throws -> String {
+                if account == forbidden { throw CredentialError.accessDenied }
+                return account == .asr ? "fixture-asr" : "fixture-llm"
+            }
+        }
+        try HelperConfigFactory(credentials: ForbidOther(forbidden: .llm))
+            .withEphemeralConfig(settings: .defaults, operation: .transcribe) { config in
+                XCTAssertEqual(config["asr_api_key"] as? String, "fixture-asr")
+                XCTAssertEqual(config["llm_api_key"] as? String, "")
+            }
+        try HelperConfigFactory(credentials: ForbidOther(forbidden: .asr))
+            .withEphemeralConfig(settings: .defaults, operation: .selectedTask) { config in
+                XCTAssertEqual(config["asr_api_key"] as? String, "")
+                XCTAssertEqual(config["llm_api_key"] as? String, "fixture-llm")
+            }
+    }
+
+    func testRequiredKeychainErrorsStillFailClosed() {
+        struct Failing: CredentialReading {
+            let error: CredentialError
+            func read(_ account: CredentialAccount) throws -> String { throw error }
+        }
+        for operation in [HelperOperation.transcribe, .selectedTask] {
+            for failure in [CredentialError.accessDenied, .lockedOrInteractionRequired,
+                            .unavailable, .invalidStoredData, .osStatus(-7)] {
+                var requestWasConstructed = false
+                XCTAssertThrowsError(try HelperConfigFactory(credentials: Failing(error: failure))
+                    .withEphemeralConfig(settings: .defaults, operation: operation) { _ in
+                        requestWasConstructed = true
+                    }) { XCTAssertEqual($0 as? CredentialError, failure) }
+                XCTAssertFalse(requestWasConstructed)
+            }
+        }
+        XCTAssertTrue(CredentialError.accessDenied.localizedDescription.contains("Keychain"))
     }
 
     #if canImport(Security)
