@@ -522,7 +522,7 @@ final class WorkspaceModel: ObservableObject {
                                             insertion.snapshot, text: text, generation: insertion.generation)
                                         self.interactionStatus = "已安全插入原目标"
                                     } catch {
-                                        self.interactionStatus = "目标/焦点已变化，未写入；识别结果保留在窗口"
+                                        self.interactionStatus = Self.insertionErrorMessage(error)
                                     }
                                 }
                             }
@@ -645,7 +645,7 @@ final class WorkspaceModel: ObservableObject {
                                                                generation: generation)
                     self.interactionStatus = "原选区验证通过并已替换"
                 } catch {
-                    self.interactionStatus = "目标/选区已变化或不支持写入；未替换"
+                    self.interactionStatus = Self.insertionErrorMessage(error)
                 }
             }
         case .failure(let failure):
@@ -654,6 +654,23 @@ final class WorkspaceModel: ObservableObject {
             if spoken { recordingStatus = "语音选区处理失败" }
             Task { await interaction.cancelTask(generation: generation) }
         }
+    }
+
+    private static func insertionErrorMessage(_ error: Error) -> String {
+        if let failure = error as? InteractionFailure {
+            switch failure {
+            case .writeNotConfirmed:
+                return "已尝试写入，但无法确认是否生效；请检查目标或复制结果"
+            case .unsupportedNativeWrite:
+                return "目标不支持可验证写入；结果已保留，可手动复制"
+            default:
+                return "目标、焦点或选区验证失败；未发起写入，结果可复制"
+            }
+        }
+        if error is ClipboardFailure {
+            return "安全剪贴板操作失败；写入状态可能不确定，请检查目标并复制结果"
+        }
+        return "原应用写入未完成；结果已保留，可手动复制"
     }
 
     func cancelCurrent() {
