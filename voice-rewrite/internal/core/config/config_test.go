@@ -66,6 +66,8 @@ func TestNormalizeRejectsInvalidConfiguration(t *testing.T) {
 		{"audio device", "录音设备编号", func(c *Config) { c.AudioDeviceID = -2 }},
 		{"audio device high", "录音设备编号", func(c *Config) { c.AudioDeviceID = 256 }},
 		{"ASR URL", "无效的 API 地址", func(c *Config) { c.ASRBaseURL = "file:///tmp/x" }},
+		{"URL with credentials", "无效的 API 地址", func(c *Config) { c.ASRBaseURL = "http://a:pass@127.0.0.1:8080/v1" }},
+		{"URL with fragment", "无效的 API 地址", func(c *Config) { c.ASRBaseURL = "http://localhost/v1#fragment" }},
 		{"LLM URL", "无效的 API 地址", func(c *Config) { c.LLMBaseURL = "https://example.invalid/v1?key=leak" }},
 	}
 	for _, tc := range cases {

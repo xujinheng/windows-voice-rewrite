@@ -28,16 +28,6 @@ func TestProviderRefusesRedirectsToUnconfiguredHosts(t *testing.T) {
 	}
 }
 
-func TestServerURLsRejectSecretBearingComponents(t *testing.T) {
-	for _, bad := range []string{"http://a:pass@127.0.0.1:8080/v1", "http://localhost:1234/v1?api_key=secret", "http://localhost/v1#fragment", "file:///tmp/voice"} {
-		if ValidateBaseURL(bad) == nil {
-			t.Errorf("accepted %q", bad)
-		}
-	}
-	if err := ValidateBaseURL("http://127.0.0.1:8080/v1"); err != nil {
-		t.Fatal(err)
-	}
-}
 func TestHTTPErrorDoesNotEchoProviderBody(t *testing.T) {
 	if strings.Contains(HTTPError("ASR", 415).Error(), "secret") {
 		t.Fatal("leaked error body")
