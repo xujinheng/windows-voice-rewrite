@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -574,4 +575,73 @@ func TestBridgeProbeInvalidConfigNeverTouchesProvider(t *testing.T) {
 	if calls.Load() != 0 {
 		t.Fatal("invalid probe configuration reached provider")
 	}
+}
+
+
+func TestBridgeSpokenSelectionUsesSharedASRAndTextedit(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/audio/transcriptions":
+			calls.Add(1)
+			_, _ = io.WriteString(w, `{"text":"请写成英文"}`)
+		case "/v1/chat/completions":
+			calls.Add(1)
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\"intent\":\"translate\",\"result\":\"Hello\"}"}}]}`)
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer srv.Close()
+	cfg := configFor(srv.URL)
+	cfg["text_model"] = "text-model"
+	h := startBridge(t, defaultOptions())
+	h.send(map[string]any{
+		"v": 1, "id": "spoken", "op": "selected_voice_task",
+		"config": cfg, "selected_text": "你好",
+		"pcm_base64": base64.StdEncoding.EncodeToString(make([]byte, 3200)),
+	})
+	reply := h.receive()
+	if !reply.OK { t.Fatalf("spoken task failed: %#v", reply) }
+	result := object(t, reply.Result)
+	if result["instruction"] != "请写成英文" || result["text"] != "Hello" ||
+		result["may_attempt_replace"] != true || result["preview_only"] != false {
+		t.Fatalf("unexpected spoken decision: %#v", result)
+	}
+	h.close()
+	if calls.Load() != 2 { t.Fatalf("wanted one ASR and one LLM call, got %d", calls.Load()) }
+}
+
+func TestBridgeSpokenSelectionRejectsBadPCMAndEmptySelection(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+	h := startBridge(t, defaultOptions())
+	cfg := configFor(srv.URL)
+	for i, tc := range []struct {
+		selected string
+		audio []byte
+		want string
+	}{
+		{"text", make([]byte, 100), "invalid_pcm"},
+		{"", make([]byte, 3200), "invalid_request"},
+		{"text", make([]byte, 3201), "invalid_pcm"},
+	} {
+		id := fmt.Sprintf("invalid-spoken-%d", i)
+		h.send(map[string]any{
+			"v": 1, "id": id, "op": "selected_voice_task",
+			"config": cfg, "selected_text": tc.selected,
+			"pcm_base64": base64.StdEncoding.EncodeToString(tc.audio),
+		})
+		reply := h.receive()
+		if reply.OK || reply.Error == nil || reply.Error.Code != tc.want {
+			t.Fatalf("unexpected response: %#v; want %s", reply, tc.want)
+		}
+	}
+	h.close()
+	if calls.Load() != 0 { t.Fatal("rejected spoken requests contacted a provider") }
 }
