@@ -97,6 +97,38 @@ func TestMeetingCaptionPlainText(t *testing.T) {
 	}
 }
 
+func TestMeetingCaptionProtocolFromRealTranscript(t *testing.T) {
+	cases := map[string]string{
+		"同龄人，我觉得。哇，我们看起来真的很像。GATE\tYES": "同龄人，我觉得。哇，我们看起来真的很像。",
+		"我也继承了奶奶的一些特质。\tGATE\tYES": "我也继承了奶奶的一些特质。",
+		"SAY<TAB>一个漂亮的。GATE<TAB>YES": "一个漂亮的。",
+		"GATE\tYES\n中文翻译。": "中文翻译。",
+		"ZH<TAB>这是翻译。GATE<TAB>NO": "这是翻译。",
+		"不过我觉得我也继承了爸爸的一些特质。\nGATE<TAB>YES": "不过我觉得我也继承了爸爸的一些特质。",
+		"GATE<TAB>YES": "",
+	}
+	for input, want := range cases {
+		if got := cleanMeetingCaption(input); got != want {
+			t.Errorf("%q => %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestMeetingTranslationDoesNotRepeatPriorParagraph(t *testing.T) {
+	source := "Playing games and being competitive, so I think that side of me is similar to him."
+	good := "喜欢玩游戏，也有竞争心，所以我觉得自己这一方面和他很像。"
+	recap := strings.Repeat("不过我觉得我也继承了爸爸的一些特质，我父亲是个理性的人。", 13)
+	if !meetingTranslationFitsSource(source, good) {
+		t.Fatal("normal translation rejected")
+	}
+	if meetingTranslationFitsSource(source, recap) {
+		t.Fatal("model recap of prior turns accepted as current caption")
+	}
+	if !meetingTranslationFitsSource("A pretty.", "一个漂亮的。") {
+		t.Fatal("short incomplete phrase rejected")
+	}
+}
+
 func TestMeetingPreviewDuringContinuousSpeech(t *testing.T) {
 	var s meetingSegmenter
 	frame := make([]byte, meetingFrameBytes)
