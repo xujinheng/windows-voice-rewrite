@@ -171,3 +171,60 @@ func TestSessionRuntimeExpressionTimeout(t *testing.T) {
 		t.Fatal("expression deadline was not enforced")
 	}
 }
+
+func TestSessionRuntimeCancelsReplyAndCaptionTasks(t *testing.T) {
+	r := NewSessionRuntime()
+	defer r.Stop()
+	work, epoch, _ := r.Snapshot()
+	first, cancelFirst, ok := r.ReplyContext(epoch, time.Second)
+	if !ok {
+		t.Fatal("active reply could not start")
+	}
+	defer cancelFirst()
+	caption, cancelCaption := context.WithCancel(work)
+	if !r.TrackCaption(epoch, 7, cancelCaption) {
+		t.Fatal("caption was rejected in active epoch")
+	}
+	r.CancelCaption(8)
+	if caption.Err() != nil {
+		t.Fatal("unrelated caption update canceled active work")
+	}
+	r.CancelCaption(7)
+	if caption.Err() == nil {
+		t.Fatal("new ASR result failed to cancel stale translation")
+	}
+	second, cancelSecond, ok := r.ReplyContext(epoch, time.Second)
+	if !ok || first.Err() == nil {
+		t.Fatal("new reply did not preempt previous suggestion")
+	}
+	defer cancelSecond()
+	r.SetPaused(true)
+	if second.Err() == nil {
+		t.Fatal("pause left reply inference running")
+	}
+	if _, _, ok := r.ReplyContext(epoch, time.Second); ok {
+		t.Fatal("paused session started a reply task")
+	}
+	orphan, stopOrphan := context.WithCancel(context.Background())
+	if r.TrackCaption(epoch, 7, stopOrphan) || orphan.Err() == nil {
+		t.Fatal("stale translation was accepted instead of canceled")
+	}
+}
+
+func TestSessionRuntimeStopCancelsTrackedTasks(t *testing.T) {
+	r := NewSessionRuntime()
+	work, epoch, _ := r.Snapshot()
+	reply, cancel, ok := r.ReplyContext(epoch, time.Second)
+	if !ok {
+		t.Fatal("failed to create tracked reply")
+	}
+	defer cancel()
+	caption, stopCaption := context.WithCancel(work)
+	if !r.TrackCaption(epoch, 17, stopCaption) {
+		t.Fatal("failed to track translation")
+	}
+	r.Stop()
+	if reply.Err() == nil || caption.Err() == nil {
+		t.Fatal("runtime shutdown did not stop the model requests")
+	}
+}
