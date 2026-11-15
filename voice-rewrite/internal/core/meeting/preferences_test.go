@@ -67,4 +67,3 @@ func TestMeetingPreferencesDefaultsAndValidation(t *testing.T) {
 		t.Fatalf("corrupt preferences: %+v %v", got, err)
 	}
 }
-
