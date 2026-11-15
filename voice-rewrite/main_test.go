@@ -1,6 +1,8 @@
 package main
 
 import (
+	"voicerewrite/internal/core/speech"
+	"voicerewrite/internal/core/provider"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -22,14 +24,14 @@ func TestCleanASR(t *testing.T) {
 		{"language Chinese<asr_text>", ""},
 	}
 	for _, tc := range cases {
-		if got := cleanASR(tc.in); got != tc.want {
+		if got := speech.CleanASR(tc.in); got != tc.want {
 			t.Errorf("%q: got %q want %q", tc.in, got, tc.want)
 		}
 	}
 }
 func TestWAV(t *testing.T) {
 	pcm := make([]byte, 32000)
-	wav, e := encodeWAV(pcm)
+	wav, e := speech.EncodeWAV(pcm)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -106,7 +108,7 @@ func TestAudioAndLLMWorkflow(t *testing.T) {
 	cfg := defaults()
 	cfg.ASRBaseURL = asr.URL + "/v1"
 	cfg.LLMBaseURL = llm.URL + "/v1"
-	instruction, e := transcribe(context.Background(), cfg, make([]byte, 32000))
+	instruction, e := speech.Transcribe(context.Background(), cfg, make([]byte, 32000))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -128,13 +130,13 @@ func TestNoASRAsTextModel(t *testing.T) {
 	defer llm.Close()
 	cfg := defaults()
 	cfg.LLMBaseURL = llm.URL + "/v1"
-	_, e := discoverModel(context.Background(), cfg)
+	_, e := provider.DiscoverModel(context.Background(), cfg)
 	if e == nil {
 		t.Fatal("must not use ASR or embeddings as text editing model")
 	}
 }
 func TestThinkingTag(t *testing.T) {
-	s := thinkingTag.ReplaceAllString("<think>分析...</think>更简洁。", "")
+	s := provider.ThinkingTag.ReplaceAllString("<think>分析...</think>更简洁。", "")
 	if s != "更简洁。" {
 		t.Fatal(s)
 	}
