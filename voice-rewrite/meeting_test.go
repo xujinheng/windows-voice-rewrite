@@ -26,7 +26,7 @@ func TestMeetingSegmenter(t *testing.T) {
 				t.Fatal("speech ended before a pause")
 			}
 		}
-		for i := 0; i < 25; i++ {
+		for i := 0; i < 40; i++ {
 			_, pcm := seg.push(silence)
 			if pcm != nil {
 				turns = append(turns, pcm)
