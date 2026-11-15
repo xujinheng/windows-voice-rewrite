@@ -1,12 +1,13 @@
 package main
 
 import (
-	meetingcore "voicerewrite/internal/core/meeting"
 	"context"
 	"errors"
 	"strings"
 	"sync"
 	"time"
+
+	meetingcore "voicerewrite/internal/core/meeting"
 )
 
 type meetingSession struct {
