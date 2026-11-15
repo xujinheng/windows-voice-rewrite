@@ -3,8 +3,6 @@
 package main
 
 import (
-	meetingcore "voicerewrite/internal/core/meeting"
-	"voicerewrite/internal/core/audio"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +11,9 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	"voicerewrite/internal/core/audio"
+	meetingcore "voicerewrite/internal/core/meeting"
 )
 
 const (
