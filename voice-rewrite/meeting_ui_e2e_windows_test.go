@@ -40,8 +40,8 @@ func meetingE2EWindowRect(t *testing.T, control uintptr) rect32 {
 func meetingE2EHistory(count int) []meetingcore.Caption {
 	captions := make([]meetingcore.Caption, 0, count)
 	for i := 1; i <= count; i++ {
-		Source := fmt.Sprintf("This is completed meeting turn number %03d. We will review it in detail.", i)
-		Chinese := fmt.Sprintf("这是第 %03d 段已确认的中文会议记录，需要保留阅读位置。", i)
+		source := fmt.Sprintf("This is completed meeting turn number %03d. We will review it in detail.", i)
+		chinese := fmt.Sprintf("这是第 %03d 段已确认的中文会议记录，需要保留阅读位置。", i)
 		captions = append(captions, meetingcore.Caption{ID: uint64(i), Source: source, Chinese: chinese, TranslatedFrom: source, Final: true})
 	}
 	return captions
