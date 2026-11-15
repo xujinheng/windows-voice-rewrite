@@ -46,6 +46,7 @@ struct MainView: View {
                         }
                         LabeledContent("麦克风", value: model.recordingStatus)
                         LabeledContent("原生交互", value: model.interactionStatus)
+                        LabeledContent("鼠标侧键", value: model.sideMouseStatus)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
@@ -59,6 +60,7 @@ struct MainView: View {
                         .disabled(!model.isRecording && !model.isStarting && !model.isProcessing)
                     Spacer()
                     Button("请求辅助功能权限") { model.requestAccessibility() }
+                    Button("重新检测鼠标侧键") { model.refreshSideMouse() }
                 }
 
                 GroupBox("语音识别结果") {
