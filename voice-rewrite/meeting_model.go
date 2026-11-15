@@ -87,7 +87,7 @@ type meetingCompletion struct {
 }
 
 func visibleMeetingText(text string) string {
-	text = thinkingTag.ReplaceAllString(text, "")
+	text = provider.ThinkingTag.ReplaceAllString(text, "")
 	if at := strings.Index(text, "<think>"); at >= 0 {
 		text = text[:at]
 	}
@@ -173,7 +173,7 @@ type meetingQuery struct {
 }
 
 func completeMeeting(ctx context.Context, cfg Config, query meetingQuery, emit func(meetingLine)) error {
-	model, err := discoverModel(ctx, cfg)
+	model, err := provider.DiscoverModel(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -278,7 +278,7 @@ func completeMeeting(ctx context.Context, cfg Config, query meetingQuery, emit f
 		if query.Mode != "caption" && query.Mode != "express" && query.Mode != "compose" {
 			text := caption.String()
 			if !strings.Contains(text, "<think>") || strings.Contains(text, "</think>") {
-				text = thinkingTag.ReplaceAllString(text, "")
+				text = provider.ThinkingTag.ReplaceAllString(text, "")
 				tail := text[strings.LastIndex(text, "\n")+1:]
 				parts := strings.SplitN(tail, "\t", 3)
 				if len(parts) >= 2 {
