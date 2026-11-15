@@ -130,7 +130,7 @@ func TestMeetingTextChangeUTF16AndHistory(t *testing.T) {
 	}
 	for _, tc := range cases {
 		p := meetingcore.TextChange(tc.old, tc.next)
-		if p.start != tc.start || p.end != tc.end || p.insert != tc.insert {
+		if p.Start != tc.start || p.End != tc.end || p.Insert != tc.insert {
 			t.Errorf("%q -> %q: got %+v", tc.old, tc.next, p)
 		}
 	}
