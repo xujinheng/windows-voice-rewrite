@@ -1,31 +1,53 @@
 # Architecture
 
-VoiceRewrite is a native Go/Win32 application. Its main components are:
+VoiceRewrite runs a native Go/Win32 Windows application. Its reusable algorithms
+are organized as **platform-independent Go packages**, and Windows-specific
+capture, GUI, input, clipboard and encryption stay in the Windows shell.
 
-| Component | Source | Responsibility |
+## Portable core
+
+| Package | Owns | Dependencies |
 | --- | --- | --- |
-| Input and recording | `mouse_windows.go`, `recording_windows.go`, `microphone_windows.go` | Detect hold/release and capture PCM audio |
-| Task execution | `task_worker_windows.go`, `task_epoch.go` | Coordinate asynchronous work, cancellation and target checks |
-| ASR | `asr.go`, `audio_chunks.go` | Transcribe audio through the configured API |
-| Text processing | `llm.go`, `intent.go` | Classify spoken instructions and generate text |
-| Text insertion | `clipboard_windows.go`, `edit_target.go`, `unicode_input_windows.go` | Apply text to an eligible editor |
-| User interface | `settings_windows.go`, `popup_windows.go`, `handy_status_windows.go`, `tray_windows.go` | Settings, results, recording indicator and tray menu |
-| Configuration | `config.go`, `config_store.go`, `secrets_windows.go` | Persist settings and protect API keys |
+| `internal/core/audio` | 16 kHz PCM framing, voice segmentation, preview timing, resampling from stereo capture, chunking and transcript joining; `FrameSource` contract | Go standard library |
+| `internal/core/meeting` | Subtitle and spoken-English policies, history follow/unread behavior, minimum-size pane layout, draggable divider math, JSON layout preferences, inference-priority scheduler | Go standard library |
+| `internal/core/provider` | HTTP transport with timeouts, redirect blocking, endpoint construction, safe HTTP errors and API base URL validation | Go standard library |
 
-## Execution
+The core packages are tested as independent packages under Linux, Windows
+and macOS CI. No core package imports Win32, WASAPI, COM, user32 or a GUI API.
+macOS CI also compiles the core for Darwin amd64 and arm64.
 
-Windows input hooks and the UI message loop remain responsive while audio, network requests and text processing run in background tasks. Results are associated with a task generation and the original target window; stale tasks cannot apply text to a different target.
+## Platform integration
 
-The ASR client uses `/v1/audio/transcriptions`; the LLM client uses `/v1/chat/completions`. Long recordings are split into bounded audio chunks. Text selections are treated as untrusted data when sent to the LLM.
+| Layer | Current source | Responsibility |
+| --- | --- | --- |
+| Native audio adapter | `meeting_capture_windows.go`, `meeting_windows.go`, `microphone_windows.go` | WASAPI process loopback and microphone capture; expose normalized PCM frames through `audio.FrameSource` |
+| Native input/output | `mouse_windows.go`, `recording_windows.go`, `clipboard_windows.go`, `unicode_input_windows.go`, `uia_password_windows.go` | Global keys, selection, secure text insertion and clipboard |
+| Native UI | `meeting_hud_windows.go`, `settings_windows.go`, `popup_windows.go`, `tray_windows.go` | Win32 event loop, layout presentation and control dispatch |
+| Application orchestration | `meeting_session.go`, `meeting_state.go`, `meeting_model.go`, `meeting_asr.go`, `asr.go`, `llm.go` | Meeting state, model requests and app lifecycle; consumes portable core packages |
+| Configuration/credentials | `config.go`, `config_store.go`, `secrets_windows.go` | User configuration, platform-native secret protection and file paths |
 
-## Input safety
+The remaining app orchestration resides in `package main` and is not yet an
+independent reusable package. A future macOS shell needs its own GUI, input,
+audio capture and credential implementation, and should extract the remaining
+orchestration behind narrow service interfaces rather than import the Windows
+executable package.
 
-Automatic replacement checks the editor and selection before inserting text. Clipboard restoration is conditional on ownership and available formats. Unsupported clipboard formats and inaccessible editors may require manual copy from the result card.
+## Data flow
 
-Known native password fields are excluded. Windows UI Automation augments password-field detection in other applications; accessibility providers may be incomplete.
+```text
+Win32 meeting process selector
+    -> Windows WASAPI FrameSource adapter
+    -> core/audio (PCM conversion and voice segmentation)
+    -> meeting_session (capture scheduling, ASR and translation calls)
+    -> core/provider (HTTP client safety)
+    -> core/meeting (subtitle, English, scheduling, layout policies)
+    -> Windows Meeting HUD (native EDIT controls and drag dividers)
+```
 
-## Data
+The original application enforces its editor/selection target and task
+generation before text insertion. Text-selection content and meeting transcripts
+are untrusted input to the configured model services. Redirects to unconfigured
+model hosts are rejected. API keys are protected with Windows DPAPI.
 
-Settings are stored under `%APPDATA%\VoiceRewrite`; API keys use DPAPI. Logs are stored under `%LOCALAPPDATA%\VoiceRewrite`. Recent text results and clipboard snapshots remain in process memory.
-
-For setup, see [README](README.md). For verification, see [TESTING.md](TESTING.md).
+For local setup see [README](README.md); for platform testing see
+[TESTING](TESTING.md) and [visual testing](VISUAL-TESTING.md).

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	meetingcore "voicerewrite/internal/core/meeting"
 )
 
 func TestMeetingStableTail(t *testing.T) {
@@ -103,16 +105,16 @@ func TestMeetingReadingPanelsEmptyOrLongSession(t *testing.T) {
 }
 
 func TestMeetingUnreadHistoryDoesNotStealFocus(t *testing.T) {
-	if meetingUnreadHistory(0, 3, 5, false) != 2 {
+	if meetingcore.UnreadHistory(0, 3, 5, false) != 2 {
 		t.Fatal("missing unread count while reading old captions")
 	}
-	if meetingUnreadHistory(2, 5, 6, false) != 3 {
+	if meetingcore.UnreadHistory(2, 5, 6, false) != 3 {
 		t.Fatal("unread count must accumulate only newly finished turns")
 	}
-	if meetingUnreadHistory(3, 6, 6, false) != 3 {
+	if meetingcore.UnreadHistory(3, 6, 6, false) != 3 {
 		t.Fatal("current caption revisions must not count as new history")
 	}
-	if meetingUnreadHistory(3, 6, 6, true) != 0 {
+	if meetingcore.UnreadHistory(3, 6, 6, true) != 0 {
 		t.Fatal("returning to newest should reset unread count")
 	}
 }
@@ -128,86 +130,14 @@ func TestMeetingTextChangeUTF16AndHistory(t *testing.T) {
 		{"🙂 原文\r\n第一版", "🙂 原文\r\n第二版", 8, 10, "二版"},
 	}
 	for _, tc := range cases {
-		p := meetingTextChange(tc.old, tc.next)
-		if p.start != tc.start || p.end != tc.end || p.insert != tc.insert {
+		p := meetingcore.TextChange(tc.old, tc.next)
+		if p.Start != tc.start || p.End != tc.end || p.Insert != tc.insert {
 			t.Errorf("%q -> %q: got %+v", tc.old, tc.next, p)
 		}
 	}
-	patch := meetingTextChange("标题\r\n第一句", "标题\r\n第一句\r\n第二句")
-	if meetingMapSelection(2, patch) != 2 {
+	patch := meetingcore.TextChange("标题\r\n第一句", "标题\r\n第一句\r\n第二句")
+	if meetingcore.MapSelection(2, patch) != 2 {
 		t.Fatal("existing selection moved while appending")
-	}
-}
-
-func TestMeetingAdjustablePaneLayout(t *testing.T) {
-	for _, mode := range []struct {
-		name         string
-		captionsOnly bool
-		expanded     bool
-	}{
-		{"complete", false, false},
-		{"English focus", false, true},
-		{"captions only", true, false},
-	} {
-		for _, space := range []int32{300, 440, 700} {
-			heights := meetingPaneHeights(space, meetingDefaultPaneWeights, mode.captionsOnly, mode.expanded)
-			visible := meetingVisiblePanes(mode.captionsOnly, mode.expanded)
-			var total int32
-			for i, height := range heights {
-				if !visible[i] && height != 0 {
-					t.Fatalf("%s: hidden pane %d took %d px", mode.name, i, height)
-				}
-				if visible[i] && height < meetingPaneMinimums[i] {
-					t.Fatalf("%s: pane %d too short %d", mode.name, i, height)
-				}
-				total += height
-			}
-			if total != space {
-				t.Fatalf("%s: %d px sum != %d available", mode.name, total, space)
-			}
-		}
-	}
-}
-
-func TestMeetingDraggableDividersAreIndependentAndConstrained(t *testing.T) {
-	for _, mode := range []struct {
-		captionsOnly bool
-		expanded     bool
-		dividers     []int
-	}{
-		{false, false, []int{0, 1, 2, 3, 4}},
-		{false, true, []int{0, 1, 2, 4}},
-		{true, false, []int{0, 1}},
-	} {
-		for _, divider := range mode.dividers {
-			weights := meetingDefaultPaneWeights
-			before := meetingPaneHeights(600, weights, mode.captionsOnly, mode.expanded)
-			a, b, ok := meetingDividerPair(divider, mode.captionsOnly, mode.expanded)
-			if !ok {
-				t.Fatalf("divider %d unavailable", divider)
-			}
-			weights = meetingDragPaneWeights(weights, before, mode.captionsOnly, mode.expanded, divider, 16)
-			after := meetingPaneHeights(600, weights, mode.captionsOnly, mode.expanded)
-			if after[a] != before[a]+16 || after[b] != before[b]-16 {
-				t.Fatalf("divider %d moved wrong panes: before %v after %v", divider, before, after)
-			}
-			for i := 0; i < meetingPaneCount; i++ {
-				if i != a && i != b && before[i] != after[i] {
-					t.Fatalf("divider %d disturbed pane %d: %v -> %v", divider, i, before, after)
-				}
-			}
-			weights = meetingDragPaneWeights(weights, after, mode.captionsOnly, mode.expanded, divider, 10000)
-			clamped := meetingPaneHeights(600, weights, mode.captionsOnly, mode.expanded)
-			if clamped[b] < meetingPaneMinimums[b] {
-				t.Fatalf("divider %d violated min height: %v", divider, clamped)
-			}
-		}
-	}
-	if _, _, ok := meetingDividerPair(3, false, true); ok {
-		t.Fatal("reply divider must hide when English is expanded")
-	}
-	if _, _, ok := meetingDividerPair(2, true, false); ok {
-		t.Fatal("assistant divider must hide in captions-only mode")
 	}
 }
 
@@ -215,7 +145,7 @@ func TestMeetingContextOnlyWhenSpeechRefersToPriorConversation(t *testing.T) {
 	for _, spoken := range []string{
 		"问他这两个方案的 schedule", "刚才说的时间安排", "他们说的那个方案",
 	} {
-		if !meetingUsesConversationContext(spoken) {
+		if !meetingcore.UsesConversationContext(spoken) {
 			t.Errorf("missing reference to conversation: %q", spoken)
 		}
 	}
@@ -223,47 +153,47 @@ func TestMeetingContextOnlyWhenSpeechRefersToPriorConversation(t *testing.T) {
 		"我需要回答有多少印度人会说英语", "有多少印度人会说英语",
 		"我没等他问，我想先谈谈教育问题", "我想说这部电影很有意思",
 	} {
-		if meetingUsesConversationContext(spoken) {
+		if meetingcore.UsesConversationContext(spoken) {
 			t.Errorf("unrelated prompt inherited project context: %q", spoken)
 		}
 	}
 }
 
 func TestMeetingVoiceModes(t *testing.T) {
-	if meetingVoiceMode(true) != "express" {
+	if meetingcore.VoiceMode(true) != "express" {
 		t.Fatal("dictation key must translate speech literally")
 	}
-	if meetingVoiceMode(false) != "compose" {
+	if meetingcore.VoiceMode(false) != "compose" {
 		t.Fatal("rewrite key must compose an English utterance from intent")
 	}
 }
 
 func TestMeetingFollowLatestIsUserControlled(t *testing.T) {
-	if !meetingFollowLatest(true, false, false) {
+	if !meetingcore.FollowLatest(true, false, false) {
 		t.Fatal("background update disabled following")
 	}
-	if meetingFollowLatest(true, true, false) {
+	if meetingcore.FollowLatest(true, true, false) {
 		t.Fatal("manual upward scrolling did not stop following")
 	}
-	if meetingFollowLatest(false, false, true) {
+	if meetingcore.FollowLatest(false, false, true) {
 		t.Fatal("background update resumed following without scroll")
 	}
-	if !meetingFollowLatest(false, true, true) {
+	if !meetingcore.FollowLatest(false, true, true) {
 		t.Fatal("returning to the bottom did not resume following")
 	}
 }
 
 func TestMeetingSchedulerPreemptsReplyAndWaitsForRelease(t *testing.T) {
-	var g meetingScheduler
+	var g meetingcore.Scheduler
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	low, release, err := g.acquire(ctx, meetingPriorityReply)
+	low, release, err := g.Acquire(ctx, meetingcore.PriorityReply)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ready := make(chan struct{})
 	go func() {
-		_, done, e := g.acquire(ctx, meetingPriorityExpress)
+		_, done, e := g.Acquire(ctx, meetingcore.PriorityExpress)
 		if e == nil {
 			close(ready)
 			done()
@@ -274,7 +204,7 @@ func TestMeetingSchedulerPreemptsReplyAndWaitsForRelease(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("not preempted")
 	}
-	if !errors.Is(context.Cause(low), errMeetingPreempted) {
+	if !errors.Is(context.Cause(low), meetingcore.ErrPreempted) {
 		t.Fatal(context.Cause(low))
 	}
 	select {
@@ -291,19 +221,19 @@ func TestMeetingSchedulerPreemptsReplyAndWaitsForRelease(t *testing.T) {
 }
 
 func TestMeetingSchedulerCanceledWaiterRemoved(t *testing.T) {
-	var g meetingScheduler
-	ctx, release, e := g.acquire(context.Background(), meetingPriorityExpress)
+	var g meetingcore.Scheduler
+	ctx, release, e := g.Acquire(context.Background(), meetingcore.PriorityExpress)
 	_ = ctx
 	if e != nil {
 		t.Fatal(e)
 	}
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, _, e = g.acquire(canceled, meetingPriorityCaption); e == nil {
+	if _, _, e = g.Acquire(canceled, meetingcore.PriorityCaption); e == nil {
 		t.Fatal("accepted canceled job")
 	}
 	release()
-	if g.pending() != 0 {
+	if g.Pending() != 0 {
 		t.Fatal("leaked waiter")
 	}
 }
@@ -332,17 +262,17 @@ func TestMeetingExpressionRemainsReadableWhileWorking(t *testing.T) {
 	if meetingRetainEnglish(meetingLine{english: "Half a sentence"}).english != "" {
 		t.Fatal("uncommitted English must not survive a failed request")
 	}
-	if heading := meetingExpressionHeading("正在识别", true); !strings.Contains(heading, "仍可复制") {
+	if heading := meetingcore.ExpressionHeading("正在识别", true); !strings.Contains(heading, "仍可复制") {
 		t.Fatalf("the interface concealed the last good English: %s", heading)
 	}
-	if detail := meetingExpressionDetail("生成失败：超时", "印度有多少人会说英语"); !strings.Contains(detail, "超时") || !strings.Contains(detail, "印度") {
+	if detail := meetingcore.ExpressionDetail("生成失败：超时", "印度有多少人会说英语"); !strings.Contains(detail, "超时") || !strings.Contains(detail, "印度") {
 		t.Fatalf("failure hid the recognized speech: %s", detail)
 	}
-	focusedCaptions, expanded := meetingExpressionFocus(true, true, true, false)
+	focusedCaptions, expanded := meetingcore.ExpressionFocus(true, true, true, false)
 	if focusedCaptions || !expanded {
 		t.Fatal("completed English was hidden behind captions-only mode")
 	}
-	focusedCaptions, expanded = meetingExpressionFocus(true, false, true, false)
+	focusedCaptions, expanded = meetingcore.ExpressionFocus(true, false, true, false)
 	if !focusedCaptions || expanded {
 		t.Fatal("a background refresh stole the user's caption focus")
 	}

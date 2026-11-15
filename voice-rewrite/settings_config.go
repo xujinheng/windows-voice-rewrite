@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"voicerewrite/internal/core/provider"
 )
 
 func uxValidURL(s string) bool {
@@ -76,7 +78,7 @@ func uxProbeModel(ctx context.Context, kind, base, apiKey, configuredModel strin
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
-	res, err := requestClient(4 * time.Second).Do(req)
+	res, err := provider.RequestClient(4 * time.Second).Do(req)
 	if err != nil {
 		return kind + "：无法连接，请检查 API 地址及网络"
 	}
@@ -115,7 +117,7 @@ func uxProbeModel(ctx context.Context, kind, base, apiKey, configuredModel strin
 	}
 }
 
-// uxProbeASRAudio exercises the actual endpoint and request format used by
+// uxProbeASRAudio exercises the actual provider.Endpoint and request format used by
 // VoiceRewrite. A models-list success cannot establish support for uploading
 // multipart WAV, as some text-only OpenAI-compatible APIs demonstrate.
 // The probe sends only locally generated silence, never microphone recordings.
@@ -133,7 +135,7 @@ func uxProbeASRAudio(ctx context.Context, base, apiKey, model string) string {
 	if err != nil {
 		return prefix + "无法生成测试音频请求"
 	}
-	res, err := requestClient(15 * time.Second).Do(req)
+	res, err := provider.RequestClient(15 * time.Second).Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
 			return prefix + "音频接口检测超时；请检查模型是否加载完成"

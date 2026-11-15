@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"voicerewrite/internal/core/provider"
 )
 
 // VoiceRewrite never sends audio or selected text to a provider other than the
@@ -138,7 +140,7 @@ func loadConfig() (Config, error) {
 		cfg.SelectionCopyTimeoutMS = 1800
 	}
 	for _, x := range []string{cfg.ASRBaseURL, cfg.LLMBaseURL} {
-		if err := validateServerBaseURL(x); err != nil {
+		if err := provider.ValidateBaseURL(x); err != nil {
 			return cfg, fmt.Errorf("无效的 API 地址: %w", err)
 		}
 	}

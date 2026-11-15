@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	meetingcore "voicerewrite/internal/core/meeting"
 )
 
 type meetingHUD struct {
@@ -27,8 +29,8 @@ type meetingHUD struct {
 	profileBackground, profileTerms, profileMode, profileStatus uintptr
 	scale                                                       float64
 	fontSize                                                    int32
-	paneWeights                                                 meetingPaneWeights
-	paneHeights                                                 [meetingPaneCount]int32
+	paneWeights                                                 meetingcore.PaneWeights
+	paneHeights                                                 [meetingcore.PaneCount]int32
 	splitterY                                                   [5]int32
 	splitterVisible                                             [5]bool
 	dragDivider                                                 int
@@ -99,8 +101,8 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	}
 	anchor := currentCursorPoint()
 	work, scale := uxWorkAreaForPoint(anchor), uxMonitorScaleForPoint(anchor)
-	prefs, _ := loadMeetingPreferences(meetingPreferencesPath())
-	x, y, w, h := prefs.geometry(work, scale)
+	prefs, _ := meetingcore.LoadPreferences(meetingPreferencesPath())
+	x, y, w, h := meetingGeometry(prefs, work, scale)
 	hwnd, _, err := procCreateWindow.Call(WS_EX_TOPMOST|WS_EX_TOOLWINDOW, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),
 		WS_CAPTION|WS_SYSMENU|0x00040000|0x00010000|0x02000000, int32ptr(x), int32ptr(y), int32ptr(w), int32ptr(h), 0, 0, module, 0)
 	runtime.KeepAlive(className)
@@ -231,23 +233,23 @@ func (p *meetingHUD) layout() {
 		overhead = 4*8 + 24 + 8 + 24
 	}
 	space := int32(float64(footer-y)/p.scale) - overhead
-	p.paneHeights = meetingPaneHeights(space, p.paneWeights, p.captionsOnly, p.expressionExpanded)
+	p.paneHeights = meetingcore.PaneHeights(space, p.paneWeights, p.captionsOnly, p.expressionExpanded)
 	divider := func(index int) {
 		p.splitterY[index] = y + p.px(4)
 		p.splitterVisible[index] = true
 		y += p.px(8)
 	}
-	p.move(p.currentChinese, margin, y, width, p.px(p.paneHeights[meetingPaneChinese]))
-	y += p.px(p.paneHeights[meetingPaneChinese])
+	p.move(p.currentChinese, margin, y, width, p.px(p.paneHeights[meetingcore.PaneChinese]))
+	y += p.px(p.paneHeights[meetingcore.PaneChinese])
 	divider(0)
-	p.move(p.currentEnglish, margin, y, width, p.px(p.paneHeights[meetingPaneEnglish]))
-	y += p.px(p.paneHeights[meetingPaneEnglish])
+	p.move(p.currentEnglish, margin, y, width, p.px(p.paneHeights[meetingcore.PaneEnglish]))
+	y += p.px(p.paneHeights[meetingcore.PaneEnglish])
 	divider(1)
 	p.move(p.labels[3], margin, y, width-p.px(114), label)
 	p.move(p.buttons[14], margin+width-p.px(110), y-p.px(3), p.px(110), button)
 	y += label + gap
-	p.move(p.captions, margin, y, width, p.px(p.paneHeights[meetingPaneHistory]))
-	y += p.px(p.paneHeights[meetingPaneHistory])
+	p.move(p.captions, margin, y, width, p.px(p.paneHeights[meetingcore.PaneHistory]))
+	y += p.px(p.paneHeights[meetingcore.PaneHistory])
 
 	for _, control := range []uintptr{p.labels[1], p.responses, p.instruction, p.buttons[4], p.buttons[6], p.buttons[9], p.buttons[10], p.buttons[11], p.buttons[12], p.buttons[13]} {
 		procShowWindow.Call(control, meetingShow(!p.captionsOnly && !p.expressionExpanded))
@@ -276,8 +278,8 @@ func (p *meetingHUD) layout() {
 			x += p.px(item.width) + gap
 		}
 		y += button + gap
-		p.move(p.responses, margin, y, width, p.px(p.paneHeights[meetingPaneReply]))
-		y += p.px(p.paneHeights[meetingPaneReply]) + gap
+		p.move(p.responses, margin, y, width, p.px(p.paneHeights[meetingcore.PaneReply]))
+		y += p.px(p.paneHeights[meetingcore.PaneReply]) + gap
 		p.move(p.instruction, margin, y, width-p.px(112)-gap, button)
 		p.move(p.buttons[13], margin+width-p.px(112), y, p.px(112), button)
 		y += button
@@ -288,10 +290,10 @@ func (p *meetingHUD) layout() {
 	p.move(p.buttons[15], margin+width-p.px(226), y-p.px(4), p.px(110), button)
 	p.move(p.buttons[5], margin+width-p.px(112), y-p.px(4), p.px(112), button)
 	y += label
-	p.move(p.expression, margin, y, width, p.px(p.paneHeights[meetingPaneExpression]))
-	y += p.px(p.paneHeights[meetingPaneExpression])
+	p.move(p.expression, margin, y, width, p.px(p.paneHeights[meetingcore.PaneExpression]))
+	y += p.px(p.paneHeights[meetingcore.PaneExpression])
 	divider(4)
-	p.move(p.expressionSource, margin, y, width, p.px(p.paneHeights[meetingPaneSource]))
+	p.move(p.expressionSource, margin, y, width, p.px(p.paneHeights[meetingcore.PaneSource]))
 	meetingInvalidateRect.Call(p.window, 0, 1)
 }
 
@@ -318,7 +320,7 @@ func (p *meetingHUD) dragSplitterTo(y int32) {
 		return
 	}
 	p.dragY = y
-	weights := meetingDragPaneWeights(p.paneWeights, p.paneHeights, p.captionsOnly, p.expressionExpanded, p.dragDivider, delta)
+	weights := meetingcore.DragPaneWeights(p.paneWeights, p.paneHeights, p.captionsOnly, p.expressionExpanded, p.dragDivider, delta)
 	if weights != p.paneWeights {
 		p.paneWeights = weights
 		p.layout()
@@ -408,23 +410,23 @@ func (p *meetingHUD) setText(control uintptr, value string, preserve bool) {
 	// and avoids the top-of-document jump during active transcription.
 	first, _, _ := procSendMessage.Call(control, 0x00CE, 0, 0) // EM_GETFIRSTVISIBLELINE
 	if control == p.captions && p.transcriptDrawn {
-		p.followLatest = meetingFollowLatest(p.followLatest, p.transcriptFirstLine != first, p.transcriptAtBottom(control))
+		p.followLatest = meetingcore.FollowLatest(p.followLatest, p.transcriptFirstLine != first, p.transcriptAtBottom(control))
 	}
 	follow := control == p.captions && p.followLatest
 	var start, end uint32
 	procSendMessage.Call(control, 0x00B0, uintptr(unsafe.Pointer(&start)), uintptr(unsafe.Pointer(&end))) // EM_GETSEL
-	change := meetingTextChange(previous, value)
+	change := meetingcore.TextChange(previous, value)
 
 	procSendMessage.Call(control, 0x000B, 0, 0)                                       // WM_SETREDRAW off
 	procSendMessage.Call(control, 0x00CF, 0, 0)                                       // EM_SETREADONLY off for programmatic edit
-	procSendMessage.Call(control, 0x00B1, uintptr(change.start), uintptr(change.end)) // EM_SETSEL
-	insert := uxPtr(change.insert)
+	procSendMessage.Call(control, 0x00B1, uintptr(change.Start), uintptr(change.End)) // EM_SETSEL
+	insert := uxPtr(change.Insert)
 	procSendMessage.Call(control, 0x00C2, 0, uintptr(unsafe.Pointer(insert))) // EM_REPLACESEL
 	runtime.KeepAlive(insert)
 	procSendMessage.Call(control, 0x00CF, 1, 0) // EM_SETREADONLY on
 	procSendMessage.Call(control, 0x00B1,
-		uintptr(meetingMapSelection(start, change)),
-		uintptr(meetingMapSelection(end, change)))
+		uintptr(meetingcore.MapSelection(start, change)),
+		uintptr(meetingcore.MapSelection(end, change)))
 	if follow {
 		procSendMessage.Call(control, 0x00B6, 0, uintptr(1<<20)) // EM_LINESCROLL down
 	} else {
@@ -500,7 +502,7 @@ func updateMeetingHUD(view meetingView) {
 	// reader scrolled away, count unseen turns instead of moving the viewport.
 	if panels.history != p.rendered[p.captions] {
 		p.setText(p.captions, panels.history, true)
-		p.unreadHistory = meetingUnreadHistory(p.unreadHistory, p.historyCount, panels.historyCount, p.followLatest)
+		p.unreadHistory = meetingcore.UnreadHistory(p.unreadHistory, p.historyCount, panels.historyCount, p.followLatest)
 		p.historyCount = panels.historyCount
 	}
 	if p.followLatest {
@@ -514,7 +516,7 @@ func updateMeetingHUD(view meetingView) {
 	p.displayedReplies, p.displayedSource, p.displayedTip = view.replies, view.replySource, view.tip
 	p.renderReply()
 	newEnglish := view.expression.complete && view.expression.english != "" && view.expression.english != p.copyExpression
-	captionsOnly, expanded := meetingExpressionFocus(view.expression.complete, newEnglish, p.captionsOnly, p.expressionExpanded)
+	captionsOnly, expanded := meetingcore.ExpressionFocus(view.expression.complete, newEnglish, p.captionsOnly, p.expressionExpanded)
 	if captionsOnly != p.captionsOnly || expanded != p.expressionExpanded {
 		p.captionsOnly, p.expressionExpanded = captionsOnly, expanded
 		p.layout()
@@ -530,7 +532,7 @@ func updateMeetingHUD(view meetingView) {
 	if expression == "" {
 		expression = "听写键：直译自己的发言；改写键：提问、回答、补充观点。"
 	}
-	p.setText(p.labels[2], meetingExpressionHeading(view.expressionStatus, view.expression.complete), false)
+	p.setText(p.labels[2], meetingcore.ExpressionHeading(view.expressionStatus, view.expression.complete), false)
 	if view.expression.complete || time.Since(p.lastExpression) >= 280*time.Millisecond {
 		p.setText(p.expression, expression, true)
 		if newEnglish {
@@ -538,7 +540,7 @@ func updateMeetingHUD(view meetingView) {
 		}
 		p.lastExpression = time.Now()
 	}
-	original := meetingExpressionDetail(view.expressionStatus, view.expressionSource)
+	original := meetingcore.ExpressionDetail(view.expressionStatus, view.expressionSource)
 	p.setText(p.expressionSource, original, true)
 	meetingEnableWindow.Call(p.buttons[5], meetingBool(p.copyExpression != ""))
 }
@@ -579,12 +581,12 @@ func (p *meetingHUD) savePreferences() {
 	// Do not persist minimized or maximized geometry as a normal window size.
 	minimized, _, _ := user32.NewProc("IsIconic").Call(p.window)
 	maximized, _, _ := user32.NewProc("IsZoomed").Call(p.window)
-	prefs, _ := loadMeetingPreferences(meetingPreferencesPath())
+	prefs, _ := meetingcore.LoadPreferences(meetingPreferencesPath())
 	prefs.FontSize, prefs.CaptionsOnly, prefs.Panes = p.fontSize, p.captionsOnly, p.paneWeights
 	if minimized == 0 && maximized == 0 {
 		prefs.X, prefs.Y, prefs.Width, prefs.Height = bounds.Left, bounds.Top, bounds.Right-bounds.Left, bounds.Bottom-bounds.Top
 	}
-	if err := saveMeetingPreferences(meetingPreferencesPath(), prefs); err != nil && p.app != nil {
+	if err := meetingcore.SavePreferences(meetingPreferencesPath(), prefs); err != nil && p.app != nil {
 		p.app.logger.Printf("meeting UI preferences: %v", err)
 	}
 }

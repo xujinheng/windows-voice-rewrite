@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	"voicerewrite/internal/core/audio"
 )
 
 var (
@@ -253,8 +255,8 @@ func captureMeetingAudio(ctx context.Context, pid uint32, started func(), push f
 	defer comMethod(client, 11)
 	started()
 
-	var converter meetingPCMConverter
-	var silence [meetingFrameBytes]byte
+	var converter audio.PCMConverter
+	var silence [audio.FrameBytes]byte
 	lastPacket := time.Now()
 	for ctx.Err() == nil {
 		if active, _, _ := waitMeetingEvent.Call(target, 0); active != 258 {
@@ -285,7 +287,7 @@ func captureMeetingAudio(ctx context.Context, pid uint32, started func(), push f
 	return ctx.Err()
 }
 
-func readMeetingPacket(capture uintptr, converter *meetingPCMConverter, push func([]byte)) (uint32, error) {
+func readMeetingPacket(capture uintptr, converter *audio.PCMConverter, push func([]byte)) (uint32, error) {
 	var data uintptr
 	var frames, flags uint32
 	hr := comMethod(capture, 3, uintptr(unsafe.Pointer(&data)), uintptr(unsafe.Pointer(&frames)), uintptr(unsafe.Pointer(&flags)), 0, 0)
@@ -296,6 +298,6 @@ func readMeetingPacket(capture uintptr, converter *meetingPCMConverter, push fun
 	if flags&2 == 0 && data != 0 {
 		pcm = unsafe.Slice((*byte)(unsafe.Pointer(data)), int(frames)*4)
 	}
-	converter.consume(pcm, int(frames), push)
+	converter.Consume(pcm, int(frames), push)
 	return frames, meetingCOMError("释放音频缓冲", comMethod(capture, 4, uintptr(frames)))
 }

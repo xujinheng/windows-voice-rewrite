@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"voicerewrite/internal/core/provider"
 )
 
 type modelItem struct {
@@ -22,20 +24,20 @@ func discoverModel(ctx context.Context, cfg Config) (string, error) {
 	if m != "" && !strings.EqualFold(m, "auto") {
 		return m, nil
 	}
-	req, e := http.NewRequestWithContext(ctx, "GET", endpoint(cfg.LLMBaseURL, "/models"), nil)
+	req, e := http.NewRequestWithContext(ctx, "GET", provider.Endpoint(cfg.LLMBaseURL, "/models"), nil)
 	if e != nil {
 		return "", e
 	}
 	if cfg.LLMAPIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.LLMAPIKey)
 	}
-	resp, e := requestClient(10 * time.Second).Do(req)
+	resp, e := provider.RequestClient(10 * time.Second).Do(req)
 	if e != nil {
 		return "", fmt.Errorf("无法连接文本处理 API: %w", e)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return "", providerHTTPError("查询文本模型列表失败", resp.StatusCode)
+		return "", provider.HTTPError("查询文本模型列表失败", resp.StatusCode)
 	}
 	var v struct {
 		Data []modelItem `json:"data"`
@@ -87,7 +89,7 @@ func rewrite(ctx context.Context, cfg Config, original, instruction string) (str
 	if e != nil {
 		return "", e
 	}
-	req, e := http.NewRequestWithContext(ctx, "POST", endpoint(cfg.LLMBaseURL, "/chat/completions"), bytes.NewReader(raw))
+	req, e := http.NewRequestWithContext(ctx, "POST", provider.Endpoint(cfg.LLMBaseURL, "/chat/completions"), bytes.NewReader(raw))
 	if e != nil {
 		return "", e
 	}
@@ -95,13 +97,13 @@ func rewrite(ctx context.Context, cfg Config, original, instruction string) (str
 	if cfg.LLMAPIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.LLMAPIKey)
 	}
-	resp, e := requestClient(120 * time.Second).Do(req)
+	resp, e := provider.RequestClient(120 * time.Second).Do(req)
 	if e != nil {
 		return "", fmt.Errorf("文本模型请求失败: %w", e)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return "", providerHTTPError("文本模型", resp.StatusCode)
+		return "", provider.HTTPError("文本模型", resp.StatusCode)
 	}
 	var result struct {
 		Choices []struct {

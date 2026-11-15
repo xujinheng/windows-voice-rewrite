@@ -1,4 +1,4 @@
-package main
+package audio
 
 import (
 	"encoding/binary"
@@ -7,18 +7,18 @@ import (
 	"unicode/utf8"
 )
 
-const pcmBytesPerSecond = 16000 * 2
-const asrChunkSeconds = 25
+const PCMBytesPerSecond = 16000 * 2
+const ASRChunkSeconds = 25
 
-// splitPCMForASR preserves every sample. For long dictations, it places cuts
+// SplitPCMForASR preserves every sample. For long dictations, it places cuts
 // near low-energy regions in the last four seconds of each 25-second window.
 // Server-specific maximum audio durations are not assumed by the UI.
-func splitPCMForASR(pcm []byte) [][]byte {
-	if len(pcm) <= asrChunkSeconds*pcmBytesPerSecond || len(pcm)%2 != 0 {
+func SplitPCMForASR(pcm []byte) [][]byte {
+	if len(pcm) <= ASRChunkSeconds*PCMBytesPerSecond || len(pcm)%2 != 0 {
 		return [][]byte{pcm}
 	}
 	var parts [][]byte
-	maxBytes := asrChunkSeconds * pcmBytesPerSecond
+	maxBytes := ASRChunkSeconds * PCMBytesPerSecond
 	for start := 0; start < len(pcm); {
 		end := start + maxBytes
 		if end >= len(pcm) {
@@ -26,10 +26,10 @@ func splitPCMForASR(pcm []byte) [][]byte {
 			break
 		}
 		// Only seek for quieter boundaries if a meaningful tail remains.
-		if len(pcm)-end > 3*pcmBytesPerSecond {
-			from := end - 4*pcmBytesPerSecond
-			if from < start+10*pcmBytesPerSecond {
-				from = start + 10*pcmBytesPerSecond
+		if len(pcm)-end > 3*PCMBytesPerSecond {
+			from := end - 4*PCMBytesPerSecond
+			if from < start+10*PCMBytesPerSecond {
+				from = start + 10*PCMBytesPerSecond
 			}
 			end = quietBoundary(pcm, from, end)
 		}
@@ -44,8 +44,8 @@ func splitPCMForASR(pcm []byte) [][]byte {
 }
 
 func quietBoundary(pcm []byte, from, until int) int {
-	const window = pcmBytesPerSecond / 5 // 200 ms
-	const step = pcmBytesPerSecond / 10  // 100 ms
+	const window = PCMBytesPerSecond / 5 // 200 ms
+	const step = PCMBytesPerSecond / 10  // 100 ms
 	best, bestEnergy := until, uint64(^uint64(0))
 	for x := from; x+window <= until; x += step {
 		var energy uint64
@@ -63,7 +63,7 @@ func quietBoundary(pcm []byte, from, until int) int {
 	return best
 }
 
-func joinASRChunks(parts []string) string {
+func JoinASRChunks(parts []string) string {
 	var out strings.Builder
 	for _, part := range parts {
 		part = strings.TrimSpace(part)

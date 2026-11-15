@@ -17,6 +17,8 @@ import (
 	"time"
 	"unicode/utf8"
 	"unsafe"
+
+	meetingcore "voicerewrite/internal/core/meeting"
 )
 
 var buildID = "0.29.0-dev" // overwritten by -ldflags -X at build time
@@ -488,7 +490,7 @@ func runApp() {
 			app.postHandyPhase(statusProcessing, holdGeneration)
 			if holdMeeting != nil {
 				if holdMeeting.ctx.Err() == nil {
-					mode := meetingVoiceMode(holdIsDictation)
+					mode := meetingcore.VoiceMode(holdIsDictation)
 					go holdMeeting.express(app, rec, holdGeneration, mode)
 				} else {
 					go func() { <-rec.result }()
