@@ -35,4 +35,3 @@ func TestASRChunksMergeAndRespectCancel(t *testing.T) {
 		t.Fatalf("canceled task contacted server: %v", err)
 	}
 }
-
