@@ -31,7 +31,7 @@ func TestBridgeRejectsUnsupportedAndMalformedRequests(t *testing.T) {
 	private := "private-auth-token-never-log"
 	input := strings.NewReader("{\"v\":1,\"id\":\"a\",\"op\":\"unknown\"}\n" +
 		"{\"v\":9,\"id\":\"b\",\"op\":\"hello\"}\n" +
-		"{\"v\":1,\"id\":\"c\",\"op\":\"hello\",\"secret\":\""+private+"\"}\n" +
+		"{\"v\":1,\"id\":\"c\",\"op\":\"hello\",\"secret\":\"" + private + "\"}\n" +
 		"{not-json}\n")
 	var output bytes.Buffer
 	if err := serve(input, &output); err != nil {
