@@ -45,7 +45,7 @@ jobs:
         run: go build ./internal/core/...
   test-core-macos:
     runs-on: macos-15
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -60,6 +60,26 @@ jobs:
         run: |
           GOOS=darwin GOARCH=arm64 go build ./internal/core/...
           GOOS=darwin GOARCH=amd64 go build ./internal/core/...
+      - name: Test native macOS Swift packages
+        run: |
+          for module in Microphone Storage Interaction; do
+            package="macos/Modules/$module/Package.swift"
+            if [ -f "$package" ]; then
+              echo "Testing native Swift module $module"
+              (cd "macos/Modules/$module" && swift test)
+            fi
+          done
+      - name: Build and test native macOS application
+        if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        run: |
+          xcodebuild -project macos/VoiceRewrite.xcodeproj \
+            -scheme VoiceRewrite -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/voicerewrite-derived" test
+          app="$RUNNER_TEMP/voicerewrite-derived/Build/Products/Debug/VoiceRewrite.app"
+          test -d "$app"
+          test -x "$app/Contents/MacOS/voicebridge"
+          file "$app/Contents/MacOS/voicebridge"
       - name: Verify Swift-to-Go local process handshake on macOS
         working-directory: voice-rewrite
         run: |
