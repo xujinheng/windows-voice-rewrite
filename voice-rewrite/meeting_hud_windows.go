@@ -16,7 +16,7 @@ type meetingHUD struct {
 	app                                                         *appState
 	window, owner                                               uintptr
 	status, live, captions, responses, expression, instruction  uintptr
-	currentEnglish, currentChinese                                uintptr
+	currentEnglish, currentChinese, expressionSource              uintptr
 	labelFont, bodyFont, englishFont, chineseFont                uintptr
 	palette                                                     uiPalette
 	background, surface                                         uintptr
@@ -102,8 +102,8 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	p.surface, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.surface))
 	p.labelFont = meetingUIFont(p.px(14), 600)
 	p.bodyFont = meetingUIFont(p.px(p.fontSize), 400)
-	p.englishFont = popupFont(-p.px(p.fontSize+4), 500)
-	p.chineseFont = meetingUIFont(p.px(p.fontSize+2), 500)
+	p.englishFont = popupFont(-p.px(p.fontSize+5), 500)
+	p.chineseFont = meetingUIFont(p.px(p.fontSize+3), 500)
 	applyWindowPalette(hwnd, p.palette)
 	child := func(class, text string, style uintptr, id uintptr, body bool) uintptr {
 		if err != nil {
@@ -148,6 +148,8 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	runtime.KeepAlive(cue)
 	p.labels[2] = child("STATIC", "我的英文表达", 0, 0, false)
 	p.expression = child("EDIT", "", editStyle, 0, true)
+	setFont(p.expression, p.englishFont)
+	p.expressionSource = child("EDIT", "", ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL, 0, false)
 	if err != nil {
 		closeMeetingHUD()
 		return err
@@ -222,7 +224,7 @@ func (p *meetingHUD) layout() {
 	// The user's generated utterance is anchored to the bottom of the window.
 	// Only the history area expands when the meeting window grows.
 	footer := bounds.Bottom - margin
-	for _, control := range []uintptr{p.labels[1], p.labels[2], p.responses, p.expression, p.instruction, p.buttons[4], p.buttons[5], p.buttons[6], p.buttons[9], p.buttons[10], p.buttons[11], p.buttons[12], p.buttons[13]} {
+	for _, control := range []uintptr{p.labels[1], p.labels[2], p.responses, p.expression, p.expressionSource, p.instruction, p.buttons[4], p.buttons[5], p.buttons[6], p.buttons[9], p.buttons[10], p.buttons[11], p.buttons[12], p.buttons[13]} {
 		procShowWindow.Call(control, meetingShow(!p.captionsOnly))
 	}
 	if p.captionsOnly {
@@ -238,7 +240,12 @@ func (p *meetingHUD) layout() {
 	expressionHeader := footer - expressionHeight - label
 	p.move(p.labels[2], margin, expressionHeader, width-p.px(116), label)
 	p.move(p.buttons[5], margin+width-p.px(112), expressionHeader-p.px(4), p.px(112), button)
-	p.move(p.expression, margin, expressionHeader+label, width, expressionHeight)
+	sourceHeight := p.px(28)
+	if expressionHeight > p.px(100) {
+		sourceHeight = p.px(34)
+	}
+	p.move(p.expression, margin, expressionHeader+label, width, expressionHeight-sourceHeight)
+	p.move(p.expressionSource, margin, expressionHeader+label+expressionHeight-sourceHeight, width, sourceHeight)
 
 	instructionY := expressionHeader - gap - button
 	p.move(p.instruction, margin, instructionY, width-p.px(112)-gap, button)
@@ -283,8 +290,8 @@ func (p *meetingHUD) resizeText(delta int32) {
 		return
 	}
 	body := meetingUIFont(p.px(size), 400)
-	english := popupFont(-p.px(size+4), 500)
-	chinese := meetingUIFont(p.px(size+2), 500)
+	english := popupFont(-p.px(size+5), 500)
+	chinese := meetingUIFont(p.px(size+3), 500)
 	if body == 0 || english == 0 || chinese == 0 {
 		for _, font := range []uintptr{body, english, chinese} {
 			if font != 0 {
@@ -295,13 +302,14 @@ func (p *meetingHUD) resizeText(delta int32) {
 	}
 	old := []uintptr{p.bodyFont, p.englishFont, p.chineseFont}
 	p.bodyFont, p.englishFont, p.chineseFont, p.fontSize = body, english, chinese, size
-	for _, control := range []uintptr{p.captions, p.responses, p.expression, p.instruction, p.profileBackground, p.profileTerms} {
+	for _, control := range []uintptr{p.captions, p.responses, p.instruction, p.profileBackground, p.profileTerms} {
 		if control != 0 {
 			setFont(control, body)
 		}
 	}
 	setFont(p.currentEnglish, english)
 	setFont(p.currentChinese, chinese)
+	setFont(p.expression, english)
 	for _, font := range old {
 		procDeleteObject.Call(font)
 	}
@@ -448,12 +456,6 @@ func updateMeetingHUD(view meetingView) {
 	p.copyExpression = ""
 	if expression == "" && view.expression.english != "" {
 		expression = view.expression.english
-		if view.expression.chinese != "" {
-			expression += "\r\n" + view.expression.chinese
-		}
-		if view.expressionSource != "" {
-			expression += "\r\n\r\n语音原文 · " + view.expressionSource
-		}
 		if view.expression.complete {
 			p.copyExpression = view.expression.english
 		} else {
@@ -461,12 +463,17 @@ func updateMeetingHUD(view meetingView) {
 		}
 	}
 	if expression == "" {
-		expression = "会议中：按听写键直接翻成英文；按改写键说你的意图，生成可直接说出的英文。"
+		expression = "听写键：直接翻英文；改写键：说出要表达的意思。"
 	}
 	if view.expression.complete || time.Since(p.lastExpression) >= 280*time.Millisecond {
 		p.setText(p.expression, expression, true)
 		p.lastExpression = time.Now()
 	}
+	original := "识别原话 · " + strings.TrimSpace(view.expressionSource)
+	if strings.TrimSpace(view.expressionSource) == "" {
+		original = "语音原话会保留在这里"
+	}
+	p.setText(p.expressionSource, original, true)
 	meetingEnableWindow.Call(p.buttons[5], meetingBool(p.copyExpression != ""))
 }
 
@@ -487,11 +494,8 @@ func (p *meetingHUD) renderReply() {
 	if reply.english == "" {
 		text = "听到提问后生成建议；新建议可点击“查看新建议”后阅读。"
 	}
-	if p.displayedSource != "" {
-		text += "\r\n\r\n对应原话 · " + p.displayedSource
-	}
 	if p.displayedTip != "" {
-		text += "\r\n技术提示 · " + p.displayedTip
+		text += "\r\n提示 · " + p.displayedTip
 	}
 	if reply.complete || time.Since(p.lastReply) >= 280*time.Millisecond {
 		p.setText(p.responses, text, true)
@@ -647,7 +651,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			} else {
 				procSetTextColor.Call(wParam, p.palette.color(p.palette.text))
 			}
-			if lParam == p.captions || lParam == p.live || lParam == p.currentEnglish || lParam == p.currentChinese || lParam == p.responses || lParam == p.expression || lParam == p.instruction || lParam == p.profileBackground || lParam == p.profileTerms {
+			if lParam == p.captions || lParam == p.live || lParam == p.currentEnglish || lParam == p.currentChinese || lParam == p.responses || lParam == p.expression || lParam == p.expressionSource || lParam == p.instruction || lParam == p.profileBackground || lParam == p.profileTerms {
 				procSetBkColor.Call(wParam, p.palette.color(p.palette.surface))
 				return p.surface
 			}
