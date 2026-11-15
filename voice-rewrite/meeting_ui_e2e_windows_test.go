@@ -37,12 +37,12 @@ func meetingE2EWindowRect(t *testing.T, control uintptr) rect32 {
 	return bounds
 }
 
-func meetingE2EHistory(count int) []meetingCaption {
-	captions := make([]meetingCaption, 0, count)
+func meetingE2EHistory(count int) []meetingcore.Caption {
+	captions := make([]meetingcore.Caption, 0, count)
 	for i := 1; i <= count; i++ {
-		source := fmt.Sprintf("This is completed meeting turn number %03d. We will review it in detail.", i)
-		chinese := fmt.Sprintf("这是第 %03d 段已确认的中文会议记录，需要保留阅读位置。", i)
-		captions = append(captions, meetingCaption{id: uint64(i), source: source, chinese: chinese, translatedFrom: source, final: true})
+		Source := fmt.Sprintf("This is completed meeting turn number %03d. We will review it in detail.", i)
+		Chinese := fmt.Sprintf("这是第 %03d 段已确认的中文会议记录，需要保留阅读位置。", i)
+		captions = append(captions, meetingcore.Caption{ID: uint64(i), Source: source, Chinese: chinese, TranslatedFrom: source, Final: true})
 	}
 	return captions
 }
@@ -84,9 +84,9 @@ func TestMeetingWindowsE2E(t *testing.T) {
 	// EM_GETFIRSTVISIBLELINE must remain unchanged and unread must increase.
 	procSendMessage.Call(p.captions, 0x0115, 6, 0) // WM_VSCROLL / SB_TOP
 	top := meetingE2EFirstLine(p.captions)
-	view.captions = append(view.captions, meetingCaption{
-		id: 66, source: "One more actual utterance", chinese: "再补充一段实际发言",
-		translatedFrom: "One more actual utterance", final: true,
+	view.captions = append(view.captions, meetingcore.Caption{
+		ID: 66, Source: "One more actual utterance", Chinese: "再补充一段实际发言",
+		TranslatedFrom: "One more actual utterance", Final: true,
 	})
 	updateMeetingHUD(view)
 	if first := meetingE2EFirstLine(p.captions); first != top || p.followLatest || p.unreadHistory != 1 {
