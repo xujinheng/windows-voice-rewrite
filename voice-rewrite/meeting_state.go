@@ -11,7 +11,7 @@ import (
 
 type meetingCaption struct {
 	id                            uint64
-	source, chinese, stable, live string
+	source, chinese, translatedFrom, stable, live string
 	final                         bool
 }
 
@@ -44,6 +44,7 @@ func reviseMeetingCaption(old meetingCaption, id uint64, text string, final bool
 	if old.id == id {
 		// Keep the last readable translation until the replacement arrives.
 		out.chinese = old.chinese
+		out.translatedFrom = old.translatedFrom
 	}
 	if final {
 		out.stable = text
@@ -137,18 +138,13 @@ func buildMeetingReadingPanels(captions []meetingCaption) meetingReadingPanels {
 	result.live = !current.final
 	switch {
 	case !current.final:
-		result.hint = "识别中 · 内容可能微调"
-	case meetingNeedsReply(current.source):
-		result.hint = "可能在提问 · 可准备回复"
-	case strings.Contains(strings.ToLower(current.source), "schedule") ||
-		strings.Contains(strings.ToLower(current.source), "timeline") ||
-		strings.Contains(strings.ToLower(current.source), "deadline"):
-		result.hint = "提到了时间安排"
-	case strings.Contains(strings.ToLower(current.source), "delay") ||
-		strings.Contains(strings.ToLower(current.source), "risk"):
-		result.hint = "提到了风险或延期"
+		result.hint = "识别中 · 原文仍可能调整"
+	case current.chinese == "":
+		result.hint = "原文已确认 · 正在生成译文"
+	case current.translatedFrom != "" && current.translatedFrom != current.source:
+		result.hint = "原文已更新 · 译文待刷新"
 	default:
-		result.hint = "已完成 · 当前发言"
+		result.hint = "已确认 · 可以放心阅读"
 	}
 	if result.chinese == "" {
 		result.chinese = "正在准备中文释义…"
@@ -276,15 +272,6 @@ func meetingMapSelection(pos uint32, patch meetingTextPatch) uint32 {
 	}
 	inserted := len(utf16.Encode([]rune(patch.insert)))
 	return uint32(at + inserted - (patch.end - patch.start))
-}
-
-func meetingShouldReply(latest string, prior []string, semantic bool) bool {
-	text := strings.Trim(strings.ToLower(strings.TrimSpace(latest)), ".!?？。，")
-	switch text {
-	case "", "yeah", "yes", "no", "okay", "ok", "uh-huh", "thanks", "thank you", "好的", "嗯", "谢谢":
-		return false
-	}
-	return meetingNeedsReply(latest) || semantic
 }
 
 const (
