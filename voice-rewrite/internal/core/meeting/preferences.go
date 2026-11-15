@@ -8,13 +8,13 @@ import (
 )
 
 type Preferences struct {
-	FontSize     int32              `json:"font_size"`
+	FontSize     int32       `json:"font_size"`
 	Panes        PaneWeights `json:"panes"`
-	CaptionsOnly bool               `json:"captions_only"`
-	X            int32              `json:"x"`
-	Y            int32              `json:"y"`
-	Width        int32              `json:"width"`
-	Height       int32              `json:"height"`
+	CaptionsOnly bool        `json:"captions_only"`
+	X            int32       `json:"x"`
+	Y            int32       `json:"y"`
+	Width        int32       `json:"width"`
+	Height       int32       `json:"height"`
 }
 
 func LoadPreferences(path string) (Preferences, error) {
@@ -58,4 +58,3 @@ func SavePreferences(path string, p Preferences) error {
 	}
 	return os.Rename(f.Name(), path)
 }
-
