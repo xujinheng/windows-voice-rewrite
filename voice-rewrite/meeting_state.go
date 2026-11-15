@@ -185,6 +185,30 @@ func meetingTranslationFitsSource(source, translated string) bool {
 // A meeting has two independent speaking actions, neither requiring a selection.
 // The rewrite shortcut is a general-purpose speaking tool. When the
 // instruction explicitly asks to ANSWER, do not feed it to a question-composer.
+// The English answer deserves most of the available height while it is being
+// read; historical captions remain independently scrollable. All sizes here
+// are logical 96-DPI pixels, making them testable without Win32.
+type meetingAssistantHeights struct {
+	history, reply, expression, source int32
+}
+
+func meetingPanelHeights(space int32, expanded bool) meetingAssistantHeights {
+	if expanded {
+		history := max(int32(52), space*24/100)
+		expression := max(int32(70), space-history-32) // title + gap
+		return meetingAssistantHeights{history: history, expression: expression, source: 32}
+	}
+	// Normal mode has three rows of buttons, a title and five spacing gaps:
+	// 3*32 + 24 + 5*8 = 160. Protect a minimum reading area for history.
+	budget := max(int32(110), space-160-52)
+	reply := min(int32(90), max(int32(42), budget/3))
+	expression := min(int32(172), max(int32(72), budget-reply))
+	return meetingAssistantHeights{
+		history: max(int32(30), space-160-reply-expression),
+		reply: reply, expression: expression, source: 28,
+	}
+}
+
 func meetingSpeechTask(mode, spoken string) string {
 	if mode != "compose" {
 		return mode
