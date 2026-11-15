@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"unicode/utf8"
 
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
