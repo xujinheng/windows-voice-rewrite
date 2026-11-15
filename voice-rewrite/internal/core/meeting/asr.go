@@ -1,8 +1,6 @@
 package meeting
 
 import (
-	coreconfig "voicerewrite/internal/core/config"
-	"voicerewrite/internal/core/speech"
 	"bufio"
 	"bytes"
 	"context"
@@ -15,7 +13,9 @@ import (
 	"strings"
 	"time"
 
+	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
+	"voicerewrite/internal/core/speech"
 )
 
 type ASRState struct{ raw, fixed string }
