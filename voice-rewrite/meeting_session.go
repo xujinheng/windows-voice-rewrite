@@ -1,6 +1,7 @@
 package main
 
 import (
+	meetingcore "voicerewrite/internal/core/meeting"
 	"context"
 	"errors"
 	"strings"
@@ -33,7 +34,7 @@ type meetingSession struct {
 	dirty, demo                  bool
 	modelMu                      sync.Mutex
 	model                        string
-	scheduler                    meetingScheduler
+	scheduler                    meetingcore.Scheduler
 	lastVoice                    time.Time
 	onConfig                     func(Config)
 }
@@ -173,18 +174,18 @@ func meetingPreviewInterval(elapsed time.Duration) time.Duration {
 
 func (s *meetingSession) runInference(ctx context.Context, priority int, stage string, call func(context.Context) error) error {
 	for {
-		active, release, err := s.scheduler.acquire(ctx, priority)
+		active, release, err := s.scheduler.Acquire(ctx, priority)
 		if err != nil {
 			return err
 		}
-		s.mutate(func() { s.view.metrics.Stage = stage; s.view.metrics.Pending = s.scheduler.pending() })
+		s.mutate(func() { s.view.metrics.Stage = stage; s.view.metrics.Pending = s.scheduler.Pending() })
 		err = call(active)
-		preempted := errors.Is(context.Cause(active), errMeetingPreempted)
+		preempted := errors.Is(context.Cause(active), meetingcore.ErrPreempted)
 		if !preempted && ctx.Err() == nil {
 			s.mutate(func() {
 				if !s.view.capturePaused {
 					s.view.metrics.Stage = "正在听"
-					s.view.metrics.Pending = s.scheduler.pending()
+					s.view.metrics.Pending = s.scheduler.Pending()
 				}
 			})
 		}
@@ -192,13 +193,13 @@ func (s *meetingSession) runInference(ctx context.Context, priority int, stage s
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if preempted && priority == meetingPriorityReply {
-			return errMeetingPreempted
+		if preempted && priority == meetingcore.PriorityReply {
+			return meetingcore.ErrPreempted
 		}
 		if preempted {
 			continue
 		}
-		s.mutate(func() { s.view.metrics.Stage = "正在听"; s.view.metrics.Pending = s.scheduler.pending() })
+		s.mutate(func() { s.view.metrics.Stage = "正在听"; s.view.metrics.Pending = s.scheduler.Pending() })
 		return err
 	}
 }
@@ -247,9 +248,9 @@ func (s *meetingSession) transcribeTurn(turn meetingAudioTurn, state *meetingASR
 	s.mu.Unlock()
 	defer func() { s.mu.Lock(); s.activeASRCancel = nil; s.mu.Unlock() }()
 	cfg := s.configSnapshot()
-	priority := meetingPriorityPreview
+	priority := meetingcore.PriorityPreview
 	if turn.final {
-		priority = meetingPriorityASR
+		priority = meetingcore.PriorityASR
 	}
 	var latest string
 	var first time.Duration
@@ -345,7 +346,7 @@ func (s *meetingSession) upsertSourceLocked(id uint64, text string, final, confi
 	s.view.captions = append(s.view.captions, reviseMeetingCaption(meetingCaption{}, id, text, final))
 }
 func (s *meetingSession) updateCaption(epoch, id uint64, source, chinese string) {
-	if !meetingTranslationFitsSource(source, chinese) {
+	if !meetingcore.TranslationFitsSource(source, chinese) {
 		s.logger("meeting stage=caption discarded overlong translation for source %d bytes", len(source))
 		return
 	}
@@ -373,7 +374,7 @@ func (s *meetingSession) translateTurns(jobs <-chan meetingCaptionJob) {
 			s.applyWork(job.epoch, func() { s.stopCaption = cancel; s.captionID = job.id })
 			var displayed bool
 			started := time.Now()
-			err := s.complete(ctx, meetingPriorityCaption, meetingQuery{Mode: "caption", Prior: job.prior, Latest: job.latest}, func(line meetingLine) {
+			err := s.complete(ctx, meetingcore.PriorityCaption, meetingQuery{Mode: "caption", Prior: job.prior, Latest: job.latest}, func(line meetingLine) {
 				if line.kind != "ZH" {
 					return
 				}
@@ -401,7 +402,7 @@ func (s *meetingSession) complete(ctx context.Context, priority int, query meeti
 	if query.Mode == "replies" {
 		stage = "正在准备建议"
 	}
-	if priority == meetingPriorityExpress {
+	if priority == meetingcore.PriorityExpress {
 		stage = "正在整理你的表达"
 	}
 	return s.runInference(ctx, priority, stage, func(active context.Context) error {
@@ -443,7 +444,7 @@ func (s *meetingSession) queueReplies(job meetingCaptionJob) {
 		defer cancel()
 		var batch [3]meetingLine
 		tip := ""
-		err := s.complete(ctx, meetingPriorityReply, meetingQuery{Mode: "replies", Latest: job.latest, Prior: job.prior}, func(line meetingLine) {
+		err := s.complete(ctx, meetingcore.PriorityReply, meetingQuery{Mode: "replies", Latest: job.latest, Prior: job.prior}, func(line meetingLine) {
 			switch line.kind {
 			case "ONE":
 				batch[0] = line
@@ -553,7 +554,7 @@ func (s *meetingSession) refineReply(index int, instruction string) {
 	s.mu.Unlock()
 	go func() {
 		defer cancel()
-		err := s.complete(ctx, meetingPriorityExpress, meetingQuery{Mode: "refine", SelectedReply: selected, UserPoints: instruction}, func(line meetingLine) {
+		err := s.complete(ctx, meetingcore.PriorityExpress, meetingQuery{Mode: "refine", SelectedReply: selected, UserPoints: instruction}, func(line meetingLine) {
 			s.applyExpression(epoch, serial, func() { s.view.expression = line; s.view.expressionStatus = "" })
 		})
 		if err != nil && ctx.Err() == nil {
