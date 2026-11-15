@@ -1,6 +1,7 @@
 package main
 
 import (
+	"voicerewrite/internal/core/speech"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -59,7 +60,7 @@ func TestDictationTranscribesWithoutLLM(t *testing.T) {
 	cfg.ASRBaseURL = server.URL + "/v1"
 	cfg.LLMBaseURL = "http://127.0.0.1:1/v1" // must not be called
 	pcm := make([]byte, 6400)
-	result, err := transcribe(context.Background(), cfg, pcm)
+	result, err := speech.Transcribe(context.Background(), cfg, pcm)
 	if err != nil || result != "早上好，今天的会议开始。" || asrCalls != 1 {
 		t.Fatalf("result=%q err=%v calls=%d", result, err, asrCalls)
 	}
