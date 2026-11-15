@@ -548,9 +548,6 @@ func runApp() {
 			} else {
 				statusMode = "会议意图"
 			}
-		} else {
-			statusMode = "会议意图"
-		}
 		}
 		// Promote the immediate mouse-down preview without recreating its HWND.
 		// Keyboard hold has no preview and uses the usual status path.
