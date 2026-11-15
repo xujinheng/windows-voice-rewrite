@@ -1,6 +1,7 @@
 package main
 
 import (
+	"voicerewrite/internal/core/provider"
 	"bufio"
 	"bytes"
 	"context"
@@ -29,7 +30,7 @@ func meetingJSON(ctx context.Context, cfg Config, url string, body any, out any)
 	if cfg.ASRAPIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.ASRAPIKey)
 	}
-	resp, err := requestClient(16 * time.Second).Do(req)
+	resp, err := provider.RequestClient(16 * time.Second).Do(req)
 	if err != nil {
 		return err
 	}
@@ -43,7 +44,7 @@ func meetingASRHTTPError(status int) error {
 	if status == 404 || status == 405 || status == 400 || status == 501 {
 		return fmt.Errorf("ASR 续写接口不可用（HTTP %d），请更新 oneclick/llama-server，或在会议设置选择分段识别", status)
 	}
-	return providerHTTPError("ASR", status)
+	return provider.HTTPError("ASR", status)
 }
 func (s *meetingASRState) prefix(ctx context.Context, cfg Config) (string, error) {
 	marker := strings.Index(s.raw, "<asr_text>")
@@ -107,7 +108,7 @@ func (s *meetingASRState) transcribe(ctx context.Context, cfg Config, pcm []byte
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint(cfg.ASRBaseURL, "/chat/completions"), bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, provider.Endpoint(cfg.ASRBaseURL, "/chat/completions"), bytes.NewReader(data))
 	if err != nil {
 		return "", err
 	}
@@ -115,7 +116,7 @@ func (s *meetingASRState) transcribe(ctx context.Context, cfg Config, pcm []byte
 	if cfg.ASRAPIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.ASRAPIKey)
 	}
-	resp, err := requestClient(16 * time.Second).Do(req)
+	resp, err := provider.RequestClient(16 * time.Second).Do(req)
 	if err != nil {
 		return "", err
 	}
