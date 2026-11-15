@@ -75,4 +75,3 @@ func TestMeetingDraggableDividersAreIndependentAndConstrained(t *testing.T) {
 		t.Fatal("assistant divider must hide in captions-only mode")
 	}
 }
-
