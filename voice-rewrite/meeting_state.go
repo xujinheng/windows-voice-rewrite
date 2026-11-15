@@ -137,12 +137,12 @@ func buildMeetingReadingPanels(captions []meetingCaption) meetingReadingPanels {
 	result.chinese = strings.TrimSpace(current.chinese)
 	result.live = !current.final
 	switch {
+	case current.translatedFrom != "" && current.translatedFrom != current.source:
+		result.hint = "原文已更新 · 译文待刷新"
 	case !current.final:
 		result.hint = "识别中 · 原文仍可能调整"
 	case current.chinese == "":
 		result.hint = "原文已确认 · 正在生成译文"
-	case current.translatedFrom != "" && current.translatedFrom != current.source:
-		result.hint = "原文已更新 · 译文待刷新"
 	default:
 		result.hint = "已确认 · 可以放心阅读"
 	}
