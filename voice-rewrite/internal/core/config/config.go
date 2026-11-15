@@ -1,5 +1,13 @@
 package config
 
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+
+	"voicerewrite/internal/core/provider"
+)
+
 // VoiceRewrite never sends audio or selected text to a provider other than the
 // two HTTP endpoints explicitly configured by the user.
 type Config struct {
@@ -43,4 +51,84 @@ func Defaults() Config {
 		SelectionCopyAttempts:  2,
 		SelectionCopyTimeoutMS: 750,
 	}
+}
+
+// Parse overlays JSON onto defaults. Credentials remain opaque until a native
+// adapter decrypts them; callers must Normalize the decrypted configuration.
+func Parse(data []byte) (Config, error) {
+	cfg := Defaults()
+	err := json.Unmarshal(data, &cfg)
+	return cfg, err
+}
+
+// Marshal serializes a configuration without touching the filesystem or keys.
+func Marshal(cfg Config) ([]byte, error) {
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
+
+// Normalize applies the persisted configuration's defaults and validation.
+// It does not inspect or transform secrets.
+func Normalize(cfg Config) (Config, error) {
+	if cfg.MeetingASRMode != "llama-prefix" && cfg.MeetingASRMode != "multipart" {
+		return cfg, errors.New("meeting_asr_mode 必须是 llama-prefix 或 multipart")
+	}
+	if cfg.ASRModel == "" {
+		cfg.ASRModel = "whisper-1"
+	}
+	if cfg.HotkeyRecord == "" {
+		cfg.HotkeyRecord = "Mouse5"
+	}
+	if cfg.DictationHotkey == "" {
+		cfg.DictationHotkey = "Mouse4"
+	}
+	if cfg.RecordMode == "" {
+		cfg.RecordMode = "hold"
+	}
+	if cfg.RecordMode != "toggle" && cfg.RecordMode != "hold" {
+		return cfg, fmt.Errorf("invalid record_mode %q: use toggle or hold", cfg.RecordMode)
+	}
+	if cfg.HotkeyExit == "" {
+		cfg.HotkeyExit = "Ctrl+Alt+F10"
+	}
+	if cfg.AudioDeviceID < -1 || cfg.AudioDeviceID > 255 {
+		return cfg, fmt.Errorf("录音设备编号无效：%d", cfg.AudioDeviceID)
+	}
+	if cfg.MaxResponseTokens < 128 || cfg.MaxResponseTokens > 4096 {
+		cfg.MaxResponseTokens = 1200
+	}
+	if cfg.MaxRecordSeconds <= 0 || cfg.MaxRecordSeconds > 180 {
+		cfg.MaxRecordSeconds = 60
+	}
+	if cfg.MaxSelectedRunes <= 0 || cfg.MaxSelectedRunes > 100000 {
+		cfg.MaxSelectedRunes = 12000
+	}
+	if cfg.SelectionCopyAttempts < 1 || cfg.SelectionCopyAttempts > 5 {
+		cfg.SelectionCopyAttempts = 3
+	}
+	if cfg.SelectionCopyTimeoutMS < 500 || cfg.SelectionCopyTimeoutMS > 5000 {
+		cfg.SelectionCopyTimeoutMS = 1800
+	}
+	for _, base := range []string{cfg.ASRBaseURL, cfg.LLMBaseURL} {
+		if err := provider.ValidateBaseURL(base); err != nil {
+			return cfg, fmt.Errorf("无效的 API 地址: %w", err)
+		}
+	}
+	return cfg, nil
+}
+
+// TransformSecrets applies an OS-supplied credential operation to both keys.
+// The core never selects an encryption provider or stores credentials.
+func TransformSecrets(cfg Config, transform func(string) (string, error)) (Config, error) {
+	var err error
+	if cfg.ASRAPIKey, err = transform(cfg.ASRAPIKey); err != nil {
+		return cfg, err
+	}
+	if cfg.LLMAPIKey, err = transform(cfg.LLMAPIKey); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
 }

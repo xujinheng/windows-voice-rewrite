@@ -4,11 +4,14 @@ package main
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"runtime"
 	"strings"
 	"syscall"
 	"unsafe"
+
+	coreconfig "voicerewrite/internal/core/config"
 )
 
 // Windows DPAPI: secrets are tied to the current Windows user, not to an
@@ -49,7 +52,7 @@ func dpapiTransform(data []byte, protect bool) ([]byte, error) {
 	return append([]byte(nil), unsafe.Slice(out.Data, int(out.Size))...), nil
 }
 func encryptSecret(s string) (string, error) {
-	if s == "" || strings.HasPrefix(s, dpapiPrefix) {
+	if s == "" {
 		return s, nil
 	}
 	raw, err := dpapiTransform([]byte(s), true)
@@ -66,6 +69,9 @@ func decryptSecret(s string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("密钥编码错误: %w", err)
 	}
+	if len(raw) == 0 {
+		return "", errors.New("DPAPI 密文为空")
+	}
 	plain, err := dpapiTransform(raw, false)
 	if err != nil {
 		return "", err
@@ -73,22 +79,9 @@ func decryptSecret(s string) (string, error) {
 	return string(plain), nil
 }
 func encryptConfigSecrets(c Config) (Config, error) {
-	var err error
-	if c.ASRAPIKey, err = encryptSecret(c.ASRAPIKey); err != nil {
-		return c, err
-	}
-	if c.LLMAPIKey, err = encryptSecret(c.LLMAPIKey); err != nil {
-		return c, err
-	}
-	return c, nil
+	return coreconfig.TransformSecrets(c, encryptSecret)
 }
+
 func decryptConfigSecrets(c Config) (Config, error) {
-	var err error
-	if c.ASRAPIKey, err = decryptSecret(c.ASRAPIKey); err != nil {
-		return c, err
-	}
-	if c.LLMAPIKey, err = decryptSecret(c.LLMAPIKey); err != nil {
-		return c, err
-	}
-	return c, nil
+	return coreconfig.TransformSecrets(c, decryptSecret)
 }
