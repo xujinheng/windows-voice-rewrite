@@ -11,6 +11,7 @@ public enum TextWriteVerification {
               range.location + range.length <= original.utf16.count,
               selectedText.utf16.count == range.length else { return nil }
         let nsRange = NSRange(location: range.location, length: range.length)
+        guard Range(nsRange, in: original) != nil else { return nil }
         let actual = (original as NSString).substring(with: nsRange)
         guard Array(actual.utf16) == Array(selectedText.utf16) else { return nil }
         return (original as NSString).replacingCharacters(in: nsRange, with: replacement)
