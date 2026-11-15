@@ -127,8 +127,8 @@ func meetingTextChange(old, next string) meetingTextPatch {
 		n++
 	}
 	return meetingTextPatch{
-		start: len(utf16.Encode(a[:n])),
-		end:   len(utf16.Encode(a)),
+		start:  len(utf16.Encode(a[:n])),
+		end:    len(utf16.Encode(a)),
 		insert: string(b[n:]),
 	}
 }
