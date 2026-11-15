@@ -61,10 +61,10 @@ func TestMeetingSettingsRejectMissingStore(t *testing.T) {
 func TestMeetingHistoryIsNotDiscardedAfterTwelveTurns(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.stop()
-	for id := uint64(1); id <= 30; id++ {
-		s.upsertSourceLocked(id, "test sentence", true, true)
+	for ID := uint64(1); id <= 30; id++ {
+		s.view.captions = meetingcore.UpsertCaption(s.view.captions, id, "test sentence", true, true)
 	}
-	if len(s.view.captions) != 30 || s.view.captions[0].id != 1 {
+	if len(s.view.captions) != 30 || s.view.captions[0].ID != 1 {
 		t.Fatalf("reader lost early captions: %#v", s.view.captions)
 	}
 }
@@ -72,14 +72,14 @@ func TestMeetingHistoryIsNotDiscardedAfterTwelveTurns(t *testing.T) {
 func TestMeetingStreamingDoesNotClearTranslation(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.stop()
-	s.upsertSourceLocked(1, "the first phrase", false, true)
+	s.view.captions = meetingcore.UpsertCaption(s.view.captions, 1, "the first phrase", false, true)
 	s.updateCaption(1, 1, "the first phrase", "第一句")
-	s.upsertSourceLocked(1, "the first phrase continues", false, false)
-	if len(s.view.captions) != 1 || s.view.captions[0].chinese != "第一句" {
+	s.view.captions = meetingcore.UpsertCaption(s.view.captions, 1, "the first phrase continues", false, false)
+	if len(s.view.captions) != 1 || s.view.captions[0].Chinese != "第一句" {
 		t.Fatalf("translation flickered away: %#v", s.view.captions)
 	}
-	s.upsertSourceLocked(1, "", false, false)
-	if s.view.captions[0].source == "" {
+	s.view.captions = meetingcore.UpsertCaption(s.view.captions, 1, "", false, false)
+	if s.view.captions[0].Source == "" {
 		t.Fatal("empty stream chunk erased readable transcript")
 	}
 }
@@ -107,7 +107,7 @@ func TestMeetingPendingRepliesKeepReadableBatch(t *testing.T) {
 	defer s.stop()
 	s.view.replies[0] = meetingLine{english: "old", complete: true}
 	s.view.replySource = "old question"
-	batch := [3]meetingLine{{english: "new", chinese: "新", complete: true}}
+	batch := [3]meetingLine{{english: "new", Chinese: "新", complete: true}}
 	s.publishReplies(batch, "new question", "check")
 	if s.view.replies[0].english != "old" || !s.view.replyPending {
 		t.Fatal("readable reply replaced")
@@ -135,9 +135,9 @@ func TestMeetingReplyBatchKeepsReceivingRemainingOptions(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.stop()
 	s.replySerial = 1
-	batch := [3]meetingLine{{english: "first", chinese: "一", complete: true}}
+	batch := [3]meetingLine{{english: "first", Chinese: "一", complete: true}}
 	s.publishRepliesFor(1, 1, batch, "question", "")
-	batch[1] = meetingLine{english: "second", chinese: "二", complete: true}
+	batch[1] = meetingLine{english: "second", Chinese: "二", complete: true}
 	s.publishRepliesFor(1, 1, batch, "question", "")
 	if s.view.replies[1].english != "second" || s.view.replyPending {
 		t.Fatal("same batch became pending")
@@ -149,7 +149,7 @@ func TestMeetingReplyBatchKeepsReceivingRemainingOptions(t *testing.T) {
 		t.Fatal("regeneration replaced current reply")
 	}
 	s.acceptPendingReplies()
-	batch[2] = meetingLine{english: "third", chinese: "三", complete: true}
+	batch[2] = meetingLine{english: "third", Chinese: "三", complete: true}
 	s.publishRepliesFor(1, 2, batch, "question", "")
 	if s.view.replies[2].english != "third" {
 		t.Fatal("accepted live batch stopped updating")
@@ -159,10 +159,10 @@ func TestMeetingReplyBatchKeepsReceivingRemainingOptions(t *testing.T) {
 func TestMeetingPauseRemovesAbandonedLiveCaption(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.stop()
-	s.view.captions = []meetingCaption{{id: 1, source: "final", final: true}, {id: 2, source: "unfinished", live: "unfinished"}}
+	s.view.captions = []meetingcore.Caption{{ID: 1, Source: "final", Final: true}, {ID: 2, Source: "unfinished", Live: "unfinished"}}
 	s.setCapturePaused(true)
 	s.setCapturePaused(false)
-	if len(s.view.captions) != 1 || !s.view.captions[0].final {
+	if len(s.view.captions) != 1 || !s.view.captions[0].Final {
 		t.Fatalf("abandoned live caption %#v", s.view.captions)
 	}
 }
@@ -175,7 +175,7 @@ func TestMeetingFinalCancelsActivePreview(t *testing.T) {
 	s.activeASRID = 1
 	work, epoch := s.workSnapshot()
 	q := make(chan meetingAudioTurn, 1)
-	s.queueAudio(q, meetingAudioTurn{final: true, id: 1, epoch: epoch, ctx: work})
+	s.queueAudio(q, meetingAudioTurn{Final: true, ID: 1, epoch: epoch, ctx: work})
 	if ctx.Err() == nil {
 		t.Fatal("final waits behind preview")
 	}
@@ -188,7 +188,7 @@ func TestMeetingCancellationDiscardsUnfinishedLines(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.stop()
 	s.view.replies[0] = meetingLine{english: "I would"}
-	s.view.replies[1] = meetingLine{english: "Could you clarify?", chinese: "能解释吗", complete: true}
+	s.view.replies[1] = meetingLine{english: "Could you clarify?", Chinese: "能解释吗", complete: true}
 	s.view.expression = meetingLine{english: "Partial"}
 	s.setCapturePaused(true)
 	if s.view.replies[0].english != "" || s.view.replies[1].english == "" || s.view.expression.english != "" {
