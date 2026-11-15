@@ -18,6 +18,26 @@ final class BridgeClientTests: XCTestCase {
         return executable
     }
 
+    func testSharedCoreProbeOperationsAndResponses() throws {
+        for operation in ["probe_asr", "probe_llm"] {
+            let request = try BridgeRequest(id: operation, operation: operation,
+                                            fields: ["config": .object(["asr_base_url":
+                                                .string("http://127.0.0.1:8080/v1")])]).line()
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(request.dropLast()))
+                                       as? [String: Any])
+            XCTAssertEqual(object["op"] as? String, operation)
+            XCTAssertEqual(object["v"] as? Int, 1)
+            XCTAssertNil(object["selected_text"])
+            XCTAssertNil(object["pcm_base64"])
+        }
+
+        let data = Data(#"{"v":1,"id":"probe-asr","ok":true,"result":{"kind":"ASR","message":"ASR：静音测试成功"}}"#.utf8)
+        let reply = try JSONDecoder().decode(BridgeReply.self, from: data)
+        try reply.validate()
+        XCTAssertEqual(reply.result?["kind"]?.string, "ASR")
+        XCTAssertTrue(reply.result?["message"]?.string?.contains("静音测试成功") == true)
+    }
+
     func testFragmentedAndMultipleJSONLLines() throws {
         let first = Data(#"{"v":1,"id":"a","ok":true,"result":{"name":"VoiceRewrite","protocol":1}}"#.utf8)
         let second = Data(#"{"v":1,"id":"b","ok":false,"error":{"code":"unsupported_op","message":"unsupported operation"}}"#.utf8)
