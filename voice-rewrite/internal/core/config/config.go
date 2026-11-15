@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-
-	"voicerewrite/internal/core/provider"
+	"net/url"
+	"strings"
 )
 
 // VoiceRewrite never sends audio or selected text to a provider other than the
@@ -113,7 +113,7 @@ func Normalize(cfg Config) (Config, error) {
 		cfg.SelectionCopyTimeoutMS = 1800
 	}
 	for _, base := range []string{cfg.ASRBaseURL, cfg.LLMBaseURL} {
-		if err := provider.ValidateBaseURL(base); err != nil {
+		if err := ValidateBaseURL(base); err != nil {
 			return cfg, fmt.Errorf("无效的 API 地址: %w", err)
 		}
 	}
@@ -131,4 +131,14 @@ func TransformSecrets(cfg Config, transform func(string) (string, error)) (Confi
 		return cfg, err
 	}
 	return cfg, nil
+}
+
+// ValidateBaseURL rejects credentials, queries, fragments and non-HTTP schemes
+// before a configured endpoint can be used to carry private data.
+func ValidateBaseURL(base string) error {
+	u, err := url.Parse(strings.TrimSpace(base))
+	if err != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
+		return errors.New("服务地址必须是无用户名、查询参数或锚点的 http(s) API 基础 URL")
+	}
+	return nil
 }
