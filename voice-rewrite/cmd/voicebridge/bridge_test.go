@@ -244,8 +244,13 @@ func TestBridgeCancelStopsNetworkAndSuppressesSuccess(t *testing.T) {
 	started := make(chan struct{}, 1)
 	canceled := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		started <- struct{}{}
-		<-r.Context().Done()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+			t.Error("HTTP request was not canceled")
+		}
 		canceled <- struct{}{}
 	}))
 	defer srv.Close()
@@ -275,8 +280,13 @@ func TestBridgeCancelStopsNetworkAndSuppressesSuccess(t *testing.T) {
 func TestBridgeTimeout(t *testing.T) {
 	started := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		started <- struct{}{}
-		<-r.Context().Done()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+			t.Error("HTTP request was not canceled")
+		}
 	}))
 	defer srv.Close()
 	options := defaultOptions()
@@ -297,8 +307,13 @@ func TestBridgeTimeout(t *testing.T) {
 func TestBridgeConcurrencyDuplicateIDAndBusy(t *testing.T) {
 	started := make(chan struct{}, 2)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		started <- struct{}{}
-		<-r.Context().Done()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+			t.Error("HTTP request was not canceled")
+		}
 	}))
 	defer srv.Close()
 	options := defaultOptions()
@@ -415,8 +430,13 @@ func TestBridgeEOFAndOutputFailureReleaseTasks(t *testing.T) {
 	started := make(chan struct{}, 1)
 	canceled := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
 		started <- struct{}{}
-		<-r.Context().Done()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+			t.Error("HTTP request was not canceled")
+		}
 		canceled <- struct{}{}
 	}))
 	defer srv.Close()
