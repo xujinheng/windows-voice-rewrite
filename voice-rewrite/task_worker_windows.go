@@ -268,25 +268,20 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/32000)
 	ctx, cancel := context.WithTimeout(app.epoch.contextFor(generation), 240*time.Second)
 	defer cancel()
-	startedASR := time.Now()
-	instruction, e := speech.Transcribe(ctx, app.cfg, r.pcm)
+	started := time.Now()
+	answer, instruction, e := textedit.ResolveSpokenTask(ctx, app.cfg, sel.Text, r.pcm, func(text string) {
+		if !app.epoch.valid(generation) {
+			return
+		}
+		app.logger.Printf("stage=asr ms=%d", time.Since(started).Milliseconds())
+		app.setStatus(trayRewriting)
+		app.postHandyPhase(statusRewriting, generation)
+		app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(text))
+	})
 	if !app.epoch.valid(generation) {
 		return
 	}
-	app.logger.Printf("stage=asr ms=%d", time.Since(startedASR).Milliseconds())
-	if e != nil {
-		app.fail(e)
-		return
-	}
-	app.setStatus(trayRewriting)
-	app.postHandyPhase(statusRewriting, generation)
-	app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(instruction))
-	startedLLM := time.Now()
-	answer, e := textedit.ResolveSelectedTask(ctx, app.cfg, sel.Text, instruction)
-	if !app.epoch.valid(generation) {
-		return
-	}
-	app.logger.Printf("stage=llm ms=%d intent=%s", time.Since(startedLLM).Milliseconds(), answer.Intent)
+	app.logger.Printf("stage=spoken_selection ms=%d intent=%s", time.Since(started).Milliseconds(), answer.Intent)
 	if e != nil {
 		app.fail(e)
 		return
