@@ -12,7 +12,7 @@ The portable core boundary check requires the same Go and test source files acro
 
 PRs do not build or upload general-purpose GUI/OneClick executables, installers or release archives in the build workflow. Pushes to `main` and version tags build and upload the Windows executables, portable ZIP, and installer; version tags also perform artifact attestations and publish releases when the release notes are present.
 
-`.github/workflows/meeting-ui.yml` runs the Win32 Meeting E2E Go test and a real GUI screenshot/interaction script on matching pull requests, pushes to `meeting-preview`, or manual dispatch. `.github/workflows/direct2d-result.yml` runs native Direct2D result-card tests on matching pull requests, pushes to `main`, or manual dispatch. These UI jobs build temporary test executables on Windows, not distributable packages. `.github/workflows/visual-matrix.yml` captures the Windows UI on relevant `main` pushes or manual dispatch; `.github/workflows/demo-video.yml` renders demo media on its configured `main` paths or manual dispatch.
+`.github/workflows/meeting-ui.yml` runs the Win32 Meeting E2E Go test and a real GUI screenshot/interaction script on matching pull requests, pushes to `main` or `meeting-preview`, or manual dispatch. `.github/workflows/direct2d-result.yml` runs native Direct2D result-card tests on matching pull requests, pushes to `main`, or manual dispatch. These UI jobs build temporary test executables on Windows, not distributable packages. `.github/workflows/visual-matrix.yml` captures the Windows UI on relevant `main` pushes or manual dispatch; `.github/workflows/demo-video.yml` renders demo media on its configured `main` paths or manual dispatch.
 
 ## Local Windows checks
 
