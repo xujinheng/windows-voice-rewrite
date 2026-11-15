@@ -34,8 +34,13 @@ public final class MacClipboardBoard: ClipboardBoard, @unchecked Sendable {
 
     public func installTemporaryText(_ text: String, owner: UUID) throws -> Int {
         let item = NSPasteboardItem()
+        // Convention-based hints to clipboard history apps; not a security boundary.
+        let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+        let transient = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
         guard item.setString(text, forType: .string),
-              item.setString(owner.uuidString, forType: ownerType) else {
+              item.setString(owner.uuidString, forType: ownerType),
+              item.setData(Data(), forType: concealed),
+              item.setData(Data(), forType: transient) else {
             throw ClipboardFailure.writeFailed
         }
         board.clearContents()
