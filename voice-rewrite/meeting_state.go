@@ -221,6 +221,13 @@ func meetingUsesConversationContext(spoken string) bool {
 // A finished voice request must be visible even if the user is listening in
 // captions-only mode. A background update never steals the user's view.
 // Keep progress/error details subordinate to the last copyable English.
+func meetingRetainEnglish(previous meetingLine) meetingLine {
+	if previous.complete && strings.TrimSpace(previous.english) != "" {
+		return previous
+	}
+	return meetingLine{}
+}
+
 func meetingExpressionHeading(status string, hasResult bool) string {
 	if strings.TrimSpace(status) == "" {
 		return "我的英文表达"
