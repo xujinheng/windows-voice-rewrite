@@ -3,25 +3,50 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"sync"
+	"time"
+	"unicode/utf8"
+
+	coreconfig "voicerewrite/internal/core/config"
+	"voicerewrite/internal/core/speech"
+	"voicerewrite/internal/core/textedit"
 )
 
-const protocolVersion = 1
-const maxRequestBytes = 8 << 20
+const (
+	protocolVersion  = 1
+	maxRequestBytes  = 8 << 20
+	maxPCMBytes      = 16000 * 2 * 60
+	maxSelectedBytes = 1 << 20
+	maxInstructionBytes = 32 << 10
+	maxSeenIDs       = 65536
+)
+
+var errFrameTooLarge = errors.New("frame exceeds limit")
 
 type request struct {
-	Version int    `json:"v"`
-	ID      string `json:"id"`
-	Op      string `json:"op"`
+	Version      int             `json:"v"`
+	ID           string          `json:"id"`
+	Op           string          `json:"op"`
+	Config       json.RawMessage `json:"config"`
+	PCMBase64    string          `json:"pcm_base64"`
+	SelectedText string          `json:"selected_text"`
+	Instruction  string          `json:"instruction"`
+	TargetID     string          `json:"target_id"`
 }
+
 type bridgeError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
+
 type response struct {
 	Version int          `json:"v"`
 	ID      string       `json:"id"`
@@ -30,41 +55,329 @@ type response struct {
 	Error   *bridgeError `json:"error,omitempty"`
 }
 
-func serve(input io.Reader, output io.Writer) error {
-	scanner := bufio.NewScanner(input)
-	scanner.Buffer(make([]byte, 64*1024), maxRequestBytes)
-	encoder := json.NewEncoder(output)
-	for scanner.Scan() {
-		var req request
-		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
-			if err := encoder.Encode(response{Version: protocolVersion, OK: false,
-				Error: &bridgeError{Code: "invalid_json", Message: "invalid request JSON"}}); err != nil {
-				return err
+type bridgeOptions struct {
+	MaxInFlight      int
+	TranscribeTimeout time.Duration
+	SelectedTimeout   time.Duration
+}
+
+func defaultOptions() bridgeOptions {
+	return bridgeOptions{MaxInFlight: 4, TranscribeTimeout: 220 * time.Second, SelectedTimeout: 150 * time.Second}
+}
+
+type bridgeTask struct {
+	cancel   context.CancelFunc
+	canceled bool
+}
+
+type bridgeServer struct {
+	mu       sync.Mutex
+	active   map[string]*bridgeTask
+	seen     map[string]struct{}
+	wg       sync.WaitGroup
+	options  bridgeOptions
+
+	input    io.Reader
+	output   io.Writer
+	writeMu  sync.Mutex
+	writeErr error
+	stopOnce sync.Once
+}
+
+func failure(id, code, message string) response {
+	return response{Version: protocolVersion, ID: id, Error: &bridgeError{Code: code, Message: message}}
+}
+
+func success(id string, value any) response {
+	return response{Version: protocolVersion, ID: id, OK: true, Result: value}
+}
+
+// readFrame bounds memory even if a client sends a line without a terminator.
+// On an oversized line, consume through its delimiter before accepting another.
+func readFrame(r *bufio.Reader) ([]byte, error) {
+	var frame []byte
+	oversized := false
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if !oversized {
+			if len(frame)+len(chunk) > maxRequestBytes {
+				frame = nil
+				oversized = true
+			} else {
+				frame = append(frame, chunk...)
 			}
+		}
+		if errors.Is(err, bufio.ErrBufferFull) {
 			continue
 		}
-		reply := response{Version: protocolVersion, ID: req.ID}
-		switch {
-		case req.Version != protocolVersion:
-			reply.Error = &bridgeError{Code: "protocol_version", Message: "unsupported protocol version"}
-		case req.ID == "" || len(req.ID) > 128:
-			reply.Error = &bridgeError{Code: "invalid_id", Message: "request ID must be 1..128 bytes"}
-		case req.Op == "hello":
-			reply.OK = true
-			reply.Result = map[string]any{"name": "VoiceRewrite", "protocol": protocolVersion}
-		default:
-			reply.Error = &bridgeError{Code: "unsupported_op", Message: "unsupported operation"}
+		if oversized {
+			return nil, errFrameTooLarge
 		}
-		if err := encoder.Encode(reply); err != nil {
-			return err
+		if err == io.EOF {
+			if len(frame) == 0 {
+				return nil, io.EOF
+			}
+			return frame, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return bytes.TrimSuffix(frame, []byte{'\n'}), nil
+	}
+}
+
+func (s *bridgeServer) shutdown() {
+	s.stopOnce.Do(func() {
+		s.mu.Lock()
+		for _, task := range s.active {
+			task.canceled = true
+			task.cancel()
+		}
+		s.mu.Unlock()
+	})
+}
+
+// All writes, including asynchronous task completions, are one JSON line.
+// A broken stdout cancels network work and closes stdin to unblock the reader.
+func (s *bridgeServer) send(r response) {
+	s.writeMu.Lock()
+	if s.writeErr != nil {
+		s.writeMu.Unlock()
+		return
+	}
+	err := json.NewEncoder(s.output).Encode(r)
+	if err != nil {
+		s.writeErr = err
+	}
+	s.writeMu.Unlock()
+	if err != nil {
+		s.shutdown()
+		if closer, ok := s.input.(io.Closer); ok {
+			_ = closer.Close()
 		}
 	}
-	return scanner.Err()
+}
+
+func (s *bridgeServer) outputError() error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	return s.writeErr
+}
+
+func (s *bridgeServer) dispatch(frame []byte) {
+	var req request
+	if !utf8.Valid(frame) || json.Unmarshal(frame, &req) != nil {
+		s.send(failure("", "invalid_json", "invalid request JSON"))
+		return
+	}
+	if req.Version != protocolVersion {
+		s.send(failure(req.ID, "protocol_version", "unsupported protocol version"))
+		return
+	}
+	if req.ID == "" || len(req.ID) > 128 {
+		s.send(failure(req.ID, "invalid_id", "request ID must be 1..128 bytes"))
+		return
+	}
+
+	s.mu.Lock()
+	if _, exists := s.seen[req.ID]; exists {
+		s.mu.Unlock()
+		s.send(failure(req.ID, "duplicate_id", "request ID already used"))
+		return
+	}
+	if len(s.seen) >= maxSeenIDs {
+		s.mu.Unlock()
+		s.send(failure(req.ID, "id_limit", "helper request limit reached; restart helper"))
+		return
+	}
+	s.seen[req.ID] = struct{}{}
+
+	if req.Op != "transcribe" && req.Op != "selected_task" {
+		s.mu.Unlock()
+		switch req.Op {
+		case "hello":
+			s.send(success(req.ID, map[string]any{"name": "VoiceRewrite", "protocol": protocolVersion}))
+		case "cancel":
+			if req.TargetID == "" {
+				s.send(failure(req.ID, "invalid_request", "target_id is required"))
+				return
+			}
+			s.mu.Lock()
+			task, found := s.active[req.TargetID]
+			if found {
+				task.canceled = true
+				task.cancel()
+			}
+			s.mu.Unlock()
+			s.send(success(req.ID, map[string]bool{"found": found}))
+		default:
+			s.send(failure(req.ID, "unsupported_op", "unsupported operation"))
+		}
+		return
+	}
+	if len(s.active) >= s.options.MaxInFlight {
+		s.mu.Unlock()
+		s.send(failure(req.ID, "busy", "too many active requests"))
+		return
+	}
+	timeout := s.options.TranscribeTimeout
+	if req.Op == "selected_task" {
+		timeout = s.options.SelectedTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	task := &bridgeTask{cancel: cancel}
+	s.active[req.ID] = task
+	s.wg.Add(1)
+	s.mu.Unlock()
+	go s.runTask(ctx, task, req)
+}
+
+func (s *bridgeServer) runTask(ctx context.Context, task *bridgeTask, req request) {
+	defer s.wg.Done()
+	defer task.cancel()
+
+	reply := failure(req.ID, "internal_error", "request failed")
+	func() {
+		// Provider errors and unexpected panics may contain private request data.
+		// Only bridge-owned, constant error messages reach the protocol.
+		defer func() { _ = recover() }()
+		reply = processRequest(ctx, req)
+	}()
+
+	s.mu.Lock()
+	if task.canceled || errors.Is(ctx.Err(), context.Canceled) {
+		reply = failure(req.ID, "canceled", "request canceled")
+	} else if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		reply = failure(req.ID, "timeout", "request timed out")
+	}
+	delete(s.active, req.ID)
+	s.mu.Unlock()
+	s.send(reply)
+}
+
+func processRequest(ctx context.Context, req request) response {
+	if len(req.Config) == 0 || bytes.Equal(bytes.TrimSpace(req.Config), []byte("null")) {
+		return failure(req.ID, "invalid_config", "config object is required")
+	}
+	if len(bytes.TrimSpace(req.Config)) == 0 || bytes.TrimSpace(req.Config)[0] != '{' {
+		return failure(req.ID, "invalid_config", "config must be an object")
+	}
+	cfg, err := coreconfig.Parse(req.Config)
+	if err != nil {
+		return failure(req.ID, "invalid_config", "invalid configuration")
+	}
+	cfg, err = coreconfig.Normalize(cfg)
+	if err != nil {
+		return failure(req.ID, "invalid_config", "invalid configuration")
+	}
+	if err := ctx.Err(); err != nil {
+		return contextFailure(req.ID, err)
+	}
+	switch req.Op {
+	case "transcribe":
+		maxBytes := maxPCMBytes
+		if limit := cfg.MaxRecordSeconds * 32000; limit > 0 && limit < maxBytes {
+			maxBytes = limit
+		}
+		if len(req.PCMBase64) == 0 || len(req.PCMBase64) > base64.StdEncoding.EncodedLen(maxBytes) {
+			return failure(req.ID, "invalid_pcm", "PCM must be 16 kHz mono PCM16, within duration limit")
+		}
+		pcm, err := base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
+		if err != nil || len(pcm) == 0 || len(pcm)%2 != 0 || len(pcm) > maxBytes {
+			return failure(req.ID, "invalid_pcm", "PCM must be 16 kHz mono PCM16, within duration limit")
+		}
+		text, err := speech.Transcribe(ctx, cfg, pcm)
+		if err != nil {
+			if ctx.Err() != nil {
+				return contextFailure(req.ID, ctx.Err())
+			}
+			return failure(req.ID, "asr_failed", "speech transcription failed")
+		}
+		if ctx.Err() != nil {
+			return contextFailure(req.ID, ctx.Err())
+		}
+		return success(req.ID, map[string]string{"text": text})
+	case "selected_task":
+		if len(req.SelectedText) > maxSelectedBytes || len(req.Instruction) > maxInstructionBytes ||
+			!utf8.ValidString(req.SelectedText) || !utf8.ValidString(req.Instruction) {
+			return failure(req.ID, "invalid_request", "selected text or instruction exceeds limits")
+		}
+		result, err := textedit.ResolveSelectedTask(ctx, cfg, req.SelectedText, req.Instruction)
+		if err != nil {
+			if ctx.Err() != nil {
+				return contextFailure(req.ID, ctx.Err())
+			}
+			return failure(req.ID, "textedit_failed", "selected text processing failed")
+		}
+		if ctx.Err() != nil {
+			return contextFailure(req.ID, ctx.Err())
+		}
+		action := textedit.RouteTask(result, req.Instruction, false)
+		mayAttempt := action == textedit.TryReplace || action == textedit.Replace
+		return success(req.ID, struct {
+			Intent            string `json:"intent"`
+			Text              string `json:"text"`
+			PreviewOnly       bool   `json:"preview_only"`
+			MayAttemptReplace bool   `json:"may_attempt_replace"`
+		}{
+			Intent: result.Intent, Text: result.Result,
+			PreviewOnly: result.PreviewOnly || !mayAttempt,
+			MayAttemptReplace: mayAttempt,
+		})
+	}
+	return failure(req.ID, "unsupported_op", "unsupported operation")
+}
+
+func contextFailure(id string, err error) response {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return failure(id, "timeout", "request timed out")
+	}
+	return failure(id, "canceled", "request canceled")
+}
+
+func serveWithOptions(input io.Reader, output io.Writer, options bridgeOptions) error {
+	if options.MaxInFlight < 1 || options.TranscribeTimeout <= 0 || options.SelectedTimeout <= 0 {
+		return errors.New("invalid bridge options")
+	}
+	s := &bridgeServer{
+		active: make(map[string]*bridgeTask), seen: make(map[string]struct{}),
+		input: input, output: output, options: options,
+	}
+	reader := bufio.NewReaderSize(input, 64<<10)
+	var readErr error
+	for {
+		frame, err := readFrame(reader)
+		switch {
+		case errors.Is(err, errFrameTooLarge):
+			s.send(failure("", "request_too_large", "request exceeds 8 MiB"))
+		case errors.Is(err, io.EOF):
+			goto done
+		case err != nil:
+			readErr = err
+			goto done
+		default:
+			s.dispatch(frame)
+		}
+		if s.outputError() != nil {
+			break
+		}
+	}
+done:
+	s.shutdown()
+	s.wg.Wait()
+	if err := s.outputError(); err != nil {
+		return err
+	}
+	return readErr
+}
+
+func serve(input io.Reader, output io.Writer) error {
+	return serveWithOptions(input, output, defaultOptions())
 }
 
 func main() {
 	if err := serve(os.Stdin, os.Stdout); err != nil {
-		// Never echo request bytes, credentials or private text to stderr.
+		// No request data, keys, URLs or selected text are written to stderr.
 		if !errors.Is(err, io.EOF) {
 			fmt.Fprintln(os.Stderr, "voicebridge: input/output failure")
 		}
