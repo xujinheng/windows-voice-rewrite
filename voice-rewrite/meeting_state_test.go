@@ -71,6 +71,15 @@ func TestMeetingTextChangeUTF16AndHistory(t *testing.T) {
 	}
 }
 
+func TestMeetingVoiceModes(t *testing.T) {
+	if meetingVoiceMode(true) != "express" {
+		t.Fatal("dictation key must translate speech literally")
+	}
+	if meetingVoiceMode(false) != "compose" {
+		t.Fatal("rewrite key must compose an English utterance from intent")
+	}
+}
+
 func TestMeetingFollowLatestIsUserControlled(t *testing.T) {
 	if !meetingFollowLatest(true, false, false) {
 		t.Fatal("background update disabled following")
