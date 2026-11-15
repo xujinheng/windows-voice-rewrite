@@ -11,6 +11,7 @@ capture, GUI, input, clipboard and encryption stay in the Windows shell.
 | `internal/core/audio` | 16 kHz PCM framing, voice segmentation, preview timing, stereo-to-mono resampling, chunking and transcript joining; `FrameSource` contract | Go standard library |
 | `internal/core/config` | Shared application settings schema and defaults; no persistence or credentials access | Go standard library |
 | `internal/core/speech` | WAV serialization, multipart ASR uploads, transcript cleaning, chunking and cancellation | `core/audio`, `core/config`, `core/provider` |
+| `internal/core/textedit` | Selected-text rewrite requests and response validation | `core/config`, `core/provider` |
 | `internal/core/meeting` | Streaming meeting ASR, completion protocol and prompts, caption/English interpretation, history follow/unread policy, pane sizing/preferences and inference scheduler | `core/config`, `core/provider`, `core/speech` |
 | `internal/core/provider` | HTTP timeouts, redirect blocking, safe errors, URL validation, model discovery and reasoning-token stripping | `core/config` |
 
@@ -25,10 +26,10 @@ macOS CI also compiles the core for Darwin amd64 and arm64.
 | Native audio adapter | `meeting_capture_windows.go`, `meeting_windows.go`, `microphone_windows.go` | WASAPI process loopback and microphone capture; expose normalized PCM frames through `audio.FrameSource` |
 | Native input/output | `mouse_windows.go`, `recording_windows.go`, `clipboard_windows.go`, `unicode_input_windows.go`, `uia_password_windows.go` | Global keys, selection, secure text insertion and clipboard |
 | Native UI | `meeting_hud_windows.go`, `settings_windows.go`, `popup_windows.go`, `tray_windows.go` | Win32 event loop, layout presentation and control dispatch |
-| Application orchestration | `meeting_session.go`, `meeting_state.go`, `llm.go`, `intent.go` | Session lifecycle, native Meeting HUD view records, top-level dictation and edit workflows; consumes core speech and Meeting services |
+| Application orchestration | `meeting_session.go`, `meeting_state.go`, `intent.go` | Session lifecycle, native Meeting HUD view records and top-level dictation/edit coordination; consumes core speech, text-edit and Meeting services |
 | Configuration/credentials | `config.go`, `config_store.go`, `secrets_windows.go` | Platform storage paths, credential persistence and Windows DPAPI; settings data type lives in `core/config` |
 
-The native application session lifecycle and HUD view data remain in `package main`; the ASR and Meeting model clients are reusable core packages. A macOS application can use the shared services directly with its own audio source, GUI, input and secrets adapter. Reusing the entire Meeting session orchestration independently still requires separating its configuration persistence and native presentation state.
+The native application session lifecycle and HUD view data remain in `package main`; the ASR, text-edit and Meeting model clients are reusable core packages. The Meeting session receives configuration persistence as a callback supplied by its host application. A macOS application can use the shared services directly with its own audio source, GUI, input and secrets adapter. Reusing the entire Meeting session orchestration independently still requires separating its configuration persistence and native presentation state.
 
 ## Data flow
 
