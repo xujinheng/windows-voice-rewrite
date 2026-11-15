@@ -1,7 +1,6 @@
 package meeting
 
 import (
-	coreconfig "voicerewrite/internal/core/config"
 	"context"
 	"fmt"
 	"net/http"
@@ -10,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	coreconfig "voicerewrite/internal/core/config"
 )
 
 func TestMeetingStream(t *testing.T) {
