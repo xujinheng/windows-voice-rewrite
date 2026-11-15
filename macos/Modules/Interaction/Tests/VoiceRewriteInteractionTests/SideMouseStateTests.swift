@@ -1,0 +1,45 @@
+import XCTest
+@testable import VoiceRewriteInteraction
+
+final class SideMouseStateTests: XCTestCase {
+    func testShortPressReplaysAndExpiredTimerCannotActivate() {
+        var state = SideButtonHoldState()
+        let token = state.press(3)
+        XCTAssertNotNil(token)
+        XCTAssertEqual(state.release(3), .short)
+        XCTAssertFalse(state.activate(3, token: token!))
+        XCTAssertEqual(state.release(3), .ignored)
+    }
+
+    func testLongPressActivatesOnceAndReleasesOnce() {
+        var state = SideButtonHoldState()
+        let token = state.press(4)!
+        XCTAssertTrue(state.activate(4, token: token))
+        XCTAssertFalse(state.activate(4, token: token))
+        XCTAssertEqual(state.release(4), .held)
+        XCTAssertEqual(state.release(4), .ignored)
+    }
+
+    func testDoubleDownAndLateTimerCannotStartNewPress() {
+        var state = SideButtonHoldState()
+        let first = state.press(3)!
+        XCTAssertNil(state.press(3))
+        XCTAssertEqual(state.release(3), .short)
+        let second = state.press(3)!
+        XCTAssertNotEqual(first, second)
+        XCTAssertFalse(state.activate(3, token: first))
+        XCTAssertTrue(state.activate(3, token: second))
+        XCTAssertTrue(state.reset())
+        XCTAssertEqual(state.release(3), .ignored)
+    }
+
+    func testDifferentButtonsHaveIndependentTokens() {
+        var state = SideButtonHoldState()
+        let a = state.press(3)!
+        let b = state.press(4)!
+        XCTAssertTrue(state.activate(3, token: a))
+        XCTAssertEqual(state.release(4), .short)
+        XCTAssertEqual(state.release(3), .held)
+        XCTAssertFalse(state.activate(4, token: b))
+    }
+}
