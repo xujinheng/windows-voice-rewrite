@@ -49,6 +49,74 @@ func TestMeetingTranscriptKeepsStableText(t *testing.T) {
 	}
 }
 
+func TestMeetingReadingPanelsKeepActiveTurnOutOfHistory(t *testing.T) {
+	captions := []meetingCaption{
+		{id: 1, source: "We can start today.", chinese: "今天可以开始。", final: true},
+		{id: 2, source: "Do we have a timeline?", chinese: "有时间计划吗？", final: true},
+		{id: 3, source: "The schedule", final: false},
+	}
+	panels := buildMeetingReadingPanels(captions)
+	if panels.english != "The schedule" || panels.chinese != "正在准备中文释义…" || !panels.live {
+		t.Fatalf("current provisional reading area = %#v", panels)
+	}
+	if panels.historyCount != 2 || strings.Contains(panels.history, "The schedule") ||
+		!strings.Contains(panels.history, "今天可以开始。") || !strings.Contains(panels.history, "Do we have a timeline?") {
+		t.Fatalf("history must contain completed older turns only: %#v", panels)
+	}
+	captions[2].source = "The schedule is next week."
+	captions[2].chinese = "计划安排在下周。"
+	changed := buildMeetingReadingPanels(captions)
+	if changed.history != panels.history || changed.historyCount != panels.historyCount {
+		t.Fatal("active translation changed scrollable history")
+	}
+	if changed.chinese != "计划安排在下周。" {
+		t.Fatalf("translation wasn't updated in fixed pane: %#v", changed)
+	}
+	captions[2].final = true
+	last := buildMeetingReadingPanels(captions)
+	if last.live || last.english != changed.english || last.history != panels.history {
+		t.Fatalf("finalizing current turn moved the reader: %#v", last)
+	}
+	captions = append(captions, meetingCaption{id: 4, source: "What is the deadline?", final: true})
+	next := buildMeetingReadingPanels(captions)
+	if next.historyCount != 3 || !strings.Contains(next.history, "The schedule is next week.") ||
+		strings.Contains(next.history, "What is the deadline?") {
+		t.Fatalf("historical turn assignment: %#v", next)
+	}
+	if !strings.Contains(next.hint, "可能在提问") {
+		t.Fatalf("question intent cue absent: %#v", next)
+	}
+}
+
+func TestMeetingReadingPanelsEmptyOrLongSession(t *testing.T) {
+	if got := buildMeetingReadingPanels(nil); got.historyCount != 0 || got.english == "" || got.chinese == "" {
+		t.Fatalf("empty layout did not provide placeholders: %#v", got)
+	}
+	var captions []meetingCaption
+	for i := 0; i < 60; i++ {
+		captions = append(captions, meetingCaption{source: "A recorded turn", final: true})
+	}
+	got := buildMeetingReadingPanels(captions)
+	if got.historyCount != 59 || strings.Count(got.history, "A recorded turn") != 59 {
+		t.Fatalf("long-session history discarded: %#v", got)
+	}
+}
+
+func TestMeetingUnreadHistoryDoesNotStealFocus(t *testing.T) {
+	if meetingUnreadHistory(0, 3, 5, false) != 2 {
+		t.Fatal("missing unread count while reading old captions")
+	}
+	if meetingUnreadHistory(2, 5, 6, false) != 3 {
+		t.Fatal("unread count must accumulate only newly finished turns")
+	}
+	if meetingUnreadHistory(3, 6, 6, false) != 3 {
+		t.Fatal("current caption revisions must not count as new history")
+	}
+	if meetingUnreadHistory(3, 6, 6, true) != 0 {
+		t.Fatal("returning to newest should reset unread count")
+	}
+}
+
 func TestMeetingTextChangeUTF16AndHistory(t *testing.T) {
 	cases := []struct {
 		old, next  string

@@ -106,6 +106,70 @@ func meetingTranscript(captions []meetingCaption) (string, bool) {
 	return strings.Join(entries, "\r\n\r\n"), listening
 }
 
+// meetingReadingPanels keeps the active utterance outside the scrollable
+// history, so recognition and translation updates cannot move older text.
+type meetingReadingPanels struct {
+	english, chinese, history, hint string
+	currentID                       uint64
+	live                            bool
+	historyCount                    int
+}
+
+func buildMeetingReadingPanels(captions []meetingCaption) meetingReadingPanels {
+	var result meetingReadingPanels
+	var entries []meetingCaption
+	for _, line := range captions {
+		if strings.TrimSpace(line.source) != "" {
+			entries = append(entries, line)
+		}
+	}
+	if len(entries) == 0 {
+		result.english = "等待对方发言…"
+		result.chinese = "中文释义会显示在这里。"
+		result.history = "之前的对话会保留在这里，阅读时不会被新字幕打断。"
+		result.hint = "等待发言"
+		return result
+	}
+	current := entries[len(entries)-1]
+	result.currentID = current.id
+	result.english = strings.TrimSpace(current.source)
+	result.chinese = strings.TrimSpace(current.chinese)
+	result.live = !current.final
+	switch {
+	case !current.final:
+		result.hint = "识别中 · 内容可能微调"
+	case meetingNeedsReply(current.source):
+		result.hint = "可能在提问 · 可准备回复"
+	case strings.Contains(strings.ToLower(current.source), "schedule") ||
+		strings.Contains(strings.ToLower(current.source), "timeline") ||
+		strings.Contains(strings.ToLower(current.source), "deadline"):
+		result.hint = "提到了时间安排"
+	case strings.Contains(strings.ToLower(current.source), "delay") ||
+		strings.Contains(strings.ToLower(current.source), "risk"):
+		result.hint = "提到了风险或延期"
+	default:
+		result.hint = "已完成 · 当前发言"
+	}
+	if result.chinese == "" {
+		result.chinese = "正在准备中文释义…"
+	}
+	for _, item := range entries[:len(entries)-1] {
+		if !item.final {
+			continue
+		}
+		result.historyCount++
+		if text := strings.TrimSpace(item.chinese); text != "" {
+			result.history += text + "\r\n"
+		}
+		result.history += strings.TrimSpace(item.source) + "\r\n\r\n"
+	}
+	result.history = strings.TrimSpace(result.history)
+	if result.historyCount == 0 {
+		result.history = "已完成的上一句会出现在这里。"
+	}
+	return result
+}
+
 // A translation of a short ASR fragment cannot legitimately contain whole
 // paragraphs from preceding turns. Reject such output instead of showing an
 // invented recap as the current subtitle.
@@ -124,6 +188,14 @@ func meetingVoiceMode(dictation bool) string {
 		return "express"
 	}
 	return "compose"
+}
+
+// Only new completed history turns count as unread while a reader is away.
+func meetingUnreadHistory(unread, priorCount, nextCount int, following bool) int {
+	if following {
+		return 0
+	}
+	return unread + max(0, nextCount-priorCount)
 }
 
 func meetingFollowLatest(current, moved, atBottom bool) bool {
