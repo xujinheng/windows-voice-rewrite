@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"unsafe"
 )
@@ -14,6 +15,15 @@ import (
 func meetingE2EFirstLine(control uintptr) uintptr {
 	line, _, _ := procSendMessage.Call(control, 0x00CE, 0, 0) // EM_GETFIRSTVISIBLELINE
 	return line
+}
+
+// The UI helper intentionally caps reads at 4096 characters. An E2E
+// transcript assertion must instead inspect the full native EDIT contents.
+func meetingE2EFullText(control uintptr) string {
+	n, _, _ := procGetWindowTextLength.Call(control)
+	buf := make([]uint16, n+1)
+	uxGetWindowText.Call(control, uintptr(unsafe.Pointer(&buf[0])), n+1)
+	return syscall.UTF16ToString(buf)
 }
 
 func meetingE2EWindowRect(t *testing.T, control uintptr) rect32 {
@@ -64,7 +74,7 @@ func TestMeetingWindowsE2E(t *testing.T) {
 	if zh.Top >= en.Top || zh.Bottom > en.Top || zh.Bottom-zh.Top <= en.Bottom-en.Top {
 		t.Fatalf("Chinese must be first and larger: ZH=%+v EN=%+v", zh, en)
 	}
-	if p.historyCount != 64 || !strings.Contains(uxWinText(p.captions), "number 001") {
+	if p.historyCount != 64 || !strings.Contains(meetingE2EFullText(p.captions), "number 001") {
 		t.Fatalf("native conversation history missing earlier turns: %d", p.historyCount)
 	}
 
@@ -81,7 +91,7 @@ func TestMeetingWindowsE2E(t *testing.T) {
 		t.Fatalf("reading position stolen after append: first=%d want=%d follow=%t unread=%d",
 			first, top, p.followLatest, p.unreadHistory)
 	}
-	if !strings.Contains(uxWinText(p.captions), "number 065") {
+	if !strings.Contains(meetingE2EFullText(p.captions), "number 065") {
 		t.Fatal("previous active utterance did not become native history")
 	}
 	p.scrollToLatest()
