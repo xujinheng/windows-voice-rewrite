@@ -1,6 +1,7 @@
 package main
 
 import (
+	"voicerewrite/internal/core/audio"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -13,11 +14,11 @@ import (
 )
 
 func TestLongAudioChunksNeverDropSamples(t *testing.T) {
-	pcm := make([]byte, 62*pcmBytesPerSecond)
+	pcm := make([]byte, 62*audio.PCMBytesPerSecond)
 	for i := 0; i < len(pcm); i += 2 {
 		binary.LittleEndian.PutUint16(pcm[i:i+2], uint16(i/2))
 	}
-	parts := splitPCMForASR(pcm)
+	parts := audio.SplitPCMForASR(pcm)
 	if len(parts) < 3 {
 		t.Fatalf("expected several chunks; got %d", len(parts))
 	}
@@ -25,7 +26,7 @@ func TestLongAudioChunksNeverDropSamples(t *testing.T) {
 		t.Fatal("lost or reordered samples")
 	}
 	for _, part := range parts {
-		if len(part) == 0 || len(part) > asrChunkSeconds*pcmBytesPerSecond || len(part)%2 != 0 {
+		if len(part) == 0 || len(part) > asrChunkSeconds*audio.PCMBytesPerSecond || len(part)%2 != 0 {
 			t.Fatalf("invalid PCM chunk length: %d", len(part))
 		}
 	}
@@ -43,23 +44,23 @@ func TestASRChunksMergeAndRespectCancel(t *testing.T) {
 	defer srv.Close()
 	cfg := defaults()
 	cfg.ASRBaseURL = srv.URL + "/v1"
-	got, err := transcribe(context.Background(), cfg, make([]byte, 55*pcmBytesPerSecond))
+	got, err := transcribe(context.Background(), cfg, make([]byte, 55*audio.PCMBytesPerSecond))
 	if err != nil || !strings.Contains(got, "segment 1") || !strings.Contains(got, "segment 2") || calls.Load() < 2 {
 		t.Fatalf("got=%q err=%v calls=%d", got, err, calls.Load())
 	}
 	canceled, stop := context.WithCancel(context.Background())
 	stop()
 	before := calls.Load()
-	if _, err = transcribe(canceled, cfg, make([]byte, 55*pcmBytesPerSecond)); err == nil || calls.Load() != before {
+	if _, err = transcribe(canceled, cfg, make([]byte, 55*audio.PCMBytesPerSecond)); err == nil || calls.Load() != before {
 		t.Fatalf("canceled task contacted server: %v", err)
 	}
 }
 
 func TestJoinASRChunksChineseAndEnglish(t *testing.T) {
-	if got := joinASRChunks([]string{"你好", "世界。"}); got != "你好世界。" {
+	if got := audio.JoinASRChunks([]string{"你好", "世界。"}); got != "你好世界。" {
 		t.Fatal(got)
 	}
-	if got := joinASRChunks([]string{"Hello", "world."}); got != "Hello world." {
+	if got := audio.JoinASRChunks([]string{"Hello", "world."}); got != "Hello world." {
 		t.Fatal(got)
 	}
 }
