@@ -1,8 +1,6 @@
 package main
 
 import (
-	"voicerewrite/internal/core/speech"
-	"voicerewrite/internal/core/provider"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -12,6 +10,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"voicerewrite/internal/core/provider"
+	"voicerewrite/internal/core/speech"
 )
 
 func TestCleanASR(t *testing.T) {
