@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -22,6 +23,29 @@ func TestMeetingStableTail(t *testing.T) {
 	c = reviseMeetingCaption(c, 1, "stale preview", false)
 	if c != final || !c.final || c.live != "" {
 		t.Fatal(c)
+	}
+}
+
+func TestMeetingTranscriptKeepsStableText(t *testing.T) {
+	base := meetingCaption{id: 4, source: "We should check", chinese: "我们应该检查"}
+	revised := reviseMeetingCaption(base, 4, "We should check the index", false)
+	if revised.chinese != base.chinese {
+		t.Fatalf("translation vanished during ASR: %#v", revised)
+	}
+	text, live := meetingTranscript([]meetingCaption{
+		{id: 3, source: "Earlier response", chinese: "之前的回复", final: true},
+		revised,
+	})
+	if !live || !strings.Contains(text, "之前的回复") || !strings.Contains(text, "我们应该检查") || !strings.Contains(text, "We should check the index") {
+		t.Fatalf("transcript lost content: %q (%t)", text, live)
+	}
+	revised = reviseMeetingCaption(revised, 4, "We should check the index.", true)
+	if revised.chinese != base.chinese {
+		t.Fatalf("finalization removed the translation: %#v", revised)
+	}
+	text, live = meetingTranscript([]meetingCaption{revised})
+	if live || strings.Contains(text, "识别中") {
+		t.Fatalf("final transcript remains provisional: %q", text)
 	}
 }
 
