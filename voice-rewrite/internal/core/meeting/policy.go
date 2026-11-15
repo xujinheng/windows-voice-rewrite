@@ -121,4 +121,3 @@ func MapSelection(pos uint32, patch TextPatch) uint32 {
 	inserted := len(utf16.Encode([]rune(patch.Insert)))
 	return uint32(at + inserted - (patch.End - patch.Start))
 }
-
