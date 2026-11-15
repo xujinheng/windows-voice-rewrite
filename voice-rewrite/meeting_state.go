@@ -252,6 +252,17 @@ func meetingExpressionFocus(completed, newResult, captionsOnly, expanded bool) (
 	return false, true
 }
 
+// Suggestions use the latest finished utterance, never partial recognition.
+// The caller explicitly requests them; no audio fragment starts them.
+func meetingLastCompletedCaption(captions []meetingCaption) (meetingCaption, bool) {
+	for i := len(captions) - 1; i >= 0; i-- {
+		if captions[i].final && strings.TrimSpace(captions[i].source) != "" {
+			return captions[i], true
+		}
+	}
+	return meetingCaption{}, false
+}
+
 func meetingVoiceMode(dictation bool) string {
 	if dictation {
 		return "express"
