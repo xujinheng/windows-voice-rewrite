@@ -323,9 +323,11 @@ func (p *meetingHUD) transcriptAtBottom(control uintptr) bool {
 
 func (p *meetingHUD) scrollToLatest() {
 	p.followLatest = true
+	p.unreadHistory = 0
 	// EM_LINESCROLL moves the viewport, not the selection/caret.
 	procSendMessage.Call(p.captions, 0x00B6, 0, uintptr(1<<20))
 	p.transcriptFirstLine, _, _ = procSendMessage.Call(p.captions, 0x00CE, 0, 0)
+	updateMeetingHUD(p.latest)
 }
 
 func (p *meetingHUD) setText(control uintptr, value string, preserve bool) {
@@ -416,20 +418,30 @@ func updateMeetingHUD(view meetingView) {
 	if p.paused {
 		return
 	}
-	transcript, live := meetingTranscript(view.captions)
-	activity := "● 已同步"
-	if live {
-		activity = "● 正在识别"
-	} else if view.capturePaused {
-		activity = "● 已暂停"
-	} else if len(view.captions) == 0 {
-		activity = "● 等待发言"
-	}
-	p.setText(p.live, activity, false)
-	if !live || time.Since(p.lastTranscript) >= 280*time.Millisecond {
-		p.setText(p.captions, transcript, true)
+	panels := buildMeetingReadingPanels(view.captions)
+	p.setText(p.live, "● "+panels.hint, false)
+	if !panels.live || time.Since(p.lastTranscript) >= 280*time.Millisecond {
+		p.setText(p.currentEnglish, panels.english, true)
+		p.setText(p.currentChinese, panels.chinese, true)
 		p.lastTranscript = time.Now()
 	}
+	// Only completed older turns are added to the history control. If the
+	// reader scrolled away, count unseen turns instead of moving the viewport.
+	if panels.history != p.rendered[p.captions] {
+		p.setText(p.captions, panels.history, true)
+		if !p.followLatest && panels.historyCount > p.historyCount {
+			p.unreadHistory += panels.historyCount - p.historyCount
+		}
+		p.historyCount = panels.historyCount
+	}
+	if p.followLatest {
+		p.unreadHistory = 0
+	}
+	historyLabel := fmt.Sprintf("之前的对话 · %d 段", panels.historyCount)
+	if p.unreadHistory > 0 {
+		historyLabel += fmt.Sprintf(" · %d 条新内容", p.unreadHistory)
+	}
+	p.setText(p.labels[3], historyLabel, false)
 	p.displayedReplies, p.displayedSource, p.displayedTip = view.replies, view.replySource, view.tip
 	p.renderReply()
 	expression := view.expressionStatus
