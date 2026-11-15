@@ -125,11 +125,11 @@ func TestMeetingCaptionPlainText(t *testing.T) {
 
 func TestMeetingCaptionProtocolFromRealTranscript(t *testing.T) {
 	cases := map[string]string{
-		"同龄人，我觉得。哇，我们看起来真的很像。GATE\tYES": "同龄人，我觉得。哇，我们看起来真的很像。",
-		"我也继承了奶奶的一些特质。\tGATE\tYES": "我也继承了奶奶的一些特质。",
-		"SAY<TAB>一个漂亮的。GATE<TAB>YES": "一个漂亮的。",
-		"GATE\tYES\n中文翻译。": "中文翻译。",
-		"ZH<TAB>这是翻译。GATE<TAB>NO": "这是翻译。",
+		"同龄人，我觉得。哇，我们看起来真的很像。GATE\tYES":    "同龄人，我觉得。哇，我们看起来真的很像。",
+		"我也继承了奶奶的一些特质。\tGATE\tYES":         "我也继承了奶奶的一些特质。",
+		"SAY<TAB>一个漂亮的。GATE<TAB>YES":       "一个漂亮的。",
+		"GATE\tYES\n中文翻译。":                 "中文翻译。",
+		"ZH<TAB>这是翻译。GATE<TAB>NO":          "这是翻译。",
 		"不过我觉得我也继承了爸爸的一些特质。\nGATE<TAB>YES": "不过我觉得我也继承了爸爸的一些特质。",
 		"GATE<TAB>YES": "",
 	}
