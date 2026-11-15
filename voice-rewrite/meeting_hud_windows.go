@@ -802,8 +802,8 @@ func demoMeeting() meetingView {
 				{Kind: "THREE", Complete: true, English: "Let me take a moment to think through where we'd get the clearest signal.", Chinese: "我先理一下从哪里入手能最快弄清情况。"},
 			},
 			Source: "We're seeing high tail latency on vector search. How would you start investigating?",
-			Tip: "先对照高峰期的 p99 排队时间与分片耗时，再核对是否集中在特定索引或查询类型。",
+			Tip:    "先对照高峰期的 p99 排队时间与分片耗时，再核对是否集中在特定索引或查询类型。",
 		}},
-		expression:  meetingLine{kind: "SAY", complete: true, english: "We can do that, but by Friday I can only share an initial version.", chinese: "可以做，但周五前我只能给初版。"},
+		expression: meetingLine{kind: "SAY", complete: true, english: "We can do that, but by Friday I can only share an initial version.", chinese: "可以做，但周五前我只能给初版。"},
 	}
 }
