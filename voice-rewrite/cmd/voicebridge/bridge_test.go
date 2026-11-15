@@ -484,3 +484,75 @@ func TestBridgeCancelMissing(t *testing.T) {
 	}
 	h.close()
 }
+
+func TestBridgeServiceProbesUseSharedCoreWithoutUserContent(t *testing.T) {
+    var asrCalls, modelCalls atomic.Int32
+    srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        switch r.URL.Path {
+        case "/v1/audio/transcriptions":
+            asrCalls.Add(1)
+            if r.Method != "POST" || r.Header.Get("Authorization") != "Bearer asr-private-key" {
+                t.Error("ASR probe did not use configured provider authentication")
+            }
+            if err := r.ParseMultipartForm(2 << 20); err != nil { t.Error(err); w.WriteHeader(400); return }
+            audio, _, err := r.FormFile("file")
+            if err != nil { t.Error(err); w.WriteHeader(400); return }
+            defer audio.Close()
+            data, err := io.ReadAll(audio)
+            if err != nil || len(data) != 32044 || !bytes.Equal(data[:4], []byte("RIFF")) {
+                t.Error("probe did not send one second of silent WAV via shared ASR request")
+            } else {
+                for _, sample := range data[44:] { if sample != 0 { t.Error("probe audio was not silent"); break } }
+            }
+            w.WriteHeader(200)
+        case "/v1/models":
+            modelCalls.Add(1)
+            if r.Method != "GET" || r.Header.Get("Authorization") != "Bearer llm-private-key" {
+                t.Error("LLM probe did not use configured provider authentication")
+            }
+            _, _ = io.WriteString(w, `{"data":[{"id":"model-one"}]}`)
+        default:
+            t.Errorf("unexpected provider endpoint: %s", r.URL.Path)
+            w.WriteHeader(404)
+        }
+    }))
+    defer srv.Close()
+    h := startBridge(t, defaultOptions())
+    cfg := configFor(srv.URL)
+    cfg["asr_model"] = "whisper-1"
+    cfg["text_model"] = "model-one"
+    h.send(map[string]any{"v":1, "id":"probe-a", "op":"probe_asr", "config":cfg})
+    h.send(map[string]any{"v":1, "id":"probe-l", "op":"probe_llm", "config":cfg})
+    replies := h.receiveIDs("probe-a", "probe-l")
+    for id, want := range map[string]string{"probe-a": "静音测试成功", "probe-l": "已在服务中发现"} {
+        reply := replies[id]
+        result := object(t, reply.Result)
+        msg, _ := result["message"].(string)
+        if !reply.OK || !strings.Contains(msg, want) { t.Fatalf("%s failed: %#v", id, reply) }
+        encoded, _ := json.Marshal(reply)
+        if bytes.Contains(encoded, []byte("private-key")) { t.Fatal("probe result leaked a credential") }
+    }
+    h.close()
+    if asrCalls.Load() != 1 || modelCalls.Load() != 1 {
+        t.Fatalf("expected one probe to each provider endpoint, got ASR %d LLM %d", asrCalls.Load(), modelCalls.Load())
+    }
+}
+
+func TestBridgeProbeInvalidConfigNeverTouchesProvider(t *testing.T) {
+    var calls atomic.Int32
+    srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        calls.Add(1)
+        w.WriteHeader(200)
+    }))
+    defer srv.Close()
+    h := startBridge(t, defaultOptions())
+    cfg := configFor(srv.URL)
+    cfg["asr_base_url"] = "http://user:password@localhost/v1"
+    h.send(map[string]any{"v":1, "id":"probe-invalid", "op":"probe_asr", "config":cfg})
+    reply := h.receive()
+    if reply.OK || reply.Error == nil || reply.Error.Code != "invalid_config" {
+        t.Fatalf("expected sanitized invalid_config: %#v", reply)
+    }
+    h.close()
+    if calls.Load() != 0 { t.Fatal("invalid probe configuration reached provider") }
+}
