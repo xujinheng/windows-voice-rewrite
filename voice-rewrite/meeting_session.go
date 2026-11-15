@@ -391,9 +391,7 @@ func (s *meetingSession) translateTurns(jobs <-chan meetingCaptionJob) {
 				// previous completed snapshot. The original ASR stays visible.
 				s.applyWork(job.epoch, func() { s.view.status = "翻译暂不可用 · 原文已保留" })
 			}
-			canceled := ctx.Err() != nil
 			cancel()
-
 		}
 	}
 }
