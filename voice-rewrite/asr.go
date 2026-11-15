@@ -1,6 +1,7 @@
 package main
 
 import (
+	"voicerewrite/internal/core/audio"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -78,7 +79,7 @@ func encodeWAV(pcm []byte) ([]byte, error) {
 
 // transcribe sends the exact multipart request expected by Handy-compatible ASR.
 func transcribe(ctx context.Context, cfg Config, pcm []byte) (string, error) {
-	chunks := splitPCMForASR(pcm)
+	chunks := audio.SplitPCMForASR(pcm)
 	results := make([]string, 0, len(chunks))
 	for i, chunk := range chunks {
 		if err := ctx.Err(); err != nil {
@@ -93,7 +94,7 @@ func transcribe(ctx context.Context, cfg Config, pcm []byte) (string, error) {
 		}
 		results = append(results, part)
 	}
-	return joinASRChunks(results), nil
+	return audio.JoinASRChunks(results), nil
 }
 
 // transcribeChunk is one HTTP request; taskEpoch cancellation propagates
