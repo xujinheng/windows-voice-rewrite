@@ -80,6 +80,23 @@ jobs:
           test -d "$app"
           test -x "$app/Contents/MacOS/voicebridge"
           file "$app/Contents/MacOS/voicebridge"
+      - name: Package native macOS developer app
+        if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        run: |
+          app="$RUNNER_TEMP/voicerewrite-derived/Build/Products/Debug/VoiceRewrite.app"
+          test -d "$app"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/VoiceRewrite-macOS-Dev.zip"
+          cd "$RUNNER_TEMP"
+          shasum -a 256 VoiceRewrite-macOS-Dev.zip > VoiceRewrite-macOS-Dev.zip.sha256
+      - name: Upload native macOS developer app
+        if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceRewrite-macOS-Dev
+          path: |
+            ${{ runner.temp }}/VoiceRewrite-macOS-Dev.zip
+            ${{ runner.temp }}/VoiceRewrite-macOS-Dev.zip.sha256
+          retention-days: 7
       - name: Verify Swift-to-Go local process handshake on macOS
         working-directory: voice-rewrite
         run: |
