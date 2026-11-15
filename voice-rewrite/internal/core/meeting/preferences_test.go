@@ -1,9 +1,9 @@
 package meeting
 
 import (
-	"testing"
 	"os"
 	"path/filepath"
+	"testing"
 )
 
 func TestMeetingPreferencesRoundTrip(t *testing.T) {
