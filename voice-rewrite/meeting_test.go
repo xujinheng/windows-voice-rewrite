@@ -1,8 +1,6 @@
 package main
 
 import (
-	meetingcore "voicerewrite/internal/core/meeting"
-	"voicerewrite/internal/core/audio"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -11,6 +9,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"voicerewrite/internal/core/audio"
+	meetingcore "voicerewrite/internal/core/meeting"
 )
 
 func TestMeetingSegmenter(t *testing.T) {
