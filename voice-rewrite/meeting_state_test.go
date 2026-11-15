@@ -177,7 +177,6 @@ func TestMeetingContextOnlyWhenSpeechRefersToPriorConversation(t *testing.T) {
 	}
 }
 
-
 func TestMeetingVoiceModes(t *testing.T) {
 	if meetingVoiceMode(true) != "express" {
 		t.Fatal("dictation key must translate speech literally")
