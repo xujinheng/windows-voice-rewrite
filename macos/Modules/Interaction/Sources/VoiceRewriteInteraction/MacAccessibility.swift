@@ -121,8 +121,6 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
               role == "AXSearchField" else {
             throw InteractionFailure.notEditable
         }
-        let selected = try readAttribute(focused, kAXSelectedTextAttribute)
-        guard let text = selected as? String else { throw InteractionFailure.selectionUnavailable }
         let rangeValue = try readAttribute(focused, kAXSelectedTextRangeAttribute)
         guard CFGetTypeID(rangeValue) == AXValueGetTypeID() else {
             throw InteractionFailure.selectionUnavailable
@@ -131,6 +129,17 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         guard AXValueGetType(axValue) == .cfRange else { throw InteractionFailure.selectionUnavailable }
         var range = CFRange(location: 0, length: 0)
         guard AXValueGetValue(axValue, .cfRange, &range) else {
+            throw InteractionFailure.selectionUnavailable
+        }
+        // Some editable controls report no selected-text value for an empty caret.
+        // This is safe only when the independently read AX range is zero-length.
+        let selected = try optionalAttribute(focused, kAXSelectedTextAttribute)
+        let text: String
+        if let value = selected as? String {
+            text = value
+        } else if selected == nil && range.length == 0 {
+            text = ""
+        } else {
             throw InteractionFailure.selectionUnavailable
         }
         return SelectionObservation(processID: pid,
@@ -209,7 +218,13 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         try optionalAttribute(target, kAXValueAttribute) as? String
     }
 
-    private func postPaste(to pid: Int32) throws {
+    private func postPaste(expected: SelectionObservation) throws {
+        // Foreground delivery is required by several editors, including native and
+        // Chromium text controls. Never post into an unverified focus.
+        _ = try revalidate(expected)
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == expected.processID else {
+            throw InteractionFailure.applicationChanged
+        }
         guard let source = CGEventSource(stateID: .hidSystemState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false) else {
@@ -217,9 +232,8 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         }
         down.flags = .maskCommand
         up.flags = .maskCommand
-        // Address the captured process, never the VoiceRewrite UI or a newly active app.
-        down.postToPid(pid)
-        up.postToPid(pid)
+        down.post(tap: .cgSessionEventTap)
+        up.post(tap: .cgSessionEventTap)
     }
 
     private func guardedPaste(_ text: String, expected: SelectionObservation,
@@ -229,7 +243,7 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
             // Clipboard staging is externally visible. Revalidate again after staging.
             let target = try revalidate(expected)
             guard pasteboard.isOwned(lease) else { throw ClipboardFailure.ownershipLost }
-            try postPaste(to: expected.processID)
+            try postPaste(expected: expected)
 
             // AXValue is the receipt. Sending keys or reading the clipboard is not proof.
             let deadline = ProcessInfo.processInfo.systemUptime + 0.75
