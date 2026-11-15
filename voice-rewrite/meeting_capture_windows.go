@@ -197,6 +197,9 @@ func openMeetingAudio(ctx context.Context, pid uint32) (uintptr, error) {
 }
 
 func captureMeetingAudio(ctx context.Context, pid uint32, started func(), push func([]byte)) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	target, _, _ := meetingOpenProcess.Call(0x00100000, 0, uintptr(pid)) // SYNCHRONIZE
 	if target == 0 {
 		return errors.New("选中的音频来源已退出或不可访问")
