@@ -83,8 +83,8 @@ func TestMeetingReadingPanelsKeepActiveTurnOutOfHistory(t *testing.T) {
 		strings.Contains(next.history, "What is the deadline?") {
 		t.Fatalf("historical turn assignment: %#v", next)
 	}
-	if !strings.Contains(next.hint, "可能在提问") {
-		t.Fatalf("question intent cue absent: %#v", next)
+	if next.hint != "原文已确认 · 正在生成译文" {
+		t.Fatalf("caption state must not guess conversational intent: %#v", next)
 	}
 }
 
@@ -256,16 +256,56 @@ func TestMeetingSchedulerCanceledWaiterRemoved(t *testing.T) {
 	}
 }
 
-func TestMeetingGateContext(t *testing.T) {
-	for _, s := range []string{"Let's hear your take", "Can we hear from you", "你怎么看", "Any concerns about that approach"} {
-		if !meetingNeedsReply(s) {
-			t.Errorf("missed handoff %q", s)
-		}
+func TestMeetingTranslationVersionIsVisibleToReader(t *testing.T) {
+	translated := meetingCaption{id: 1, source: "I can start Monday", chinese: "我周一可以开始", translatedFrom: "I can start Monday", final: true}
+	ready := buildMeetingReadingPanels([]meetingCaption{translated})
+	if ready.hint != "已确认 · 可以放心阅读" {
+		t.Fatalf("completed translation incorrectly marked pending: %q", ready.hint)
 	}
-	if meetingShouldReply("yeah", []string{"What do you think?"}, true) {
-		t.Fatal("backchannel triggered reply")
+	changed := reviseMeetingCaption(meetingCaption{source: "I can start Monday", chinese: "我周一可以开始", translatedFrom: "I can start Monday"}, 1, "I can start Tuesday", true)
+	if changed.chinese != translated.chinese || changed.translatedFrom != translated.translatedFrom {
+		t.Fatalf("changing ASR erased the last readable Chinese version: %#v", changed)
 	}
-	if !meetingShouldReply("That is the constraint we are working with", nil, true) {
-		t.Fatal("semantic gate ignored")
+	stale := buildMeetingReadingPanels([]meetingCaption{changed})
+	if stale.hint != "原文已更新 · 译文待刷新" || stale.chinese != translated.chinese {
+		t.Fatalf("stale translation shown as final: %#v", stale)
 	}
 }
+
+func TestMeetingExpressionRemainsReadableWhileWorking(t *testing.T) {
+	last := meetingLine{kind: "SAY", english: "I would add one more point.", complete: true}
+	if meetingRetainEnglish(last) != last {
+		t.Fatal("the last completed spoken English was lost")
+	}
+	if meetingRetainEnglish(meetingLine{english: "Half a sentence"}).english != "" {
+		t.Fatal("uncommitted English must not survive a failed request")
+	}
+	if heading := meetingExpressionHeading("正在识别", true); !strings.Contains(heading, "仍可复制") {
+		t.Fatalf("the interface concealed the last good English: %s", heading)
+	}
+	if detail := meetingExpressionDetail("生成失败：超时", "印度有多少人会说英语"); !strings.Contains(detail, "超时") || !strings.Contains(detail, "印度") {
+		t.Fatalf("failure hid the recognized speech: %s", detail)
+	}
+	focusedCaptions, expanded := meetingExpressionFocus(true, true, true, false)
+	if focusedCaptions || !expanded {
+		t.Fatal("completed English was hidden behind captions-only mode")
+	}
+	focusedCaptions, expanded = meetingExpressionFocus(true, false, true, false)
+	if !focusedCaptions || expanded {
+		t.Fatal("a background refresh stole the user's caption focus")
+	}
+}
+
+func TestMeetingSuggestionsUseCompletedSpeechOnly(t *testing.T) {
+	if _, ok := meetingLastCompletedCaption([]meetingCaption{{id: 3, source: "What about", final: false}}); ok {
+		t.Fatal("a partial fragment was used to generate suggestions")
+	}
+	finished, ok := meetingLastCompletedCaption([]meetingCaption{
+		{id: 1, source: "Let's consider both.", final: true},
+		{id: 2, source: "Maybe...", final: false},
+	})
+	if !ok || finished.id != 1 {
+		t.Fatalf("suggestions ignored the latest completed turn: %#v %t", finished, ok)
+	}
+}
+
