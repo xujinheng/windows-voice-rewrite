@@ -308,4 +308,3 @@ func TestMeetingSuggestionsUseCompletedSpeechOnly(t *testing.T) {
 		t.Fatalf("suggestions ignored the latest completed turn: %#v %t", finished, ok)
 	}
 }
-
