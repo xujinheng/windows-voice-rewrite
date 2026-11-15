@@ -3,7 +3,6 @@
 package main
 
 import (
-	"voicerewrite/internal/core/speech"
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"voicerewrite/internal/core/speech"
 )
 
 func watchMouseHoldTimeout(hwnd, session uintptr, canceled <-chan struct{}, timeout time.Duration, logger *log.Logger) {
