@@ -1,13 +1,14 @@
 package main
 
 import (
-	"voicerewrite/internal/core/provider"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"voicerewrite/internal/core/provider"
 )
 
 // VoiceRewrite never sends audio or selected text to a provider other than the
