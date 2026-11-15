@@ -1,6 +1,7 @@
 package main
 
 import (
+	meetingcore "voicerewrite/internal/core/meeting"
 	"voicerewrite/internal/core/audio"
 	"context"
 	"encoding/binary"
@@ -133,13 +134,13 @@ func TestMeetingTranslationDoesNotRepeatPriorParagraph(t *testing.T) {
 	source := "Playing games and being competitive, so I think that side of me is similar to him."
 	good := "喜欢玩游戏，也有竞争心，所以我觉得自己这一方面和他很像。"
 	recap := strings.Repeat("不过我觉得我也继承了爸爸的一些特质，我父亲是个理性的人。", 13)
-	if !meetingTranslationFitsSource(source, good) {
+	if !meetingcore.TranslationFitsSource(source, good) {
 		t.Fatal("normal translation rejected")
 	}
-	if meetingTranslationFitsSource(source, recap) {
+	if meetingcore.TranslationFitsSource(source, recap) {
 		t.Fatal("model recap of prior turns accepted as current caption")
 	}
-	if !meetingTranslationFitsSource("A pretty.", "一个漂亮的。") {
+	if !meetingcore.TranslationFitsSource("A pretty.", "一个漂亮的。") {
 		t.Fatal("short incomplete phrase rejected")
 	}
 }
