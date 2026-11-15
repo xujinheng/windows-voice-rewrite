@@ -3,7 +3,6 @@
 package main
 
 import (
-	meetingcore "voicerewrite/internal/core/meeting"
 	"fmt"
 	"os"
 	"runtime"
@@ -11,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 	"unsafe"
+
+	meetingcore "voicerewrite/internal/core/meeting"
 )
 
 func meetingE2EFirstLine(control uintptr) uintptr {
