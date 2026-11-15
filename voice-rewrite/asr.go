@@ -1,8 +1,6 @@
 package main
 
 import (
-	"voicerewrite/internal/core/provider"
-	"voicerewrite/internal/core/audio"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -15,6 +13,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"voicerewrite/internal/core/audio"
+	"voicerewrite/internal/core/provider"
 )
 
 // Match OneClick's metadata delimiter, not arbitrary characters between "language"
