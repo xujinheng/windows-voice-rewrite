@@ -48,6 +48,9 @@ final class WorkspaceModel: ObservableObject {
     private var activeVoiceSelection: (snapshot: SelectionSnapshot, generation: UInt64)?
     private var hotKeyDriver: CarbonHotKeyDriver?
     private var hotKeys: HotKeyRegistry?
+    private var sideMouse: SideMouseButtonDriver?
+    private var activeSideAction: SideMouseAction?
+    private var pendingSideRelease: SideMouseAction?
 
     private let recordShortcut = HotKeyShortcut(keyCode: 15, modifiers: [.control, .option])
     private let editShortcut = HotKeyShortcut(keyCode: 17, modifiers: [.control, .option])
@@ -68,6 +71,7 @@ final class WorkspaceModel: ObservableObject {
         if case .disconnected = connection { connect() }
         if hotKeys == nil { registerHotKeys() }
         accessibilityAuthorized = InteractionSession.accessibilityPermissionGranted()
+        if accessibilityAuthorized { registerSideMouse() }
     }
 
     func connect() {
@@ -156,6 +160,7 @@ final class WorkspaceModel: ObservableObject {
         interactionStatus = accessibilityAuthorized
             ? "辅助功能已授权"
             : "请在系统设置的辅助功能权限中授权 VoiceRewrite"
+        if accessibilityAuthorized { registerSideMouse() }
     }
 
     private func registerHotKeys() {
@@ -182,6 +187,58 @@ final class WorkspaceModel: ObservableObject {
             driver.shutdown()
             interactionStatus = "无法注册全局快捷键，请检查系统快捷键冲突"
         }
+    }
+
+    private func registerSideMouse() {
+        guard sideMouse == nil else { return }
+        let driver = SideMouseButtonDriver(
+            onHold: { [weak self] action, pid in
+                self?.sideMouseHeld(action, targetPID: pid)
+            },
+            onRelease: { [weak self] action in
+                self?.sideMouseReleased(action)
+            },
+            onCancel: { [weak self] in
+                self?.cancelCurrent()
+            }
+        )
+        do {
+            try driver.start()
+            sideMouse = driver
+            interactionStatus = "Mouse4 按住听写，Mouse5 按住改写；短按保留鼠标导航"
+        } catch {
+            driver.shutdown()
+            interactionStatus = "鼠标侧键未启用：\(error.localizedDescription)；键盘快捷键仍可用"
+        }
+    }
+
+    private func sideMouseHeld(_ action: SideMouseAction, targetPID: Int32?) {
+        guard !isRecording && !isStarting && !isProcessing && activeSideAction == nil else { return }
+        switch action {
+        case .dictation: toggleRecording(from: targetPID)
+        case .rewrite: toggleVoiceSelectedText(from: targetPID)
+        }
+        // Starting a new task invalidates the previous task's input ownership.
+        activeSideAction = action
+        pendingSideRelease = nil
+    }
+
+    private func sideMouseReleased(_ action: SideMouseAction) {
+        guard activeSideAction == action else { return }
+        if isStarting {
+            pendingSideRelease = action
+        } else if isRecording {
+            stopRecording()
+        } else {
+            activeSideAction = nil
+        }
+    }
+
+    private func stopWhenSideMouseReleased(_ action: SideMouseAction) {
+        guard pendingSideRelease == action else { return }
+        pendingSideRelease = nil
+        if isRecording { stopRecording() }
+        else { activeSideAction = nil }
     }
 
     private func requestConfig(for operation: HelperOperation) throws -> JSONValue {
@@ -300,6 +357,8 @@ final class WorkspaceModel: ObservableObject {
         }
         activeVoiceSelection = nil
         isVoiceSelectionRecording = false
+        activeSideAction = nil
+        pendingSideRelease = nil
         isProcessing = false
     }
 
@@ -345,7 +404,7 @@ final class WorkspaceModel: ObservableObject {
                 activeVoiceSelection = (snapshot, next)
                 isVoiceSelectionRecording = true
                 isRecording = true
-                recordingStatus = "语音修改选区录音中；再次按 Ctrl+Option+E 结束"
+                recordingStatus = "语音修改选区录音中；松开 Mouse5 或再次按 Ctrl+Option+E 结束"
                 interactionStatus = "已锁定选区；录音后校验焦点与选区是否仍有效"
             } catch {
                 microphone.cancel()
@@ -356,6 +415,7 @@ final class WorkspaceModel: ObservableObject {
                 }
             }
             isStarting = false
+            stopWhenSideMouseReleased(.rewrite)
         }
     }
 
@@ -383,16 +443,19 @@ final class WorkspaceModel: ObservableObject {
                 try await microphone.start()
                 guard resultGeneration.accepts(token) else { microphone.cancel(); return }
                 isRecording = true
-                recordingStatus = "录音中；再次按 Ctrl+Option+R 停止"
+                recordingStatus = "录音中；松开 Mouse4 或再次按 Ctrl+Option+R 停止"
             } catch {
                 recordingStatus = "无法启动麦克风：\(error.localizedDescription)"
             }
             isStarting = false
+            stopWhenSideMouseReleased(.dictation)
         }
     }
 
     func stopRecording() {
         guard isRecording else { return }
+        activeSideAction = nil
+        pendingSideRelease = nil
         isRecording = false
         isProcessing = true
         recordingStatus = "正在处理语音"
@@ -606,6 +669,8 @@ final class WorkspaceModel: ObservableObject {
         _ = helloGeneration.begin()
         cancelProbes()
         cancelCurrent()
+        sideMouse?.shutdown()
+        sideMouse = nil
         hotKeys?.shutdown()
         hotKeyDriver?.shutdown()
         hotKeys = nil
