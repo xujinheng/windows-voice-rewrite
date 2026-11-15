@@ -53,6 +53,70 @@ func TestMeetingCaptionPromptCannotEchoPriorOrControlTags(t *testing.T) {
 	}
 }
 
+func TestMeetingEnglishExpressionFormats(t *testing.T) {
+	for _, tc := range []struct {
+		raw, want string
+	}{
+		{"Could you walk us through the schedule for each option?", "Could you walk us through the schedule for each option?"},
+		{"SAY\\tThanks for sharing.\\t谢谢分享。", "Thanks for sharing."},
+		{"SAY<TAB>Could you clarify the timing?<TAB>能澄清时间吗？", "Could you clarify the timing?"},
+		{`{"english":"I'd like to know the schedule."}`, "I'd like to know the schedule."},
+		{"<think>internal</think>How long would each option take?", "How long would each option take?"},
+		{"GATE<TAB>YES", ""},
+		{"只返回中文", ""},
+	} {
+		if got := meetingEnglishExpression(tc.raw); got != tc.want {
+			t.Errorf("%q -> %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+}
+
+func TestMeetingLiteralAndIntentEnglishDoNotRequireSAYProtocol(t *testing.T) {
+	for _, tc := range []struct {
+		mode, spoken, reply, expected string
+	}{
+		{"express", "我想知道潜在的延期。", "I would like to know about any potential delays.", "I would like to know about any potential delays."},
+		{"compose", "问他这两个方案的schedule", "Thanks for sharing the two options. Could you walk us through the schedule and any potential delays for each one?", "Thanks for sharing the two options. Could you walk us through the schedule and any potential delays for each one?"},
+	} {
+		t.Run(tc.mode, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request struct {
+					Messages []struct {
+						Role    string `json:"role"`
+						Content string `json:"content"`
+					} `json:"messages"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Error(err)
+				}
+				if len(request.Messages) != 2 || !strings.Contains(request.Messages[1].Content, tc.spoken) {
+					t.Errorf("spoken input missing from prompt: %#v", request.Messages)
+				}
+				if tc.mode == "express" {
+					if strings.Contains(request.Messages[1].Content, "old meeting text") || !strings.Contains(request.Messages[0].Content, "Translate") {
+						t.Error("literal translation used previous meeting or intent prompt")
+					}
+				} else if !strings.Contains(request.Messages[0].Content, "INSTRUCTION") || !strings.Contains(request.Messages[1].Content, "old meeting text") {
+					t.Error("intent expression lost meeting context or instruction semantics")
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				data, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": map[string]string{"content": tc.reply}}}})
+				fmt.Fprintf(w, "data: %s\\n\\ndata: [DONE]\\n\\n", data)
+			}))
+			defer server.Close()
+			cfg := defaults()
+			cfg.LLMBaseURL, cfg.TextModel = server.URL, "test"
+			var got []meetingLine
+			err := completeMeeting(context.Background(), cfg, meetingQuery{
+				Mode: tc.mode, UserPoints: tc.spoken, Prior: []string{"old meeting text"},
+			}, func(line meetingLine) { got = append(got, line) })
+			if err != nil || len(got) != 1 || !got[0].complete || got[0].kind != "SAY" || got[0].english != tc.expected {
+				t.Fatalf("English response = %#v, err=%v", got, err)
+			}
+		})
+	}
+}
+
 func TestMeetingPartialReplyAndNoThinking(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
