@@ -60,10 +60,11 @@ type bridgeOptions struct {
 	MaxInFlight       int
 	TranscribeTimeout time.Duration
 	SelectedTimeout   time.Duration
+	SpokenSelectedTimeout time.Duration
 }
 
 func defaultOptions() bridgeOptions {
-	return bridgeOptions{MaxInFlight: 4, TranscribeTimeout: 220 * time.Second, SelectedTimeout: 150 * time.Second}
+	return bridgeOptions{MaxInFlight: 4, TranscribeTimeout: 220 * time.Second, SelectedTimeout: 150 * time.Second, SpokenSelectedTimeout: 360 * time.Second}
 }
 
 type bridgeTask struct {
@@ -193,7 +194,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	}
 	s.seen[req.ID] = struct{}{}
 
-	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "probe_asr" && req.Op != "probe_llm" {
+	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "selected_voice_task" && req.Op != "probe_asr" && req.Op != "probe_llm" {
 		s.mu.Unlock()
 		switch req.Op {
 		case "hello":
@@ -224,6 +225,8 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	timeout := s.options.TranscribeTimeout
 	if req.Op == "selected_task" {
 		timeout = s.options.SelectedTimeout
+	} else if req.Op == "selected_voice_task" {
+		timeout = s.options.SpokenSelectedTimeout
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	task := &bridgeTask{cancel: cancel}
@@ -256,6 +259,36 @@ func (s *bridgeServer) runTask(ctx context.Context, task *bridgeTask, req reques
 	s.send(reply)
 }
 
+func decodeRequestPCM(req request, cfg coreconfig.Config) ([]byte, bool) {
+	maxBytes := maxPCMBytes
+	if limit := cfg.MaxRecordSeconds * 32000; limit > 0 && limit < maxBytes {
+		maxBytes = limit
+	}
+	if len(req.PCMBase64) == 0 || len(req.PCMBase64) > base64.StdEncoding.EncodedLen(maxBytes) {
+		return nil, false
+	}
+	pcm, err := base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
+	if err != nil || len(pcm) < 3200 || len(pcm)%2 != 0 || len(pcm) > maxBytes {
+		return nil, false
+	}
+	return pcm, true
+}
+
+func selectedTaskSuccess(id string, result textedit.AssistantResult, instruction string, spoken bool) response {
+	action := textedit.RouteTask(result, instruction, false)
+	mayAttempt := action == textedit.TryReplace || action == textedit.Replace
+	payload := map[string]any{
+		"intent": result.Intent,
+		"text": result.Result,
+		"preview_only": result.PreviewOnly || !mayAttempt,
+		"may_attempt_replace": mayAttempt,
+	}
+	if spoken {
+		payload["instruction"] = instruction
+	}
+	return success(id, payload)
+}
+
 func processRequest(ctx context.Context, req request) response {
 	if len(req.Config) == 0 || bytes.Equal(bytes.TrimSpace(req.Config), []byte("null")) {
 		return failure(req.ID, "invalid_config", "config object is required")
@@ -282,16 +315,9 @@ func processRequest(ctx context.Context, req request) response {
 		message := serviceprobe.ProbeModel(ctx, "LLM", cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.TextModel)
 		return success(req.ID, map[string]string{"kind": "LLM", "message": message})
 	case "transcribe":
-		maxBytes := maxPCMBytes
-		if limit := cfg.MaxRecordSeconds * 32000; limit > 0 && limit < maxBytes {
-			maxBytes = limit
-		}
-		if len(req.PCMBase64) == 0 || len(req.PCMBase64) > base64.StdEncoding.EncodedLen(maxBytes) {
-			return failure(req.ID, "invalid_pcm", "PCM must be 16 kHz mono PCM16, within duration limit")
-		}
-		pcm, err := base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
-		if err != nil || len(pcm) == 0 || len(pcm)%2 != 0 || len(pcm) > maxBytes {
-			return failure(req.ID, "invalid_pcm", "PCM must be 16 kHz mono PCM16, within duration limit")
+		pcm, ok := decodeRequestPCM(req, cfg)
+		if !ok {
+			return failure(req.ID, "invalid_pcm", "PCM must be 16 kHz mono PCM16, at least 0.1s and within duration limit")
 		}
 		text, err := speech.Transcribe(ctx, cfg, pcm)
 		if err != nil {
@@ -304,12 +330,27 @@ func processRequest(ctx context.Context, req request) response {
 			return contextFailure(req.ID, ctx.Err())
 		}
 		return success(req.ID, map[string]string{"text": text})
-	case "selected_task":
-		if len(req.SelectedText) > maxSelectedBytes || len(req.Instruction) > maxInstructionBytes ||
-			!utf8.ValidString(req.SelectedText) || !utf8.ValidString(req.Instruction) {
+	case "selected_task", "selected_voice_task":
+		if len(req.SelectedText) == 0 || len(req.SelectedText) > maxSelectedBytes ||
+			!utf8.ValidString(req.SelectedText) || len(req.Instruction) > maxInstructionBytes ||
+			!utf8.ValidString(req.Instruction) {
 			return failure(req.ID, "invalid_request", "selected text or instruction exceeds limits")
 		}
-		result, err := textedit.ResolveSelectedTask(ctx, cfg, req.SelectedText, req.Instruction)
+		var result textedit.AssistantResult
+		var instruction string
+		if req.Op == "selected_voice_task" {
+			if req.Instruction != "" {
+				return failure(req.ID, "invalid_request", "spoken selected text task must not supply a text instruction")
+			}
+			pcm, ok := decodeRequestPCM(req, cfg)
+			if !ok {
+				return failure(req.ID, "invalid_pcm", "PCM must be 16 kHz mono PCM16, at least 0.1s and within duration limit")
+			}
+			result, instruction, err = textedit.ResolveSpokenTask(ctx, cfg, req.SelectedText, pcm, nil)
+		} else {
+			instruction = req.Instruction
+			result, err = textedit.ResolveSelectedTask(ctx, cfg, req.SelectedText, instruction)
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return contextFailure(req.ID, ctx.Err())
@@ -319,18 +360,7 @@ func processRequest(ctx context.Context, req request) response {
 		if ctx.Err() != nil {
 			return contextFailure(req.ID, ctx.Err())
 		}
-		action := textedit.RouteTask(result, req.Instruction, false)
-		mayAttempt := action == textedit.TryReplace || action == textedit.Replace
-		return success(req.ID, struct {
-			Intent            string `json:"intent"`
-			Text              string `json:"text"`
-			PreviewOnly       bool   `json:"preview_only"`
-			MayAttemptReplace bool   `json:"may_attempt_replace"`
-		}{
-			Intent: result.Intent, Text: result.Result,
-			PreviewOnly:       result.PreviewOnly || !mayAttempt,
-			MayAttemptReplace: mayAttempt,
-		})
+		return selectedTaskSuccess(req.ID, result, instruction, req.Op == "selected_voice_task")
 	}
 	return failure(req.ID, "unsupported_op", "unsupported operation")
 }
@@ -343,7 +373,7 @@ func contextFailure(id string, err error) response {
 }
 
 func serveWithOptions(input io.Reader, output io.Writer, options bridgeOptions) error {
-	if options.MaxInFlight < 1 || options.TranscribeTimeout <= 0 || options.SelectedTimeout <= 0 {
+	if options.MaxInFlight < 1 || options.TranscribeTimeout <= 0 || options.SelectedTimeout <= 0 || options.SpokenSelectedTimeout <= 0 {
 		return errors.New("invalid bridge options")
 	}
 	s := &bridgeServer{
