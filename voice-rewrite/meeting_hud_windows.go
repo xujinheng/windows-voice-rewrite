@@ -431,7 +431,7 @@ func updateMeetingHUD(view meetingView) {
 	newTurn := panels.currentID != p.currentID || panels.historyCount > p.historyCount
 	p.currentID = panels.currentID
 	p.setText(p.live, "● "+panels.hint, false)
-	if !panels.live || time.Since(p.lastTranscript) >= 280*time.Millisecond {
+	if newTurn || !panels.live || time.Since(p.lastTranscript) >= 280*time.Millisecond {
 		p.setText(p.currentEnglish, panels.english, true)
 		p.setText(p.currentChinese, panels.chinese, true)
 		if newTurn {
