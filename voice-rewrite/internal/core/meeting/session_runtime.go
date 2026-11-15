@@ -20,6 +20,9 @@ type SessionRuntime struct {
 	paused           bool
 	expressionSerial uint64
 	stopExpression   context.CancelFunc
+	stopReply        context.CancelFunc
+	stopCaption      context.CancelFunc
+	captionID        uint64
 }
 
 func NewSessionRuntime() *SessionRuntime {
@@ -43,6 +46,14 @@ func (s *SessionRuntime) Stop() {
 	if s.stopExpression != nil {
 		s.stopExpression()
 		s.stopExpression = nil
+	}
+	if s.stopReply != nil {
+		s.stopReply()
+		s.stopReply = nil
+	}
+	if s.stopCaption != nil {
+		s.stopCaption()
+		s.stopCaption = nil
 	}
 }
 
@@ -68,6 +79,14 @@ func (s *SessionRuntime) resetLocked() {
 	if s.stopExpression != nil {
 		s.stopExpression()
 		s.stopExpression = nil
+	}
+	if s.stopReply != nil {
+		s.stopReply()
+		s.stopReply = nil
+	}
+	if s.stopCaption != nil {
+		s.stopCaption()
+		s.stopCaption = nil
 	}
 	s.epoch++
 	s.turnID++ // IDs cannot collide with canceled ASR snapshots.
@@ -130,4 +149,56 @@ func (s *SessionRuntime) CurrentExpression(epoch, serial uint64) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.activeLocked(epoch) && serial != 0 && s.expressionSerial == serial
+}
+
+
+// ReplyContext cancels any earlier reply task and binds a new one to the
+// active epoch. A paused or superseded epoch cannot start a reply request.
+func (s *SessionRuntime) ReplyContext(epoch uint64, timeout time.Duration) (context.Context, context.CancelFunc, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.activeLocked(epoch) {
+		return nil, nil, false
+	}
+	if s.stopReply != nil {
+		s.stopReply()
+	}
+	ctx, cancel := context.WithTimeout(s.work, timeout)
+	s.stopReply = cancel
+	return ctx, cancel, true
+}
+
+func (s *SessionRuntime) CancelReply() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopReply != nil {
+		s.stopReply()
+		s.stopReply = nil
+	}
+}
+
+// TrackCaption makes the active translator cancelable by a newer ASR revision,
+// pause/resume transition, or session shutdown.
+func (s *SessionRuntime) TrackCaption(epoch, id uint64, cancel context.CancelFunc) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.activeLocked(epoch) {
+		cancel()
+		return false
+	}
+	if s.stopCaption != nil {
+		s.stopCaption()
+	}
+	s.stopCaption = cancel
+	s.captionID = id
+	return true
+}
+
+func (s *SessionRuntime) CancelCaption(id uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopCaption != nil && s.captionID == id {
+		s.stopCaption()
+		s.stopCaption = nil
+	}
 }
