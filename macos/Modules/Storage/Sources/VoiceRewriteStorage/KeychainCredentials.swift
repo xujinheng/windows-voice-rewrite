@@ -8,7 +8,7 @@ public enum CredentialAccount: String, CaseIterable, Sendable {
     case llm = "llm_api_key"
 }
 
-public enum CredentialError: Error, Equatable, CustomStringConvertible {
+public enum CredentialError: Error, Equatable, CustomStringConvertible, LocalizedError {
     case notFound
     case duplicate
     case lockedOrInteractionRequired
@@ -28,6 +28,19 @@ public enum CredentialError: Error, Equatable, CustomStringConvertible {
         case .invalidStoredData: return "Keychain returned invalid credential data"
         case .osStatus(let status): return "Keychain OSStatus \(status)"
         case .unsupportedPlatform: return "Security.framework requires macOS"
+        }
+    }
+
+    public var errorDescription: String? {
+        switch self {
+        case .notFound: return "未找到 Keychain 凭据"
+        case .duplicate: return "Keychain 中已存在此凭据"
+        case .lockedOrInteractionRequired: return "Keychain 已锁定或需要解锁后重试"
+        case .accessDenied: return "Keychain 拒绝访问；请检查应用签名及钥匙串权限"
+        case .unavailable: return "Keychain 当前不可用"
+        case .invalidStoredData: return "Keychain 中的凭据数据无效"
+        case .osStatus(let status): return "Keychain 操作失败（OSStatus \(status)）"
+        case .unsupportedPlatform: return "当前平台不支持 macOS Keychain"
         }
     }
 
@@ -140,6 +153,11 @@ public final class KeychainCredentials: CredentialReading {
 
 /// Construct only at the IPC boundary. This class is deliberately not Codable,
 /// and SettingsStore accepts only MacSettings (never this request dictionary).
+public enum HelperOperation: Sendable {
+    case transcribe
+    case selectedTask
+}
+
 public struct HelperConfigFactory {
     private let credentials: any CredentialReading
 
@@ -147,13 +165,24 @@ public struct HelperConfigFactory {
         self.credentials = credentials
     }
 
+    private func credentialOrEmpty(_ account: CredentialAccount) throws -> String {
+        do {
+            return try credentials.read(account)
+        } catch CredentialError.notFound {
+            // The Go Core accepts local API endpoints without an Authorization header.
+            return ""
+        }
+    }
+
     public func withEphemeralConfig<Result>(
         settings: MacSettings,
+        operation: HelperOperation,
         _ performRequest: ([String: Any]) throws -> Result
     ) throws -> Result {
         try settings.validateForPersistence()
-        let asr = try credentials.read(.asr)
-        let llm = try credentials.read(.llm)
+        // Do not read or transmit a credential that the requested operation will not use.
+        let asr = operation == .transcribe ? try credentialOrEmpty(.asr) : ""
+        let llm = operation == .selectedTask ? try credentialOrEmpty(.llm) : ""
         return try performRequest([
             "asr_base_url": settings.asrBaseURL,
             "llm_base_url": settings.llmBaseURL,
