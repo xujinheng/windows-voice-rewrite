@@ -18,6 +18,27 @@ final class BridgeClientTests: XCTestCase {
         return executable
     }
 
+    func testSpokenSelectionRequestAndGuardedResponse() throws {
+        let request = try BridgeRequest(id: "voice-selected", operation: "selected_voice_task",
+            fields: [
+                "config": .object(["asr_base_url": .string("http://127.0.0.1:8080/v1")]),
+                "selected_text": .string("原文"),
+                "pcm_base64": .string("AAAAAA=="),
+            ]).line()
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(request.dropLast()))
+                                    as? [String: Any])
+        XCTAssertEqual(payload["op"] as? String, "selected_voice_task")
+        XCTAssertEqual(payload["selected_text"] as? String, "原文")
+        XCTAssertNil(payload["instruction"])
+
+        let response = Data(#"{"v":1,"id":"voice-selected","ok":true,"result":{"instruction":"请翻译成英文","intent":"translate","text":"Original","preview_only":false,"may_attempt_replace":true}}"#.utf8)
+        let reply = try JSONDecoder().decode(BridgeReply.self, from: response)
+        try reply.validate()
+        XCTAssertEqual(reply.result?["instruction"]?.string, "请翻译成英文")
+        XCTAssertEqual(reply.result?["may_attempt_replace"]?.boolValue, true)
+        XCTAssertEqual(reply.result?["preview_only"]?.boolValue, false)
+    }
+
     func testSharedCoreProbeOperationsAndResponses() throws {
         for operation in ["probe_asr", "probe_llm"] {
             let request = try BridgeRequest(id: operation, operation: operation,

@@ -68,7 +68,9 @@ struct MainView: View {
                 GroupBox("选区改写") {
                     VStack(alignment: .leading, spacing: 8) {
                         TextField("输入改写/翻译指令，再切到其他应用选中文字", text: $model.taskInstruction)
-                        Text("Ctrl+Option+T：处理原应用选区。Ctrl+Option+R：录音/停止；仅在原光标仍有效时插入。")
+                        Text("Ctrl+Option+E：选中文字后开始语音修改，再按一次结束；Go Core 识别指令并决定改写、翻译或预览。Ctrl+Option+T：使用上方文字指令处理选区。Ctrl+Option+R：普通听写。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        Text("语音选区模式需要先在目标应用选中文字；录音中不得改变目标、焦点或选区，否则只保留预览。")
                             .font(.footnote).foregroundStyle(.secondary)
                         resultView(model.processedText, empty: "这里显示真实模型结果；未经授权不会更改其他应用文本。")
                     }

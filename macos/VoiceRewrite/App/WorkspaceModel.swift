@@ -29,6 +29,7 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var transcription: String?
     @Published private(set) var processedText: String?
     @Published private(set) var isRecording = false
+    @Published private(set) var isVoiceSelectionRecording = false
     @Published private(set) var isStarting = false
     @Published private(set) var isProcessing = false
     @Published private(set) var accessibilityAuthorized = false
@@ -44,11 +45,13 @@ final class WorkspaceModel: ObservableObject {
     private var activeProbeIDs: [String: String] = [:]
     private var activeRequestID: String?
     private var activeInsert: (snapshot: SelectionSnapshot, generation: UInt64)?
+    private var activeVoiceSelection: (snapshot: SelectionSnapshot, generation: UInt64)?
     private var hotKeyDriver: CarbonHotKeyDriver?
     private var hotKeys: HotKeyRegistry?
 
     private let recordShortcut = HotKeyShortcut(keyCode: 15, modifiers: [.control, .option])
     private let editShortcut = HotKeyShortcut(keyCode: 17, modifiers: [.control, .option])
+    private let spokenEditShortcut = HotKeyShortcut(keyCode: 14, modifiers: [.control, .option])
 
     init() {
         do {
@@ -162,15 +165,18 @@ final class WorkspaceModel: ObservableObject {
                 self.toggleRecording(from: pid)
             } else if shortcut == self.editShortcut {
                 self.processSelectedText(from: pid)
+            } else if shortcut == self.spokenEditShortcut {
+                self.toggleVoiceSelectedText(from: pid)
             }
         }
         let registry = HotKeyRegistry(driver: driver)
         do {
             try registry.register(recordShortcut)
             try registry.register(editShortcut)
+            try registry.register(spokenEditShortcut)
             hotKeyDriver = driver
             hotKeys = registry
-            interactionStatus = "Ctrl+Option+R 录音；Ctrl+Option+T 处理选区"
+            interactionStatus = "Ctrl+Option+R 听写；Ctrl+Option+T 文本指令；Ctrl+Option+E 语音修改选区"
         } catch {
             registry.shutdown()
             driver.shutdown()
@@ -235,6 +241,8 @@ final class WorkspaceModel: ObservableObject {
             case .selectedTask:
                 name = "LLM"
                 bridgeOperation = "probe_llm"
+            case .spokenSelectedTask:
+                continue
             }
             setProbeStatus("\(name)：正在检测服务…", for: operation)
             do {
@@ -273,6 +281,9 @@ final class WorkspaceModel: ObservableObject {
         switch operation {
         case .transcribe: asrProbeStatus = message
         case .selectedTask: llmProbeStatus = message
+        case .spokenSelectedTask:
+            asrProbeStatus = message
+            llmProbeStatus = message
         }
     }
 
@@ -284,12 +295,68 @@ final class WorkspaceModel: ObservableObject {
             Task { await interaction.cancelTask(generation: old.generation) }
         }
         activeInsert = nil
+        if let old = activeVoiceSelection {
+            Task { await interaction.cancelTask(generation: old.generation) }
+        }
+        activeVoiceSelection = nil
+        isVoiceSelectionRecording = false
         isProcessing = false
     }
 
     func toggleRecording(from targetPID: Int32? = nil) {
         if isRecording { stopRecording() }
         else if !isStarting && !isProcessing { startRecording(targetPID: targetPID) }
+    }
+
+    func toggleVoiceSelectedText(from targetPID: Int32?) {
+        if isRecording {
+            if isVoiceSelectionRecording { stopRecording() }
+            return
+        }
+        guard !isStarting && !isProcessing else { return }
+        guard let pid = targetPID, pid > 0 else {
+            interactionStatus = "无有效前台目标，无法获取选区"
+            return
+        }
+        invalidatePending()
+        let token = resultGeneration.begin()
+        isStarting = true
+        interactionStatus = "正在安全获取原应用选区"
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            var generation: UInt64?
+            do {
+                let next = try await interaction.beginTask(targetProcessID: pid)
+                generation = next
+                let snapshot = try await interaction.captureSelection(
+                    generation: next, intent: .replaceSelection)
+                guard resultGeneration.accepts(token) else {
+                    await interaction.cancelTask(generation: next)
+                    isStarting = false
+                    return
+                }
+                try await microphone.start()
+                guard resultGeneration.accepts(token) else {
+                    microphone.cancel()
+                    await interaction.cancelTask(generation: next)
+                    isStarting = false
+                    return
+                }
+                activeVoiceSelection = (snapshot, next)
+                isVoiceSelectionRecording = true
+                isRecording = true
+                recordingStatus = "语音修改选区录音中；再次按 Ctrl+Option+E 结束"
+                interactionStatus = "已锁定选区；录音后校验焦点与选区是否仍有效"
+            } catch {
+                microphone.cancel()
+                if let generation { await interaction.cancelTask(generation: generation) }
+                if resultGeneration.accepts(token) {
+                    interactionStatus = "无法开始语音选区处理：\(error.localizedDescription)"
+                    recordingStatus = "未录音"
+                }
+            }
+            isStarting = false
+        }
     }
 
     private func startRecording(targetPID: Int32?) {
@@ -331,12 +398,37 @@ final class WorkspaceModel: ObservableObject {
         recordingStatus = "正在处理语音"
         let token = resultGeneration.latest
         let insertion = activeInsert
+        let voiceSelection = activeVoiceSelection
         activeInsert = nil
+        activeVoiceSelection = nil
+        isVoiceSelectionRecording = false
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 let pcm = try await microphone.stop()
                 guard resultGeneration.accepts(token) else { return }
+                if let voiceSelection {
+                    cancelProbes()
+                    asrProbeStatus = "ASR：正在识别语音修改指令…"
+                    llmProbeStatus = "LLM：等待语音指令识别"
+                    let config = try requestConfig(for: .spokenSelectedTask)
+                    guard let bridge else { throw BridgeFailure.notRunning }
+                    let id = bridge.send(operation: "selected_voice_task", fields: [
+                        "config": config,
+                        "pcm_base64": .string(pcm.base64EncodedString()),
+                        "selected_text": .string(voiceSelection.snapshot.originalSelectedText),
+                    ]) { [weak self] reply in
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            self.handleSelectedTaskReply(reply,
+                                snapshot: voiceSelection.snapshot,
+                                generation: voiceSelection.generation,
+                                token: token, spoken: true)
+                        }
+                    }
+                    activeRequestID = id
+                    return
+                }
                 cancelProbes()
                 asrProbeStatus = "ASR：正在转写真实录音…"
                 let config = try requestConfig(for: .transcribe)
@@ -383,6 +475,10 @@ final class WorkspaceModel: ObservableObject {
                 isProcessing = false
                 recordingStatus = "无法识别：\(error.localizedDescription)"
                 asrProbeStatus = "ASR：实际转写未完成"
+                if let voiceSelection {
+                    await interaction.cancelTask(generation: voiceSelection.generation)
+                    interactionStatus = "语音选区任务未执行"
+                }
             }
         }
     }
@@ -421,40 +517,9 @@ final class WorkspaceModel: ObservableObject {
                     "instruction": .string(instruction),
                 ]) { [weak self] reply in
                     Task { @MainActor [weak self] in
-                        guard let self, self.resultGeneration.accepts(token) else { return }
-                        self.isProcessing = false
-                        self.activeRequestID = nil
-                        switch reply {
-                        case .success(let response):
-                            guard response.ok, let text = response.result?["text"]?.string else {
-                                self.interactionStatus = "模型处理失败：\(response.error?.code ?? "invalid_reply")"
-                                self.llmProbeStatus = "LLM：实际任务失败"
-                                return
-                            }
-                            self.processedText = text
-                            self.llmProbeStatus = "LLM：实际文本任务成功"
-                            let mayWrite = response.result?["may_attempt_replace"]?.boolValue == true
-                            let previewOnly = response.result?["preview_only"]?.boolValue != false
-                            guard mayWrite && !previewOnly else {
-                                self.interactionStatus = "仅预览结果；未获模型路由修改授权"
-                                Task { await self.interaction.cancelTask(generation: generation) }
-                                return
-                            }
-                            Task { @MainActor [weak self] in
-                                guard let self, self.resultGeneration.accepts(token) else { return }
-                                do {
-                                    try await self.interaction.replaceIfCurrent(snapshot, with: text,
-                                                                               generation: generation)
-                                    self.interactionStatus = "原选区验证通过并已替换"
-                                } catch {
-                                    self.interactionStatus = "目标/选区已变化或不支持写入；未替换"
-                                }
-                            }
-                        case .failure:
-                            self.llmProbeStatus = "LLM：实际文本任务失败或已取消"
-                            self.interactionStatus = "文本任务失败或已取消"
-                            Task { await self.interaction.cancelTask(generation: generation) }
-                        }
+                        guard let self else { return }
+                        self.handleSelectedTaskReply(reply, snapshot: snapshot,
+                            generation: generation, token: token, spoken: false)
                     }
                 }
                 activeRequestID = id
@@ -464,6 +529,67 @@ final class WorkspaceModel: ObservableObject {
                 interactionStatus = "选区任务未执行：\(error.localizedDescription)"
                 llmProbeStatus = "LLM：实际任务未完成"
             }
+        }
+    }
+
+    private func handleSelectedTaskReply(
+        _ reply: Result<BridgeReply, BridgeFailure>,
+        snapshot: SelectionSnapshot, generation: UInt64,
+        token: UInt64, spoken: Bool
+    ) {
+        guard resultGeneration.accepts(token) else {
+            Task { await interaction.cancelTask(generation: generation) }
+            return
+        }
+        activeRequestID = nil
+        isProcessing = false
+        switch reply {
+        case .success(let response):
+            guard response.ok, let text = response.result?["text"]?.string else {
+                interactionStatus = "模型处理失败：\(response.error?.code ?? "invalid_reply")"
+                if spoken {
+                    recordingStatus = "语音修改未完成"
+                    asrProbeStatus = "ASR / LLM：语音选区任务失败"
+                }
+                llmProbeStatus = "LLM：实际任务失败"
+                Task { await interaction.cancelTask(generation: generation) }
+                return
+            }
+            if spoken {
+                guard let instruction = response.result?["instruction"]?.string,
+                      !instruction.isEmpty else {
+                    interactionStatus = "语音指令响应缺失；未写入原选区"
+                    Task { await interaction.cancelTask(generation: generation) }
+                    return
+                }
+                transcription = instruction
+                asrProbeStatus = "ASR：语音指令识别成功"
+                recordingStatus = "语音修改已处理"
+            }
+            processedText = text
+            llmProbeStatus = "LLM：实际文本任务成功"
+            let mayWrite = response.result?["may_attempt_replace"]?.boolValue == true
+            let previewOnly = response.result?["preview_only"]?.boolValue != false
+            guard mayWrite && !previewOnly else {
+                interactionStatus = "仅预览结果；未获模型路由修改授权"
+                Task { await interaction.cancelTask(generation: generation) }
+                return
+            }
+            Task { @MainActor [weak self] in
+                guard let self, self.resultGeneration.accepts(token) else { return }
+                do {
+                    try await self.interaction.replaceIfCurrent(snapshot, with: text,
+                                                               generation: generation)
+                    self.interactionStatus = "原选区验证通过并已替换"
+                } catch {
+                    self.interactionStatus = "目标/选区已变化或不支持写入；未替换"
+                }
+            }
+        case .failure(let failure):
+            interactionStatus = "文本任务失败或已取消：\(failure.localizedDescription)"
+            llmProbeStatus = "LLM：实际文本任务失败或已取消"
+            if spoken { recordingStatus = "语音选区处理失败" }
+            Task { await interaction.cancelTask(generation: generation) }
         }
     }
 
