@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct MainView: View {
@@ -87,8 +88,17 @@ struct MainView: View {
     private func resultView(_ value: String?, empty: String) -> some View {
         Group {
             if let value, !value.isEmpty {
-                ScrollView {
-                    Text(value).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .trailing, spacing: 6) {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(value, forType: .string)
+                    } label: {
+                        Label("复制结果", systemImage: "doc.on.doc")
+                    }
+                    .accessibilityLabel("复制文本结果")
+                    ScrollView {
+                        Text(value).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
             } else {
                 Text(empty).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
