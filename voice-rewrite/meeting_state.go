@@ -5,6 +5,13 @@ import (
 	"unicode"
 )
 
+// meetingLine is the native HUD view record; the core model's Line is its
+// protocol result and is converted at the session boundary.
+type meetingLine struct {
+	kind, english, chinese string
+	complete               bool
+}
+
 type meetingCaption struct {
 	id                                            uint64
 	source, chinese, translatedFrom, stable, live string
