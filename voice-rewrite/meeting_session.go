@@ -1,7 +1,6 @@
 package main
 
 import (
-	"voicerewrite/internal/core/provider"
 	"context"
 	"errors"
 	"strings"
@@ -10,6 +9,7 @@ import (
 
 	"voicerewrite/internal/core/audio"
 	meetingcore "voicerewrite/internal/core/meeting"
+	"voicerewrite/internal/core/provider"
 )
 
 type meetingSession struct {
