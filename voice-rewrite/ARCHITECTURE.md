@@ -11,7 +11,7 @@ VoiceRewrite has native Windows (Go/Win32) and macOS (SwiftUI/AppKit with a bund
 | `internal/core/provider` | Safe HTTP clients, redirect blocking, bounded responses, model discovery, HTTP errors and reasoning-tag removal. |
 | `internal/core/speech` | WAV/multipart ASR requests, transcript processing, chunking and request cancellation. |
 | `internal/core/serviceprobe` | Shared ASR silent-WAV upload and LLM model-list connection probing for both desktop hosts. |
-| `internal/core/textedit` | Selected-text length/cancellation validation, intent classification and parsing, explicit-command write authorization, routing, plain-text rewrite and shared model completion transport. |
+| `internal/core/textedit` | Selected-text length/cancellation validation, spoken-command ASR-to-edit orchestration, intent classification and parsing, explicit-command write authorization, routing, plain-text rewrite and shared model completion transport. |
 | `internal/core/meeting` | Stream segmentation, adaptive ASR previews, session epochs/pause/resume/cancellation (`SessionRuntime`), bounded final/preview queues and revision-fenced caption translation (`Pipeline`), captions, replies, inference priorities, history and layout policies. |
 
 Core packages are built and tested without Win32, WASAPI, COM or native GUI
@@ -50,7 +50,7 @@ using the current user's DPAPI protection.
 
 ## Native macOS integration
 
-`macos/VoiceRewrite.xcodeproj` builds the SwiftUI/AppKit host and bundles native Go `voicebridge`. The Helper calls the same `internal/core` packages as Windows; `probe_asr` and `probe_llm` expose identical service diagnostics. `Microphone` captures audio, `VoiceRewriteStorage` owns private settings and Keychain credentials, and `VoiceRewriteInteraction` owns Carbon shortcuts and guarded Accessibility insertion. Swift only handles the user interface, platform permissions and lifecycle.
+`macos/VoiceRewrite.xcodeproj` builds the SwiftUI/AppKit host and bundles native Go `voicebridge`. The Helper calls the same `internal/core` packages as Windows; `probe_asr` and `probe_llm` expose identical service diagnostics. The `selected_voice_task` operation runs the same spoken-selection ASR + textedit orchestration used by Windows; macOS captures the physical microphone and validates the original Accessibility selection before attempting a result write. `Microphone` captures audio, `VoiceRewriteStorage` owns private settings and Keychain credentials, and `VoiceRewriteInteraction` owns Carbon shortcuts and guarded Accessibility insertion. Swift only handles the user interface, platform permissions and lifecycle.
 
 macOS Meeting application-audio capture remains a separate integration requirement. Physical microphone, Keychain and Accessibility behavior plus distribution signing must be verified before public macOS release.
 
