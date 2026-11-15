@@ -13,6 +13,7 @@ import (
 
 	"voicerewrite/internal/core/provider"
 	"voicerewrite/internal/core/speech"
+	"voicerewrite/internal/core/textedit"
 )
 
 func TestCleanASR(t *testing.T) {
@@ -116,7 +117,7 @@ func TestAudioAndLLMWorkflow(t *testing.T) {
 	if instruction != "请把这句话改得简洁一点。" {
 		t.Errorf("wrong instruction: %q", instruction)
 	}
-	result, e := rewrite(context.Background(), cfg, "我觉得这个产品的功能其实是比较不错的。", instruction)
+	result, e := textedit.Rewrite(context.Background(), cfg, "我觉得这个产品的功能其实是比较不错的。", instruction)
 	if e != nil {
 		t.Fatal(e)
 	}

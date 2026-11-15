@@ -1,4 +1,4 @@
-package main
+package textedit
 
 import (
 	"bytes"
@@ -11,10 +11,13 @@ import (
 	"strings"
 	"time"
 
+	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
 )
 
-func rewrite(ctx context.Context, cfg Config, original, instruction string) (string, error) {
+// Rewrite applies a spoken instruction to untrusted selected text through the
+// user-configured LLM endpoint.
+func Rewrite(ctx context.Context, cfg coreconfig.Config, original, instruction string) (string, error) {
 	model, e := provider.DiscoverModel(ctx, cfg)
 	if e != nil {
 		return "", e

@@ -2,14 +2,64 @@ package main
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	meetingcore "voicerewrite/internal/core/meeting"
 )
 
+func newTestMeetingCore() *meetingSession {
+	return newMeetingCore(defaults(), func(string, ...any) {}, func(Config) error { return nil })
+}
+
+func TestMeetingSettingsStoreFailureDoesNotMutateState(t *testing.T) {
+	original := defaults()
+	storeError := errors.New("disk full")
+	var notified bool
+	s := newMeetingCore(original, func(string, ...any) {}, func(Config) error { return storeError })
+	defer s.stop()
+	s.onConfig = func(Config) { notified = true }
+	if err := s.updateProfile("new background", "new terms"); !errors.Is(err, storeError) {
+		t.Fatalf("save error = %v", err)
+	}
+	if s.configSnapshot() != original || notified {
+		t.Fatal("failed save modified in-memory configuration")
+	}
+}
+
+func TestMeetingSettingsUseInjectedStore(t *testing.T) {
+	var persisted Config
+	var calls int
+	s := newMeetingCore(defaults(), func(string, ...any) {}, func(cfg Config) error {
+		persisted = cfg
+		calls++
+		return nil
+	})
+	defer s.stop()
+	var notified Config
+	s.onConfig = func(cfg Config) { notified = cfg }
+	if err := s.updateProfile("  project background  ", "  vocabulary  "); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || persisted.MeetingBackground != "project background" || persisted.MeetingTerms != "vocabulary" {
+		t.Fatalf("unexpected stored config: %+v, calls=%d", persisted, calls)
+	}
+	if notified != persisted || s.configSnapshot() != persisted {
+		t.Fatal("session/app config not synchronized after successful save")
+	}
+}
+
+func TestMeetingSettingsRejectMissingStore(t *testing.T) {
+	s := newMeetingCore(defaults(), func(string, ...any) {}, nil)
+	defer s.stop()
+	if err := s.updateProfile("project", "terms"); err == nil {
+		t.Fatal("missing store silently accepted config update")
+	}
+}
+
 func TestMeetingHistoryIsNotDiscardedAfterTwelveTurns(t *testing.T) {
-	s := newMeetingCore(defaults(), func(string, ...any) {})
+	s := newTestMeetingCore()
 	defer s.stop()
 	for id := uint64(1); id <= 30; id++ {
 		s.upsertSourceLocked(id, "test sentence", true, true)
@@ -20,7 +70,7 @@ func TestMeetingHistoryIsNotDiscardedAfterTwelveTurns(t *testing.T) {
 }
 
 func TestMeetingStreamingDoesNotClearTranslation(t *testing.T) {
-	s := newMeetingCore(defaults(), func(string, ...any) {})
+	s := newTestMeetingCore()
 	defer s.stop()
 	s.upsertSourceLocked(1, "the first phrase", false, true)
 	s.updateCaption(1, 1, "the first phrase", "第一句")
@@ -35,7 +85,7 @@ func TestMeetingStreamingDoesNotClearTranslation(t *testing.T) {
 }
 
 func TestMeetingPauseInvalidatesOldWork(t *testing.T) {
-	s := newMeetingCore(defaults(), func(string, ...any) {})
+	s := newTestMeetingCore()
 	defer s.stop()
 	ctx, epoch := s.workSnapshot()
 	s.setCapturePaused(true)
@@ -53,7 +103,7 @@ func TestMeetingPauseInvalidatesOldWork(t *testing.T) {
 	}
 }
 func TestMeetingPendingRepliesKeepReadableBatch(t *testing.T) {
-	s := newMeetingCore(defaults(), func(string, ...any) {})
+	s := newTestMeetingCore()
 	defer s.stop()
 	s.view.replies[0] = meetingLine{english: "old", complete: true}
 	s.view.replySource = "old question"
@@ -90,7 +140,7 @@ func TestMeetingSerialInference(t *testing.T) {
 }
 
 func TestMeetingReplyBatchKeepsReceivingRemainingOptions(t *testing.T) {
-	s := newMeetingCore(defaults(), func(string, ...any) {})
+	s := newTestMeetingCore()
 	defer s.stop()
 	s.replySerial = 1
 	batch := [3]meetingLine{{english: "first", chinese: "一", complete: true}}
@@ -115,7 +165,7 @@ func TestMeetingReplyBatchKeepsReceivingRemainingOptions(t *testing.T) {
 }
 
 func TestMeetingPauseRemovesAbandonedLiveCaption(t *testing.T) {
-	s := newMeetingCore(defaults(), func(string, ...any) {})
+	s := newTestMeetingCore()
 	defer s.stop()
 	s.view.captions = []meetingCaption{{id: 1, source: "final", final: true}, {id: 2, source: "unfinished", live: "unfinished"}}
 	s.setCapturePaused(true)
@@ -126,7 +176,7 @@ func TestMeetingPauseRemovesAbandonedLiveCaption(t *testing.T) {
 }
 
 func TestMeetingFinalCancelsActivePreview(t *testing.T) {
-	s := newMeetingCore(defaults(), func(string, ...any) {})
+	s := newTestMeetingCore()
 	defer s.stop()
 	ctx, cancel := context.WithCancel(s.ctx)
 	s.activeASRCancel = cancel
@@ -143,7 +193,7 @@ func TestMeetingFinalCancelsActivePreview(t *testing.T) {
 }
 
 func TestMeetingCancellationDiscardsUnfinishedLines(t *testing.T) {
-	s := newMeetingCore(defaults(), func(string, ...any) {})
+	s := newTestMeetingCore()
 	defer s.stop()
 	s.view.replies[0] = meetingLine{english: "I would"}
 	s.view.replies[1] = meetingLine{english: "Could you clarify?", chinese: "能解释吗", complete: true}
@@ -155,7 +205,7 @@ func TestMeetingCancellationDiscardsUnfinishedLines(t *testing.T) {
 }
 
 func TestMeetingLatestExpressionWins(t *testing.T) {
-	s := newMeetingCore(defaults(), func(string, ...any) {})
+	s := newTestMeetingCore()
 	defer s.stop()
 	s.mu.Lock()
 	first, done, epoch, old := s.expressionContextLocked(time.Second)

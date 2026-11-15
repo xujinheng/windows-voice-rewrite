@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"voicerewrite/internal/core/speech"
+	"voicerewrite/internal/core/textedit"
 )
 
 func watchMouseHoldTimeout(hwnd, session uintptr, canceled <-chan struct{}, timeout time.Duration, logger *log.Logger) {
@@ -297,7 +298,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	if (clearlyRequestsEdit(instruction) || clearlyRequestsTranslation(instruction)) &&
 		answer.Intent != "edit" && answer.Intent != "translate" {
 		app.logger.Printf("intent conflict; voice requires edit but model returned %s; retrying rewrite", answer.Intent)
-		fixed, rewriteErr := rewrite(ctx, app.cfg, sel.Text, instruction)
+		fixed, rewriteErr := textedit.Rewrite(ctx, app.cfg, sel.Text, instruction)
 		if rewriteErr != nil {
 			app.fail(fmt.Errorf("模型误判意图，重新生成改写文字失败: %w", rewriteErr))
 			return

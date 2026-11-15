@@ -40,6 +40,7 @@ type meetingSession struct {
 	scheduler                    meetingcore.Scheduler
 	lastVoice                    time.Time
 	onConfig                     func(Config)
+	saveConfiguration            func(Config) error
 }
 
 type meetingAudioTurn struct {
@@ -58,10 +59,10 @@ type meetingCaptionJob struct {
 	ctx       context.Context
 }
 
-func newMeetingCore(cfg Config, logger func(string, ...any)) *meetingSession {
+func newMeetingCore(cfg Config, logger func(string, ...any), saveConfiguration func(Config) error) *meetingSession {
 	ctx, stop := context.WithCancel(context.Background())
 	work, cancel := context.WithCancel(ctx)
-	return &meetingSession{ctx: ctx, stop: stop, cfg: cfg, logger: logger, work: work, cancelWork: cancel, wake: make(chan struct{}, 1), epoch: 1}
+	return &meetingSession{ctx: ctx, stop: stop, cfg: cfg, logger: logger, work: work, cancelWork: cancel, wake: make(chan struct{}, 1), epoch: 1, saveConfiguration: saveConfiguration}
 }
 func (s *meetingSession) mutate(update func()) {
 	s.mu.Lock()
@@ -140,7 +141,10 @@ func (s *meetingSession) setCapturePaused(paused bool) {
 func (s *meetingSession) saveMeetingConfig(change func(*Config)) error {
 	cfg := s.configSnapshot()
 	change(&cfg)
-	if err := saveConfig(cfg); err != nil {
+	if s.saveConfiguration == nil {
+		return errors.New("未配置会议设置保存服务")
+	}
+	if err := s.saveConfiguration(cfg); err != nil {
 		return err
 	}
 	s.mutate(func() {
