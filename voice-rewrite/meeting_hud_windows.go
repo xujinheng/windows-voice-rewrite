@@ -36,6 +36,7 @@ type meetingHUD struct {
 	transcriptDrawn                                             bool
 	transcriptFirstLine                                         uintptr
 	historyCount, unreadHistory                                 int
+	currentID                                                   uint64
 	lastTranscript, lastReply, lastExpression                   time.Time
 	rendered                                                    map[uintptr]string
 }
@@ -427,10 +428,18 @@ func updateMeetingHUD(view meetingView) {
 		return
 	}
 	panels := buildMeetingReadingPanels(view.captions)
+	newTurn := panels.currentID != p.currentID || panels.historyCount > p.historyCount
+	p.currentID = panels.currentID
 	p.setText(p.live, "● "+panels.hint, false)
 	if !panels.live || time.Since(p.lastTranscript) >= 280*time.Millisecond {
 		p.setText(p.currentEnglish, panels.english, true)
 		p.setText(p.currentChinese, panels.chinese, true)
+		if newTurn {
+			// Reading a fresh utterance starts at its first line, not the
+			// scroll position of the previously long utterance.
+			procSendMessage.Call(p.currentEnglish, 0x0115, 6, 0) // WM_VSCROLL / SB_TOP
+			procSendMessage.Call(p.currentChinese, 0x0115, 6, 0)
+		}
 		p.lastTranscript = time.Now()
 	}
 	// Only completed older turns are added to the history control. If the
