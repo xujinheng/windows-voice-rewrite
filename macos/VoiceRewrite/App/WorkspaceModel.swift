@@ -10,9 +10,8 @@ final class WorkspaceModel: ObservableObject {
         case failed(String)
     }
 
-    // Transitional, in-memory values. D's settings/Keychain package will own persistence.
-    @Published var asrURL = "http://127.0.0.1:8000/v1/audio/transcriptions"
-    @Published var llmURL = "http://127.0.0.1:11434/v1/chat/completions"
+    @Published var asrURL = "http://127.0.0.1:8080/v1"
+    @Published var llmURL = "http://127.0.0.1:1234/v1"
     @Published var modelName = ""
     @Published private(set) var connection: Connection = .disconnected
     @Published private(set) var recordingStatus = "未接入录音模块"
