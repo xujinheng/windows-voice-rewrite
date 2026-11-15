@@ -21,6 +21,9 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var connection: Connection = .disconnected
     @Published private(set) var recordingStatus = "未录音"
     @Published private(set) var serviceStatus = "尚未连接"
+    @Published private(set) var asrProbeStatus = "尚未检测"
+    @Published private(set) var llmProbeStatus = "尚未检测"
+    @Published private(set) var isCheckingServices = false
     @Published private(set) var interactionStatus = "全局快捷键尚未注册"
     @Published private(set) var settingsStatus = ""
     @Published private(set) var transcription: String?
@@ -37,6 +40,8 @@ final class WorkspaceModel: ObservableObject {
     private var bridge: BridgeClient?
     private var helloGeneration = ResultGeneration()
     private var resultGeneration = ResultGeneration()
+    private var probeGeneration = ResultGeneration()
+    private var activeProbeIDs: [String: String] = [:]
     private var activeRequestID: String?
     private var activeInsert: (snapshot: SelectionSnapshot, generation: UInt64)?
     private var hotKeyDriver: CarbonHotKeyDriver?
@@ -64,6 +69,9 @@ final class WorkspaceModel: ObservableObject {
 
     func connect() {
         let token = helloGeneration.begin()
+        cancelProbes()
+        asrProbeStatus = "尚未检测"
+        llmProbeStatus = "尚未检测"
         bridge?.stop()
         bridge = nil
         connection = .connecting
@@ -78,6 +86,9 @@ final class WorkspaceModel: ObservableObject {
                 guard let self, self.helloGeneration.accepts(token) else { return }
                 self.connection = .failed(failure.localizedDescription)
                 self.serviceStatus = "Go Helper 已断开"
+                self.cancelProbes()
+                self.asrProbeStatus = "未连接"
+                self.llmProbeStatus = "未连接"
                 self.invalidatePending()
             }
         }
@@ -100,7 +111,8 @@ final class WorkspaceModel: ObservableObject {
                         return
                     }
                     self.connection = .connected("VoiceRewrite / JSONL v1")
-                    self.serviceStatus = "Go Helper 已连接（ASR / LLM 服务尚未检测）"
+                    self.serviceStatus = "Go Helper 已连接"
+                    self.checkServices()
                 case .failure:
                     self.connection = .failed("Go Helper 握手失败")
                     self.serviceStatus = "不可用"
@@ -110,6 +122,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func saveSettings() {
+        cancelProbes()
         defer {
             asrKeyInput = ""
             llmKeyInput = ""
@@ -120,6 +133,7 @@ final class WorkspaceModel: ObservableObject {
             try saveCredential(asrKeyInput, account: .asr)
             try saveCredential(llmKeyInput, account: .llm)
             settingsStatus = "设置已保存，密钥不写入配置文件"
+            checkServices()
         } catch {
             settingsStatus = "无法安全保存设置：\(error.localizedDescription)"
         }
@@ -178,6 +192,87 @@ final class WorkspaceModel: ObservableObject {
                 }
             }
             return .object(data)
+        }
+    }
+
+    private func cancelProbes() {
+        _ = probeGeneration.begin()
+        for id in activeProbeIDs.values { bridge?.cancel(id: id) }
+        activeProbeIDs.removeAll()
+        isCheckingServices = false
+    }
+
+    // Windows and macOS use the same Go Core probe semantics via voicebridge.
+    // No user microphone input or selected text is sent by these operations.
+    func checkServices() {
+        runProbes([.transcribe, .selectedTask])
+    }
+
+    func checkASRService() {
+        runProbes([.transcribe])
+    }
+
+    func checkLLMService() {
+        runProbes([.selectedTask])
+    }
+
+    private func runProbes(_ operations: [HelperOperation]) {
+        cancelProbes()
+        guard case .connected = connection, let bridge else {
+            for operation in operations {
+                setProbeStatus("Go Helper 未连接", for: operation)
+            }
+            return
+        }
+        let token = probeGeneration.latest
+        for operation in operations {
+            let name: String
+            let bridgeOperation: String
+            switch operation {
+            case .transcribe:
+                name = "ASR"
+                bridgeOperation = "probe_asr"
+            case .selectedTask:
+                name = "LLM"
+                bridgeOperation = "probe_llm"
+            }
+            setProbeStatus("\(name)：正在检测服务…", for: operation)
+            do {
+                let config = try requestConfig(for: operation)
+                let id = bridge.send(operation: bridgeOperation, fields: ["config": config]) {
+                    [weak self] response in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.probeGeneration.accepts(token) else { return }
+                        self.activeProbeIDs.removeValue(forKey: bridgeOperation)
+                        self.isCheckingServices = !self.activeProbeIDs.isEmpty
+                        switch response {
+                        case .success(let reply):
+                            if reply.ok, reply.result?["kind"]?.string == name,
+                               let message = reply.result?["message"]?.string {
+                                self.setProbeStatus(message, for: operation)
+                            } else {
+                                self.setProbeStatus("\(name)：检测失败（\(reply.error?.code ?? "invalid_reply")）",
+                                                    for: operation)
+                            }
+                        case .failure(let error):
+                            self.setProbeStatus("\(name)：检测失败（\(error.localizedDescription)）",
+                                                for: operation)
+                        }
+                    }
+                }
+                activeProbeIDs[bridgeOperation] = id
+                isCheckingServices = true
+            } catch {
+                setProbeStatus("\(name)：无法读取服务配置（\(error.localizedDescription)）",
+                               for: operation)
+            }
+        }
+    }
+
+    private func setProbeStatus(_ message: String, for operation: HelperOperation) {
+        switch operation {
+        case .transcribe: asrProbeStatus = message
+        case .selectedTask: llmProbeStatus = message
         }
     }
 
@@ -242,6 +337,8 @@ final class WorkspaceModel: ObservableObject {
             do {
                 let pcm = try await microphone.stop()
                 guard resultGeneration.accepts(token) else { return }
+                cancelProbes()
+                asrProbeStatus = "ASR：正在转写真实录音…"
                 let config = try requestConfig(for: .transcribe)
                 guard let bridge else { throw BridgeFailure.notRunning }
                 let id = bridge.send(operation: "transcribe", fields: [
@@ -256,10 +353,12 @@ final class WorkspaceModel: ObservableObject {
                         case .success(let response):
                             guard response.ok, let text = response.result?["text"]?.string else {
                                 self.recordingStatus = "ASR 请求失败：\(response.error?.code ?? "invalid_reply")"
+                                self.asrProbeStatus = "ASR：实际转写失败"
                                 return
                             }
                             self.transcription = text
                             self.recordingStatus = "语音识别已完成"
+                            self.asrProbeStatus = "ASR：真实录音识别成功"
                             if let insertion {
                                 Task { @MainActor [weak self] in
                                     guard let self, self.resultGeneration.accepts(token) else { return }
@@ -274,6 +373,7 @@ final class WorkspaceModel: ObservableObject {
                             }
                         case .failure(let failure):
                             self.recordingStatus = "识别失败：\(failure.localizedDescription)"
+                            self.asrProbeStatus = "ASR：实际转写失败"
                         }
                     }
                 }
@@ -282,6 +382,7 @@ final class WorkspaceModel: ObservableObject {
                 guard resultGeneration.accepts(token) else { return }
                 isProcessing = false
                 recordingStatus = "无法识别：\(error.localizedDescription)"
+                asrProbeStatus = "ASR：实际转写未完成"
             }
         }
     }
@@ -310,6 +411,8 @@ final class WorkspaceModel: ObservableObject {
                     await interaction.cancelTask(generation: generation)
                     return
                 }
+                cancelProbes()
+                llmProbeStatus = "LLM：正在处理选区…"
                 let config = try requestConfig(for: .selectedTask)
                 guard let bridge else { throw BridgeFailure.notRunning }
                 let id = bridge.send(operation: "selected_task", fields: [
@@ -325,9 +428,11 @@ final class WorkspaceModel: ObservableObject {
                         case .success(let response):
                             guard response.ok, let text = response.result?["text"]?.string else {
                                 self.interactionStatus = "模型处理失败：\(response.error?.code ?? "invalid_reply")"
+                                self.llmProbeStatus = "LLM：实际任务失败"
                                 return
                             }
                             self.processedText = text
+                            self.llmProbeStatus = "LLM：实际文本任务成功"
                             let mayWrite = response.result?["may_attempt_replace"]?.boolValue == true
                             let previewOnly = response.result?["preview_only"]?.boolValue != false
                             guard mayWrite && !previewOnly else {
@@ -346,6 +451,7 @@ final class WorkspaceModel: ObservableObject {
                                 }
                             }
                         case .failure:
+                            self.llmProbeStatus = "LLM：实际文本任务失败或已取消"
                             self.interactionStatus = "文本任务失败或已取消"
                             Task { await self.interaction.cancelTask(generation: generation) }
                         }
@@ -356,6 +462,7 @@ final class WorkspaceModel: ObservableObject {
                 guard resultGeneration.accepts(token) else { return }
                 isProcessing = false
                 interactionStatus = "选区任务未执行：\(error.localizedDescription)"
+                llmProbeStatus = "LLM：实际任务未完成"
             }
         }
     }
@@ -371,6 +478,7 @@ final class WorkspaceModel: ObservableObject {
 
     func shutdown() {
         _ = helloGeneration.begin()
+        cancelProbes()
         cancelCurrent()
         hotKeys?.shutdown()
         hotKeyDriver?.shutdown()

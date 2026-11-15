@@ -36,7 +36,14 @@ struct MainView: View {
                             case .failed(let reason): Text(reason).foregroundStyle(.red)
                             }
                         }
-                        LabeledContent("服务", value: model.serviceStatus)
+                        LabeledContent("Helper 状态", value: model.serviceStatus)
+                        LabeledContent("ASR 服务", value: model.asrProbeStatus)
+                        LabeledContent("LLM 服务", value: model.llmProbeStatus)
+                        HStack {
+                            Spacer()
+                            Button("重新检测 ASR / LLM") { model.checkServices() }
+                                .disabled(model.isCheckingServices)
+                        }
                         LabeledContent("麦克风", value: model.recordingStatus)
                         LabeledContent("原生交互", value: model.interactionStatus)
                     }
