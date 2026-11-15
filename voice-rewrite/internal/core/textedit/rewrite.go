@@ -18,15 +18,12 @@ import (
 
 // validateRequest applies platform-independent selection and instruction limits
 // before any selected text is sent to a provider.
-func validateRequest(ctx context.Context, cfg coreconfig.Config, selected, instruction string) error {
+func validateSelectedText(ctx context.Context, cfg coreconfig.Config, selected string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if strings.TrimSpace(selected) == "" {
 		return errors.New("选中文字为空")
-	}
-	if strings.TrimSpace(instruction) == "" {
-		return errors.New("语音指令为空")
 	}
 	limit := cfg.MaxSelectedRunes
 	if limit <= 0 {
@@ -34,6 +31,16 @@ func validateRequest(ctx context.Context, cfg coreconfig.Config, selected, instr
 	}
 	if utf8.RuneCountInString(selected) > limit {
 		return fmt.Errorf("选中文字超过 %d 字限制", limit)
+	}
+	return nil
+}
+
+func validateRequest(ctx context.Context, cfg coreconfig.Config, selected, instruction string) error {
+	if err := validateSelectedText(ctx, cfg, selected); err != nil {
+		return err
+	}
+	if strings.TrimSpace(instruction) == "" {
+		return errors.New("语音指令为空")
 	}
 	return nil
 }
