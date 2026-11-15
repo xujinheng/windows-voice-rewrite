@@ -139,6 +139,49 @@ func TestMeetingTextChangeUTF16AndHistory(t *testing.T) {
 	}
 }
 
+func TestMeetingPanelHeightsPrioritizeGeneratedEnglish(t *testing.T) {
+	for _, space := range []int32{340, 360, 450, 700} {
+		compact := meetingPanelHeights(space, false)
+		focused := meetingPanelHeights(space, true)
+		if compact.reply < 42 || compact.history < 30 || compact.expression <= compact.source {
+			t.Fatalf("normal panels don't fit %d: %+v", space, compact)
+		}
+		if compact.history+compact.reply+compact.expression+160 > space {
+			t.Fatalf("normal panels overlap at %d: %+v", space, compact)
+		}
+		if focused.expression-focused.source < 180 || focused.history < 52 ||
+			focused.history+focused.expression+32 > space {
+			t.Fatalf("focused English can't be read at %d: %+v", space, focused)
+		}
+		if focused.expression <= compact.expression {
+			t.Fatalf("expanding didn't enlarge English at %d: normal %+v, focused %+v", space, compact, focused)
+		}
+	}
+}
+
+func TestMeetingSpeechTaskRoutesFactsAndPreservesCasualSpeech(t *testing.T) {
+	for _, tc := range []struct {
+		mode, spoken, want string
+	}{
+		{"compose", "我需要回答有多少印度人会说英语", "answer"},
+		{"compose", "帮我回答世界最高的山是什么", "answer"},
+		{"compose", "问他这两个方案的schedule", "compose"},
+		{"compose", "我想说这部电影很有意思", "compose"},
+		{"express", "我需要回答有多少印度人会说英语", "express"},
+	} {
+		if got := meetingSpeechTask(tc.mode, tc.spoken); got != tc.want {
+			t.Errorf("%s %q: %s, want %s", tc.mode, tc.spoken, got, tc.want)
+		}
+	}
+	if !meetingUsesConversationContext("问他这两个方案的schedule") {
+		t.Fatal("lost important references to prior meeting discussion")
+	}
+	if meetingUsesConversationContext("我需要回答有多少印度人会说英语") ||
+		meetingUsesConversationContext("我想说这部电影很有意思") {
+		t.Fatal("unrelated factual or casual conversation inherited project context")
+	}
+}
+
 func TestMeetingVoiceModes(t *testing.T) {
 	if meetingVoiceMode(true) != "express" {
 		t.Fatal("dictation key must translate speech literally")
