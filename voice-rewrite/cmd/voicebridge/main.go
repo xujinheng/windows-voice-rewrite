@@ -57,9 +57,9 @@ type response struct {
 }
 
 type bridgeOptions struct {
-	MaxInFlight       int
-	TranscribeTimeout time.Duration
-	SelectedTimeout   time.Duration
+	MaxInFlight           int
+	TranscribeTimeout     time.Duration
+	SelectedTimeout       time.Duration
 	SpokenSelectedTimeout time.Duration
 }
 
@@ -278,9 +278,9 @@ func selectedTaskSuccess(id string, result textedit.AssistantResult, instruction
 	action := textedit.RouteTask(result, instruction, false)
 	mayAttempt := action == textedit.TryReplace || action == textedit.Replace
 	payload := map[string]any{
-		"intent": result.Intent,
-		"text": result.Result,
-		"preview_only": result.PreviewOnly || !mayAttempt,
+		"intent":              result.Intent,
+		"text":                result.Result,
+		"preview_only":        result.PreviewOnly || !mayAttempt,
 		"may_attempt_replace": mayAttempt,
 	}
 	if spoken {

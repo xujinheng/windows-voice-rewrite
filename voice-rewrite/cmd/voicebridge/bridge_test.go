@@ -577,7 +577,6 @@ func TestBridgeProbeInvalidConfigNeverTouchesProvider(t *testing.T) {
 	}
 }
 
-
 func TestBridgeSpokenSelectionUsesSharedASRAndTextedit(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -603,14 +602,18 @@ func TestBridgeSpokenSelectionUsesSharedASRAndTextedit(t *testing.T) {
 		"pcm_base64": base64.StdEncoding.EncodeToString(make([]byte, 3200)),
 	})
 	reply := h.receive()
-	if !reply.OK { t.Fatalf("spoken task failed: %#v", reply) }
+	if !reply.OK {
+		t.Fatalf("spoken task failed: %#v", reply)
+	}
 	result := object(t, reply.Result)
 	if result["instruction"] != "请写成英文" || result["text"] != "Hello" ||
 		result["may_attempt_replace"] != true || result["preview_only"] != false {
 		t.Fatalf("unexpected spoken decision: %#v", result)
 	}
 	h.close()
-	if calls.Load() != 2 { t.Fatalf("wanted one ASR and one LLM call, got %d", calls.Load()) }
+	if calls.Load() != 2 {
+		t.Fatalf("wanted one ASR and one LLM call, got %d", calls.Load())
+	}
 }
 
 func TestBridgeSpokenSelectionRejectsBadPCMAndEmptySelection(t *testing.T) {
@@ -624,8 +627,8 @@ func TestBridgeSpokenSelectionRejectsBadPCMAndEmptySelection(t *testing.T) {
 	cfg := configFor(srv.URL)
 	for i, tc := range []struct {
 		selected string
-		audio []byte
-		want string
+		audio    []byte
+		want     string
 	}{
 		{"text", make([]byte, 100), "invalid_pcm"},
 		{"", make([]byte, 3200), "invalid_request"},
@@ -643,5 +646,7 @@ func TestBridgeSpokenSelectionRejectsBadPCMAndEmptySelection(t *testing.T) {
 		}
 	}
 	h.close()
-	if calls.Load() != 0 { t.Fatal("rejected spoken requests contacted a provider") }
+	if calls.Load() != 0 {
+		t.Fatal("rejected spoken requests contacted a provider")
+	}
 }

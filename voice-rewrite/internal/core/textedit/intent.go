@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"unicode/utf8"
 	"strings"
+	"unicode/utf8"
 
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
@@ -167,29 +167,29 @@ func ResolveSelectedTask(ctx context.Context, cfg coreconfig.Config, selected, i
 	return result, nil
 }
 
- // ResolveSpokenTask performs the same ASR-instruction and text-edit routing
- // on every host. The optional callback lets native UI report the stage change
- // without owning provider requests, prompt rules or classification logic.
- func ResolveSpokenTask(
-     ctx context.Context, cfg coreconfig.Config, selected string, pcm []byte,
-     onTranscribed func(string),
- ) (AssistantResult, string, error) {
-     if err := validateSelectedText(ctx, cfg, selected); err != nil {
-         return AssistantResult{}, "", err
-     }
-     if len(pcm) < 3200 || len(pcm)%2 != 0 {
-         return AssistantResult{}, "", errors.New("录音太短（至少约 0.1 秒）或 PCM 格式无效")
-     }
-     instruction, err := speech.Transcribe(ctx, cfg, pcm)
-     if err != nil {
-         return AssistantResult{}, "", err
-     }
-     if err := ctx.Err(); err != nil {
-         return AssistantResult{}, "", err
-     }
-     if onTranscribed != nil {
-         onTranscribed(instruction)
-     }
-     result, err := ResolveSelectedTask(ctx, cfg, selected, instruction)
-     return result, instruction, err
- }
+// ResolveSpokenTask performs the same ASR-instruction and text-edit routing
+// on every host. The optional callback lets native UI report the stage change
+// without owning provider requests, prompt rules or classification logic.
+func ResolveSpokenTask(
+	ctx context.Context, cfg coreconfig.Config, selected string, pcm []byte,
+	onTranscribed func(string),
+) (AssistantResult, string, error) {
+	if err := validateSelectedText(ctx, cfg, selected); err != nil {
+		return AssistantResult{}, "", err
+	}
+	if len(pcm) < 3200 || len(pcm)%2 != 0 {
+		return AssistantResult{}, "", errors.New("录音太短（至少约 0.1 秒）或 PCM 格式无效")
+	}
+	instruction, err := speech.Transcribe(ctx, cfg, pcm)
+	if err != nil {
+		return AssistantResult{}, "", err
+	}
+	if err := ctx.Err(); err != nil {
+		return AssistantResult{}, "", err
+	}
+	if onTranscribed != nil {
+		onTranscribed(instruction)
+	}
+	result, err := ResolveSelectedTask(ctx, cfg, selected, instruction)
+	return result, instruction, err
+}

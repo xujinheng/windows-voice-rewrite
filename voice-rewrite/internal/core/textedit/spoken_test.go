@@ -31,7 +31,9 @@ func TestResolveSpokenTaskSharesRealASRAndTextRouter(t *testing.T) {
 				t.Error("LLM auth was not forwarded")
 			}
 			var req struct {
-				Messages []struct { Content string `json:"content"` } `json:"messages"`
+				Messages []struct {
+					Content string `json:"content"`
+				} `json:"messages"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				t.Errorf("malformed LLM payload: %v", err)
@@ -54,7 +56,9 @@ func TestResolveSpokenTaskSharesRealASRAndTextRouter(t *testing.T) {
 	var callbacks int
 	result, spoken, err := ResolveSpokenTask(context.Background(), cfg, "原文", make([]byte, 3200), func(text string) {
 		callbacks++
-		if text != "改成英文" { t.Errorf("wrong spoken command: %q", text) }
+		if text != "改成英文" {
+			t.Errorf("wrong spoken command: %q", text)
+		}
 	})
 	if err != nil || spoken != "改成英文" || result.Intent != "translate" || result.Result != "Original" {
 		t.Fatalf("result=%+v spoken=%q err=%v", result, spoken, err)
@@ -78,7 +82,7 @@ func TestResolveSpokenTaskRejectsInvalidSelectionAndAudioWithoutNetwork(t *testi
 	cfg.ASRBaseURL, cfg.LLMBaseURL = server.URL, server.URL
 	for _, tc := range []struct {
 		selected string
-		audio []byte
+		audio    []byte
 	}{
 		{"", make([]byte, 3200)},
 		{"selected", make([]byte, 100)},
@@ -88,7 +92,9 @@ func TestResolveSpokenTaskRejectsInvalidSelectionAndAudioWithoutNetwork(t *testi
 			t.Fatalf("accepted invalid input: selected=%q audio_bytes=%d", tc.selected, len(tc.audio))
 		}
 	}
-	if requests.Load() != 0 { t.Fatal("invalid input contacted a provider") }
+	if requests.Load() != 0 {
+		t.Fatal("invalid input contacted a provider")
+	}
 }
 
 func TestResolveSpokenTaskCancelsBetweenASRAndLLM(t *testing.T) {
@@ -109,5 +115,7 @@ func TestResolveSpokenTaskCancelsBetweenASRAndLLM(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, _, err := ResolveSpokenTask(ctx, cfg, "原文", make([]byte, 3200), func(string) { cancel() })
-	if err == nil || llmCalls.Load() != 0 { t.Fatalf("cancellation failed: err=%v llm=%d", err, llmCalls.Load()) }
+	if err == nil || llmCalls.Load() != 0 {
+		t.Fatalf("cancellation failed: err=%v llm=%d", err, llmCalls.Load())
+	}
 }
