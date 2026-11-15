@@ -116,11 +116,11 @@ func newMeetingSession(app *appState, demo bool) *meetingSession {
 func (s *meetingSession) express(app *appState, rec *audioRecorder, generation uint64, mode string) {
 	defer app.busy.Store(false)
 	result := <-rec.result
-	if !app.epoch.valid(generation) || s.ctx.Err() != nil {
+	if !app.epoch.valid(generation) || s.runtime.Context().Err() != nil {
 		return
 	}
 	s.mu.Lock()
-	ctx, cancel, epoch, serial := s.expressionContextLocked(50 * time.Second)
+	ctx, cancel, epoch, serial := s.runtime.NewExpression(50 * time.Second)
 	s.mu.Unlock()
 	stop := context.AfterFunc(app.epoch.contextFor(generation), cancel)
 	defer stop()
@@ -185,7 +185,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 			s.view.expressionStatus = ""
 		})
 	})
-	if !app.epoch.valid(generation) || ctx.Err() != nil || s.ctx.Err() != nil {
+	if !app.epoch.valid(generation) || ctx.Err() != nil || s.runtime.Context().Err() != nil {
 		return
 	}
 	if err != nil {
@@ -197,7 +197,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 }
 
 func (s *meetingSession) expressionFailed(app *appState, generation, epoch, serial uint64, label string, cause error) {
-	if !app.epoch.valid(generation) || s.ctx.Err() != nil {
+	if !app.epoch.valid(generation) || s.runtime.Context().Err() != nil {
 		return
 	}
 	message := label + "：" + cause.Error()
@@ -233,7 +233,7 @@ func (a *appState) beginMeeting(pid uint32, demo bool) {
 		s.view = demoMeeting()
 	}
 	if err := showMeetingHUD(a.Window, s.view); err != nil {
-		s.stop()
+		s.runtime.Stop()
 		a.fail(err)
 		return
 	}
