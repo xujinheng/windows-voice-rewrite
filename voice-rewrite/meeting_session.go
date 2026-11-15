@@ -262,12 +262,10 @@ func (s *meetingSession) transcribeTurn(turn meetingAudioTurn, state *meetingASR
 			}
 			if first == 0 {
 				first = time.Since(began)
+				s.applyWork(turn.epoch, func() {
+					s.view.metrics.ASRFirstMS = first.Milliseconds()
+				})
 			}
-			// Measure latency without copying every provisional decoder token
-			// to the UI. A complete preview is the unit of presentation.
-			s.applyWork(turn.epoch, func() {
-				s.view.metrics.ASRFirstMS = first.Milliseconds()
-			})
 		})
 		return err
 	})
@@ -356,6 +354,7 @@ func (s *meetingSession) updateCaption(epoch, id uint64, source, chinese string)
 			line := &s.view.captions[i]
 			if line.id == id && line.source == source {
 				line.chinese = chinese
+				line.translatedFrom = source
 				return
 			}
 		}
@@ -392,11 +391,7 @@ func (s *meetingSession) translateTurns(jobs <-chan meetingCaptionJob) {
 				// previous completed snapshot. The original ASR stays visible.
 				s.applyWork(job.epoch, func() { s.view.status = "翻译暂不可用 · 原文已保留" })
 			}
-			canceled := ctx.Err() != nil
 			cancel()
-			if job.final && !canceled && meetingShouldReply(job.latest, job.prior, false) {
-				s.queueReplies(job, false)
-			}
 		}
 	}
 }
@@ -428,9 +423,9 @@ func (s *meetingSession) complete(ctx context.Context, priority int, query meeti
 		})
 	})
 }
-func (s *meetingSession) queueReplies(job meetingCaptionJob, manual bool) {
+func (s *meetingSession) queueReplies(job meetingCaptionJob) {
 	s.mu.Lock()
-	if s.ctx.Err() != nil || s.view.capturePaused || job.epoch != s.epoch || (!manual && job.id != s.turnID) {
+	if s.ctx.Err() != nil || s.view.capturePaused || job.epoch != s.epoch {
 		s.mu.Unlock()
 		return
 	}
@@ -446,27 +441,6 @@ func (s *meetingSession) queueReplies(job meetingCaptionJob, manual bool) {
 	s.mu.Unlock()
 	go func() {
 		defer cancel()
-		if !manual {
-			for {
-				s.mu.Lock()
-				wait := time.Until(s.lastVoice.Add(700 * time.Millisecond))
-				valid := s.turnID == job.id
-				s.mu.Unlock()
-				if !valid {
-					return
-				}
-				if wait <= 0 {
-					break
-				}
-				timer := time.NewTimer(wait)
-				select {
-				case <-ctx.Done():
-					timer.Stop()
-					return
-				case <-timer.C:
-				}
-			}
-		}
 		var batch [3]meetingLine
 		tip := ""
 		err := s.complete(ctx, meetingPriorityReply, meetingQuery{Mode: "replies", Latest: job.latest, Prior: job.prior}, func(line meetingLine) {
@@ -543,14 +517,24 @@ func (s *meetingSession) acceptPendingReplies() {
 }
 func (s *meetingSession) requestReplies() {
 	s.mu.Lock()
-	if len(s.view.captions) == 0 || s.view.capturePaused {
+	if s.view.capturePaused {
 		s.mu.Unlock()
 		return
 	}
-	last := s.view.captions[len(s.view.captions)-1]
-	job := meetingCaptionJob{latest: last.source, id: last.id, epoch: s.epoch, ctx: s.work, prior: append([]string(nil), s.prior...), ended: time.Now()}
+	last, ok := meetingLastCompletedCaption(s.view.captions)
+	if !ok {
+		s.view.status = "请等当前发言结束后再生成建议"
+		s.dirty = true
+		s.mu.Unlock()
+		return
+	}
+	prior := append([]string(nil), s.prior...)
+	if len(prior) > 0 && strings.TrimSpace(prior[len(prior)-1]) == strings.TrimSpace(last.source) {
+		prior = prior[:len(prior)-1]
+	}
+	job := meetingCaptionJob{latest: last.source, id: last.id, epoch: s.epoch, ctx: s.work, prior: prior, ended: time.Now()}
 	s.mu.Unlock()
-	s.queueReplies(job, true)
+	s.queueReplies(job)
 }
 func (s *meetingSession) refineReply(index int, instruction string) {
 	instruction = strings.TrimSpace(instruction)

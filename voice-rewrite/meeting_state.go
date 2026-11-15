@@ -10,9 +10,9 @@ import (
 )
 
 type meetingCaption struct {
-	id                            uint64
-	source, chinese, stable, live string
-	final                         bool
+	id                                            uint64
+	source, chinese, translatedFrom, stable, live string
+	final                                         bool
 }
 
 type meetingMetrics struct {
@@ -44,6 +44,7 @@ func reviseMeetingCaption(old meetingCaption, id uint64, text string, final bool
 	if old.id == id {
 		// Keep the last readable translation until the replacement arrives.
 		out.chinese = old.chinese
+		out.translatedFrom = old.translatedFrom
 	}
 	if final {
 		out.stable = text
@@ -136,19 +137,14 @@ func buildMeetingReadingPanels(captions []meetingCaption) meetingReadingPanels {
 	result.chinese = strings.TrimSpace(current.chinese)
 	result.live = !current.final
 	switch {
+	case current.translatedFrom != "" && current.translatedFrom != current.source:
+		result.hint = "原文已更新 · 译文待刷新"
 	case !current.final:
-		result.hint = "识别中 · 内容可能微调"
-	case meetingNeedsReply(current.source):
-		result.hint = "可能在提问 · 可准备回复"
-	case strings.Contains(strings.ToLower(current.source), "schedule") ||
-		strings.Contains(strings.ToLower(current.source), "timeline") ||
-		strings.Contains(strings.ToLower(current.source), "deadline"):
-		result.hint = "提到了时间安排"
-	case strings.Contains(strings.ToLower(current.source), "delay") ||
-		strings.Contains(strings.ToLower(current.source), "risk"):
-		result.hint = "提到了风险或延期"
+		result.hint = "识别中 · 原文仍可能调整"
+	case current.chinese == "":
+		result.hint = "原文已确认 · 正在生成译文"
 	default:
-		result.hint = "已完成 · 当前发言"
+		result.hint = "已确认 · 可以放心阅读"
 	}
 	if result.chinese == "" {
 		result.chinese = "正在准备中文释义…"
@@ -190,9 +186,9 @@ type meetingAssistantHeights struct {
 
 func meetingPanelHeights(space int32, expanded bool) meetingAssistantHeights {
 	if expanded {
-		history := max(int32(52), space*24/100)
+		history := max(int32(52), space*22/100)
 		expression := max(int32(70), space-history-32)
-		return meetingAssistantHeights{history: history, expression: expression, source: 32}
+		return meetingAssistantHeights{history: history, expression: expression, source: 48}
 	}
 	// Normal mode: reserve three button rows, one label and spacing.
 	budget := max(int32(110), space-160-52)
@@ -200,7 +196,7 @@ func meetingPanelHeights(space int32, expanded bool) meetingAssistantHeights {
 	expression := min(int32(172), max(int32(72), budget-reply))
 	return meetingAssistantHeights{
 		history: max(int32(30), space-160-reply-expression),
-		reply:   reply, expression: expression, source: 28,
+		reply:   reply, expression: expression, source: 40,
 	}
 }
 
@@ -220,6 +216,58 @@ func meetingUsesConversationContext(spoken string) bool {
 		}
 	}
 	return false
+}
+
+// A finished voice request must be visible even if the user is listening in
+// captions-only mode. A background update never steals the user's view.
+// Keep progress/error details subordinate to the last copyable English.
+func meetingRetainEnglish(previous meetingLine) meetingLine {
+	if previous.complete && strings.TrimSpace(previous.english) != "" {
+		return previous
+	}
+	return meetingLine{}
+}
+
+func meetingExpressionHeading(status string, hasResult bool) string {
+	if strings.TrimSpace(status) == "" {
+		return "我的英文表达"
+	}
+	if hasResult {
+		return "我的英文表达 · 上次结果仍可复制"
+	}
+	return "我的英文表达 · 正在准备"
+}
+
+func meetingExpressionDetail(status, source string) string {
+	status, source = strings.TrimSpace(status), strings.TrimSpace(source)
+	switch {
+	case status != "" && source != "":
+		return status + "\r\n已识别 · " + source
+	case status != "":
+		return status
+	case source != "":
+		return "已识别 · " + source
+	default:
+		return "语音原话会显示在这里"
+	}
+}
+
+func meetingExpressionFocus(completed, newResult, captionsOnly, expanded bool) (bool, bool) {
+	if !completed || !newResult {
+		return captionsOnly, expanded
+	}
+	return false, true
+}
+
+// Suggestions use the latest finished utterance, never partial recognition.
+// The caller explicitly requests them; no audio fragment starts them.
+func meetingLastCompletedCaption(captions []meetingCaption) (meetingCaption, bool) {
+	for i := len(captions) - 1; i >= 0; i-- {
+		if captions[i].final && strings.TrimSpace(captions[i].source) != "" {
+			return captions[i], true
+		}
+	}
+	return meetingCaption{}, false
 }
 
 func meetingVoiceMode(dictation bool) string {
@@ -276,15 +324,6 @@ func meetingMapSelection(pos uint32, patch meetingTextPatch) uint32 {
 	}
 	inserted := len(utf16.Encode([]rune(patch.insert)))
 	return uint32(at + inserted - (patch.end - patch.start))
-}
-
-func meetingShouldReply(latest string, prior []string, semantic bool) bool {
-	text := strings.Trim(strings.ToLower(strings.TrimSpace(latest)), ".!?？。，")
-	switch text {
-	case "", "yeah", "yes", "no", "okay", "ok", "uh-huh", "thanks", "thank you", "好的", "嗯", "谢谢":
-		return false
-	}
-	return meetingNeedsReply(latest) || semantic
 }
 
 const (

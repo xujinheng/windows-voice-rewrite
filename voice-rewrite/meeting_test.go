@@ -38,18 +38,6 @@ func TestMeetingSegmenter(t *testing.T) {
 	}
 }
 
-func TestMeetingGate(t *testing.T) {
-	for text, want := range map[string]bool{
-		"Any thoughts": true, "Why?": true, "Can you elaborate": true,
-		"yeah": false, "The build just finished.": false,
-		"We'd like to get your take on this": true,
-	} {
-		if got := meetingNeedsReply(text); got != want {
-			t.Errorf("%q: got %v, want %v", text, got, want)
-		}
-	}
-}
-
 func TestMeetingStream(t *testing.T) {
 	var got []meetingLine
 	body := "data: {\"choices\":[{\"delta\":{\"content\":\"ONE\\tWhat changed?\"}}]}\n\n" +

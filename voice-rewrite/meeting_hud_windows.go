@@ -103,8 +103,8 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	p.surface, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.surface))
 	p.labelFont = meetingUIFont(p.px(14), 600)
 	p.bodyFont = meetingUIFont(p.px(p.fontSize), 400)
-	p.englishFont = popupFont(-p.px(p.fontSize+5), 500)
-	p.chineseFont = meetingUIFont(p.px(p.fontSize+3), 500)
+	p.englishFont = popupFont(-p.px(p.fontSize+1), 450)
+	p.chineseFont = meetingUIFont(p.px(p.fontSize+6), 600)
 	applyWindowPalette(hwnd, p.palette)
 	child := func(class, text string, style uintptr, id uintptr, body bool) uintptr {
 		if err != nil {
@@ -125,7 +125,7 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	for i, title := range []string{"冻结画面", "专注字幕", "A−", "A+", "复制回复", "复制英文", "生成建议", "暂停采集", "会议资料", "1 直接回应", "2 澄清一下", "3 争取时间", "查看新建议", "改写回复", "回到最新", "放大英文"} {
 		p.buttons[i] = child("BUTTON", title, 0x00010000|uxBSOwnerDraw, uintptr(7100+i), false)
 	}
-	p.labels[0] = child("STATIC", "当前发言", 0, 0, false)
+	p.labels[0] = child("STATIC", "当前发言 · 中文优先", 0, 0, false)
 	editStyle := uintptr(WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_BORDER | 0x00010000)
 	p.live = child("STATIC", "● 等待发言", 0, 0, false)
 	currentStyle := uintptr(ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL)
@@ -210,14 +210,14 @@ func (p *meetingHUD) layout() {
 
 	// Current speech never belongs to the scrolling history. EN and ZH are
 	// independent reading areas, so translation updates cannot reflow EN.
-	englishHeight, chineseHeight := p.px(76), p.px(64)
+	englishHeight, chineseHeight := p.px(54), p.px(86)
 	if bounds.Bottom < p.px(760) {
-		englishHeight, chineseHeight = p.px(68), p.px(56)
+		englishHeight, chineseHeight = p.px(48), p.px(76)
 	}
-	p.move(p.currentEnglish, margin, y, width, englishHeight)
-	y += englishHeight + p.px(2)
 	p.move(p.currentChinese, margin, y, width, chineseHeight)
-	y += chineseHeight + gap
+	y += chineseHeight + p.px(2)
+	p.move(p.currentEnglish, margin, y, width, englishHeight)
+	y += englishHeight + gap
 	p.move(p.labels[3], margin, y, width-p.px(114), label)
 	p.move(p.buttons[14], margin+width-p.px(110), y-p.px(3), p.px(110), button)
 	y += label + gap
@@ -295,8 +295,8 @@ func (p *meetingHUD) resizeText(delta int32) {
 		return
 	}
 	body := meetingUIFont(p.px(size), 400)
-	english := popupFont(-p.px(size+5), 500)
-	chinese := meetingUIFont(p.px(size+3), 500)
+	english := popupFont(-p.px(size+1), 450)
+	chinese := meetingUIFont(p.px(size+6), 600)
 	if body == 0 || english == 0 || chinese == 0 {
 		for _, font := range []uintptr{body, english, chinese} {
 			if font != 0 {
@@ -465,23 +465,23 @@ func updateMeetingHUD(view meetingView) {
 	p.displayedReplies, p.displayedSource, p.displayedTip = view.replies, view.replySource, view.tip
 	p.renderReply()
 	newEnglish := view.expression.complete && view.expression.english != "" && view.expression.english != p.copyExpression
-	if newEnglish && !p.captionsOnly {
-		p.expressionExpanded = true
+	captionsOnly, expanded := meetingExpressionFocus(view.expression.complete, newEnglish, p.captionsOnly, p.expressionExpanded)
+	if captionsOnly != p.captionsOnly || expanded != p.expressionExpanded {
+		p.captionsOnly, p.expressionExpanded = captionsOnly, expanded
 		p.layout()
 	}
-	expression := view.expressionStatus
-	p.copyExpression = ""
-	if expression == "" && view.expression.english != "" {
-		expression = view.expression.english
-		if view.expression.complete {
-			p.copyExpression = view.expression.english
-		} else {
-			expression += "\r\n正在生成…"
-		}
+	// Show the last successful utterance while recognition or generation is
+	// underway. Transient status belongs below the result, not in its place.
+	expression := view.expression.english
+	if view.expression.complete {
+		p.copyExpression = view.expression.english
+	} else {
+		p.copyExpression = ""
 	}
 	if expression == "" {
-		expression = "听写键：直接翻英文；改写键：说出要表达的意思。"
+		expression = "听写键：直译自己的发言；改写键：提问、回答、补充观点。"
 	}
+	p.setText(p.labels[2], meetingExpressionHeading(view.expressionStatus, view.expression.complete), false)
 	if view.expression.complete || time.Since(p.lastExpression) >= 280*time.Millisecond {
 		p.setText(p.expression, expression, true)
 		if newEnglish {
@@ -489,10 +489,7 @@ func updateMeetingHUD(view meetingView) {
 		}
 		p.lastExpression = time.Now()
 	}
-	original := "识别原话 · " + strings.TrimSpace(view.expressionSource)
-	if strings.TrimSpace(view.expressionSource) == "" {
-		original = "语音原话会保留在这里"
-	}
+	original := meetingExpressionDetail(view.expressionStatus, view.expressionSource)
 	p.setText(p.expressionSource, original, true)
 	meetingEnableWindow.Call(p.buttons[5], meetingBool(p.copyExpression != ""))
 }

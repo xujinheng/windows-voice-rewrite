@@ -45,14 +45,6 @@ For mode refine, edit selected_reply according to user_points without inventing 
 For mode express, output one line: SAY<TAB>natural spoken English for user_points<TAB>Simplified Chinese meaning. Preserve the user's intended conditions without adding commitments.
 Use literal tabs and plain lines, with no markdown. Put the requested first line first.`
 
-var meetingQuestionStart = regexp.MustCompile(`(?i)^(?:(?:so|well|okay|and)[, ]+)*(?:what(?:'s)?|why|how|when|where|which|who|any (?:thoughts|ideas|questions|suggestions)|(?:can|could|would|will|do|did|should|are|have) (?:you|we)|tell (?:me|us)|walk (?:me|us) through|please explain)\b`)
-var meetingHandoff = regexp.MustCompile(`(?i)\b(?:your (?:take|thoughts|opinion|recommendation|input)|any concerns|what do you think|over to you|hear from you)\b`)
-
-func meetingNeedsReply(text string) bool {
-	text = strings.TrimSpace(text)
-	return strings.ContainsAny(text, "?？") || strings.Contains(text, "你怎么看") || meetingQuestionStart.MatchString(text) || meetingHandoff.MatchString(text)
-}
-
 type meetingLine struct {
 	kind, english, chinese string
 	complete               bool
