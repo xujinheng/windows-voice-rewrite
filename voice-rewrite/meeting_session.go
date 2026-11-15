@@ -374,7 +374,7 @@ func (s *meetingSession) translateTurns(jobs <-chan meetingCaptionJob) {
 			s.applyWork(job.epoch, func() { s.stopCaption = cancel; s.captionID = job.id })
 			var displayed bool
 			started := time.Now()
-			err := s.complete(ctx, meetingPriorityCaption, meetingQuery{Mode: "caption", Prior: job.prior, Latest: job.latest, }, func(line meetingLine) {
+			err := s.complete(ctx, meetingPriorityCaption, meetingQuery{Mode: "caption", Prior: job.prior, Latest: job.latest}, func(line meetingLine) {
 				if line.kind != "ZH" {
 					return
 				}
