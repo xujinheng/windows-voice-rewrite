@@ -47,7 +47,6 @@ var editCuePattern = regexp.MustCompile(`(?i)(改写|改成|修改|润色|重写
 var translationCuePattern = regexp.MustCompile(`(?i)(翻译成|译成|写成.{0,10}(英|中|日|法|德|西|韩|文)|改成.{0,10}(英|中|日|法|德|西|韩|文)|用.{0,10}(英文|中文|日文|法文|德文|西班牙文|韩文).{0,10}(写|表达)|translate (this |it |the selected text )?(to|into)|write (this |it )?in (english|chinese|japanese|french|german|spanish|korean))`)
 var questionCuePattern = regexp.MustCompile(`(?i)(什么意思|是什么|为什么|怎么回事|怎么用|怎么翻译|如何|解释|讲解|请问|告诉我|什么叫|怎么说|what (does|is|are)|why |how |explain|define|meaning of|summari[sz]e|总结|概括|摘要)`)
 
-
 // Independent lexical guards prevent the model from granting write permission.
 func clearlyRequestsEdit(instruction string) bool {
 	if questionCuePattern.MatchString(instruction) {

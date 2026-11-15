@@ -198,7 +198,7 @@ func TestSelectionValidationAndCancelBeforeNetwork(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	for _, tc := range []struct {
-		ctx context.Context
+		ctx                   context.Context
 		selected, instruction string
 	}{
 		{context.Background(), "", "润色"},
