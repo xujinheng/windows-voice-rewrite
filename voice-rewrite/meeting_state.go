@@ -25,7 +25,7 @@ type meetingView struct {
 	status                             string
 	captions                           []meetingCaption
 	replies                            [3]meetingLine
-	tip, replySource, expressionStatus string
+	tip, replySource, expressionStatus, expressionSource string
 	expression                         meetingLine
 	sourceName, asrMode                string
 	level                              int
