@@ -796,12 +796,12 @@ func demoMeeting() meetingView {
 			{Final: true, Source: "We're seeing high tail latency on vector search. How would you start investigating?", Chinese: "向量检索的尾延迟偏高。你会从哪里开始排查？"},
 		},
 		replies: [3]meetingLine{
-			{kind: "ONE", complete: true, english: "I'd start by separating time spent waiting in the queue from time spent running the search.", Chinese: "我会先把排队耗时和实际检索耗时分开看。"},
-			{kind: "TWO", complete: true, english: "Is the spike limited to certain queries, or does it affect the whole cluster?", Chinese: "是部分查询出现尖峰，还是整个集群都受影响？"},
-			{kind: "THREE", complete: true, english: "Let me take a moment to think through where we'd get the clearest signal.", Chinese: "我先理一下从哪里入手能最快弄清情况。"},
+			{kind: "ONE", complete: true, english: "I'd start by separating time spent waiting in the queue from time spent running the search.", chinese: "我会先把排队耗时和实际检索耗时分开看。"},
+			{kind: "TWO", complete: true, english: "Is the spike limited to certain queries, or does it affect the whole cluster?", chinese: "是部分查询出现尖峰，还是整个集群都受影响？"},
+			{kind: "THREE", complete: true, english: "Let me take a moment to think through where we'd get the clearest signal.", chinese: "我先理一下从哪里入手能最快弄清情况。"},
 		},
 		replySource: "We're seeing high tail latency on vector search. How would you start investigating?",
 		tip:         "先对照高峰期的 p99 排队时间与分片耗时，再核对是否集中在特定索引或查询类型。",
-		expression:  meetingLine{kind: "SAY", complete: true, english: "We can do that, but by Friday I can only share an initial version.", Chinese: "可以做，但周五前我只能给初版。"},
+		expression:  meetingLine{kind: "SAY", complete: true, english: "We can do that, but by Friday I can only share an initial version.", chinese: "可以做，但周五前我只能给初版。"},
 	}
 }
