@@ -20,18 +20,15 @@ type meetingMetrics struct {
 }
 
 type meetingView struct {
-	status                                               string
-	captions                                             []meetingcore.Caption
-	replies                                              [3]meetingLine
-	tip, replySource, expressionStatus, expressionSource string
-	expression                                           meetingLine
-	sourceName, asrMode                                  string
-	level                                                int
-	capturePaused                                        bool
-	metrics                                              meetingMetrics
-	pendingReplies                                       [3]meetingLine
-	pendingReplySource, pendingTip                       string
-	replyPending                                         bool
+	status                             string
+	captions                           []meetingcore.Caption
+	reply                              meetingcore.ReplyState
+	expressionStatus, expressionSource string
+	expression                         meetingLine
+	sourceName, asrMode                string
+	level                              int
+	capturePaused                      bool
+	metrics                            meetingMetrics
 }
 
 // A finished voice request must be visible even if the user is listening in

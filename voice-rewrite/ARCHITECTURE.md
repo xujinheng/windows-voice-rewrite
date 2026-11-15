@@ -12,7 +12,7 @@ capture, GUI, input, clipboard and encryption stay in the Windows shell.
 | `internal/core/config` | Shared application settings schema and defaults; no persistence or credentials access | Go standard library |
 | `internal/core/speech` | WAV serialization, multipart ASR uploads, transcript cleaning, chunking and cancellation | `core/audio`, `core/config`, `core/provider` |
 | `internal/core/textedit` | Selected-text rewrite requests and response validation | `core/config`, `core/provider` |
-| `internal/core/meeting` | Streaming meeting ASR, completion protocol and prompts, caption/English interpretation, versioned caption state and reading projections, cross-platform audio stream segmentation and adaptive previews, history follow/unread policy, pane sizing/preferences and inference scheduler with priority preemption | `core/config`, `core/provider`, `core/speech` |
+| `internal/core/meeting` | Streaming meeting ASR, completion protocol and prompts, caption/English interpretation, versioned caption state and reading projections, streamed reply batches and generation fencing, cross-platform audio stream segmentation and adaptive previews, history follow/unread policy, pane sizing/preferences and inference scheduler with priority preemption | `core/config`, `core/provider`, `core/speech` |
 | `internal/core/provider` | HTTP timeouts, redirect blocking, safe errors, URL validation, model discovery and reasoning-token stripping | `core/config` |
 
 The core packages are tested as independent packages under Linux, Windows
@@ -38,10 +38,10 @@ Win32 meeting process selector
     -> Windows WASAPI FrameSource adapter
     -> core/audio (PCM conversion)
     -> core/meeting (audio stream segmentation, adaptive snapshots)
-    -> meeting_session (session lifecycle, caption queues and HUD state)
+    -> meeting_session (session lifecycle, caption/reply inference queues and HUD state)
     -> core/speech + core/meeting (ASR, translation, English expression)
     -> core/provider (model discovery, safe HTTP client)
-    -> core/meeting (caption revision, reading panels, English, scheduling, layout policies)
+    -> core/meeting (caption/reply state, reading panels, English, scheduling, layout policies)
     -> Windows Meeting HUD (native EDIT controls and drag dividers)
 ```
 

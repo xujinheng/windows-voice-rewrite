@@ -13,33 +13,32 @@ import (
 )
 
 type meetingSession struct {
-	expressionSerial             uint64
-	stopExpression               context.CancelFunc
-	activeASRCancel              context.CancelFunc
-	activeASRID, latestFinalID   uint64
-	activeASRFinal               bool
-	ctx                          context.Context
-	stop                         context.CancelFunc
-	cfg                          Config
-	logger                       func(string, ...any)
-	mu                           sync.Mutex
-	view                         meetingView
-	prior                        []string
-	turnID, epoch, replySerial   uint64
-	displaySerial, pendingSerial uint64
-	work                         context.Context
-	cancelWork                   context.CancelFunc
-	wake                         chan struct{}
-	stopReply                    context.CancelFunc
-	stopCaption                  context.CancelFunc
-	captionID                    uint64
-	captureErr                   error
-	dirty, demo                  bool
-	modelMu                      sync.Mutex
-	model                        string
-	scheduler                    meetingcore.Scheduler
-	onConfig                     func(Config)
-	saveConfiguration            func(Config) error
+	expressionSerial           uint64
+	stopExpression             context.CancelFunc
+	activeASRCancel            context.CancelFunc
+	activeASRID, latestFinalID uint64
+	activeASRFinal             bool
+	ctx                        context.Context
+	stop                       context.CancelFunc
+	cfg                        Config
+	logger                     func(string, ...any)
+	mu                         sync.Mutex
+	view                       meetingView
+	prior                      []string
+	turnID, epoch              uint64
+	work                       context.Context
+	cancelWork                 context.CancelFunc
+	wake                       chan struct{}
+	stopReply                  context.CancelFunc
+	stopCaption                context.CancelFunc
+	captionID                  uint64
+	captureErr                 error
+	dirty, demo                bool
+	modelMu                    sync.Mutex
+	model                      string
+	scheduler                  meetingcore.Scheduler
+	onConfig                   func(Config)
+	saveConfiguration          func(Config) error
 }
 
 type meetingAudioTurn struct {
@@ -87,19 +86,16 @@ func (s *meetingSession) workSnapshot() (context.Context, uint64) {
 func (s *meetingSession) configSnapshot() Config { s.mu.Lock(); defer s.mu.Unlock(); return s.cfg }
 func (s *meetingSession) resetWorkLocked() {
 	s.cancelWork()
-	s.discardPartialLocked()
+	s.view.reply.ResetWork()
 	if !s.view.expression.complete {
 		s.view.expression = meetingLine{}
 	}
 	s.view.captions = meetingcore.KeepCompletedCaptions(s.view.captions)
-	s.view.pendingReplies = [3]meetingLine{}
-	s.view.replyPending = false
 	if s.view.expressionStatus != "" {
 		s.view.expressionStatus = "处理已取消"
 	}
 	s.epoch++
 	s.turnID++
-	s.replySerial++
 	if s.stopReply != nil {
 		s.stopReply()
 	}
@@ -376,8 +372,7 @@ func (s *meetingSession) queueReplies(job meetingCaptionJob) {
 	if s.stopReply != nil {
 		s.stopReply()
 	}
-	s.replySerial++
-	serial := s.replySerial
+	serial := s.view.reply.Next()
 	ctx, cancel := context.WithTimeout(s.work, 30*time.Second)
 	s.stopReply = cancel
 	s.view.status = "正在准备回复建议…"
@@ -385,79 +380,33 @@ func (s *meetingSession) queueReplies(job meetingCaptionJob) {
 	s.mu.Unlock()
 	go func() {
 		defer cancel()
-		var batch [3]meetingLine
-		tip := ""
+		batch := meetingcore.ReplyBatch{Source: job.latest}
 		err := s.complete(ctx, meetingcore.PriorityReply, meetingcore.Query{Mode: "replies", Latest: job.latest, Prior: job.prior}, func(line meetingLine) {
-			switch line.kind {
-			case "ONE":
-				batch[0] = line
-			case "TWO":
-				batch[1] = line
-			case "THREE":
-				batch[2] = line
-			case "TIP":
-				tip = line.chinese
+			if !batch.Apply(meetingcore.Line{Kind: line.kind, English: line.english, Chinese: line.chinese, Complete: line.complete}) {
+				return
 			}
-			s.mu.Lock()
-			valid := serial == s.replySerial && ctx.Err() == nil
-			s.mu.Unlock()
-			if valid {
-				s.publishRepliesFor(job.epoch, serial, batch, job.latest, tip)
-			}
+			// Epoch, generation, and context are checked under the session
+			// lock before partial output reaches the HUD.
+			s.applyWork(job.epoch, func() {
+				if ctx.Err() == nil {
+					s.view.reply.Publish(serial, batch)
+				}
+			})
 		})
 		if err != nil {
 			s.applyWork(job.epoch, func() {
-				if serial == s.replySerial {
-					s.discardPartialLocked()
-				}
-			})
-		}
-		if err != nil && ctx.Err() == nil {
-			s.applyWork(job.epoch, func() {
-				if serial == s.replySerial {
-					s.view.status = "建议生成失败 · 保留当前回复"
+				if s.view.reply.Current(serial) {
+					s.view.reply.DiscardPartial()
+					if ctx.Err() == nil {
+						s.view.status = "建议生成失败 · 保留当前回复"
+					}
 				}
 			})
 		}
 	}()
 }
-func (s *meetingSession) publishRepliesFor(epoch, serial uint64, batch [3]meetingLine, source, tip string) {
-	s.applyWork(epoch, func() {
-		if serial != s.replySerial {
-			return
-		}
-		s.publishRepliesLocked(serial, batch, source, tip)
-	})
-}
-func (s *meetingSession) publishRepliesLocked(serial uint64, batch [3]meetingLine, source, tip string) {
-	if s.view.replies[0].english == "" || s.displaySerial == serial {
-		s.displaySerial = serial
-		s.view.replies = batch
-		s.view.replySource = source
-		s.view.tip = tip
-		return
-	}
-	s.pendingSerial = serial
-	s.view.pendingReplies = batch
-	s.view.pendingReplySource = source
-	s.view.pendingTip = tip
-	s.view.replyPending = batch[0].complete
-}
-func (s *meetingSession) publishReplies(batch [3]meetingLine, source, tip string) {
-	s.mutate(func() { s.replySerial++; s.publishRepliesLocked(s.replySerial, batch, source, tip) })
-}
 func (s *meetingSession) acceptPendingReplies() {
-	s.mutate(func() {
-		if !s.view.replyPending {
-			return
-		}
-		s.displaySerial = s.pendingSerial
-		s.view.replies = s.view.pendingReplies
-		s.view.replySource = s.view.pendingReplySource
-		s.view.tip = s.view.pendingTip
-		s.view.replyPending = false
-		s.view.pendingReplies = [3]meetingLine{}
-	})
+	s.mutate(func() { s.view.reply.AcceptPending() })
 }
 func (s *meetingSession) requestReplies() {
 	s.mu.Lock()
@@ -486,7 +435,7 @@ func (s *meetingSession) refineReply(index int, instruction string) {
 		return
 	}
 	s.mu.Lock()
-	selected := s.view.replies[index].english
+	selected := s.view.reply.Displayed.Lines[index].English
 	if selected == "" || s.view.capturePaused {
 		s.mu.Unlock()
 		return
@@ -539,20 +488,6 @@ func (s *meetingSession) queueAudio(queue chan meetingAudioTurn, job meetingAudi
 	default:
 	}
 }
-func (s *meetingSession) discardPartialLocked() {
-	for i := range s.view.replies {
-		if !s.view.replies[i].complete {
-			s.view.replies[i] = meetingLine{}
-		}
-	}
-	for i := range s.view.pendingReplies {
-		if !s.view.pendingReplies[i].complete {
-			s.view.pendingReplies[i] = meetingLine{}
-		}
-	}
-	s.view.replyPending = s.view.pendingReplies[0].complete
-}
-
 func (s *meetingSession) expressionContextLocked(timeout time.Duration) (context.Context, context.CancelFunc, uint64, uint64) {
 	if s.stopExpression != nil {
 		s.stopExpression()
@@ -606,8 +541,8 @@ func (s *meetingSession) start(source audio.FrameSource) {
 					s.applyWork(epoch, func() {
 						s.turnID++
 						id = s.turnID
-						s.replySerial++
-						s.discardPartialLocked()
+						s.view.reply.DiscardPartial()
+						s.view.reply.Next()
 						if s.stopReply != nil {
 							s.stopReply()
 						}
