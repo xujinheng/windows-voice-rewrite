@@ -197,6 +197,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 	s.applyExpression(epoch, serial, func() {
 		// Keep the previous completed English available to read and copy
 		// while the next recognition/model request is running.
+		s.view.expression = meetingRetainEnglish(s.view.expression)
 		s.view.expressionSource = ""
 		s.view.expressionStatus = label
 	})
@@ -230,7 +231,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 	}
 	s.applyExpression(epoch, serial, func() {
 		s.view.expressionSource = points
-		s.view.expressionStatus = label + "\r\n已识别 · " + points
+		s.view.expressionStatus = label
 	})
 	var prior []string
 	if mode == "compose" {
@@ -266,7 +267,7 @@ func (s *meetingSession) expressionFailed(app *appState, generation, epoch, seri
 	message := label + "：" + cause.Error()
 	s.applyExpression(epoch, serial, func() {
 		s.view.expressionStatus = message
-
+		s.view.expression = meetingRetainEnglish(s.view.expression)
 	})
 	app.fail(fmt.Errorf("%s: %w", label, cause))
 	app.postHandyPhase(statusError, generation)
