@@ -100,8 +100,8 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	}
 	anchor := currentCursorPoint()
 	work, scale := uxWorkAreaForPoint(anchor), uxMonitorScaleForPoint(anchor)
-	prefs, _ := loadMeetingPreferences(meetingPreferencesPath())
-	x, y, w, h := prefs.geometry(work, scale)
+	prefs, _ := meetingcore.LoadPreferences(meetingPreferencesPath())
+	x, y, w, h := meetingGeometry(prefs, work, scale)
 	hwnd, _, err := procCreateWindow.Call(WS_EX_TOPMOST|WS_EX_TOOLWINDOW, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),
 		WS_CAPTION|WS_SYSMENU|0x00040000|0x00010000|0x02000000, int32ptr(x), int32ptr(y), int32ptr(w), int32ptr(h), 0, 0, module, 0)
 	runtime.KeepAlive(className)
@@ -580,12 +580,12 @@ func (p *meetingHUD) savePreferences() {
 	// Do not persist minimized or maximized geometry as a normal window size.
 	minimized, _, _ := user32.NewProc("IsIconic").Call(p.window)
 	maximized, _, _ := user32.NewProc("IsZoomed").Call(p.window)
-	prefs, _ := loadMeetingPreferences(meetingPreferencesPath())
+	prefs, _ := meetingcore.LoadPreferences(meetingPreferencesPath())
 	prefs.FontSize, prefs.CaptionsOnly, prefs.Panes = p.fontSize, p.captionsOnly, p.paneWeights
 	if minimized == 0 && maximized == 0 {
 		prefs.X, prefs.Y, prefs.Width, prefs.Height = bounds.Left, bounds.Top, bounds.Right-bounds.Left, bounds.Bottom-bounds.Top
 	}
-	if err := saveMeetingPreferences(meetingPreferencesPath(), prefs); err != nil && p.app != nil {
+	if err := meetingcore.SavePreferences(meetingPreferencesPath(), prefs); err != nil && p.app != nil {
 		p.app.logger.Printf("meeting UI preferences: %v", err)
 	}
 }
