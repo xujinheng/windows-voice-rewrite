@@ -38,7 +38,6 @@ type meetingSession struct {
 	modelMu                      sync.Mutex
 	model                        string
 	scheduler                    meetingcore.Scheduler
-	lastVoice                    time.Time
 	onConfig                     func(Config)
 	saveConfiguration            func(Config) error
 }
@@ -175,40 +174,17 @@ func (s *meetingSession) setASRMode(mode string) error {
 	}
 	return s.saveMeetingConfig(func(c *Config) { c.MeetingASRMode = mode })
 }
-func meetingPreviewInterval(elapsed time.Duration) time.Duration {
-	return max(800*time.Millisecond, min(2400*time.Millisecond, elapsed*5/4))
-}
-
 func (s *meetingSession) runInference(ctx context.Context, priority int, stage string, call func(context.Context) error) error {
-	for {
-		active, release, err := s.scheduler.Acquire(ctx, priority)
-		if err != nil {
-			return err
-		}
-		s.mutate(func() { s.view.metrics.Stage = stage; s.view.metrics.Pending = s.scheduler.Pending() })
-		err = call(active)
-		preempted := errors.Is(context.Cause(active), meetingcore.ErrPreempted)
-		if !preempted && ctx.Err() == nil {
-			s.mutate(func() {
-				if !s.view.capturePaused {
-					s.view.metrics.Stage = "正在听"
-					s.view.metrics.Pending = s.scheduler.Pending()
-				}
-			})
-		}
-		release()
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if preempted && priority == meetingcore.PriorityReply {
-			return meetingcore.ErrPreempted
-		}
-		if preempted {
-			continue
-		}
-		s.mutate(func() { s.view.metrics.Stage = "正在听"; s.view.metrics.Pending = s.scheduler.Pending() })
-		return err
-	}
+	return s.scheduler.Run(ctx, priority, call, func(running bool) {
+		s.mutate(func() {
+			if running {
+				s.view.metrics.Stage = stage
+			} else if !s.view.capturePaused {
+				s.view.metrics.Stage = "正在听"
+			}
+			s.view.metrics.Pending = s.scheduler.Pending()
+		})
+	})
 }
 
 func (s *meetingSession) transcribeTurns(turns, previews <-chan meetingAudioTurn, captions chan meetingCaptionJob) {
@@ -665,29 +641,19 @@ func (s *meetingSession) start(source audio.FrameSource) {
 					continue
 				}
 			}
-			var seg audio.Segmenter
 			var id uint64
-			var lastMeter time.Time
-			err := source.Stream(work, func() { s.applyWork(epoch, func() { s.view.status = "正在聆听 · 按住听写键说中文" }) }, func(frame []byte) {
-				if work.Err() != nil {
-					return
-				}
-				now := time.Now()
-				level := audio.Level(frame)
+			err := meetingcore.StreamAudio(work, source, func() time.Duration {
 				s.mu.Lock()
-				if level >= 4 {
-					s.lastVoice = now
-				}
-				elapsed := time.Duration(s.view.metrics.ASRDoneMS+s.view.metrics.TranslationDoneMS) * time.Millisecond
-				s.mu.Unlock()
-				seg.SetPreviewInterval(meetingPreviewInterval(elapsed))
-				if now.Sub(lastMeter) >= 150*time.Millisecond {
-					lastMeter = now
+				defer s.mu.Unlock()
+				return time.Duration(s.view.metrics.ASRDoneMS+s.view.metrics.TranslationDoneMS) * time.Millisecond
+			}, func() {
+				s.applyWork(epoch, func() { s.view.status = "正在聆听 · 按住听写键说中文" })
+			}, func(event meetingcore.AudioEvent) {
+				if event.Meter {
 					pending := len(turns) + len(previews) + len(captions) + s.scheduler.Pending()
-					s.applyWork(epoch, func() { s.view.level = level; s.view.metrics.Pending = pending })
+					s.applyWork(epoch, func() { s.view.level = event.Level; s.view.metrics.Pending = pending })
 				}
-				started, pcm := seg.Push(frame)
-				if started {
+				if event.UtteranceStarted {
 					s.applyWork(epoch, func() {
 						s.turnID++
 						id = s.turnID
@@ -698,13 +664,9 @@ func (s *meetingSession) start(source audio.FrameSource) {
 						}
 					})
 				}
-				final := pcm != nil
-				if !final {
-					pcm = seg.Preview()
-				}
-				if pcm != nil {
-					job := meetingAudioTurn{final: final, id: id, epoch: epoch, ctx: work, pcm: pcm, ended: now}
-					if final {
+				if event.PCM != nil {
+					job := meetingAudioTurn{final: event.Final, id: id, epoch: epoch, ctx: work, pcm: event.PCM, ended: event.Time}
+					if event.Final {
 						s.queueAudio(turns, job)
 					} else {
 						s.queueAudio(previews, job)
