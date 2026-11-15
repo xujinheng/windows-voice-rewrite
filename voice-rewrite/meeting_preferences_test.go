@@ -1,8 +1,9 @@
 package main
 
 import (
-	meetingcore "voicerewrite/internal/core/meeting"
 	"testing"
+
+	meetingcore "voicerewrite/internal/core/meeting"
 )
 
 func TestMeetingPreferencesClampRemovedMonitor(t *testing.T) {
