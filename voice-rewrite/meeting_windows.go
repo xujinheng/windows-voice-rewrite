@@ -237,6 +237,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 		prior = append([]string(nil), s.prior...)
 		s.mu.Unlock()
 	}
+	mode = meetingSpeechTask(mode, points)
 	app.logger.Printf("meeting expression mode=%s recognized_chars=%d", mode, len([]rune(points)))
 	err = s.complete(ctx, meetingPriorityExpress, meetingQuery{Mode: mode, Prior: prior, UserPoints: points}, func(line meetingLine) {
 		if !app.epoch.valid(generation) || line.kind != "SAY" {
