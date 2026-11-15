@@ -1,10 +1,11 @@
 package main
 
 import (
-	meetingcore "voicerewrite/internal/core/meeting"
 	"context"
 	"testing"
 	"time"
+
+	meetingcore "voicerewrite/internal/core/meeting"
 )
 
 func TestMeetingHistoryIsNotDiscardedAfterTwelveTurns(t *testing.T) {
