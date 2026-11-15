@@ -57,7 +57,7 @@ func TestMeetingTextChangeUTF16AndHistory(t *testing.T) {
 	}{
 		{"", "你好", 0, 0, "你好"},
 		{"第一句\r\nHello", "第一句\r\nHello world", 10, 10, " world"},
-		{"🙂 原文\r\n第一版", "🙂 原文\r\n第二版", 7, 10, "第二版"},
+		{"🙂 原文\r\n第一版", "🙂 原文\r\n第二版", 8, 10, "二版"},
 	}
 	for _, tc := range cases {
 		p := meetingTextChange(tc.old, tc.next)
