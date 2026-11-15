@@ -1,7 +1,6 @@
 package meeting
 
 import (
-	coreconfig "voicerewrite/internal/core/config"
 	"bufio"
 	"bytes"
 	"context"
@@ -14,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
 )
 
