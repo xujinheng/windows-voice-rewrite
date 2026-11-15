@@ -200,7 +200,7 @@ func meetingPanelHeights(space int32, expanded bool) meetingAssistantHeights {
 	expression := min(int32(172), max(int32(72), budget-reply))
 	return meetingAssistantHeights{
 		history: max(int32(30), space-160-reply-expression),
-		reply: reply, expression: expression, source: 28,
+		reply:   reply, expression: expression, source: 28,
 	}
 }
 
