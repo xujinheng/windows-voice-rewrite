@@ -197,6 +197,9 @@ func openMeetingAudio(ctx context.Context, pid uint32) (uintptr, error) {
 }
 
 func captureMeetingAudio(ctx context.Context, pid uint32, started func(), push func([]byte)) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	target, _, _ := meetingOpenProcess.Call(0x00100000, 0, uintptr(pid)) // SYNCHRONIZE
 	if target == 0 {
 		return errors.New("选中的音频来源已退出或不可访问")
@@ -240,6 +243,9 @@ func captureMeetingAudio(ctx context.Context, pid uint32, started func(), push f
 	if err := meetingCOMError("获取采集器", comMethod(client, 14, uintptr(unsafe.Pointer(&meetingCaptureInterface)), uintptr(unsafe.Pointer(&capture)))); err != nil {
 		return err
 	}
+	if capture == 0 {
+		return errors.New("Windows 未返回音频采集器")
+	}
 	defer comMethod(capture, 2)
 	event, _, eventErr := createMeetingEvent.Call(0, 0, 0, 0)
 	if event == 0 {
@@ -255,18 +261,27 @@ func captureMeetingAudio(ctx context.Context, pid uint32, started func(), push f
 	defer comMethod(client, 11)
 	started()
 
-	var converter audio.PCMConverter
-	var silence [audio.FrameBytes]byte
+	converter, err := audio.NewPCMConverter(audio.PCMFormat{
+		SampleRate:    int(format.SamplesPerSec),
+		Channels:      int(format.Channels),
+		BitsPerSample: int(format.BitsPerSample),
+	})
+	if err != nil {
+		return err
+	}
 	lastPacket := time.Now()
 	for ctx.Err() == nil {
 		if active, _, _ := waitMeetingEvent.Call(target, 0); active != 258 {
 			return errors.New("选中的音频来源已结束，请重新选择")
 		}
 		wait, _, waitErr := waitMeetingEvent.Call(event, 40)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		switch wait {
 		case 0:
 			for ctx.Err() == nil {
-				n, err := readMeetingPacket(capture, &converter, push)
+				n, err := readMeetingPacket(capture, converter, push)
 				if err != nil {
 					return err
 				}
@@ -277,8 +292,9 @@ func captureMeetingAudio(ctx context.Context, pid uint32, started func(), push f
 			}
 		case 258: // A render stream may stop producing packets during silence.
 			if time.Since(lastPacket) >= 40*time.Millisecond {
-				push(silence[:])
-				push(silence[:])
+				if err := converter.Consume(nil, int(format.SamplesPerSec)/25, true, push); err != nil {
+					return err
+				}
 			}
 		default:
 			return fmt.Errorf("等待应用音频: %w", waitErr)
@@ -294,10 +310,21 @@ func readMeetingPacket(capture uintptr, converter *audio.PCMConverter, push func
 	if err := meetingCOMError("读取应用音频", hr); err != nil || frames == 0 {
 		return frames, err
 	}
+
+	// Each successful nonempty GetBuffer owns a matching ReleaseBuffer,
+	// including malformed packets and conversion failures.
+	packetBytes, packetErr := converter.PacketBytes(int(frames))
 	var pcm []byte
-	if flags&2 == 0 && data != 0 {
-		pcm = unsafe.Slice((*byte)(unsafe.Pointer(data)), int(frames)*4)
+	if packetErr == nil && flags&2 == 0 {
+		if data == 0 {
+			packetErr = errors.New("Windows 返回了空音频缓冲区")
+		} else {
+			pcm = unsafe.Slice((*byte)(unsafe.Pointer(data)), packetBytes)
+		}
 	}
-	converter.Consume(pcm, int(frames), push)
-	return frames, meetingCOMError("释放音频缓冲", comMethod(capture, 4, uintptr(frames)))
+	if packetErr == nil {
+		packetErr = converter.Consume(pcm, int(frames), flags&2 != 0, push)
+	}
+	releaseErr := meetingCOMError("释放音频缓冲", comMethod(capture, 4, uintptr(frames)))
+	return frames, errors.Join(packetErr, releaseErr)
 }
