@@ -67,6 +67,7 @@ func (s *meetingSession) applyWork(epoch uint64, update func()) {
 	})
 }
 func (s *meetingSession) configSnapshot() Config { s.mu.Lock(); defer s.mu.Unlock(); return s.cfg }
+
 // resetViewLocked runs with the host state mutex held after the runtime
 // invalidates its epoch. Presentation never survives a canceled partial task.
 func (s *meetingSession) resetViewLocked() {
