@@ -159,28 +159,24 @@ func TestMeetingPanelHeightsPrioritizeGeneratedEnglish(t *testing.T) {
 	}
 }
 
-func TestMeetingSpeechTaskRoutesFactsAndPreservesCasualSpeech(t *testing.T) {
-	for _, tc := range []struct {
-		mode, spoken, want string
-	}{
-		{"compose", "我需要回答有多少印度人会说英语", "answer"},
-		{"compose", "帮我回答世界最高的山是什么", "answer"},
-		{"compose", "问他这两个方案的schedule", "compose"},
-		{"compose", "我想说这部电影很有意思", "compose"},
-		{"express", "我需要回答有多少印度人会说英语", "express"},
+func TestMeetingContextOnlyWhenSpeechRefersToPriorConversation(t *testing.T) {
+	for _, spoken := range []string{
+		"问他这两个方案的 schedule", "刚才说的时间安排", "他们说的那个方案",
 	} {
-		if got := meetingSpeechTask(tc.mode, tc.spoken); got != tc.want {
-			t.Errorf("%s %q: %s, want %s", tc.mode, tc.spoken, got, tc.want)
+		if !meetingUsesConversationContext(spoken) {
+			t.Errorf("missing reference to conversation: %q", spoken)
 		}
 	}
-	if !meetingUsesConversationContext("问他这两个方案的schedule") {
-		t.Fatal("lost important references to prior meeting discussion")
-	}
-	if meetingUsesConversationContext("我需要回答有多少印度人会说英语") ||
-		meetingUsesConversationContext("我想说这部电影很有意思") {
-		t.Fatal("unrelated factual or casual conversation inherited project context")
+	for _, spoken := range []string{
+		"我需要回答有多少印度人会说英语", "有多少印度人会说英语",
+		"我没等他问，我想先谈谈教育问题", "我想说这部电影很有意思",
+	} {
+		if meetingUsesConversationContext(spoken) {
+			t.Errorf("unrelated prompt inherited project context: %q", spoken)
+		}
 	}
 }
+
 
 func TestMeetingVoiceModes(t *testing.T) {
 	if meetingVoiceMode(true) != "express" {
