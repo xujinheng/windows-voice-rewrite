@@ -31,7 +31,7 @@ type meetingHUD struct {
 	displayedReplies                                            [3]meetingLine
 	displayedSource, displayedTip, copyExpression               string
 	selectedReply                                               int
-	lastTranscript, lastReply, lastExpression                    time.Time
+	lastTranscript, lastReply, lastExpression                   time.Time
 	rendered                                                    map[uintptr]string
 }
 
@@ -267,7 +267,7 @@ func (p *meetingHUD) setText(control uintptr, value string, preserve bool) {
 	follow := false
 	if preserve {
 		procSendMessage.Call(control, 0x00B0, uintptr(unsafe.Pointer(&start)), uintptr(unsafe.Pointer(&end))) // EM_GETSEL
-		first, _, _ = procSendMessage.Call(control, 0x00CE, 0, 0) // EM_GETFIRSTVISIBLELINE
+		first, _, _ = procSendMessage.Call(control, 0x00CE, 0, 0)                                             // EM_GETFIRSTVISIBLELINE
 		follow = control == p.captions && start == end && p.transcriptAtBottom(control)
 		procSendMessage.Call(control, 0x000B, 0, 0) // WM_SETREDRAW off
 	}
@@ -275,7 +275,7 @@ func (p *meetingHUD) setText(control uintptr, value string, preserve bool) {
 	if preserve {
 		if follow {
 			procSendMessage.Call(control, 0x00B1, ^uintptr(0), ^uintptr(0)) // EM_SETSEL to end
-			procSendMessage.Call(control, 0x00B7, 0, 0) // EM_SCROLLCARET
+			procSendMessage.Call(control, 0x00B7, 0, 0)                     // EM_SCROLLCARET
 		} else {
 			procSendMessage.Call(control, 0x00B1, uintptr(start), uintptr(end))
 			now, _, _ := procSendMessage.Call(control, 0x00CE, 0, 0)
@@ -285,13 +285,6 @@ func (p *meetingHUD) setText(control uintptr, value string, preserve bool) {
 	}
 	p.rendered[control] = value
 	meetingInvalidateRect.Call(control, 0, 1)
-}
-
-func meetingLatency(ms int64) string {
-	if ms <= 0 {
-		return "—"
-	}
-	return fmt.Sprintf("%dms", ms)
 }
 
 func updateMeetingHUD(view meetingView) {
@@ -385,7 +378,7 @@ func (p *meetingHUD) renderReply() {
 		text += "\r\n正在生成…（完成后可复制或改写）"
 	}
 	if reply.english == "" {
-		text = "听到提问后生成建议；新建议需点击“切换新建议”后阅读。"
+		text = "听到提问后生成建议；新建议可点击“查看新建议”后阅读。"
 	}
 	if p.displayedSource != "" {
 		text += "\r\n\r\n对应原话 · " + p.displayedSource
