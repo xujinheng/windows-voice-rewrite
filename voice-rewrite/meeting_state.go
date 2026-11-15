@@ -43,4 +43,3 @@ func meetingRetainEnglish(previous meetingLine) meetingLine {
 	}
 	return meetingLine{}
 }
-
