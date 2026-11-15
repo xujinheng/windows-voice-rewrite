@@ -8,17 +8,17 @@ import (
 )
 
 const PCMBytesPerSecond = 16000 * 2
-const asrChunkSeconds = 25
+const ASRChunkSeconds = 25
 
 // SplitPCMForASR preserves every sample. For long dictations, it places cuts
 // near low-energy regions in the last four seconds of each 25-second window.
 // Server-specific maximum audio durations are not assumed by the UI.
 func SplitPCMForASR(pcm []byte) [][]byte {
-	if len(pcm) <= asrChunkSeconds*PCMBytesPerSecond || len(pcm)%2 != 0 {
+	if len(pcm) <= ASRChunkSeconds*PCMBytesPerSecond || len(pcm)%2 != 0 {
 		return [][]byte{pcm}
 	}
 	var parts [][]byte
-	maxBytes := asrChunkSeconds * PCMBytesPerSecond
+	maxBytes := ASRChunkSeconds * PCMBytesPerSecond
 	for start := 0; start < len(pcm); {
 		end := start + maxBytes
 		if end >= len(pcm) {
