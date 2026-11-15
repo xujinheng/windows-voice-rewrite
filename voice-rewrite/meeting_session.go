@@ -91,13 +91,7 @@ func (s *meetingSession) resetWorkLocked() {
 	if !s.view.expression.complete {
 		s.view.expression = meetingLine{}
 	}
-	kept := s.view.captions[:0]
-	for _, c := range s.view.captions {
-		if c.final {
-			kept = append(kept, c)
-		}
-	}
-	s.view.captions = kept
+	s.view.captions = meetingcore.KeepCompletedCaptions(s.view.captions)
 	s.view.pendingReplies = [3]meetingLine{}
 	s.view.replyPending = false
 	if s.view.expressionStatus != "" {
@@ -266,9 +260,9 @@ func (s *meetingSession) transcribeTurn(turn meetingAudioTurn, state *meetingcor
 	s.logger("meeting stage=asr first_ms=%d complete_ms=%d since_snapshot_ms=%d final=%t", first.Milliseconds(), elapsed.Milliseconds(), time.Since(turn.ended).Milliseconds(), turn.final)
 	var job meetingCaptionJob
 	s.applyWork(turn.epoch, func() {
-		s.upsertSourceLocked(turn.id, latest, turn.final, true)
+		s.view.captions = meetingcore.UpsertCaption(s.view.captions, turn.id, latest, turn.final, true)
 		if !turn.final && cfg.MeetingASRMode != "multipart" {
-			s.setSourcePrefixLocked(turn.id, state.StablePrefix())
+			meetingcore.SetCaptionPrefix(s.view.captions, turn.id, state.StablePrefix())
 		}
 		job = meetingCaptionJob{final: turn.final, id: turn.id, epoch: turn.epoch, prior: append([]string(nil), s.prior...), latest: latest, ended: turn.ended, ctx: turn.ctx}
 		if turn.final {
@@ -301,47 +295,13 @@ func (s *meetingSession) transcribeTurn(turn meetingAudioTurn, state *meetingcor
 	}
 }
 
-func (s *meetingSession) upsertSourceLocked(id uint64, text string, final, confirmed bool) {
-	if strings.TrimSpace(text) == "" {
-		return
-	}
-	for i := range s.view.captions {
-		old := s.view.captions[i]
-		if old.id != id {
-			continue
-		}
-		if old.final {
-			return
-		}
-		if confirmed {
-			s.view.captions[i] = reviseMeetingCaption(old, id, text, final)
-		} else {
-			old.source = text
-			old.live = strings.TrimPrefix(text, old.stable)
-			if !strings.HasPrefix(text, old.stable) {
-				old.stable = ""
-				old.live = text
-			}
-			s.view.captions[i] = old
-		}
-		return
-	}
-	s.view.captions = append(s.view.captions, reviseMeetingCaption(meetingCaption{}, id, text, final))
-}
 func (s *meetingSession) updateCaption(epoch, id uint64, source, chinese string) {
 	if !meetingcore.TranslationFitsSource(source, chinese) {
 		s.logger("meeting stage=caption discarded overlong translation for source %d bytes", len(source))
 		return
 	}
 	s.applyWork(epoch, func() {
-		for i := range s.view.captions {
-			line := &s.view.captions[i]
-			if line.id == id && line.source == source {
-				line.chinese = chinese
-				line.translatedFrom = source
-				return
-			}
-		}
+		meetingcore.ApplyCaptionTranslation(s.view.captions, id, source, chinese)
 	})
 }
 func (s *meetingSession) translateTurns(jobs <-chan meetingCaptionJob) {
@@ -505,7 +465,7 @@ func (s *meetingSession) requestReplies() {
 		s.mu.Unlock()
 		return
 	}
-	last, ok := meetingLastCompletedCaption(s.view.captions)
+	last, ok := meetingcore.LatestCompletedCaption(s.view.captions)
 	if !ok {
 		s.view.status = "请等当前发言结束后再生成建议"
 		s.dirty = true
@@ -516,7 +476,7 @@ func (s *meetingSession) requestReplies() {
 	if len(prior) > 0 && strings.TrimSpace(prior[len(prior)-1]) == strings.TrimSpace(last.source) {
 		prior = prior[:len(prior)-1]
 	}
-	job := meetingCaptionJob{latest: last.source, id: last.id, epoch: s.epoch, ctx: s.work, prior: prior, ended: time.Now()}
+	job := meetingCaptionJob{latest: last.Source, id: last.ID, epoch: s.epoch, ctx: s.work, prior: prior, ended: time.Now()}
 	s.mu.Unlock()
 	s.queueReplies(job)
 }
@@ -579,17 +539,6 @@ func (s *meetingSession) queueAudio(queue chan meetingAudioTurn, job meetingAudi
 	default:
 	}
 }
-func (s *meetingSession) setSourcePrefixLocked(id uint64, prefix string) {
-	for i := range s.view.captions {
-		c := &s.view.captions[i]
-		if c.id == id && !c.final && strings.HasPrefix(c.source, prefix) {
-			c.stable = prefix
-			c.live = strings.TrimPrefix(c.source, prefix)
-			return
-		}
-	}
-}
-
 func (s *meetingSession) discardPartialLocked() {
 	for i := range s.view.replies {
 		if !s.view.replies[i].complete {
