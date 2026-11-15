@@ -118,6 +118,14 @@ func meetingTranslationFitsSource(source, translated string) bool {
 	return len([]rune(translated)) <= max(48, len([]rune(source))*2)
 }
 
+// A meeting has two independent speaking actions, neither requiring a selection.
+func meetingVoiceMode(dictation bool) string {
+	if dictation {
+		return "express"
+	}
+	return "compose"
+}
+
 func meetingFollowLatest(current, moved, atBottom bool) bool {
 	if moved {
 		return atBottom
