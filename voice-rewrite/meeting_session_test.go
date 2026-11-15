@@ -6,6 +6,21 @@ import (
 	"time"
 )
 
+func TestMeetingStreamingDoesNotClearTranslation(t *testing.T) {
+	s := newMeetingCore(defaults(), func(string, ...any) {})
+	defer s.stop()
+	s.upsertSourceLocked(1, "the first phrase", false, true)
+	s.updateCaption(1, 1, "the first phrase", "第一句")
+	s.upsertSourceLocked(1, "the first phrase continues", false, false)
+	if len(s.view.captions) != 1 || s.view.captions[0].chinese != "第一句" {
+		t.Fatalf("translation flickered away: %#v", s.view.captions)
+	}
+	s.upsertSourceLocked(1, "", false, false)
+	if s.view.captions[0].source == "" {
+		t.Fatal("empty stream chunk erased readable transcript")
+	}
+}
+
 func TestMeetingPauseInvalidatesOldWork(t *testing.T) {
 	s := newMeetingCore(defaults(), func(string, ...any) {})
 	defer s.stop()

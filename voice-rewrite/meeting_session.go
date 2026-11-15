@@ -324,6 +324,9 @@ func (s *meetingSession) transcribeTurn(turn meetingAudioTurn, state *meetingASR
 }
 
 func (s *meetingSession) upsertSourceLocked(id uint64, text string, final, confirmed bool) {
+	if strings.TrimSpace(text) == "" {
+		return
+	}
 	for i := range s.view.captions {
 		old := s.view.captions[i]
 		if old.id != id {
@@ -335,9 +338,6 @@ func (s *meetingSession) upsertSourceLocked(id uint64, text string, final, confi
 		if confirmed {
 			s.view.captions[i] = reviseMeetingCaption(old, id, text, final)
 		} else {
-			if old.source != text {
-				old.chinese = ""
-			}
 			old.source = text
 			old.live = strings.TrimPrefix(text, old.stable)
 			if !strings.HasPrefix(text, old.stable) {
