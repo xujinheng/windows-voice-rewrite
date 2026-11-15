@@ -177,44 +177,37 @@ func (s *meetingSession) start(pid uint32) {
 	}()
 }
 
-func (s *meetingSession) express(app *appState, rec *audioRecorder, generation uint64) {
+func (s *meetingSession) express(app *appState, rec *audioRecorder, generation uint64, mode string) {
 	defer app.busy.Store(false)
 	result := <-rec.result
-	if !app.epoch.valid(generation) {
-		return
-	}
-	defer func() {
-		if s.ctx.Err() != nil && app.epoch.valid(generation) {
-			app.setStatus(trayIdle)
-			app.postHandyPhase(statusError, generation)
-		}
-	}()
-	if s.ctx.Err() != nil {
+	if !app.epoch.valid(generation) || s.ctx.Err() != nil {
 		return
 	}
 	s.mu.Lock()
-	ctx, cancel, epoch, serial := s.expressionContextLocked(35 * time.Second)
+	ctx, cancel, epoch, serial := s.expressionContextLocked(50 * time.Second)
 	s.mu.Unlock()
 	stop := context.AfterFunc(app.epoch.contextFor(generation), cancel)
 	defer stop()
 	defer cancel()
-	defer func() {
-		if ctx.Err() != nil {
-			s.applyExpression(epoch, serial, func() { s.view.expressionStatus = "表达请求已结束" })
-			if app.epoch.valid(generation) && s.ctx.Err() == nil {
-				app.setStatus(trayIdle)
-				app.postHandyPhase(statusError, generation)
-			}
-		}
-	}()
+
+	label := "正在翻译你说的话…"
+	if mode == "compose" {
+		label = "正在理解表达意图…"
+	}
 	s.applyExpression(epoch, serial, func() {
 		s.view.expression = meetingLine{}
-		s.view.expressionStatus = "正在整理你的中文要点…"
+		s.view.expressionSource = ""
+		s.view.expressionStatus = label
 	})
-	if result.err != nil || len(result.pcm) < 3200 {
-		s.expressionFailed(app, generation, epoch, serial, "没有录到足够语音，请重试")
+	if result.err != nil {
+		s.expressionFailed(app, generation, epoch, serial, "麦克风录音失败", result.err)
 		return
 	}
+	if len(result.pcm) < 3200 {
+		s.expressionFailed(app, generation, epoch, serial, "没有录到足够语音", errors.New("请按住快捷键说话后松开"))
+		return
+	}
+
 	var points string
 	cfg := s.configSnapshot()
 	err := s.runInference(ctx, meetingPriorityExpress, "正在识别你的中文", func(active context.Context) error {
@@ -222,18 +215,31 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 		points, e = transcribe(active, cfg, result.pcm)
 		return e
 	})
-	if ctx.Err() != nil {
+	if !app.epoch.valid(generation) || ctx.Err() != nil {
 		return
 	}
 	if err != nil {
-		s.expressionFailed(app, generation, epoch, serial, "语音转写失败，请检查 ASR")
+		s.expressionFailed(app, generation, epoch, serial, "语音识别失败", err)
 		return
 	}
-	s.mu.Lock()
-	prior := append([]string(nil), s.prior...)
-	s.mu.Unlock()
-	err = s.complete(ctx, meetingPriorityExpress, meetingQuery{Mode: "express", Prior: prior, UserPoints: points}, func(line meetingLine) {
-		if !app.epoch.valid(generation) {
+	points = strings.TrimSpace(points)
+	if points == "" {
+		s.expressionFailed(app, generation, epoch, serial, "语音识别结果为空", errors.New("请调整麦克风音量后重试"))
+		return
+	}
+	s.applyExpression(epoch, serial, func() {
+		s.view.expressionSource = points
+		s.view.expressionStatus = label + "\r\n已识别 · " + points
+	})
+	var prior []string
+	if mode == "compose" {
+		s.mu.Lock()
+		prior = append([]string(nil), s.prior...)
+		s.mu.Unlock()
+	}
+	app.logger.Printf("meeting expression mode=%s recognized_chars=%d", mode, len([]rune(points)))
+	err = s.complete(ctx, meetingPriorityExpress, meetingQuery{Mode: mode, Prior: prior, UserPoints: points}, func(line meetingLine) {
+		if !app.epoch.valid(generation) || line.kind != "SAY" {
 			return
 		}
 		s.applyExpression(epoch, serial, func() {
@@ -245,24 +251,29 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 		return
 	}
 	if err != nil {
-		s.expressionFailed(app, generation, epoch, serial, "英文表达生成失败，请检查 LLM")
+		s.expressionFailed(app, generation, epoch, serial, "英文生成失败", err)
 		return
 	}
 	app.setStatus(traySuccess)
 	app.postHandyPhase(statusAnswer, generation)
 }
 
-func (s *meetingSession) expressionFailed(app *appState, generation, epoch, serial uint64, message string) {
-	if app.epoch.valid(generation) && s.ctx.Err() == nil {
-		s.applyExpression(epoch, serial, func() {
-			s.view.expressionStatus = message
-			if !s.view.expression.complete {
-				s.view.expression = meetingLine{}
-			}
-		})
-		app.fail(errors.New(message))
-		app.postHandyPhase(statusError, generation)
+func (s *meetingSession) expressionFailed(app *appState, generation, epoch, serial uint64, label string, cause error) {
+	if !app.epoch.valid(generation) || s.ctx.Err() != nil {
+		return
 	}
+	message := label + "：" + cause.Error()
+	s.applyExpression(epoch, serial, func() {
+		s.view.expressionStatus = message
+		if s.view.expressionSource != "" {
+			s.view.expressionStatus += "\r\n\r\n已识别 · " + s.view.expressionSource
+		}
+		if !s.view.expression.complete {
+			s.view.expression = meetingLine{}
+		}
+	})
+	app.fail(fmt.Errorf("%s: %w", label, cause))
+	app.postHandyPhase(statusError, generation)
 }
 
 func (a *appState) closeMeeting() {
