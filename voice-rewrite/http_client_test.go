@@ -1,13 +1,14 @@
 package main
 
 import (
-	"voicerewrite/internal/core/provider"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"voicerewrite/internal/core/provider"
 )
 
 func TestProviderRefusesRedirectsToUnconfiguredHosts(t *testing.T) {
