@@ -1,7 +1,6 @@
 package main
 
 import (
-	"voicerewrite/internal/core/speech"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"voicerewrite/internal/core/provider"
+	"voicerewrite/internal/core/speech"
 )
 
 func uxValidURL(s string) bool {
