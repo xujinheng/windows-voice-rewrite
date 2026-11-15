@@ -116,4 +116,3 @@ func DragPaneWeights(weights PaneWeights, heights [PaneCount]int32, captionsOnly
 	}
 	return weights
 }
-
