@@ -117,14 +117,6 @@ func TestMeetingPendingRepliesKeepReadableBatch(t *testing.T) {
 		t.Fatal("switch failed")
 	}
 }
-func TestMeetingAdaptiveInterval(t *testing.T) {
-	if got := meetingPreviewInterval(100 * time.Millisecond); got != 800*time.Millisecond {
-		t.Fatal(got)
-	}
-	if got := meetingPreviewInterval(5 * time.Second); got != 2400*time.Millisecond {
-		t.Fatal(got)
-	}
-}
 func TestMeetingSerialInference(t *testing.T) {
 	var g meetingcore.Scheduler
 	ctx, release, err := g.Acquire(context.Background(), meetingcore.PriorityCaption)

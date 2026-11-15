@@ -75,6 +75,38 @@ func (g *Scheduler) Acquire(ctx context.Context, priority int) (context.Context,
 		return run, release, nil
 	}
 }
+
+// Run serializes inference with higher-priority work. An interrupted ASR or
+// caption attempt retries after its replacement releases the GPU; background
+// reply suggestions instead stop so they do not delay fresher speech.
+func (g *Scheduler) Run(ctx context.Context, priority int, call func(context.Context) error, onPhase func(running bool)) error {
+	for {
+		active, release, err := g.Acquire(ctx, priority)
+		if err != nil {
+			return err
+		}
+		if onPhase != nil {
+			onPhase(true)
+		}
+		err = call(active)
+		preempted := errors.Is(context.Cause(active), ErrPreempted)
+		release()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if preempted {
+			if priority == PriorityReply {
+				return ErrPreempted
+			}
+			continue
+		}
+		if onPhase != nil {
+			onPhase(false)
+		}
+		return err
+	}
+}
+
 func (g *Scheduler) advanceLocked() {
 	if g.active != nil {
 		return
