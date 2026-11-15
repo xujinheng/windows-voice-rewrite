@@ -106,6 +106,18 @@ func meetingTranscript(captions []meetingCaption) (string, bool) {
 	return strings.Join(entries, "\r\n\r\n"), listening
 }
 
+// A translation of a short ASR fragment cannot legitimately contain whole
+// paragraphs from preceding turns. Reject such output instead of showing an
+// invented recap as the current subtitle.
+func meetingTranslationFitsSource(source, translated string) bool {
+	source = strings.TrimSpace(source)
+	translated = strings.TrimSpace(translated)
+	if source == "" || translated == "" {
+		return false
+	}
+	return len([]rune(translated)) <= max(48, len([]rune(source))*2)
+}
+
 func meetingFollowLatest(current, moved, atBottom bool) bool {
 	if moved {
 		return atBottom
