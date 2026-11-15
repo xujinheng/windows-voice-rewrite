@@ -70,7 +70,7 @@ jobs:
             fi
           done
       - name: Build and test native macOS application
-        if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        if: always() && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         run: |
           xcodebuild -project macos/VoiceRewrite.xcodeproj \
             -scheme VoiceRewrite -configuration Debug \
