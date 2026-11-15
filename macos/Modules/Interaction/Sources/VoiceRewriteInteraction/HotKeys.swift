@@ -1,0 +1,75 @@
+import Foundation
+
+public struct HotKeyModifiers: OptionSet, Hashable, Sendable {
+    public let rawValue: UInt8
+    public init(rawValue: UInt8) { self.rawValue = rawValue }
+    public static let command = HotKeyModifiers(rawValue: 1 << 0)
+    public static let option = HotKeyModifiers(rawValue: 1 << 1)
+    public static let control = HotKeyModifiers(rawValue: 1 << 2)
+    public static let shift = HotKeyModifiers(rawValue: 1 << 3)
+}
+
+public struct HotKeyShortcut: Hashable, Sendable {
+    /// Hardware virtual key code, not a Unicode scalar or localized character.
+    public let keyCode: UInt32
+    public let modifiers: HotKeyModifiers
+    public init(keyCode: UInt32, modifiers: HotKeyModifiers) {
+        self.keyCode = keyCode
+        self.modifiers = modifiers
+    }
+}
+
+public enum HotKeyFailure: Error, Equatable {
+    case duplicate
+    case invalidShortcut
+    case systemConflict(Int32)
+    case registrationFailed(Int32)
+}
+
+public struct HotKeyToken: Hashable, Sendable {
+    public let id: UInt32
+    public init(id: UInt32) { self.id = id }
+}
+
+@MainActor
+public protocol HotKeyDriver: AnyObject {
+    func register(_ shortcut: HotKeyShortcut) throws -> HotKeyToken
+    func unregister(_ token: HotKeyToken)
+}
+
+/// The host owns this registry and must call shutdown on application termination.
+@MainActor
+public final class HotKeyRegistry {
+    private let driver: any HotKeyDriver
+    private var registrations: [HotKeyShortcut: HotKeyToken] = [:]
+
+    public init(driver: any HotKeyDriver) { self.driver = driver }
+
+    public func register(_ shortcut: HotKeyShortcut) throws {
+        guard shortcut.keyCode <= 127, !shortcut.modifiers.isEmpty,
+              shortcut.modifiers.rawValue & ~UInt8(0x0F) == 0 else {
+            throw HotKeyFailure.invalidShortcut
+        }
+        guard registrations[shortcut] == nil else { throw HotKeyFailure.duplicate }
+        registrations[shortcut] = try driver.register(shortcut)
+    }
+
+    public func unregister(_ shortcut: HotKeyShortcut) {
+        guard let token = registrations.removeValue(forKey: shortcut) else { return }
+        driver.unregister(token)
+    }
+
+    public func shutdown() {
+        for token in registrations.values { driver.unregister(token) }
+        registrations.removeAll()
+    }
+
+    public var registeredCount: Int { registrations.count }
+
+    deinit {
+        // The driver must remain owned by the registry; OS hotkeys are never left registered.
+        MainActor.assumeIsolated {
+            for token in registrations.values { driver.unregister(token) }
+        }
+    }
+}
