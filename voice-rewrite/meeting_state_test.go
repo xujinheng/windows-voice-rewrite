@@ -51,9 +51,9 @@ func TestMeetingTranscriptKeepsStableText(t *testing.T) {
 
 func TestMeetingTextChangeUTF16AndHistory(t *testing.T) {
 	cases := []struct {
-		old, next string
+		old, next  string
 		start, end int
-		insert string
+		insert     string
 	}{
 		{"", "你好", 0, 0, "你好"},
 		{"第一句\r\nHello", "第一句\r\nHello world", 10, 10, " world"},
