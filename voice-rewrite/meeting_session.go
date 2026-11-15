@@ -473,7 +473,7 @@ func (s *meetingSession) requestReplies() {
 		return
 	}
 	prior := append([]string(nil), s.prior...)
-	if len(prior) > 0 && strings.TrimSpace(prior[len(prior)-1]) == strings.TrimSpace(last.source) {
+	if len(prior) > 0 && strings.TrimSpace(prior[len(prior)-1]) == strings.TrimSpace(last.Source) {
 		prior = prior[:len(prior)-1]
 	}
 	job := meetingCaptionJob{latest: last.Source, id: last.ID, epoch: s.epoch, ctx: s.work, prior: prior, ended: time.Now()}
