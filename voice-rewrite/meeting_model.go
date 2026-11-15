@@ -367,24 +367,31 @@ func meetingEnglishExpression(raw string) string {
 			}
 		}
 	}
-	for _, line := range strings.Split(text, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "SAY<TAB>") {
-			line = strings.TrimPrefix(line, "SAY<TAB>")
-			line, _, _ = strings.Cut(line, "<TAB>")
-		} else if strings.HasPrefix(line, "SAY\t") {
-			line = strings.TrimPrefix(line, "SAY\t")
-			line, _, _ = strings.Cut(line, "\t")
-		}
-		line = strings.TrimSpace(strings.Trim(line, "\"“”"))
-		if line == "" || strings.HasPrefix(line, "GATE") {
+	// Legacy SAY responses have a separate Chinese field; never include it in
+	// the English panel. Modern plain-English responses may contain multiple
+	// sentences/paragraphs and must not be truncated to the first line.
+	if strings.HasPrefix(text, "SAY<TAB>") {
+		text = strings.TrimPrefix(text, "SAY<TAB>")
+		text, _, _ = strings.Cut(text, "<TAB>")
+	} else if strings.HasPrefix(text, "SAY\t") {
+		text = strings.TrimPrefix(text, "SAY\t")
+		text, _, _ = strings.Cut(text, "\t")
+	}
+	var lines []string
+	for _, rawLine := range strings.Split(text, "\n") {
+		line := strings.TrimSpace(strings.Trim(rawLine, "\r"))
+		if line == "" || strings.HasPrefix(strings.ToUpper(line), "GATE") {
 			continue
 		}
+		line = strings.TrimSpace(strings.Trim(line, "\"“”"))
+		if strings.HasPrefix(strings.ToLower(line), "english:") {
+			line = strings.TrimSpace(line[len("english:"):])
+		}
 		if strings.ContainsAny(line, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") {
-			return line
+			lines = append(lines, line)
 		}
 	}
-	return ""
+	return strings.Join(lines, "\r\n")
 }
 
 var meetingCaptionGateMarker = regexp.MustCompile(`(?i)\bGATE(?:\s*<TAB>\s*|[\t ]+)(?:YES|NO)\b`)
