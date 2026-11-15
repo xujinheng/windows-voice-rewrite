@@ -21,13 +21,13 @@ type meetingHUD struct {
 	palette                                                     uiPalette
 	background, surface                                         uintptr
 	labels                                                      [4]uintptr
-	buttons                                                     [15]uintptr
+	buttons                                                     [16]uintptr
 	mainControls                                                []uintptr
 	profileControls                                             []uintptr
 	profileBackground, profileTerms, profileMode, profileStatus uintptr
 	scale                                                       float64
 	fontSize                                                    int32
-	paused, captionsOnly, profileOpen                           bool
+	paused, captionsOnly, profileOpen, expressionExpanded       bool
 	latest                                                      meetingView
 	displayedReplies                                            [3]meetingLine
 	displayedSource, displayedTip, copyExpression               string
@@ -122,7 +122,7 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	}
 	// Native tab stops include selectable read-only text and the rewrite input.
 	p.status = child("STATIC", "", 0, 0, false)
-	for i, title := range []string{"冻结画面", "专注字幕", "A−", "A+", "复制回复", "复制英文", "生成建议", "暂停采集", "会议资料", "1 直接回应", "2 澄清一下", "3 争取时间", "查看新建议", "改写回复", "回到最新"} {
+	for i, title := range []string{"冻结画面", "专注字幕", "A−", "A+", "复制回复", "复制英文", "生成建议", "暂停采集", "会议资料", "1 直接回应", "2 澄清一下", "3 争取时间", "查看新建议", "改写回复", "回到最新", "放大英文"} {
 		p.buttons[i] = child("BUTTON", title, 0x00010000|uxBSOwnerDraw, uintptr(7100+i), false)
 	}
 	p.labels[0] = child("STATIC", "当前发言", 0, 0, false)
@@ -150,7 +150,7 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	p.labels[2] = child("STATIC", "我的英文表达", 0, 0, false)
 	p.expression = child("EDIT", "", editStyle, 0, true)
 	setFont(p.expression, p.englishFont)
-	p.expressionSource = child("EDIT", "", ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL, 0, false)
+	p.expressionSource = child("EDIT", "", ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL|WS_VSCROLL, 0, false)
 	if err != nil {
 		closeMeetingHUD()
 		return err
@@ -222,10 +222,15 @@ func (p *meetingHUD) layout() {
 	p.move(p.buttons[14], margin+width-p.px(110), y-p.px(3), p.px(110), button)
 	y += label + gap
 
-	// The user's generated utterance is anchored to the bottom of the window.
-	// Only the history area expands when the meeting window grows.
+	// The generated English can temporarily take over the reply controls and
+	// most of the window. An explicit toggle restores the full workspace.
 	footer := bounds.Bottom - margin
-	for _, control := range []uintptr{p.labels[1], p.labels[2], p.responses, p.expression, p.expressionSource, p.instruction, p.buttons[4], p.buttons[5], p.buttons[6], p.buttons[9], p.buttons[10], p.buttons[11], p.buttons[12], p.buttons[13]} {
+	space := int32(float64(footer-y) / p.scale)
+	heights := meetingPanelHeights(space, p.expressionExpanded)
+	for _, control := range []uintptr{p.labels[1], p.responses, p.instruction, p.buttons[4], p.buttons[6], p.buttons[9], p.buttons[10], p.buttons[11], p.buttons[12], p.buttons[13]} {
+		procShowWindow.Call(control, meetingShow(!p.captionsOnly && !p.expressionExpanded))
+	}
+	for _, control := range []uintptr{p.labels[2], p.expression, p.expressionSource, p.buttons[5], p.buttons[15]} {
 		procShowWindow.Call(control, meetingShow(!p.captionsOnly))
 	}
 	if p.captionsOnly {
@@ -233,42 +238,41 @@ func (p *meetingHUD) layout() {
 		meetingInvalidateRect.Call(p.window, 0, 1)
 		return
 	}
-
-	replyHeight, expressionHeight := p.px(70), p.px(80)
-	if bounds.Bottom > p.px(950) {
-		replyHeight, expressionHeight = p.px(108), p.px(112)
-	}
+	expressionHeight := p.px(heights.expression)
+	sourceHeight := p.px(heights.source)
 	expressionHeader := footer - expressionHeight - label
-	p.move(p.labels[2], margin, expressionHeader, width-p.px(116), label)
+	p.move(p.labels[2], margin, expressionHeader, width-p.px(240), label)
+	p.move(p.buttons[15], margin+width-p.px(226), expressionHeader-p.px(4), p.px(110), button)
 	p.move(p.buttons[5], margin+width-p.px(112), expressionHeader-p.px(4), p.px(112), button)
-	sourceHeight := p.px(28)
-	if expressionHeight > p.px(100) {
-		sourceHeight = p.px(34)
-	}
-	p.move(p.expression, margin, expressionHeader+label, width, expressionHeight-sourceHeight)
+	p.move(p.expression, margin, expressionHeader+label, width, max(p.px(36), expressionHeight-sourceHeight))
 	p.move(p.expressionSource, margin, expressionHeader+label+expressionHeight-sourceHeight, width, sourceHeight)
 
-	instructionY := expressionHeader - gap - button
-	p.move(p.instruction, margin, instructionY, width-p.px(112)-gap, button)
-	p.move(p.buttons[13], margin+width-p.px(112), instructionY, p.px(112), button)
-	replyY := instructionY - gap - replyHeight
-	p.move(p.responses, margin, replyY, width, replyHeight)
-	optionsY := replyY - gap - button
-	x = margin
-	for _, item := range []struct {
-		index int
-		width int32
-	}{{9, 112}, {10, 112}, {11, 112}} {
-		p.move(p.buttons[item.index], x, optionsY, p.px(item.width), button)
-		x += p.px(item.width) + gap
+	if p.expressionExpanded {
+		// Both the current speech and the historical scroll position remain
+		// readable; only reply tools disappear while preparing an answer.
+		p.move(p.captions, margin, y, width, max(p.px(48), expressionHeader-gap-y))
+	} else {
+		instructionY := expressionHeader - gap - button
+		p.move(p.instruction, margin, instructionY, width-p.px(112)-gap, button)
+		p.move(p.buttons[13], margin+width-p.px(112), instructionY, p.px(112), button)
+		replyY := instructionY - gap - p.px(heights.reply)
+		p.move(p.responses, margin, replyY, width, p.px(heights.reply))
+		optionsY := replyY - gap - button
+		x = margin
+		for _, item := range []struct {
+			index int
+			width int32
+		}{{9, 112}, {10, 112}, {11, 112}} {
+			p.move(p.buttons[item.index], x, optionsY, p.px(item.width), button)
+			x += p.px(item.width) + gap
+		}
+		replyTitleY := optionsY - gap - button
+		p.move(p.labels[1], margin, replyTitleY, width-p.px(316), button)
+		p.move(p.buttons[6], margin+width-p.px(310), replyTitleY, p.px(92), button)
+		p.move(p.buttons[12], margin+width-p.px(210), replyTitleY, p.px(108), button)
+		p.move(p.buttons[4], margin+width-p.px(94), replyTitleY, p.px(94), button)
+		p.move(p.captions, margin, y, width, max(p.px(48), replyTitleY-gap-y))
 	}
-	replyTitleY := optionsY - gap - button
-	p.move(p.labels[1], margin, replyTitleY, width-p.px(316), button)
-	p.move(p.buttons[6], margin+width-p.px(310), replyTitleY, p.px(92), button)
-	p.move(p.buttons[12], margin+width-p.px(210), replyTitleY, p.px(108), button)
-	p.move(p.buttons[4], margin+width-p.px(94), replyTitleY, p.px(94), button)
-
-	p.move(p.captions, margin, y, width, max(p.px(48), replyTitleY-gap-y))
 	meetingInvalidateRect.Call(p.window, 0, 1)
 }
 
@@ -419,6 +423,7 @@ func updateMeetingHUD(view meetingView) {
 	p.setText(p.buttons[0], map[bool]string{false: "冻结画面", true: "恢复画面"}[p.paused], false)
 	p.setText(p.buttons[7], map[bool]string{false: "暂停采集", true: "恢复采集"}[view.capturePaused], false)
 	p.setText(p.buttons[1], map[bool]string{false: "专注字幕", true: "完整视图"}[p.captionsOnly], false)
+	p.setText(p.buttons[15], map[bool]string{false: "放大英文", true: "收起英文"}[p.expressionExpanded], false)
 	for _, i := range []int{6, 7, 8} {
 		meetingEnableWindow.Call(p.buttons[i], meetingBool(p.owner != 0))
 	}
@@ -459,6 +464,11 @@ func updateMeetingHUD(view meetingView) {
 	p.setText(p.labels[3], historyLabel, false)
 	p.displayedReplies, p.displayedSource, p.displayedTip = view.replies, view.replySource, view.tip
 	p.renderReply()
+	newEnglish := view.expression.complete && view.expression.english != "" && view.expression.english != p.copyExpression
+	if newEnglish && !p.captionsOnly {
+		p.expressionExpanded = true
+		p.layout()
+	}
 	expression := view.expressionStatus
 	p.copyExpression = ""
 	if expression == "" && view.expression.english != "" {
@@ -474,6 +484,9 @@ func updateMeetingHUD(view meetingView) {
 	}
 	if view.expression.complete || time.Since(p.lastExpression) >= 280*time.Millisecond {
 		p.setText(p.expression, expression, true)
+		if newEnglish {
+			procSendMessage.Call(p.expression, 0x0115, 6, 0) // WM_VSCROLL / SB_TOP
+		}
 		p.lastExpression = time.Now()
 	}
 	original := "识别原话 · " + strings.TrimSpace(view.expressionSource)
@@ -566,8 +579,8 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		case uxWMDrawItem:
 			if lParam != 0 {
 				item := (*drawItemStruct)(unsafe.Pointer(lParam))
-				if item.CtlID >= 7100 && item.CtlID <= 7114 {
-					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(p.buttons[item.CtlID-7100]), item.CtlID == 7106 || item.CtlID == 7112 && p.latest.replyPending)
+				if item.CtlID >= 7100 && item.CtlID <= 7115 {
+					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(p.buttons[item.CtlID-7100]), item.CtlID == 7106 || item.CtlID == 7112 && p.latest.replyPending || item.CtlID == 7115 && p.expressionExpanded)
 					return 1
 				}
 				if item.CtlID == 7205 || item.CtlID == 7206 {
@@ -622,6 +635,10 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				p.renderReply()
 			case 7114:
 				p.scrollToLatest()
+			case 7115:
+				p.expressionExpanded = !p.expressionExpanded
+				p.layout()
+				updateMeetingHUD(p.latest)
 			case 7112:
 				if p.app != nil && p.app.meeting != nil && !p.paused {
 					p.app.meeting.acceptPendingReplies()

@@ -139,6 +139,44 @@ func TestMeetingTextChangeUTF16AndHistory(t *testing.T) {
 	}
 }
 
+func TestMeetingPanelHeightsPrioritizeGeneratedEnglish(t *testing.T) {
+	for _, space := range []int32{340, 360, 450, 700} {
+		compact := meetingPanelHeights(space, false)
+		focused := meetingPanelHeights(space, true)
+		if compact.reply < 42 || compact.history < 30 || compact.expression <= compact.source {
+			t.Fatalf("normal panels don't fit %d: %+v", space, compact)
+		}
+		if compact.history+compact.reply+compact.expression+160 > space {
+			t.Fatalf("normal panels overlap at %d: %+v", space, compact)
+		}
+		if focused.expression-focused.source < 180 || focused.history < 52 ||
+			focused.history+focused.expression+32 > space {
+			t.Fatalf("focused English can't be read at %d: %+v", space, focused)
+		}
+		if focused.expression <= compact.expression {
+			t.Fatalf("expanding didn't enlarge English at %d: normal %+v, focused %+v", space, compact, focused)
+		}
+	}
+}
+
+func TestMeetingContextOnlyWhenSpeechRefersToPriorConversation(t *testing.T) {
+	for _, spoken := range []string{
+		"问他这两个方案的 schedule", "刚才说的时间安排", "他们说的那个方案",
+	} {
+		if !meetingUsesConversationContext(spoken) {
+			t.Errorf("missing reference to conversation: %q", spoken)
+		}
+	}
+	for _, spoken := range []string{
+		"我需要回答有多少印度人会说英语", "有多少印度人会说英语",
+		"我没等他问，我想先谈谈教育问题", "我想说这部电影很有意思",
+	} {
+		if meetingUsesConversationContext(spoken) {
+			t.Errorf("unrelated prompt inherited project context: %q", spoken)
+		}
+	}
+}
+
 func TestMeetingVoiceModes(t *testing.T) {
 	if meetingVoiceMode(true) != "express" {
 		t.Fatal("dictation key must translate speech literally")
