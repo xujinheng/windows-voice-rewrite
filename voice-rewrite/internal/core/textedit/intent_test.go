@@ -54,7 +54,7 @@ func TestIntentsRouting(t *testing.T) {
 		{"看一下", "edit", false, false, "popup"},
 	} {
 		got := RouteTask(AssistantResult{Intent: tc.intent, Result: "text"}, tc.instruction, tc.editable)
-		if got != tc.want {
+		if got != Action(tc.want) {
 			t.Errorf("%s intent=%s editable=%t: got %s want %s", tc.instruction, tc.intent, tc.editable, got, tc.want)
 		}
 	}
