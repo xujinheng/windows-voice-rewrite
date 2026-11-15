@@ -21,7 +21,7 @@ on:
       - 'scripts/test-meeting-ui.ps1'
       - '.github/workflows/meeting-ui.yml'
   push:
-    branches: [meeting-preview]
+    branches: [main, meeting-preview]
     paths:
       - 'voice-rewrite/meeting*.go'
       - 'voice-rewrite/internal/core/audio/**'
