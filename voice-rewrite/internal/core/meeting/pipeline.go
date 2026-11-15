@@ -50,21 +50,21 @@ type Pipeline struct {
 	previews chan AudioTurn
 	captions chan CaptionTask
 
-	mu              sync.Mutex
-	epoch           uint64
-	latestFinal     uint64
-	revision        uint64
-	latestRevision  map[uint64]uint64
-	activeCancel    context.CancelFunc
-	activeID        uint64
-	activeFinal     bool
+	mu             sync.Mutex
+	epoch          uint64
+	latestFinal    uint64
+	revision       uint64
+	latestRevision map[uint64]uint64
+	activeCancel   context.CancelFunc
+	activeID       uint64
+	activeFinal    bool
 }
 
 func NewPipeline(runtime *SessionRuntime, hooks PipelineHooks) *Pipeline {
 	return &Pipeline{
 		runtime: runtime, hooks: hooks,
 		finals: make(chan AudioTurn, 2), previews: make(chan AudioTurn, 1),
-		captions: make(chan CaptionTask, 1),
+		captions:       make(chan CaptionTask, 1),
 		latestRevision: make(map[uint64]uint64),
 	}
 }

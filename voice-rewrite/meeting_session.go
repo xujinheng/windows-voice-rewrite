@@ -13,20 +13,20 @@ import (
 )
 
 type meetingSession struct {
-	pipeline                   *meetingcore.Pipeline
-	runtime                    *meetingcore.SessionRuntime
-	cfg                        Config
-	logger                     func(string, ...any)
-	mu                         sync.Mutex
-	view                       meetingView
-	prior                      []string
-	captureErr                 error
-	dirty, demo                bool
-	modelMu                    sync.Mutex
-	model                      string
-	scheduler                  meetingcore.Scheduler
-	onConfig                   func(Config)
-	saveConfiguration          func(Config) error
+	pipeline          *meetingcore.Pipeline
+	runtime           *meetingcore.SessionRuntime
+	cfg               Config
+	logger            func(string, ...any)
+	mu                sync.Mutex
+	view              meetingView
+	prior             []string
+	captureErr        error
+	dirty, demo       bool
+	modelMu           sync.Mutex
+	model             string
+	scheduler         meetingcore.Scheduler
+	onConfig          func(Config)
+	saveConfiguration func(Config) error
 }
 
 func newMeetingCore(cfg Config, logger func(string, ...any), saveConfiguration func(Config) error) *meetingSession {
