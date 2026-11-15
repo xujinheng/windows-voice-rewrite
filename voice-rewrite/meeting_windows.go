@@ -258,7 +258,7 @@ func (a *appState) refreshMeeting() {
 	s.dirty = false
 	err := s.captureErr
 	view := s.view
-	view.captions = append([]meetingCaption(nil), view.captions...)
+	view.captions = append([]meetingcore.Caption(nil), view.captions...)
 	s.mu.Unlock()
 	if err != nil {
 		a.closeMeeting()
