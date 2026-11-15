@@ -164,6 +164,7 @@ type selectedText struct {
 	Anchor               trayPoint
 }
 type appState struct {
+	meeting     *meetingSession // owned by the UI thread
 	Window      uintptr
 	logger      *log.Logger
 	cfg         Config
@@ -276,6 +277,10 @@ func singleInstanceGuard() (func(), error) {
 }
 
 func runApp() {
+	if len(os.Args) == 2 && os.Args[1] == "--meeting-demo" {
+		runMeetingDemo()
+		return
+	}
 	if os.Getenv("VOICEREWRITE_VISUAL_PREVIEW") == "settings" {
 		runSettingsVisualPreview()
 		return
@@ -331,6 +336,7 @@ func runApp() {
 	defer procDestroyWindow.Call(hwnd)
 	app := &appState{Window: hwnd, logger: l, cfg: cfg, popups: make(chan popupMessage, 4), updateReady: make(chan updateNotice, 1)}
 	defer app.epoch.shutdown()
+	defer app.closeMeeting()
 	defer closeActiveAnswer()
 	defer closeNativeSettings()
 	defer closeHandyStatus()
@@ -453,6 +459,7 @@ func runApp() {
 	var holdTargetWindow uintptr
 	var holdButton uint16
 	var holdIsDictation bool
+	var holdMeeting *meetingSession
 	var holdGeneration uint64
 	var selectedGeneration uint64
 	var holdSession uintptr
@@ -477,9 +484,22 @@ func runApp() {
 		app.busy.Store(true) // no second operation until the worker is finished
 		app.setStatus(trayTranscribing)
 		l.Print("recording stop requested; selection/model processing moved to worker")
-		if cfg.RecordMode == "hold" && holdIsDictation {
+		if cfg.RecordMode == "hold" && (holdIsDictation || holdMeeting != nil) {
 			app.postHandyPhase(statusProcessing, holdGeneration)
-			go processDictationHold(app, rec, holdTargetWindow, holdGeneration)
+			if holdMeeting != nil {
+				if holdMeeting.ctx.Err() == nil {
+					mode := meetingVoiceMode(holdIsDictation)
+					go holdMeeting.express(app, rec, holdGeneration, mode)
+				} else {
+					go func() { <-rec.result }()
+					app.busy.Store(false)
+					app.setStatus(trayIdle)
+					closeHandyStatus()
+				}
+			} else {
+				go processDictationHold(app, rec, holdTargetWindow, holdGeneration)
+			}
+			holdMeeting = nil
 		} else if cfg.RecordMode == "hold" {
 			app.postHandyPhase(statusSelection, holdGeneration)
 			go processRecordedHold(app, rec, holdTargetWindow, currentCursorPoint(), holdGeneration)
@@ -496,6 +516,10 @@ func runApp() {
 		holdTargetWindow = target
 		holdButton = button
 		holdIsDictation = dictation
+		holdMeeting = nil
+		if app.meeting != nil && !app.meeting.demo {
+			holdMeeting = app.meeting
+		}
 		holdGeneration = app.epoch.start()
 		active = rec
 		app.setStatus(trayRecording)
@@ -517,6 +541,13 @@ func runApp() {
 		statusMode := "改写"
 		if dictation {
 			statusMode = "听写"
+		}
+		if holdMeeting != nil {
+			if dictation {
+				statusMode = "会议直译"
+			} else {
+				statusMode = "会议意图"
+			}
 		}
 		// Promote the immediate mouse-down preview without recreating its HWND.
 		// Keyboard hold has no preview and uses the usual status path.
@@ -600,6 +631,30 @@ func runApp() {
 		rv, _, _ := procGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
 		if int32(rv) <= 0 {
 			break
+		}
+		switch msg.Message {
+		case WM_MEETING_START:
+			if !app.paused.Load() {
+				app.beginMeeting(uint32(msg.WParam), false)
+			}
+			continue
+		case WM_MEETING_SUGGEST:
+			if app.meeting != nil && !app.meeting.demo {
+				app.meeting.requestReplies()
+			}
+			continue
+		case WM_MEETING_DEMO:
+			app.beginMeeting(0, true)
+			continue
+		case WM_MEETING_STOP:
+			app.closeMeeting()
+			if holdMeeting != nil {
+				closeHandyStatus()
+			}
+			continue
+		case WM_MEETING_REFRESH:
+			app.refreshMeeting()
+			continue
 		}
 		if msg.Message == WM_STATUS_UPDATE {
 			if app.epoch.valid(uint64(msg.LParam)) && activeHandyStatus != nil && activeHandyStatus.owner == uint64(msg.LParam) {
@@ -714,7 +769,7 @@ func runApp() {
 			event := uint32(msg.LParam & 0xffff)
 			if trayMenuRequested(event) {
 				l.Printf("tray: context menu requested event=0x%04x", event)
-				command, menuErr := indicator.contextMenu()
+				command, menuErr := indicator.contextMenu(app.meeting != nil)
 				if menuErr != nil {
 					l.Printf("tray: menu failed: %v", menuErr)
 				} else {
@@ -777,6 +832,7 @@ func runApp() {
 			newPaused := !app.paused.Load()
 			app.paused.Store(newPaused)
 			if newPaused {
+				app.closeMeeting()
 				discardPendingSide()
 				app.setStatus(trayPaused)
 			} else {
@@ -1009,6 +1065,11 @@ func dispatchNativeMessage(msg *winMSG) {
 	}
 	// The result is a regular top-level HWND, not a dialog: explicitly
 	// translate Tab/Shift+Tab and button activation for its native controls.
+	if activeMeetingHUD != nil && activeMeetingHUD.window != 0 {
+		if handled, _, _ := procIsDialogMessage.Call(activeMeetingHUD.window, uintptr(unsafe.Pointer(msg))); handled != 0 {
+			return
+		}
+	}
 	if activeAnswer != nil && activeAnswer.window != 0 {
 		if handled, _, _ := procIsDialogMessage.Call(activeAnswer.window, uintptr(unsafe.Pointer(msg))); handled != 0 {
 			return

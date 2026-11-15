@@ -290,7 +290,7 @@ func (t *trayIndicator) close() {
 		t.menuOwner = 0
 	}
 }
-func (t *trayIndicator) contextMenu() (uintptr, error) {
+func (t *trayIndicator) contextMenu(meetingActive bool) (uintptr, error) {
 	if t == nil || t.menuOwner == 0 {
 		return 0, errors.New("tray menu owner unavailable")
 	}
@@ -311,6 +311,35 @@ func (t *trayIndicator) contextMenu() (uintptr, error) {
 	closeLabel, _ := syscall.UTF16PtrFromString("关闭 AI 结果窗口")
 	updateLabel, _ := syscall.UTF16PtrFromString("检查更新…")
 	exitLabel, _ := syscall.UTF16PtrFromString("退出 VoiceRewrite")
+	var sources []meetingSource
+	if meetingActive {
+		meetingStopLabel, _ := syscall.UTF16PtrFromString("结束会议模式")
+		procAppendMenu.Call(m, MF_STRING, 10, uintptr(unsafe.Pointer(meetingStopLabel)))
+		runtime.KeepAlive(meetingStopLabel)
+	} else if !t.paused.Load() {
+		sources = runningMeetingSources()
+		if submenu, _, _ := procCreatePopupMenu.Call(); submenu != 0 {
+			for i, source := range sources {
+				name, _ := syscall.UTF16PtrFromString(source.name + " · " + strings.ReplaceAll(source.title, "&", "&&"))
+				procAppendMenu.Call(submenu, MF_STRING, uintptr(2000+i), uintptr(unsafe.Pointer(name)))
+				runtime.KeepAlive(name)
+			}
+			if len(sources) == 0 {
+				label, _ := syscall.UTF16PtrFromString("请先打开 Zoom 或其他会议应用")
+				procAppendMenu.Call(submenu, MF_STRING|MF_GRAYED, 12, uintptr(unsafe.Pointer(label)))
+				runtime.KeepAlive(label)
+			}
+			label, _ := syscall.UTF16PtrFromString("开始会议模式 · 选择音频来源")
+			if ok, _, _ := procAppendMenu.Call(m, MF_POPUP, submenu, uintptr(unsafe.Pointer(label))); ok == 0 {
+				procDestroyMenu.Call(submenu)
+			}
+			runtime.KeepAlive(label)
+		}
+	}
+	meetingDemoLabel, _ := syscall.UTF16PtrFromString("查看会议模式演示")
+	procAppendMenu.Call(m, MF_STRING, 11, uintptr(unsafe.Pointer(meetingDemoLabel)))
+	procAppendMenu.Call(m, MF_SEPARATOR, 0, 0)
+	runtime.KeepAlive(meetingDemoLabel)
 	procAppendMenu.Call(m, MF_STRING, 6, uintptr(unsafe.Pointer(pauseLabel)))
 	procAppendMenu.Call(m, MF_STRING, 2, uintptr(unsafe.Pointer(configLabel)))
 	procAppendMenu.Call(m, MF_STRING, 3, uintptr(unsafe.Pointer(logLabel)))
@@ -371,12 +400,20 @@ func (t *trayIndicator) contextMenu() (uintptr, error) {
 	// Required workaround for repeated notification-icon popup menus.
 	procPostMessage.Call(t.menuOwner, WM_NULL, 0, 0)
 	procShowWindow.Call(t.menuOwner, SW_HIDE)
+	if selected >= 2000 && selected < 2000+uintptr(len(sources)) {
+		procPostMessage.Call(t.hwnd, WM_MEETING_START, uintptr(sources[selected-2000].pid), 0)
+		return selected, nil
+	}
 	if selected >= 1000 && selected < 1000+uintptr(len(recent)) {
 		entry := recent[int(selected-1000)]
 		procPostMessage.Call(t.hwnd, WM_TRAY_HISTORY_ITEM, uintptr(entry.ID), 0)
 		return selected, nil
 	}
 	switch selected {
+	case 10:
+		procPostMessage.Call(t.hwnd, WM_MEETING_STOP, 0, 0)
+	case 11:
+		procPostMessage.Call(t.hwnd, WM_MEETING_DEMO, 0, 0)
 	case 9:
 		procPostMessage.Call(t.hwnd, WM_TRAY_CLEAR_HISTORY, 0, 0)
 	case 1:

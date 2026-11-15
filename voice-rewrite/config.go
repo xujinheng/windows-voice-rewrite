@@ -12,6 +12,9 @@ import (
 // VoiceRewrite never sends audio or selected text to a provider other than the
 // two HTTP endpoints explicitly configured by the user.
 type Config struct {
+	MeetingASRMode         string `json:"meeting_asr_mode"`
+	MeetingBackground      string `json:"meeting_background"`
+	MeetingTerms           string `json:"meeting_terms"`
 	ASRBaseURL             string `json:"asr_base_url"`
 	LLMBaseURL             string `json:"llm_base_url"`
 	TextModel              string `json:"text_model"`
@@ -33,6 +36,7 @@ type Config struct {
 
 func defaults() Config {
 	return Config{
+		MeetingASRMode:         "llama-prefix",
 		ASRBaseURL:             "http://127.0.0.1:8080/v1",
 		LLMBaseURL:             "http://127.0.0.1:1234/v1",
 		TextModel:              "auto",
@@ -93,6 +97,9 @@ func loadConfig() (Config, error) {
 	}
 	if cfg, err = decryptConfigSecrets(cfg); err != nil {
 		return cfg, fmt.Errorf("无法解锁 API 凭据（当前 Windows 用户）: %w", err)
+	}
+	if cfg.MeetingASRMode != "llama-prefix" && cfg.MeetingASRMode != "multipart" {
+		return cfg, errors.New("meeting_asr_mode 必须是 llama-prefix 或 multipart")
 	}
 	if cfg.ASRModel == "" {
 		cfg.ASRModel = "whisper-1"

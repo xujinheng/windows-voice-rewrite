@@ -25,7 +25,12 @@ jobs:
           cache-dependency-path: voice-rewrite/go.mod
       - name: Go format
         working-directory: voice-rewrite
-        run: test -z "$(gofmt -l .)"
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            gofmt -d $files
+            exit 1
+          fi
       - name: Test core with race detector
         working-directory: voice-rewrite
         run: go test -race -count=1 ./...

@@ -1,9 +1,8 @@
-// Qwen3-ASR OneClick starts llama.cpp and exposes an audio transcription endpoint.
+// Qwen3-ASR OneClick starts llama.cpp and exposes ASR and continuation APIs.
 // Windows x64 executable; Go standard library only; no Python or pip.
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -78,8 +78,19 @@ func makeHandler(upstream *url.URL, client *http.Client, ready *atomic.Bool) htt
 			fmt.Fprintln(w, "Qwen3-ASR one-click OK; llama.cpp ready")
 			return
 		}
-		if r.Method != http.MethodPost || (r.URL.Path != "/v1/audio/transcriptions" && r.URL.Path != "/v1/audio/translations" && r.URL.Path != "/audio/transcriptions" && r.URL.Path != "/audio/translations") {
-			http.Error(w, "Use POST /v1/audio/transcriptions", http.StatusNotFound)
+		transcription := false
+		allowed := false
+		switch r.URL.Path {
+		case "/v1/audio/transcriptions", "/v1/audio/translations", "/audio/transcriptions", "/audio/translations":
+			transcription = true
+			allowed = r.Method == http.MethodPost
+		case "/v1/chat/completions", "/chat/completions", "/tokenize", "/detokenize":
+			allowed = r.Method == http.MethodPost
+		case "/v1/models", "/models":
+			allowed = r.Method == http.MethodGet
+		}
+		if !allowed {
+			http.Error(w, "Unsupported API path or method", http.StatusNotFound)
 			return
 		}
 		if !ready.Load() {
@@ -106,10 +117,20 @@ func makeHandler(upstream *url.URL, client *http.Client, ready *atomic.Bool) htt
 			return
 		}
 		defer resp.Body.Close()
-		content, err := io.ReadAll(io.LimitReader(resp.Body, 128<<20))
-		if err != nil {
-			http.Error(w, "llama.cpp response read failed: "+err.Error(), http.StatusBadGateway)
-			return
+		mediaType, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+		streaming := strings.EqualFold(mediaType, "text/event-stream")
+		var content []byte
+		if !streaming {
+			const maxResponseBytes = 128 << 20
+			content, err = io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+			if err != nil {
+				http.Error(w, "llama.cpp response read failed: "+err.Error(), http.StatusBadGateway)
+				return
+			}
+			if len(content) > maxResponseBytes {
+				http.Error(w, "llama.cpp response exceeds 128 MiB", http.StatusBadGateway)
+				return
+			}
 		}
 		for key, values := range resp.Header {
 			switch http.CanonicalHeaderKey(key) {
@@ -121,7 +142,34 @@ func makeHandler(upstream *url.URL, client *http.Client, ready *atomic.Bool) htt
 				}
 			}
 		}
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if streaming {
+			w.WriteHeader(resp.StatusCode)
+			controller := http.NewResponseController(w)
+			if err := controller.Flush(); err != nil {
+				return
+			}
+			buffer := make([]byte, 32<<10)
+			for {
+				n, readErr := resp.Body.Read(buffer)
+				if n > 0 {
+					if _, err := w.Write(buffer[:n]); err != nil {
+						return
+					}
+					if err := controller.Flush(); err != nil {
+						return
+					}
+				}
+				if readErr != nil {
+					if readErr != io.EOF && r.Context().Err() == nil {
+						// Headers are committed; abort so a truncated stream is not a successful response.
+						log.Printf("llama.cpp stream read failed: %v", readErr)
+						panic(http.ErrAbortHandler)
+					}
+					return
+				}
+			}
+		}
+		if transcription && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			var cleaned bool
 			content, cleaned = cleanResponse(content, resp.Header.Get("Content-Type"))
 			if cleaned {
@@ -130,7 +178,7 @@ func makeHandler(upstream *url.URL, client *http.Client, ready *atomic.Bool) htt
 		}
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(content)))
 		w.WriteHeader(resp.StatusCode)
-		_, _ = io.Copy(w, bytes.NewReader(content))
+		_, _ = w.Write(content)
 	})
 }
 
