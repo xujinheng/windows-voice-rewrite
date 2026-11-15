@@ -58,6 +58,7 @@ final class BridgeClientTests: XCTestCase {
         }
         XCTAssertTrue(registry.cancel(id: "same"))
         XCTAssertFalse(registry.cancel(id: "same"))
+        XCTAssertThrowsError(try registry.register(id: "same") { _ in })
         let late = try JSONDecoder().decode(BridgeReply.self,
             from: Data(#"{"v":1,"id":"same","ok":true,"result":{"text":"late"}}"#.utf8))
         XCTAssertFalse(registry.resolve(late))

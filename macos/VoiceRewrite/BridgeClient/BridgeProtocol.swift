@@ -152,10 +152,12 @@ struct JSONLFramer {
 final class ReplyRegistry {
     typealias Completion = (Result<BridgeReply, BridgeFailure>) -> Void
     private var handlers: [String: Completion] = [:]
+    // Do not recycle finished/canceled IDs: a delayed reply cannot match a newer request.
+    private var usedIDs: Set<String> = []
     var count: Int { handlers.count }
 
     func register(id: String, completion: @escaping Completion) throws {
-        guard handlers[id] == nil else { throw BridgeFailure.duplicateID }
+        guard usedIDs.insert(id).inserted else { throw BridgeFailure.duplicateID }
         handlers[id] = completion
     }
 
