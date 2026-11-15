@@ -37,6 +37,16 @@ type meetingSource struct {
 	name, title string
 }
 
+// windowsProcessAudioSource adapts Windows WASAPI process-loopback to the
+// platform-neutral PCM frame stream consumed by the meeting pipeline.
+type windowsProcessAudioSource struct { pid uint32 }
+
+var _ audio.FrameSource = windowsProcessAudioSource{}
+
+func (source windowsProcessAudioSource) Stream(ctx context.Context, started func(), push func([]byte)) error {
+	return captureMeetingAudio(ctx, source.pid, started, push)
+}
+
 func runningMeetingSources() []meetingSource {
 	current := uint32(syscall.Getpid())
 	seen := map[uint32]bool{}
@@ -124,7 +134,8 @@ func (s *meetingSession) start(pid uint32) {
 			var seg audio.Segmenter
 			var id uint64
 			var lastMeter time.Time
-			err := captureMeetingAudio(work, pid, func() { s.applyWork(epoch, func() { s.view.status = "正在聆听 · 按住听写键说中文" }) }, func(frame []byte) {
+			var stream audio.FrameSource = windowsProcessAudioSource{pid: pid}
+			err := stream.Stream(work, func() { s.applyWork(epoch, func() { s.view.status = "正在聆听 · 按住听写键说中文" }) }, func(frame []byte) {
 				if work.Err() != nil {
 					return
 				}
