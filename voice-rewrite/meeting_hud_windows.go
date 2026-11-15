@@ -409,23 +409,23 @@ func (p *meetingHUD) setText(control uintptr, value string, preserve bool) {
 	// and avoids the top-of-document jump during active transcription.
 	first, _, _ := procSendMessage.Call(control, 0x00CE, 0, 0) // EM_GETFIRSTVISIBLELINE
 	if control == p.captions && p.transcriptDrawn {
-		p.followLatest = meetingFollowLatest(p.followLatest, p.transcriptFirstLine != first, p.transcriptAtBottom(control))
+		p.followLatest = meetingcore.FollowLatest(p.followLatest, p.transcriptFirstLine != first, p.transcriptAtBottom(control))
 	}
 	follow := control == p.captions && p.followLatest
 	var start, end uint32
 	procSendMessage.Call(control, 0x00B0, uintptr(unsafe.Pointer(&start)), uintptr(unsafe.Pointer(&end))) // EM_GETSEL
-	change := meetingTextChange(previous, value)
+	change := meetingcore.TextChange(previous, value)
 
 	procSendMessage.Call(control, 0x000B, 0, 0)                                       // WM_SETREDRAW off
 	procSendMessage.Call(control, 0x00CF, 0, 0)                                       // EM_SETREADONLY off for programmatic edit
-	procSendMessage.Call(control, 0x00B1, uintptr(change.start), uintptr(change.end)) // EM_SETSEL
-	insert := uxPtr(change.insert)
+	procSendMessage.Call(control, 0x00B1, uintptr(change.Start), uintptr(change.End)) // EM_SETSEL
+	insert := uxPtr(change.Insert)
 	procSendMessage.Call(control, 0x00C2, 0, uintptr(unsafe.Pointer(insert))) // EM_REPLACESEL
 	runtime.KeepAlive(insert)
 	procSendMessage.Call(control, 0x00CF, 1, 0) // EM_SETREADONLY on
 	procSendMessage.Call(control, 0x00B1,
-		uintptr(meetingMapSelection(start, change)),
-		uintptr(meetingMapSelection(end, change)))
+		uintptr(meetingcore.MapSelection(start, change)),
+		uintptr(meetingcore.MapSelection(end, change)))
 	if follow {
 		procSendMessage.Call(control, 0x00B6, 0, uintptr(1<<20)) // EM_LINESCROLL down
 	} else {
@@ -501,7 +501,7 @@ func updateMeetingHUD(view meetingView) {
 	// reader scrolled away, count unseen turns instead of moving the viewport.
 	if panels.history != p.rendered[p.captions] {
 		p.setText(p.captions, panels.history, true)
-		p.unreadHistory = meetingUnreadHistory(p.unreadHistory, p.historyCount, panels.historyCount, p.followLatest)
+		p.unreadHistory = meetingcore.UnreadHistory(p.unreadHistory, p.historyCount, panels.historyCount, p.followLatest)
 		p.historyCount = panels.historyCount
 	}
 	if p.followLatest {
@@ -515,7 +515,7 @@ func updateMeetingHUD(view meetingView) {
 	p.displayedReplies, p.displayedSource, p.displayedTip = view.replies, view.replySource, view.tip
 	p.renderReply()
 	newEnglish := view.expression.complete && view.expression.english != "" && view.expression.english != p.copyExpression
-	captionsOnly, expanded := meetingExpressionFocus(view.expression.complete, newEnglish, p.captionsOnly, p.expressionExpanded)
+	captionsOnly, expanded := meetingcore.ExpressionFocus(view.expression.complete, newEnglish, p.captionsOnly, p.expressionExpanded)
 	if captionsOnly != p.captionsOnly || expanded != p.expressionExpanded {
 		p.captionsOnly, p.expressionExpanded = captionsOnly, expanded
 		p.layout()
@@ -531,7 +531,7 @@ func updateMeetingHUD(view meetingView) {
 	if expression == "" {
 		expression = "听写键：直译自己的发言；改写键：提问、回答、补充观点。"
 	}
-	p.setText(p.labels[2], meetingExpressionHeading(view.expressionStatus, view.expression.complete), false)
+	p.setText(p.labels[2], meetingcore.ExpressionHeading(view.expressionStatus, view.expression.complete), false)
 	if view.expression.complete || time.Since(p.lastExpression) >= 280*time.Millisecond {
 		p.setText(p.expression, expression, true)
 		if newEnglish {
@@ -539,7 +539,7 @@ func updateMeetingHUD(view meetingView) {
 		}
 		p.lastExpression = time.Now()
 	}
-	original := meetingExpressionDetail(view.expressionStatus, view.expressionSource)
+	original := meetingcore.ExpressionDetail(view.expressionStatus, view.expressionSource)
 	p.setText(p.expressionSource, original, true)
 	meetingEnableWindow.Call(p.buttons[5], meetingBool(p.copyExpression != ""))
 }
