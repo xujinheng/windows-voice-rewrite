@@ -464,6 +464,11 @@ func updateMeetingHUD(view meetingView) {
 	p.setText(p.labels[3], historyLabel, false)
 	p.displayedReplies, p.displayedSource, p.displayedTip = view.replies, view.replySource, view.tip
 	p.renderReply()
+	newEnglish := view.expression.complete && view.expression.english != "" && view.expression.english != p.copyExpression
+	if newEnglish && !p.captionsOnly {
+		p.expressionExpanded = true
+		p.layout()
+	}
 	expression := view.expressionStatus
 	p.copyExpression = ""
 	if expression == "" && view.expression.english != "" {
@@ -479,6 +484,9 @@ func updateMeetingHUD(view meetingView) {
 	}
 	if view.expression.complete || time.Since(p.lastExpression) >= 280*time.Millisecond {
 		p.setText(p.expression, expression, true)
+		if newEnglish {
+			procSendMessage.Call(p.expression, uxWMVScroll, 6, 0) // SB_TOP
+		}
 		p.lastExpression = time.Now()
 	}
 	original := "识别原话 · " + strings.TrimSpace(view.expressionSource)
