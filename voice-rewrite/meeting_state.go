@@ -106,6 +106,13 @@ func meetingTranscript(captions []meetingCaption) (string, bool) {
 	return strings.Join(entries, "\r\n\r\n"), listening
 }
 
+func meetingFollowLatest(current, moved, atBottom bool) bool {
+	if moved {
+		return atBottom
+	}
+	return current
+}
+
 // meetingTextPatch describes the smallest end-anchored change to a Windows
 // multiline edit control. Its indexes use UTF-16 code units, not Go bytes.
 type meetingTextPatch struct {
