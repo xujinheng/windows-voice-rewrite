@@ -27,44 +27,61 @@ public protocol ClipboardBoard: Sendable {
     func restore(_ previous: ClipboardContents) throws
 }
 
-/// Optional clipboard staging ONLY; never sends Cmd+V or bypasses guarded AX writing.
-/// The default text editing path never touches the clipboard.
-public actor ClipboardProtector {
+/// Serializes pasteboard leases so staging cannot race with another VoiceRewrite write.
+/// A different process may take ownership at any point; never restore over its clipboard.
+public final class ClipboardProtector: @unchecked Sendable {
     private let board: any ClipboardBoard
+    private let lock = NSLock()
     private var lease: (id: UUID, before: ClipboardContents, ownedChangeCount: Int)?
 
     public init(board: any ClipboardBoard) { self.board = board }
 
+    private func synchronized<T>(_ body: () throws -> T) rethrows -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return try body()
+    }
+
     public func beginTemporaryText(_ text: String) throws -> UUID {
-        guard lease == nil else { throw ClipboardFailure.busy }
-        let before = try board.capture()
-        let id = UUID()
-        do {
-            let count = try board.installTemporaryText(text, owner: id)
-            guard board.ownedChangeCount(owner: id) == count else {
-                // Another process modified the clipboard. Never clobber its contents.
-                throw ClipboardFailure.ownershipLost
+        try synchronized {
+            guard lease == nil else { throw ClipboardFailure.busy }
+            let before = try board.capture()
+            let id = UUID()
+            do {
+                let count = try board.installTemporaryText(text, owner: id)
+                guard board.ownedChangeCount(owner: id) == count else {
+                    throw ClipboardFailure.ownershipLost
+                }
+                lease = (id, before, count)
+                return id
+            } catch {
+                // A partial write may only be undone while our marker proves ownership.
+                if board.ownedChangeCount(owner: id) != nil {
+                    do { try board.restore(before) }
+                    catch { throw ClipboardFailure.restoreFailed }
+                }
+                throw error
             }
-            lease = (id, before, count)
-            return id
-        } catch {
-            // Even partial write failures must not restore unless our marker proves ownership.
-            if board.ownedChangeCount(owner: id) != nil {
-                do { try board.restore(before) }
-                catch { throw ClipboardFailure.restoreFailed }
-            }
-            throw error
         }
     }
 
-    /// Unconditionally relinquishes the lease. Restores only if clipboard still belongs to us.
-    public func finish(_ id: UUID) throws {
-        guard let held = lease, held.id == id else { throw ClipboardFailure.ownershipLost }
-        lease = nil
-        guard board.ownedChangeCount(owner: id) == held.ownedChangeCount else {
-            throw ClipboardFailure.ownershipLost
+    public func isOwned(_ id: UUID) -> Bool {
+        synchronized {
+            guard let held = lease, held.id == id else { return false }
+            return board.ownedChangeCount(owner: id) == held.ownedChangeCount
         }
-        do { try board.restore(held.before) }
-        catch { throw ClipboardFailure.restoreFailed }
+    }
+
+    /// Relinquishes the lease even if restoration is impossible.
+    public func finish(_ id: UUID) throws {
+        try synchronized {
+            guard let held = lease, held.id == id else { throw ClipboardFailure.ownershipLost }
+            lease = nil
+            guard board.ownedChangeCount(owner: id) == held.ownedChangeCount else {
+                throw ClipboardFailure.ownershipLost
+            }
+            do { try board.restore(held.before) }
+            catch { throw ClipboardFailure.restoreFailed }
+        }
     }
 }

@@ -261,18 +261,18 @@ final class ClipboardTests: XCTestCase {
     func testRestoresAllTypesWhenStillOwned() async throws {
         let board = FakeClipboard(), protector = ClipboardProtector(board: board)
         let original = board.current.items
-        let lease = try await protector.beginTemporaryText("secret")
-        try await protector.finish(lease)
+        let lease = try protector.beginTemporaryText("secret")
+        try protector.finish(lease)
         XCTAssertEqual(board.current.items, original)
         XCTAssertEqual(board.restores, 1)
     }
 
     func testOwnershipLostNeverClobbersUserClipboard() async throws {
         let board = FakeClipboard(), protector = ClipboardProtector(board: board)
-        let lease = try await protector.beginTemporaryText("secret")
+        let lease = try protector.beginTemporaryText("secret")
         board.activeOwner = nil
         board.current = ClipboardContents(items: [["text": Data("user".utf8)]], changeCount: 44)
-        do { try await protector.finish(lease); XCTFail() }
+        do { try protector.finish(lease); XCTFail() }
         catch { XCTAssertEqual(error as? ClipboardFailure, .ownershipLost) }
         XCTAssertEqual(board.current.items[0]["text"], Data("user".utf8))
         XCTAssertEqual(board.restores, 0)
@@ -282,7 +282,7 @@ final class ClipboardTests: XCTestCase {
         let board = FakeClipboard(), protector = ClipboardProtector(board: board)
         let original = board.current.items
         board.simulateWriteFailure = true
-        do { _ = try await protector.beginTemporaryText("secret"); XCTFail() }
+        do { _ = try protector.beginTemporaryText("secret"); XCTFail() }
         catch { XCTAssertEqual(error as? ClipboardFailure, .writeFailed) }
         XCTAssertEqual(board.current.items, original)
         XCTAssertEqual(board.restores, 1)
@@ -290,9 +290,41 @@ final class ClipboardTests: XCTestCase {
 
     func testRestoreFailureReported() async throws {
         let board = FakeClipboard(), protector = ClipboardProtector(board: board)
-        let lease = try await protector.beginTemporaryText("secret")
+        let lease = try protector.beginTemporaryText("secret")
         board.simulateRestoreFailure = true
-        do { try await protector.finish(lease); XCTFail() }
+        do { try protector.finish(lease); XCTFail() }
         catch { XCTAssertEqual(error as? ClipboardFailure, .restoreFailed) }
+    }
+}
+
+final class TextWriteVerificationTests: XCTestCase {
+    func testInsertionAndReplacementUseUTF16Ranges() {
+        let baseline = "A😀B"
+        XCTAssertEqual(TextWriteVerification.expectedValue(
+            original: baseline, selectedText: "",
+            range: .init(location: 3, length: 0), replacement: "中"), "A😀中B")
+        XCTAssertEqual(TextWriteVerification.expectedValue(
+            original: baseline, selectedText: "😀",
+            range: .init(location: 1, length: 2), replacement: "ok"), "AokB")
+    }
+
+    func testStaleSelectionAndInvalidRangeCannotConfirmPaste() {
+        XCTAssertNil(TextWriteVerification.expectedValue(
+            original: "hello", selectedText: "HELLO",
+            range: .init(location: 0, length: 5), replacement: "new"))
+        XCTAssertNil(TextWriteVerification.expectedValue(
+            original: "hello", selectedText: "",
+            range: .init(location: Int.max, length: 1), replacement: "new"))
+        XCTAssertNil(TextWriteVerification.expectedValue(
+            original: "hello", selectedText: "lo",
+            range: .init(location: 9, length: 2), replacement: "new"))
+        XCTAssertNil(TextWriteVerification.expectedValue(
+            original: "A😀B", selectedText: "",
+            range: .init(location: 2, length: 0), replacement: "bad"))
+        XCTAssertFalse(TextWriteVerification.confirms(actual: "A", expected: "AB"))
+    }
+
+    func testDifferentUnicodeEncodingIsNotFalsePositive() {
+        XCTAssertFalse(TextWriteVerification.confirms(actual: "\u{00E9}", expected: "e\u{0301}"))
     }
 }

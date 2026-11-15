@@ -121,20 +121,6 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
               role == "AXSearchField" else {
             throw InteractionFailure.notEditable
         }
-        var settable = DarwinBoolean(false)
-        let writeSupport = AXUIElementIsAttributeSettable(focused, kAXSelectedTextAttribute as CFString, &settable)
-        if writeSupport == .attributeUnsupported || writeSupport == .notImplemented ||
-           writeSupport == .noValue {
-            throw InteractionFailure.unsupportedNativeWrite
-        }
-        guard writeSupport == .success else {
-            throw writeSupport == .apiDisabled ? InteractionFailure.accessibilityPermissionDenied
-                                                : InteractionFailure.systemError(writeSupport.rawValue)
-        }
-        guard settable.boolValue else { throw InteractionFailure.unsupportedNativeWrite }
-
-        let selected = try readAttribute(focused, kAXSelectedTextAttribute)
-        guard let text = selected as? String else { throw InteractionFailure.selectionUnavailable }
         let rangeValue = try readAttribute(focused, kAXSelectedTextRangeAttribute)
         guard CFGetTypeID(rangeValue) == AXValueGetTypeID() else {
             throw InteractionFailure.selectionUnavailable
@@ -143,6 +129,17 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         guard AXValueGetType(axValue) == .cfRange else { throw InteractionFailure.selectionUnavailable }
         var range = CFRange(location: 0, length: 0)
         guard AXValueGetValue(axValue, .cfRange, &range) else {
+            throw InteractionFailure.selectionUnavailable
+        }
+        // Some editable controls report no selected-text value for an empty caret.
+        // This is safe only when the independently read AX range is zero-length.
+        let selected = try optionalAttribute(focused, kAXSelectedTextAttribute)
+        let text: String
+        if let value = selected as? String {
+            text = value
+        } else if selected == nil && range.length == 0 {
+            text = ""
+        } else {
             throw InteractionFailure.selectionUnavailable
         }
         return SelectionObservation(processID: pid,
@@ -201,8 +198,9 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
 
     func currentSelection() throws -> SelectionObservation { try read() }
 
-    func writeSelectedText(_ text: String, expected: SelectionObservation) throws {
-        // This check is deliberately inside the native adapter as well as the actor guard.
+    private let pasteboard = ClipboardProtector(board: MacClipboardBoard())
+
+    private func revalidate(_ expected: SelectionObservation) throws -> AXUIElement {
         let now = try read()
         guard now.processID == expected.processID else { throw InteractionFailure.applicationChanged }
         guard now.identity.isSameElement(as: expected.identity) else { throw InteractionFailure.focusChanged }
@@ -213,13 +211,105 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         guard let target = (expected.identity as? AXFocusIdentity)?.element else {
             throw InteractionFailure.focusChanged
         }
-        let code = AXUIElementSetAttributeValue(target, kAXSelectedTextAttribute as CFString, text as CFString)
-        switch code {
-        case .success: return
-        case .attributeUnsupported, .notImplemented, .noValue: throw InteractionFailure.unsupportedNativeWrite
-        case .apiDisabled: throw InteractionFailure.accessibilityPermissionDenied
-        default: throw InteractionFailure.systemError(code.rawValue)
+        return target
+    }
+
+    private func wholeValue(_ target: AXUIElement) throws -> String? {
+        try optionalAttribute(target, kAXValueAttribute) as? String
+    }
+
+    private func postPaste(expected: SelectionObservation) throws {
+        // Foreground delivery is required by several editors, including native and
+        // Chromium text controls. Never post into an unverified focus.
+        _ = try revalidate(expected)
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == expected.processID else {
+            throw InteractionFailure.applicationChanged
         }
+        guard let source = CGEventSource(stateID: .hidSystemState),
+              let down = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false) else {
+            throw InteractionFailure.writeNotConfirmed
+        }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        down.post(tap: .cgSessionEventTap)
+        up.post(tap: .cgSessionEventTap)
+    }
+
+    private func guardedPaste(_ text: String, expected: SelectionObservation,
+                              expectedValue: String) throws {
+        let lease = try pasteboard.beginTemporaryText(text)
+        do {
+            // Clipboard staging is externally visible. Revalidate again after staging.
+            let target = try revalidate(expected)
+            guard pasteboard.isOwned(lease) else { throw ClipboardFailure.ownershipLost }
+            try postPaste(expected: expected)
+
+            // AXValue is the receipt. Sending keys or reading the clipboard is not proof.
+            let deadline = ProcessInfo.processInfo.systemUptime + 0.75
+            var confirmed = false
+            repeat {
+                guard Self.accessibilityPermissionGranted(),
+                      NSWorkspace.shared.frontmostApplication?.processIdentifier == expected.processID,
+                      !IsSecureEventInputEnabled() else { break }
+                guard let active = try? read(),
+                      active.processID == expected.processID,
+                      active.identity.isSameElement(as: expected.identity) else { break }
+                if let value = try? wholeValue(target),
+                   TextWriteVerification.confirms(actual: value, expected: expectedValue) {
+                    confirmed = true
+                    break
+                }
+                Thread.sleep(forTimeInterval: 0.025)
+            } while ProcessInfo.processInfo.systemUptime < deadline
+
+            // Never overwrite a user or clipboard manager's newer clipboard contents.
+            try pasteboard.finish(lease)
+            guard confirmed else { throw InteractionFailure.writeNotConfirmed }
+        } catch {
+            // A failed/uncertain paste may still have reached the target: never retry.
+            try? pasteboard.finish(lease)
+            throw error
+        }
+    }
+
+    func writeSelectedText(_ text: String, expected: SelectionObservation) throws {
+        let target = try revalidate(expected)
+        let baseline = try wholeValue(target)
+        let expectedValue = baseline.flatMap {
+            TextWriteVerification.expectedValue(
+                original: $0, selectedText: expected.selectedText,
+                range: expected.range, replacement: text)
+        }
+
+        var settable = DarwinBoolean(false)
+        let support = AXUIElementIsAttributeSettable(
+            target, kAXSelectedTextAttribute as CFString, &settable)
+        if support == .success && settable.boolValue {
+            let code = AXUIElementSetAttributeValue(target, kAXSelectedTextAttribute as CFString, text as CFString)
+            if code == .success {
+                if let expectedValue {
+                    guard let actual = try wholeValue(target),
+                          TextWriteVerification.confirms(actual: actual, expected: expectedValue) else {
+                        throw InteractionFailure.writeNotConfirmed
+                    }
+                }
+                return
+            }
+            if code != .attributeUnsupported && code != .notImplemented && code != .noValue {
+                throw code == .apiDisabled ? InteractionFailure.accessibilityPermissionDenied
+                                          : InteractionFailure.systemError(code.rawValue)
+            }
+        } else if support != .success && support != .attributeUnsupported &&
+                    support != .notImplemented && support != .noValue {
+            throw support == .apiDisabled ? InteractionFailure.accessibilityPermissionDenied
+                                         : InteractionFailure.systemError(support.rawValue)
+        }
+
+        // Only paste when the entire original value and UTF-16 range can be verified.
+        // Unsupported web editors without readable AXValue remain preview/copy only.
+        guard let expectedValue else { throw InteractionFailure.unsupportedNativeWrite }
+        try guardedPaste(text, expected: expected, expectedValue: expectedValue)
     }
 
     func stopMonitoring() {

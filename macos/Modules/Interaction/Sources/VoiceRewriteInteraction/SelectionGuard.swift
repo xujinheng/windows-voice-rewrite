@@ -10,6 +10,7 @@ public enum InteractionFailure: Error, Equatable, Sendable {
     case secureField
     case notEditable
     case unsupportedNativeWrite
+    case writeNotConfirmed
     case monitoringUnavailable
     case applicationChanged
     case focusChanged
@@ -70,8 +71,8 @@ public struct SelectionObservation: Sendable {
     }
 }
 
-/// Synchronous AX calls run inside InteractionSession's actor, never while awaiting ASR/LLM.
-/// Implementations must fail closed if monitoring or AX-selected-text writing is unsupported.
+/// Native target validation and writes run synchronously inside InteractionSession's actor.
+/// Implementations must fail closed if the target cannot be verified or written safely.
 public protocol AccessibilityClient: Sendable {
     func captureMonitoredSelection() throws -> SelectionObservation
     func currentSelection() throws -> SelectionObservation
@@ -228,8 +229,8 @@ public actor InteractionSession {
               snapshot.originalSelectedText == current.selectedText else {
             throw InteractionFailure.selectionChanged
         }
-        // No suspension point between the final check and the targeted native AX write.
-        // Native client also revalidates immediately before AXUIElementSetAttributeValue.
+        // No suspension point before native revalidation and either AX or guarded paste.
+        // An unconfirmed paste is single-use and never retried automatically.
         try client.writeSelectedText(text, expected: current)
     }
 }
