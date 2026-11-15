@@ -1,7 +1,6 @@
 package main
 
 import (
-	"voicerewrite/internal/core/provider"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -12,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"voicerewrite/internal/core/provider"
 )
 
 // AssistantResult is a single model call's intent classification plus answer.
