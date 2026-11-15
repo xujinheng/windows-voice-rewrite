@@ -356,6 +356,7 @@ func (s *meetingSession) updateCaption(epoch, id uint64, source, chinese string)
 			line := &s.view.captions[i]
 			if line.id == id && line.source == source {
 				line.chinese = chinese
+				line.translatedFrom = source
 				return
 			}
 		}
@@ -394,9 +395,7 @@ func (s *meetingSession) translateTurns(jobs <-chan meetingCaptionJob) {
 			}
 			canceled := ctx.Err() != nil
 			cancel()
-			if job.final && !canceled && meetingShouldReply(job.latest, job.prior, false) {
-				s.queueReplies(job, false)
-			}
+
 		}
 	}
 }
@@ -428,9 +427,9 @@ func (s *meetingSession) complete(ctx context.Context, priority int, query meeti
 		})
 	})
 }
-func (s *meetingSession) queueReplies(job meetingCaptionJob, manual bool) {
+func (s *meetingSession) queueReplies(job meetingCaptionJob) {
 	s.mu.Lock()
-	if s.ctx.Err() != nil || s.view.capturePaused || job.epoch != s.epoch || (!manual && job.id != s.turnID) {
+	if s.ctx.Err() != nil || s.view.capturePaused || job.epoch != s.epoch || job.id != s.turnID {
 		s.mu.Unlock()
 		return
 	}
@@ -446,27 +445,6 @@ func (s *meetingSession) queueReplies(job meetingCaptionJob, manual bool) {
 	s.mu.Unlock()
 	go func() {
 		defer cancel()
-		if !manual {
-			for {
-				s.mu.Lock()
-				wait := time.Until(s.lastVoice.Add(700 * time.Millisecond))
-				valid := s.turnID == job.id
-				s.mu.Unlock()
-				if !valid {
-					return
-				}
-				if wait <= 0 {
-					break
-				}
-				timer := time.NewTimer(wait)
-				select {
-				case <-ctx.Done():
-					timer.Stop()
-					return
-				case <-timer.C:
-				}
-			}
-		}
 		var batch [3]meetingLine
 		tip := ""
 		err := s.complete(ctx, meetingPriorityReply, meetingQuery{Mode: "replies", Latest: job.latest, Prior: job.prior}, func(line meetingLine) {
@@ -550,7 +528,7 @@ func (s *meetingSession) requestReplies() {
 	last := s.view.captions[len(s.view.captions)-1]
 	job := meetingCaptionJob{latest: last.source, id: last.id, epoch: s.epoch, ctx: s.work, prior: append([]string(nil), s.prior...), ended: time.Now()}
 	s.mu.Unlock()
-	s.queueReplies(job, true)
+	s.queueReplies(job)
 }
 func (s *meetingSession) refineReply(index int, instruction string) {
 	instruction = strings.TrimSpace(instruction)
