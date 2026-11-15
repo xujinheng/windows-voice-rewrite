@@ -1,6 +1,7 @@
 package main
 
 import (
+	"voicerewrite/internal/core/audio"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -12,28 +13,28 @@ import (
 )
 
 func TestMeetingSegmenter(t *testing.T) {
-	var seg meetingSegmenter
-	voice := make([]byte, meetingFrameBytes)
+	var seg audio.Segmenter
+	voice := make([]byte, audio.FrameBytes)
 	for i := 0; i < len(voice); i += 2 {
 		binary.LittleEndian.PutUint16(voice[i:], 2500)
 	}
-	silence := make([]byte, meetingFrameBytes)
+	silence := make([]byte, audio.FrameBytes)
 	var turns [][]byte
 	for _, count := range []int{15, 15} {
 		for i := 0; i < count; i++ {
-			_, pcm := seg.push(voice)
+			_, pcm := seg.Push(voice)
 			if pcm != nil {
 				t.Fatal("speech ended before a pause")
 			}
 		}
 		for i := 0; i < 40; i++ {
-			_, pcm := seg.push(silence)
+			_, pcm := seg.Push(silence)
 			if pcm != nil {
 				turns = append(turns, pcm)
 			}
 		}
 	}
-	if len(turns) != 2 || len(turns[0]) < 15*meetingFrameBytes {
+	if len(turns) != 2 || len(turns[0]) < 15*audio.FrameBytes {
 		t.Fatalf("got %d turns, want two short utterances", len(turns))
 	}
 }
@@ -50,25 +51,25 @@ func TestMeetingStream(t *testing.T) {
 }
 
 func TestMeetingShortPauseDoesNotSplitSentence(t *testing.T) {
-	var seg meetingSegmenter
-	voice := make([]byte, meetingFrameBytes)
+	var seg audio.Segmenter
+	voice := make([]byte, audio.FrameBytes)
 	for i := 0; i < len(voice); i += 2 {
 		binary.LittleEndian.PutUint16(voice[i:], 2500)
 	}
-	quiet := make([]byte, meetingFrameBytes)
+	quiet := make([]byte, audio.FrameBytes)
 	for i := 0; i < 12; i++ {
-		seg.push(voice)
+		seg.Push(voice)
 	}
 	for i := 0; i < 25; i++ {
-		if _, done := seg.push(quiet); done != nil {
+		if _, done := seg.Push(quiet); done != nil {
 			t.Fatal("split sentence after a natural half-second pause")
 		}
 	}
 	for i := 0; i < 6; i++ {
-		seg.push(voice)
+		seg.Push(voice)
 	}
-	for i := 0; i < meetingPauseFrames; i++ {
-		if _, done := seg.push(quiet); done != nil {
+	for i := 0; i < audio.PauseFrames; i++ {
+		if _, done := seg.Push(quiet); done != nil {
 			return
 		}
 	}
@@ -76,7 +77,7 @@ func TestMeetingShortPauseDoesNotSplitSentence(t *testing.T) {
 }
 
 func TestMeetingPCMConverter(t *testing.T) {
-	var c meetingPCMConverter
+	var c audio.PCMConverter
 	stereo := make([]byte, 44100*4)
 	for i := 0; i < len(stereo); i += 4 {
 		binary.LittleEndian.PutUint16(stereo[i:], 3000)
@@ -91,10 +92,10 @@ func TestMeetingPCMConverter(t *testing.T) {
 			}
 		}
 	}
-	c.consume(stereo[:124], 31, push)
-	c.consume(stereo[124:], 44100-31, push)
-	if bytes != pcmBytesPerSecond {
-		t.Fatalf("output = %d bytes, want %d", bytes, pcmBytesPerSecond)
+	c.Consume(stereo[:124], 31, push)
+	c.Consume(stereo[124:], 44100-31, push)
+	if bytes != audio.PCMBytesPerSecond {
+		t.Fatalf("output = %d bytes, want %d", bytes, audio.PCMBytesPerSecond)
 	}
 }
 
@@ -144,19 +145,19 @@ func TestMeetingTranslationDoesNotRepeatPriorParagraph(t *testing.T) {
 }
 
 func TestMeetingPreviewDuringContinuousSpeech(t *testing.T) {
-	var s meetingSegmenter
-	frame := make([]byte, meetingFrameBytes)
+	var s audio.Segmenter
+	frame := make([]byte, audio.FrameBytes)
 	for i := 0; i < len(frame); i += 2 {
 		binary.LittleEndian.PutUint16(frame[i:], 2000)
 	}
 	var previews int
 	var first []byte
 	for i := 0; i < 200; i++ {
-		_, final := s.push(frame)
+		_, final := s.Push(frame)
 		if final != nil {
 			t.Fatal("continuous speech prematurely finalized")
 		}
-		if snapshot := s.preview(); snapshot != nil {
+		if snapshot := s.Preview(); snapshot != nil {
 			previews++
 			if first == nil {
 				first = snapshot
