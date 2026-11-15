@@ -499,7 +499,7 @@ func TestBridgeServiceProbesUseSharedCoreWithoutUserContent(t *testing.T) {
             if err != nil { t.Error(err); w.WriteHeader(400); return }
             defer audio.Close()
             data, err := io.ReadAll(audio)
-            if err != nil || len(data) != 32044 || !bytes.Equal(data[:4], []byte("RIFF")) {
+            if err != nil || len(data) != 32044 || !bytes.Equal(data[:min(4, len(data))], []byte("RIFF")) {
                 t.Error("probe did not send one second of silent WAV via shared ASR request")
             } else {
                 for _, sample := range data[44:] { if sample != 0 { t.Error("probe audio was not silent"); break } }
