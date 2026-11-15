@@ -40,7 +40,7 @@ type meetingSource struct {
 
 // windowsProcessAudioSource adapts Windows WASAPI process-loopback to the
 // platform-neutral PCM frame stream consumed by the meeting pipeline.
-type windowsProcessAudioSource struct { pid uint32 }
+type windowsProcessAudioSource struct{ pid uint32 }
 
 var _ audio.FrameSource = windowsProcessAudioSource{}
 
