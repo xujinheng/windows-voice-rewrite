@@ -188,7 +188,7 @@ func meetingPanelHeights(space int32, expanded bool) meetingAssistantHeights {
 	if expanded {
 		history := max(int32(52), space*24/100)
 		expression := max(int32(70), space-history-32)
-		return meetingAssistantHeights{history: history, expression: expression, source: 32}
+		return meetingAssistantHeights{history: history, expression: expression, source: 48}
 	}
 	// Normal mode: reserve three button rows, one label and spacing.
 	budget := max(int32(110), space-160-52)
@@ -196,7 +196,7 @@ func meetingPanelHeights(space int32, expanded bool) meetingAssistantHeights {
 	expression := min(int32(172), max(int32(72), budget-reply))
 	return meetingAssistantHeights{
 		history: max(int32(30), space-160-reply-expression),
-		reply:   reply, expression: expression, source: 28,
+		reply:   reply, expression: expression, source: 40,
 	}
 }
 
@@ -216,6 +216,15 @@ func meetingUsesConversationContext(spoken string) bool {
 		}
 	}
 	return false
+}
+
+// A finished voice request must be visible even if the user is listening in
+// captions-only mode. A background update never steals the user's view.
+func meetingExpressionFocus(completed, newResult, captionsOnly, expanded bool) (bool, bool) {
+	if !completed || !newResult {
+		return captionsOnly, expanded
+	}
+	return false, true
 }
 
 func meetingVoiceMode(dictation bool) string {
