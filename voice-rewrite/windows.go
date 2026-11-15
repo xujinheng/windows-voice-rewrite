@@ -488,10 +488,7 @@ func runApp() {
 			app.postHandyPhase(statusProcessing, holdGeneration)
 			if holdMeeting != nil {
 				if holdMeeting.ctx.Err() == nil {
-					mode := "compose"
-					if holdIsDictation {
-						mode = "express"
-					}
+					mode := meetingVoiceMode(holdIsDictation)
 					go holdMeeting.express(app, rec, holdGeneration, mode)
 				} else {
 					go func() { <-rec.result }()
