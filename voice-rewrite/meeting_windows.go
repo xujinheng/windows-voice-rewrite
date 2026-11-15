@@ -211,7 +211,7 @@ func (s *meetingSession) expressionFailed(app *appState, generation, epoch, seri
 
 func (a *appState) closeMeeting() {
 	if a.meeting != nil {
-		a.meeting.stop()
+		a.meeting.runtime.Stop()
 		a.meeting = nil
 	}
 	closeMeetingHUD()
