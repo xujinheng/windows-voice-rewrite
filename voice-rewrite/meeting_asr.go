@@ -1,7 +1,6 @@
 package main
 
 import (
-	"voicerewrite/internal/core/provider"
 	"bufio"
 	"bytes"
 	"context"
@@ -13,6 +12,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"voicerewrite/internal/core/provider"
 )
 
 type meetingASRState struct{ raw, fixed string }
