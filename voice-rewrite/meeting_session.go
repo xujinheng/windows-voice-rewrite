@@ -347,6 +347,10 @@ func (s *meetingSession) upsertSourceLocked(id uint64, text string, final, confi
 	s.view.captions = append(s.view.captions, reviseMeetingCaption(meetingCaption{}, id, text, final))
 }
 func (s *meetingSession) updateCaption(epoch, id uint64, source, chinese string) {
+	if !meetingTranslationFitsSource(source, chinese) {
+		s.logger("meeting stage=caption discarded overlong translation for source %d bytes", len(source))
+		return
+	}
 	s.applyWork(epoch, func() {
 		for i := range s.view.captions {
 			line := &s.view.captions[i]
@@ -368,11 +372,10 @@ func (s *meetingSession) translateTurns(jobs <-chan meetingCaptionJob) {
 			}
 			ctx, cancel := context.WithTimeout(job.ctx, 16*time.Second)
 			s.applyWork(job.epoch, func() { s.stopCaption = cancel; s.captionID = job.id })
-			var displayed, semantic bool
+			var displayed bool
 			started := time.Now()
-			err := s.complete(ctx, meetingPriorityCaption, meetingQuery{Mode: "caption", Prior: job.prior, Latest: job.latest, Gate: job.final}, func(line meetingLine) {
-				if line.kind == "GATE" {
-					semantic = strings.EqualFold(line.chinese, "YES")
+			err := s.complete(ctx, meetingPriorityCaption, meetingQuery{Mode: "caption", Prior: job.prior, Latest: job.latest}, func(line meetingLine) {
+				if line.kind != "ZH" {
 					return
 				}
 				s.updateCaption(job.epoch, job.id, job.latest, line.chinese)
@@ -391,7 +394,7 @@ func (s *meetingSession) translateTurns(jobs <-chan meetingCaptionJob) {
 			}
 			canceled := ctx.Err() != nil
 			cancel()
-			if job.final && !canceled && meetingShouldReply(job.latest, job.prior, semantic) {
+			if job.final && !canceled && meetingShouldReply(job.latest, job.prior, false) {
 				s.queueReplies(job, false)
 			}
 		}

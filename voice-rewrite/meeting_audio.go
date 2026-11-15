@@ -8,8 +8,8 @@ import (
 const (
 	meetingFrameBytes  = pcmBytesPerSecond / 50 // 20 ms of 16 kHz mono PCM16
 	meetingLeadFrames  = 8
-	meetingPauseFrames = 18
-	meetingMaxFrames   = 450
+	meetingPauseFrames = 32
+	meetingMaxFrames   = 550
 )
 
 // meetingSegmenter detects quiet gaps in normalized meeting audio. It keeps
