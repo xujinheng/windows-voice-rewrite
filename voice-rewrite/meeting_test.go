@@ -126,14 +126,17 @@ func TestMeetingPreviewDuringContinuousSpeech(t *testing.T) {
 	}
 }
 
-func TestMeetingCaptionEmitsBeforeStreamFinishes(t *testing.T) {
-	received := make(chan struct{}, 1)
+func TestMeetingCaptionWaitsForCompleteStream(t *testing.T) {
+	firstChunk := make(chan struct{})
+	release := make(chan struct{})
+	defer close(release)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\n\n")
 		w.(http.Flusher).Flush()
+		close(firstChunk)
 		select {
-		case <-received:
+		case <-release:
 		case <-r.Context().Done():
 			return
 		}
@@ -142,15 +145,38 @@ func TestMeetingCaptionEmitsBeforeStreamFinishes(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	var last string
-	err := completeMeeting(ctx, Config{LLMBaseURL: server.URL, TextModel: "test"}, meetingQuery{Mode: "caption", Latest: "Hello world"}, func(line meetingLine) {
-		last = line.chinese
-		select {
-		case received <- struct{}{}:
-		default:
+	out := make(chan meetingLine, 3)
+	done := make(chan error, 1)
+	go func() {
+		done <- completeMeeting(ctx, Config{LLMBaseURL: server.URL, TextModel: "test"}, meetingQuery{Mode: "caption", Latest: "Hello world"}, func(line meetingLine) {
+			out <- line
+		})
+	}()
+	select {
+	case <-firstChunk:
+	case <-ctx.Done():
+		t.Fatal("server never streamed first chunk")
+	}
+	select {
+	case line := <-out:
+		t.Fatalf("unfinished translation leaked to reader: %#v", line)
+	case <-time.After(50 * time.Millisecond):
+	}
+	release <- struct{}{}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case line := <-out:
+		if line.chinese != "你好世界" {
+			t.Fatalf("unexpected committed translation: %#v", line)
 		}
-	})
-	if err != nil || last != "你好世界" {
-		t.Fatalf("streamed caption = %q, error = %v", last, err)
+	default:
+		t.Fatal("completed translation was never shown")
+	}
+	select {
+	case line := <-out:
+		t.Fatalf("translation emitted more than once: %#v", line)
+	default:
 	}
 }

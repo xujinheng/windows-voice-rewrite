@@ -260,17 +260,15 @@ func completeMeeting(ctx context.Context, cfg Config, query meetingQuery, emit f
 				}
 			}
 		}
-		if query.Mode == "caption" {
-			if text := cleanMeetingCaption(caption.String()); text != "" {
-				handle(meetingLine{kind: "ZH", chinese: text})
-			}
-		}
 	}); err != nil {
 		return err
 	}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	// Caption text is published only after the complete model response. Intermediate
+	// tokens are repeatedly decoded from the beginning and must never replace
+	// text that somebody is in the middle of reading.
 	if query.Mode == "caption" && !seen["ZH"] {
 		text := cleanMeetingCaption(caption.String())
 		if text != "" {

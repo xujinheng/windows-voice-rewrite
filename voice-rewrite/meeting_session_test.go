@@ -6,6 +6,17 @@ import (
 	"time"
 )
 
+func TestMeetingHistoryIsNotDiscardedAfterTwelveTurns(t *testing.T) {
+	s := newMeetingCore(defaults(), func(string, ...any) {})
+	defer s.stop()
+	for id := uint64(1); id <= 30; id++ {
+		s.upsertSourceLocked(id, "test sentence", true, true)
+	}
+	if len(s.view.captions) != 30 || s.view.captions[0].id != 1 {
+		t.Fatalf("reader lost early captions: %#v", s.view.captions)
+	}
+}
+
 func TestMeetingStreamingDoesNotClearTranslation(t *testing.T) {
 	s := newMeetingCore(defaults(), func(string, ...any) {})
 	defer s.stop()

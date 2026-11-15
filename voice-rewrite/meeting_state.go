@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+	"unicode/utf16"
 )
 
 type meetingCaption struct {
@@ -103,6 +104,47 @@ func meetingTranscript(captions []meetingCaption) (string, bool) {
 		return "等待会议音频…", false
 	}
 	return strings.Join(entries, "\r\n\r\n"), listening
+}
+
+func meetingFollowLatest(current, moved, atBottom bool) bool {
+	if moved {
+		return atBottom
+	}
+	return current
+}
+
+// meetingTextPatch describes the smallest end-anchored change to a Windows
+// multiline edit control. Its indexes use UTF-16 code units, not Go bytes.
+type meetingTextPatch struct {
+	start, end int
+	insert     string
+}
+
+func meetingTextChange(old, next string) meetingTextPatch {
+	a, b := []rune(old), []rune(next)
+	n := 0
+	for n < len(a) && n < len(b) && a[n] == b[n] {
+		n++
+	}
+	return meetingTextPatch{
+		start:  len(utf16.Encode(a[:n])),
+		end:    len(utf16.Encode(a)),
+		insert: string(b[n:]),
+	}
+}
+
+// Shift saved selections past the changed tail, without pointing into deleted
+// text or disrupting an existing selection in the stable transcript prefix.
+func meetingMapSelection(pos uint32, patch meetingTextPatch) uint32 {
+	at := int(pos)
+	if at <= patch.start {
+		return pos
+	}
+	if at < patch.end {
+		return uint32(patch.start)
+	}
+	inserted := len(utf16.Encode([]rune(patch.insert)))
+	return uint32(at + inserted - (patch.end - patch.start))
 }
 
 func meetingShouldReply(latest string, prior []string, semantic bool) bool {

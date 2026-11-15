@@ -31,6 +31,9 @@ type meetingHUD struct {
 	displayedReplies                                            [3]meetingLine
 	displayedSource, displayedTip, copyExpression               string
 	selectedReply                                               int
+	followLatest                                                bool
+	transcriptDrawn                                             bool
+	transcriptFirstLine                                         uintptr
 	lastTranscript, lastReply, lastExpression                   time.Time
 	rendered                                                    map[uintptr]string
 }
@@ -91,7 +94,7 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 		return fmt.Errorf("创建会议浮窗: %w", err)
 	}
 	err = nil
-	p := &meetingHUD{window: hwnd, owner: owner, palette: resultCardPalette(), scale: scale, fontSize: prefs.FontSize, captionsOnly: prefs.CaptionsOnly, rendered: map[uintptr]string{}}
+	p := &meetingHUD{window: hwnd, owner: owner, palette: resultCardPalette(), scale: scale, fontSize: prefs.FontSize, captionsOnly: prefs.CaptionsOnly, followLatest: true, rendered: map[uintptr]string{}}
 	activeMeetingHUD = p
 	p.background, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.background))
 	p.surface, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.surface))
@@ -120,6 +123,7 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	editStyle := uintptr(WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_BORDER | 0x00010000)
 	p.live = child("STATIC", "● 等待音频", 0, 0, false)
 	p.captions = child("EDIT", "", editStyle, 0, true)
+	procSendMessage.Call(p.captions, 0x00C5, 1<<20, 0) // EM_LIMITTEXT: retain in-session history
 	p.labels[1] = child("STATIC", "回复建议", 0, 0, false)
 	p.responses = child("EDIT", "", editStyle, 0, true)
 	p.instruction = child("EDIT", "", WS_BORDER|0x00010000|0x0080, 0, true)
@@ -250,40 +254,70 @@ func (p *meetingHUD) resizeText(delta int32) {
 	p.savePreferences()
 }
 
-// Preserve the reader's scroll anchor while reading older captions. Auto-follow
-// is only active near the bottom with no text selected.
+// The user decides whether live captions follow the latest turn. A scroll
+// away from the bottom suspends following; a return to the bottom resumes it.
 func (p *meetingHUD) transcriptAtBottom(control uintptr) bool {
 	info := uxScrollInfo{Size: uint32(unsafe.Sizeof(uxScrollInfo{})), Mask: uxSIFRange | uxSIFPage | uxSIFPos}
 	ok, _, _ := procGetScrollInfoUX.Call(control, uxSBVert, uintptr(unsafe.Pointer(&info)))
-	return ok == 0 || info.Max-info.Pos-int32(info.Page) <= 2
+	if ok == 0 {
+		return false
+	}
+	remaining := info.Max - info.Pos - max(0, int32(info.Page)-1)
+	return remaining <= 2
+}
+
+func (p *meetingHUD) scrollToLatest() {
+	p.followLatest = true
+	// EM_LINESCROLL moves the viewport, not the selection/caret.
+	procSendMessage.Call(p.captions, 0x00B6, 0, uintptr(1<<20))
+	p.transcriptFirstLine, _, _ = procSendMessage.Call(p.captions, 0x00CE, 0, 0)
 }
 
 func (p *meetingHUD) setText(control uintptr, value string, preserve bool) {
-	if value == p.rendered[control] {
+	previous := p.rendered[control]
+	if value == previous {
 		return
 	}
+	if !preserve {
+		uxSetText(control, value)
+		p.rendered[control] = value
+		return
+	}
+
+	// WM_SETTEXT resets native EDIT scroll and selection on every update.
+	// Patch only the changed suffix. This leaves all committed lines intact
+	// and avoids the top-of-document jump during active transcription.
+	first, _, _ := procSendMessage.Call(control, 0x00CE, 0, 0) // EM_GETFIRSTVISIBLELINE
+	if control == p.captions && p.transcriptDrawn {
+		p.followLatest = meetingFollowLatest(p.followLatest, p.transcriptFirstLine != first, p.transcriptAtBottom(control))
+	}
+	follow := control == p.captions && p.followLatest
 	var start, end uint32
-	var first uintptr
-	follow := false
-	if preserve {
-		procSendMessage.Call(control, 0x00B0, uintptr(unsafe.Pointer(&start)), uintptr(unsafe.Pointer(&end))) // EM_GETSEL
-		first, _, _ = procSendMessage.Call(control, 0x00CE, 0, 0)                                             // EM_GETFIRSTVISIBLELINE
-		follow = control == p.captions && start == end && p.transcriptAtBottom(control)
-		procSendMessage.Call(control, 0x000B, 0, 0) // WM_SETREDRAW off
+	procSendMessage.Call(control, 0x00B0, uintptr(unsafe.Pointer(&start)), uintptr(unsafe.Pointer(&end))) // EM_GETSEL
+	change := meetingTextChange(previous, value)
+
+	procSendMessage.Call(control, 0x000B, 0, 0)                                       // WM_SETREDRAW off
+	procSendMessage.Call(control, 0x00CF, 0, 0)                                       // EM_SETREADONLY off for programmatic edit
+	procSendMessage.Call(control, 0x00B1, uintptr(change.start), uintptr(change.end)) // EM_SETSEL
+	insert := uxPtr(change.insert)
+	procSendMessage.Call(control, 0x00C2, 0, uintptr(unsafe.Pointer(insert))) // EM_REPLACESEL
+	runtime.KeepAlive(insert)
+	procSendMessage.Call(control, 0x00CF, 1, 0) // EM_SETREADONLY on
+	procSendMessage.Call(control, 0x00B1,
+		uintptr(meetingMapSelection(start, change)),
+		uintptr(meetingMapSelection(end, change)))
+	if follow {
+		procSendMessage.Call(control, 0x00B6, 0, uintptr(1<<20)) // EM_LINESCROLL down
+	} else {
+		now, _, _ := procSendMessage.Call(control, 0x00CE, 0, 0)
+		procSendMessage.Call(control, 0x00B6, 0, uintptr(int64(first)-int64(now)))
 	}
-	uxSetText(control, value)
-	if preserve {
-		if follow {
-			procSendMessage.Call(control, 0x00B1, ^uintptr(0), ^uintptr(0)) // EM_SETSEL to end
-			procSendMessage.Call(control, 0x00B7, 0, 0)                     // EM_SCROLLCARET
-		} else {
-			procSendMessage.Call(control, 0x00B1, uintptr(start), uintptr(end))
-			now, _, _ := procSendMessage.Call(control, 0x00CE, 0, 0)
-			procSendMessage.Call(control, 0x00B6, 0, uintptr(int64(first)-int64(now))) // EM_LINESCROLL
-		}
-		procSendMessage.Call(control, 0x000B, 1, 0)
-	}
+	procSendMessage.Call(control, 0x000B, 1, 0) // WM_SETREDRAW on
 	p.rendered[control] = value
+	if control == p.captions {
+		p.transcriptDrawn = true
+		p.transcriptFirstLine, _, _ = procSendMessage.Call(control, 0x00CE, 0, 0)
+	}
 	meetingInvalidateRect.Call(control, 0, 1)
 }
 
@@ -503,8 +537,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				p.lastReply = time.Time{}
 				p.renderReply()
 			case 7114:
-				procSendMessage.Call(p.captions, 0x00B1, ^uintptr(0), ^uintptr(0))
-				procSendMessage.Call(p.captions, 0x00B7, 0, 0)
+				p.scrollToLatest()
 			case 7112:
 				if p.app != nil && p.app.meeting != nil && !p.paused {
 					p.app.meeting.acceptPendingReplies()

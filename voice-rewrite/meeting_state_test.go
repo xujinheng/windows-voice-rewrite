@@ -49,6 +49,43 @@ func TestMeetingTranscriptKeepsStableText(t *testing.T) {
 	}
 }
 
+func TestMeetingTextChangeUTF16AndHistory(t *testing.T) {
+	cases := []struct {
+		old, next  string
+		start, end int
+		insert     string
+	}{
+		{"", "你好", 0, 0, "你好"},
+		{"第一句\r\nHello", "第一句\r\nHello world", 10, 10, " world"},
+		{"🙂 原文\r\n第一版", "🙂 原文\r\n第二版", 8, 10, "二版"},
+	}
+	for _, tc := range cases {
+		p := meetingTextChange(tc.old, tc.next)
+		if p.start != tc.start || p.end != tc.end || p.insert != tc.insert {
+			t.Errorf("%q -> %q: got %+v", tc.old, tc.next, p)
+		}
+	}
+	patch := meetingTextChange("标题\r\n第一句", "标题\r\n第一句\r\n第二句")
+	if meetingMapSelection(2, patch) != 2 {
+		t.Fatal("existing selection moved while appending")
+	}
+}
+
+func TestMeetingFollowLatestIsUserControlled(t *testing.T) {
+	if !meetingFollowLatest(true, false, false) {
+		t.Fatal("background update disabled following")
+	}
+	if meetingFollowLatest(true, true, false) {
+		t.Fatal("manual upward scrolling did not stop following")
+	}
+	if meetingFollowLatest(false, false, true) {
+		t.Fatal("background update resumed following without scroll")
+	}
+	if !meetingFollowLatest(false, true, true) {
+		t.Fatal("returning to the bottom did not resume following")
+	}
+}
+
 func TestMeetingSchedulerPreemptsReplyAndWaitsForRelease(t *testing.T) {
 	var g meetingScheduler
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
