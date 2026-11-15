@@ -485,7 +485,7 @@ func updateMeetingHUD(view meetingView) {
 	if view.expression.complete || time.Since(p.lastExpression) >= 280*time.Millisecond {
 		p.setText(p.expression, expression, true)
 		if newEnglish {
-			procSendMessage.Call(p.expression, uxWMVScroll, 6, 0) // SB_TOP
+			procSendMessage.Call(p.expression, 0x0115, 6, 0) // WM_VSCROLL / SB_TOP
 		}
 		p.lastExpression = time.Now()
 	}
