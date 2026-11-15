@@ -483,13 +483,13 @@ func updateMeetingHUD(view meetingView) {
 	if p.paused {
 		return
 	}
-	panels := buildMeetingReadingPanels(view.captions)
-	newTurn := panels.currentID != p.currentID || panels.historyCount > p.historyCount
-	p.currentID = panels.currentID
-	p.setText(p.live, "● "+panels.hint, false)
-	if newTurn || !panels.live || time.Since(p.lastTranscript) >= 280*time.Millisecond {
-		p.setText(p.currentEnglish, panels.english, true)
-		p.setText(p.currentChinese, panels.chinese, true)
+	panels := meetingcore.BuildReadingPanels(view.captions)
+	newTurn := panels.CurrentID != p.currentID || panels.HistoryCount > p.historyCount
+	p.currentID = panels.CurrentID
+	p.setText(p.live, "● "+panels.Hint, false)
+	if newTurn || !panels.Live || time.Since(p.lastTranscript) >= 280*time.Millisecond {
+		p.setText(p.currentEnglish, panels.English, true)
+		p.setText(p.currentChinese, panels.Chinese, true)
 		if newTurn {
 			// Reading a fresh utterance starts at its first line, not the
 			// scroll position of the previously long utterance.
@@ -500,15 +500,15 @@ func updateMeetingHUD(view meetingView) {
 	}
 	// Only completed older turns are added to the history control. If the
 	// reader scrolled away, count unseen turns instead of moving the viewport.
-	if panels.history != p.rendered[p.captions] {
-		p.setText(p.captions, panels.history, true)
-		p.unreadHistory = meetingcore.UnreadHistory(p.unreadHistory, p.historyCount, panels.historyCount, p.followLatest)
-		p.historyCount = panels.historyCount
+	if panels.History != p.rendered[p.captions] {
+		p.setText(p.captions, panels.History, true)
+		p.unreadHistory = meetingcore.UnreadHistory(p.unreadHistory, p.historyCount, panels.HistoryCount, p.followLatest)
+		p.historyCount = panels.HistoryCount
 	}
 	if p.followLatest {
 		p.unreadHistory = 0
 	}
-	historyLabel := fmt.Sprintf("之前的对话 · %d 段", panels.historyCount)
+	historyLabel := fmt.Sprintf("之前的对话 · %d 段", panels.HistoryCount)
 	if p.unreadHistory > 0 {
 		historyLabel += fmt.Sprintf(" · %d 条新内容", p.unreadHistory)
 	}
@@ -791,17 +791,17 @@ func demoMeeting() meetingView {
 		status:     "演示数据 · 试用界面无需音频或模型",
 		sourceName: "Zoom.exe · 演示会议", asrMode: "multipart", level: 36,
 		metrics: meetingMetrics{Stage: "聆听", ASRFirstMS: 340, ASRDoneMS: 720, TranslationFirstMS: 120, TranslationDoneMS: 310},
-		captions: []meetingCaption{
-			{final: true, source: "The impact seems to be limited to peak hours.", chinese: "影响似乎仅限于高峰时段。"},
-			{final: true, source: "We're seeing high tail latency on vector search. How would you start investigating?", chinese: "向量检索的尾延迟偏高。你会从哪里开始排查？"},
+		captions: []meetingcore.Caption{
+			{Final: true, Source: "The impact seems to be limited to peak hours.", Chinese: "影响似乎仅限于高峰时段。"},
+			{Final: true, Source: "We're seeing high tail latency on vector search. How would you start investigating?", Chinese: "向量检索的尾延迟偏高。你会从哪里开始排查？"},
 		},
 		replies: [3]meetingLine{
-			{kind: "ONE", complete: true, english: "I'd start by separating time spent waiting in the queue from time spent running the search.", chinese: "我会先把排队耗时和实际检索耗时分开看。"},
-			{kind: "TWO", complete: true, english: "Is the spike limited to certain queries, or does it affect the whole cluster?", chinese: "是部分查询出现尖峰，还是整个集群都受影响？"},
-			{kind: "THREE", complete: true, english: "Let me take a moment to think through where we'd get the clearest signal.", chinese: "我先理一下从哪里入手能最快弄清情况。"},
+			{kind: "ONE", complete: true, english: "I'd start by separating time spent waiting in the queue from time spent running the search.", Chinese: "我会先把排队耗时和实际检索耗时分开看。"},
+			{kind: "TWO", complete: true, english: "Is the spike limited to certain queries, or does it affect the whole cluster?", Chinese: "是部分查询出现尖峰，还是整个集群都受影响？"},
+			{kind: "THREE", complete: true, english: "Let me take a moment to think through where we'd get the clearest signal.", Chinese: "我先理一下从哪里入手能最快弄清情况。"},
 		},
 		replySource: "We're seeing high tail latency on vector search. How would you start investigating?",
 		tip:         "先对照高峰期的 p99 排队时间与分片耗时，再核对是否集中在特定索引或查询类型。",
-		expression:  meetingLine{kind: "SAY", complete: true, english: "We can do that, but by Friday I can only share an initial version.", chinese: "可以做，但周五前我只能给初版。"},
+		expression:  meetingLine{kind: "SAY", complete: true, english: "We can do that, but by Friday I can only share an initial version.", Chinese: "可以做，但周五前我只能给初版。"},
 	}
 }
