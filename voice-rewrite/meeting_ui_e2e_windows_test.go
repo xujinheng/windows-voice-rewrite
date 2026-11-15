@@ -114,6 +114,37 @@ func TestMeetingWindowsE2E(t *testing.T) {
 		t.Fatalf("native font-size action not applied: %d", p.fontSize)
 	}
 
+	// Simulate a real mouse drag across every normal-workspace divider and
+	// read the resulting native EDIT geometry instead of a layout mock.
+	for divider := 0; divider < 5; divider++ {
+		if !p.splitterVisible[divider] {
+			t.Fatalf("divider %d is missing in full workspace", divider)
+		}
+		before := p.paneHeights
+		a, b, ok := meetingDividerPair(divider, false, false)
+		if !ok {
+			t.Fatalf("divider %d cannot be dragged", divider)
+		}
+		startY := p.splitterY[divider]
+		endY := startY - p.px(8)
+		point := func(y int32) uintptr { return uintptr(uint16(y))<<16 | uintptr(uint16(p.px(20))) }
+		procSendMessage.Call(p.window, 0x0201, 0, point(startY)) // WM_LBUTTONDOWN
+		procSendMessage.Call(p.window, 0x0200, 0, point(endY))   // WM_MOUSEMOVE
+		procSendMessage.Call(p.window, 0x0202, 0, point(endY))   // WM_LBUTTONUP
+		if p.paneHeights[a] >= before[a] || p.paneHeights[b] <= before[b] || p.dragDivider != -1 {
+			t.Fatalf("native divider %d did not resize adjacent panes: before=%v after=%v", divider, before, p.paneHeights)
+		}
+		for index := 0; index < meetingPaneCount; index++ {
+			if index != a && index != b && p.paneHeights[index] != before[index] {
+				t.Fatalf("native drag of divider %d changed unrelated pane %d: %v -> %v", divider, index, before, p.paneHeights)
+			}
+		}
+	}
+	stored, err := loadMeetingPreferences(meetingPreferencesPath())
+	if err != nil || stored.Panes != p.paneWeights {
+		t.Fatalf("dragged panel layout was not persisted: saved=%v current=%v err=%v", stored.Panes, p.paneWeights, err)
+	}
+
 	longEnglish := strings.Repeat("This is a complete, speakable English answer for the meeting. ", 15)
 	view.expression = meetingLine{kind: "SAY", english: longEnglish, complete: true}
 	view.expressionSource = "请告诉大家一个详细的回答"
@@ -147,5 +178,12 @@ func TestMeetingWindowsE2E(t *testing.T) {
 	updateMeetingHUD(view)
 	if p.captionsOnly || !p.expressionExpanded || p.copyExpression != view.expression.english {
 		t.Fatal("new voice answer did not appear while reading captions only")
+	}
+	if p.splitterVisible[3] || !p.splitterVisible[2] || !p.splitterVisible[4] {
+		t.Fatal("expanded English must expose only the active pane dividers")
+	}
+	procSendMessage.Call(p.window, 0x0111, 7101, 0) // return to captions-only layout
+	if !p.captionsOnly || !p.splitterVisible[0] || !p.splitterVisible[1] || p.splitterVisible[2] {
+		t.Fatal("captions-only view did not keep the Chinese/English/history dividers")
 	}
 }

@@ -139,23 +139,75 @@ func TestMeetingTextChangeUTF16AndHistory(t *testing.T) {
 	}
 }
 
-func TestMeetingPanelHeightsPrioritizeGeneratedEnglish(t *testing.T) {
-	for _, space := range []int32{340, 360, 450, 700} {
-		compact := meetingPanelHeights(space, false)
-		focused := meetingPanelHeights(space, true)
-		if compact.reply < 42 || compact.history < 30 || compact.expression <= compact.source {
-			t.Fatalf("normal panels don't fit %d: %+v", space, compact)
+func TestMeetingAdjustablePaneLayout(t *testing.T) {
+	for _, mode := range []struct {
+		name         string
+		captionsOnly bool
+		expanded     bool
+	}{
+		{"complete", false, false},
+		{"English focus", false, true},
+		{"captions only", true, false},
+	} {
+		for _, space := range []int32{300, 440, 700} {
+			heights := meetingPaneHeights(space, meetingDefaultPaneWeights, mode.captionsOnly, mode.expanded)
+			visible := meetingVisiblePanes(mode.captionsOnly, mode.expanded)
+			var total int32
+			for i, height := range heights {
+				if !visible[i] && height != 0 {
+					t.Fatalf("%s: hidden pane %d took %d px", mode.name, i, height)
+				}
+				if visible[i] && height < meetingPaneMinimums[i] {
+					t.Fatalf("%s: pane %d too short %d", mode.name, i, height)
+				}
+				total += height
+			}
+			if total != space {
+				t.Fatalf("%s: %d px sum != %d available", mode.name, total, space)
+			}
 		}
-		if compact.history+compact.reply+compact.expression+160 > space {
-			t.Fatalf("normal panels overlap at %d: %+v", space, compact)
+	}
+}
+
+func TestMeetingDraggableDividersAreIndependentAndConstrained(t *testing.T) {
+	for _, mode := range []struct {
+		captionsOnly bool
+		expanded     bool
+		dividers     []int
+	}{
+		{false, false, []int{0, 1, 2, 3, 4}},
+		{false, true, []int{0, 1, 2, 4}},
+		{true, false, []int{0, 1}},
+	} {
+		for _, divider := range mode.dividers {
+			weights := meetingDefaultPaneWeights
+			before := meetingPaneHeights(600, weights, mode.captionsOnly, mode.expanded)
+			a, b, ok := meetingDividerPair(divider, mode.captionsOnly, mode.expanded)
+			if !ok {
+				t.Fatalf("divider %d unavailable", divider)
+			}
+			weights = meetingDragPaneWeights(weights, before, mode.captionsOnly, mode.expanded, divider, 16)
+			after := meetingPaneHeights(600, weights, mode.captionsOnly, mode.expanded)
+			if after[a] != before[a]+16 || after[b] != before[b]-16 {
+				t.Fatalf("divider %d moved wrong panes: before %v after %v", divider, before, after)
+			}
+			for i := 0; i < meetingPaneCount; i++ {
+				if i != a && i != b && before[i] != after[i] {
+					t.Fatalf("divider %d disturbed pane %d: %v -> %v", divider, i, before, after)
+				}
+			}
+			weights = meetingDragPaneWeights(weights, after, mode.captionsOnly, mode.expanded, divider, 10000)
+			clamped := meetingPaneHeights(600, weights, mode.captionsOnly, mode.expanded)
+			if clamped[b] < meetingPaneMinimums[b] {
+				t.Fatalf("divider %d violated min height: %v", divider, clamped)
+			}
 		}
-		if focused.expression-focused.source < 180 || focused.history < 52 ||
-			focused.history+focused.expression+32 > space {
-			t.Fatalf("focused English can't be read at %d: %+v", space, focused)
-		}
-		if focused.expression <= compact.expression {
-			t.Fatalf("expanding didn't enlarge English at %d: normal %+v, focused %+v", space, compact, focused)
-		}
+	}
+	if _, _, ok := meetingDividerPair(3, false, true); ok {
+		t.Fatal("reply divider must hide when English is expanded")
+	}
+	if _, _, ok := meetingDividerPair(2, true, false); ok {
+		t.Fatal("assistant divider must hide in captions-only mode")
 	}
 }
 

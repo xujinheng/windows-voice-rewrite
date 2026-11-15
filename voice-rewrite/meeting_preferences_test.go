@@ -8,7 +8,7 @@ import (
 
 func TestMeetingPreferencesRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "meeting-ui.json")
-	want := meetingPreferences{FontSize: 22, CaptionsOnly: true, X: -900, Y: 30, Width: 640, Height: 720}
+	want := meetingPreferences{FontSize: 22, Panes: meetingPaneWeights{110, 40, 80, 50, 300, 30}, CaptionsOnly: true, X: -900, Y: 30, Width: 640, Height: 720}
 	if err := saveMeetingPreferences(path, want); err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestMeetingPreferencesRoundTrip(t *testing.T) {
 func TestMeetingPreferencesDefaultsAndValidation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "meeting-ui.json")
 	got, err := loadMeetingPreferences(path)
-	if err != nil || got.FontSize != 16 {
+	if err != nil || got.FontSize != 16 || got.Panes != meetingDefaultPaneWeights {
 		t.Fatalf("missing preferences: %+v %v", got, err)
 	}
 	for _, tc := range []struct {
@@ -42,8 +42,21 @@ func TestMeetingPreferencesDefaultsAndValidation(t *testing.T) {
 			t.Fatal(err)
 		}
 		got, err = loadMeetingPreferences(path)
-		if err != nil || got.FontSize != tc.font {
+		if err != nil || got.FontSize != tc.font || got.Panes != meetingDefaultPaneWeights {
 			t.Fatalf("%s: %+v %v", tc.body, got, err)
+		}
+	}
+	for _, invalid := range []string{
+		`{"panes":[0,0,0,0,0,0]}`,
+		`{"panes":[100,80,60,-5,100,30]}`,
+		`{"panes":[100,80,60,200000,100,30]}`,
+	} {
+		if err := os.WriteFile(path, []byte(invalid), 0600); err != nil {
+			t.Fatal(err)
+		}
+		got, err := loadMeetingPreferences(path)
+		if err != nil || got.Panes != meetingDefaultPaneWeights {
+			t.Fatalf("invalid pane sizing escaped validation: %+v %v", got, err)
 		}
 	}
 	if err := os.WriteFile(path, []byte(`{"font_size":`), 0600); err != nil {

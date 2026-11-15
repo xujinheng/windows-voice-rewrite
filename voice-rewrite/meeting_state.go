@@ -178,26 +178,120 @@ func meetingTranslationFitsSource(source, translated string) bool {
 	return len([]rune(translated)) <= max(48, len([]rune(source))*2)
 }
 
-// The English answer can take most of the window while the user reads it.
-// Heights are in logical 96-DPI pixels, so the layout can be regression-tested.
-type meetingAssistantHeights struct {
-	history, reply, expression, source int32
+// The six reading surfaces share the space left after fixed controls.
+// Values are logical 96-DPI pixels, independent of the physical monitor DPI.
+const (
+	meetingPaneChinese = iota
+	meetingPaneEnglish
+	meetingPaneHistory
+	meetingPaneReply
+	meetingPaneExpression
+	meetingPaneSource
+	meetingPaneCount
+)
+
+type meetingPaneWeights [meetingPaneCount]int32
+
+var meetingDefaultPaneWeights = meetingPaneWeights{85, 50, 85, 65, 230, 40}
+var meetingPaneMinimums = [meetingPaneCount]int32{46, 32, 34, 36, 62, 28}
+
+func meetingValidPaneWeights(value meetingPaneWeights) meetingPaneWeights {
+	var sum int32
+	for _, weight := range value {
+		if weight < 0 || weight > 10000 {
+			return meetingDefaultPaneWeights
+		}
+		sum += weight
+	}
+	if sum == 0 {
+		return meetingDefaultPaneWeights
+	}
+	return value
 }
 
-func meetingPanelHeights(space int32, expanded bool) meetingAssistantHeights {
-	if expanded {
-		history := max(int32(52), space*22/100)
-		expression := max(int32(70), space-history-32)
-		return meetingAssistantHeights{history: history, expression: expression, source: 48}
+func meetingVisiblePanes(captionsOnly, expanded bool) [meetingPaneCount]bool {
+	return [meetingPaneCount]bool{
+		true, true, true, !captionsOnly && !expanded, !captionsOnly, !captionsOnly,
 	}
-	// Normal mode: reserve three button rows, one label and spacing.
-	budget := max(int32(110), space-160-52)
-	reply := min(int32(90), max(int32(42), budget/3))
-	expression := min(int32(172), max(int32(72), budget-reply))
-	return meetingAssistantHeights{
-		history: max(int32(30), space-160-reply-expression),
-		reply:   reply, expression: expression, source: 40,
+}
+
+// A divider always resizes its two neighboring visible surfaces; the reply
+// surface is skipped when expanded English temporarily hides the reply tools.
+func meetingDividerPair(index int, captionsOnly, expanded bool) (int, int, bool) {
+	switch index {
+	case 0:
+		return meetingPaneChinese, meetingPaneEnglish, true
+	case 1:
+		return meetingPaneEnglish, meetingPaneHistory, true
+	case 2:
+		if captionsOnly {
+			return 0, 0, false
+		}
+		if expanded {
+			return meetingPaneHistory, meetingPaneExpression, true
+		}
+		return meetingPaneHistory, meetingPaneReply, true
+	case 3:
+		return meetingPaneReply, meetingPaneExpression, !captionsOnly && !expanded
+	case 4:
+		return meetingPaneExpression, meetingPaneSource, !captionsOnly
 	}
+	return 0, 0, false
+}
+
+// Give each visible surface a minimum height, then distribute the remaining
+// space by saved weights. Hidden panes retain their sizes for later reopening.
+func meetingPaneHeights(space int32, weights meetingPaneWeights, captionsOnly, expanded bool) [meetingPaneCount]int32 {
+	visible := meetingVisiblePanes(captionsOnly, expanded)
+	weights = meetingValidPaneWeights(weights)
+	var heights [meetingPaneCount]int32
+	var minimum, totalWeight int32
+	last := -1
+	for i, shown := range visible {
+		if shown {
+			heights[i] = meetingPaneMinimums[i]
+			minimum += meetingPaneMinimums[i]
+			totalWeight += weights[i]
+			last = i
+		}
+	}
+	extra := max(int32(0), space-minimum)
+	if totalWeight == 0 {
+		totalWeight = 1
+	}
+	remaining := extra
+	for i, shown := range visible {
+		if shown && i != last {
+			add := int32(int64(extra) * int64(weights[i]) / int64(totalWeight))
+			heights[i] += add
+			remaining -= add
+		}
+	}
+	if last >= 0 {
+		heights[last] += remaining
+	}
+	return heights
+}
+
+// Encode a mouse drag as new distributable heights. The next layout preserves
+// the dragged partition while a later window resize scales it proportionally.
+func meetingDragPaneWeights(weights meetingPaneWeights, heights [meetingPaneCount]int32, captionsOnly, expanded bool, divider int, delta int32) meetingPaneWeights {
+	a, b, ok := meetingDividerPair(divider, captionsOnly, expanded)
+	if !ok {
+		return weights
+	}
+	delta = max(meetingPaneMinimums[a]-heights[a], min(heights[b]-meetingPaneMinimums[b], delta))
+	if delta == 0 {
+		return weights
+	}
+	heights[a] += delta
+	heights[b] -= delta
+	for i, shown := range meetingVisiblePanes(captionsOnly, expanded) {
+		if shown {
+			weights[i] = heights[i] - meetingPaneMinimums[i]
+		}
+	}
+	return weights
 }
 
 // Conversation is useful for pronouns and references, not general knowledge.
