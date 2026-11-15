@@ -33,6 +33,7 @@ var (
 	iidIUIAutomation   = syscall.GUID{Data1: 0x30cbe57d, Data2: 0xd9d0, Data3: 0x452a, Data4: [8]byte{0xab, 0x13, 0x7a, 0xc5, 0xac, 0x48, 0x25, 0xee}}
 )
 
+//go:uintptrescapes
 func comMethod(obj uintptr, index uintptr, args ...uintptr) uintptr {
 	vt := *(*uintptr)(unsafe.Pointer(obj))
 	fn := *(*uintptr)(unsafe.Pointer(vt + index*unsafe.Sizeof(uintptr(0))))
