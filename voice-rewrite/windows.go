@@ -544,7 +544,10 @@ func runApp() {
 		}
 		if holdMeeting != nil {
 			if dictation {
-			statusMode = "会议直译"
+				statusMode = "会议直译"
+			} else {
+				statusMode = "会议意图"
+			}
 		} else {
 			statusMode = "会议意图"
 		}
