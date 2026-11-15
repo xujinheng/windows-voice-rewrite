@@ -437,9 +437,7 @@ func updateMeetingHUD(view meetingView) {
 	// reader scrolled away, count unseen turns instead of moving the viewport.
 	if panels.history != p.rendered[p.captions] {
 		p.setText(p.captions, panels.history, true)
-		if !p.followLatest && panels.historyCount > p.historyCount {
-			p.unreadHistory += panels.historyCount - p.historyCount
-		}
+		p.unreadHistory = meetingUnreadHistory(p.unreadHistory, p.historyCount, panels.historyCount, p.followLatest)
 		p.historyCount = panels.historyCount
 	}
 	if p.followLatest {
