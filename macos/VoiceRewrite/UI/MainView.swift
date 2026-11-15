@@ -15,44 +15,59 @@ struct MainView: View {
 
     private var dashboard: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 17) {
+                HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("VoiceRewrite").font(.largeTitle.bold())
-                        Text("原生 macOS 宿主 · 桥接连接状态")
+                        Text("macOS 原生语音识别与选区改写")
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("重新连接") { model.connect() }
-                        .accessibilityLabel("重新连接 Go Helper")
+                    Button("连接服务") { model.connect() }
                 }
 
                 GroupBox("运行状态") {
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 8) {
                         LabeledContent("Go Helper") {
-                            HStack(spacing: 8) {
-                                Image(systemName: statusSymbol)
-                                    .foregroundStyle(statusColor)
-                                Text(connectionLabel)
-                                    .textSelection(.enabled)
+                            switch model.connection {
+                            case .disconnected: Text("未连接")
+                            case .connecting: Text("正在连接")
+                            case .connected(let value): Text(value)
+                            case .failed(let reason): Text(reason).foregroundStyle(.red)
                             }
                         }
-                        LabeledContent("服务状态", value: model.serviceStatus)
-                        LabeledContent("录音状态", value: model.recordingStatus)
+                        LabeledContent("服务", value: model.serviceStatus)
+                        LabeledContent("麦克风", value: model.recordingStatus)
+                        LabeledContent("原生交互", value: model.interactionStatus)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
 
-                GroupBox("识别结果") {
-                    resultView(model.transcription, empty: "尚无识别结果。PCM16 录音与 transcribe 尚未接入。")
+                HStack(spacing: 12) {
+                    Button(model.isRecording ? "停止录音并识别" : "开始麦克风录音") {
+                        model.toggleRecording()
+                    }
+                    .disabled(model.isStarting || model.isProcessing)
+                    Button("取消任务") { model.cancelCurrent() }
+                        .disabled(!model.isRecording && !model.isStarting && !model.isProcessing)
+                    Spacer()
+                    Button("请求辅助功能权限") { model.requestAccessibility() }
                 }
-                GroupBox("文本处理结果") {
-                    resultView(model.processedText, empty: "尚无文本处理结果。selected_task 尚未接入。")
+
+                GroupBox("语音识别结果") {
+                    resultView(model.transcription, empty: "录音并调用用户配置的 ASR 服务后显示真实结果。")
                 }
-                Text("当前版本只验证打包的 Go Helper 的真实 hello 响应；未运行的功能不会显示模拟结果。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+
+                GroupBox("选区改写") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        TextField("输入改写/翻译指令，再切到其他应用选中文字", text: $model.taskInstruction)
+                        Text("Ctrl+Option+T：处理原应用选区。Ctrl+Option+R：录音/停止；仅在原光标仍有效时插入。")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        resultView(model.processedText, empty: "这里显示真实模型结果；未经授权不会更改其他应用文本。")
+                    }
+                }
+                Text("更改目标应用或选区会阻止旧任务写入。真实麦克风、Keychain 和辅助功能权限需在本机授权。")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -61,37 +76,14 @@ struct MainView: View {
     private func resultView(_ value: String?, empty: String) -> some View {
         Group {
             if let value, !value.isEmpty {
-                ScrollView { Text(value).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+                ScrollView {
+                    Text(value).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                }
             } else {
-                Text(empty).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(empty).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .frame(minHeight: 85, alignment: .topLeading)
+        .frame(minHeight: 70, alignment: .topLeading)
         .padding(8)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var connectionLabel: String {
-        switch model.connection {
-        case .disconnected: return "未连接"
-        case .connecting: return "正在握手…"
-        case .connected(let descriptor): return "已连接：\(descriptor)"
-        case .failed(let detail): return "连接失败：\(detail)"
-        }
-    }
-    private var statusSymbol: String {
-        switch model.connection {
-        case .connected: return "checkmark.circle.fill"
-        case .failed: return "exclamationmark.triangle.fill"
-        case .disconnected, .connecting: return "circle.dotted"
-        }
-    }
-    private var statusColor: Color {
-        switch model.connection {
-        case .connected: return .green
-        case .failed: return .red
-        case .disconnected, .connecting: return .secondary
-        }
     }
 }
