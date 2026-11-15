@@ -100,7 +100,7 @@ final class WorkspaceModel: ObservableObject {
                         return
                     }
                     self.connection = .connected("VoiceRewrite / JSONL v1")
-                    self.serviceStatus = "ASR / 文本服务就绪"
+                    self.serviceStatus = "Go Helper 已连接（ASR / LLM 服务尚未检测）"
                 case .failure:
                     self.connection = .failed("Go Helper 握手失败")
                     self.serviceStatus = "不可用"
@@ -164,9 +164,9 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func requestConfig() throws -> JSONValue {
+    private func requestConfig(for operation: HelperOperation) throws -> JSONValue {
         let factory = HelperConfigFactory(credentials: credentials)
-        return try factory.withEphemeralConfig(settings: settings) { config in
+        return try factory.withEphemeralConfig(settings: settings, operation: operation) { config in
             var data: [String: JSONValue] = [:]
             for (key, value) in config {
                 if let string = value as? String {
@@ -242,7 +242,7 @@ final class WorkspaceModel: ObservableObject {
             do {
                 let pcm = try await microphone.stop()
                 guard resultGeneration.accepts(token) else { return }
-                let config = try requestConfig()
+                let config = try requestConfig(for: .transcribe)
                 guard let bridge else { throw BridgeFailure.notRunning }
                 let id = bridge.send(operation: "transcribe", fields: [
                     "config": config,
@@ -310,7 +310,7 @@ final class WorkspaceModel: ObservableObject {
                     await interaction.cancelTask(generation: generation)
                     return
                 }
-                let config = try requestConfig()
+                let config = try requestConfig(for: .selectedTask)
                 guard let bridge else { throw BridgeFailure.notRunning }
                 let id = bridge.send(operation: "selected_task", fields: [
                     "config": config,
