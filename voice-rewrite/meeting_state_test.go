@@ -167,4 +167,3 @@ func TestMeetingExpressionRemainsReadableWhileWorking(t *testing.T) {
 		t.Fatal("a background refresh stole the user's caption focus")
 	}
 }
-
