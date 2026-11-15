@@ -107,7 +107,7 @@ func TestMeetingPendingRepliesKeepReadableBatch(t *testing.T) {
 	defer s.stop()
 	s.view.replies[0] = meetingLine{english: "old", complete: true}
 	s.view.replySource = "old question"
-	batch := [3]meetingLine{{english: "new", Chinese: "新", complete: true}}
+	batch := [3]meetingLine{{english: "new", chinese: "新", complete: true}}
 	s.publishReplies(batch, "new question", "check")
 	if s.view.replies[0].english != "old" || !s.view.replyPending {
 		t.Fatal("readable reply replaced")
@@ -135,9 +135,9 @@ func TestMeetingReplyBatchKeepsReceivingRemainingOptions(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.stop()
 	s.replySerial = 1
-	batch := [3]meetingLine{{english: "first", Chinese: "一", complete: true}}
+	batch := [3]meetingLine{{english: "first", chinese: "一", complete: true}}
 	s.publishRepliesFor(1, 1, batch, "question", "")
-	batch[1] = meetingLine{english: "second", Chinese: "二", complete: true}
+	batch[1] = meetingLine{english: "second", chinese: "二", complete: true}
 	s.publishRepliesFor(1, 1, batch, "question", "")
 	if s.view.replies[1].english != "second" || s.view.replyPending {
 		t.Fatal("same batch became pending")
@@ -149,7 +149,7 @@ func TestMeetingReplyBatchKeepsReceivingRemainingOptions(t *testing.T) {
 		t.Fatal("regeneration replaced current reply")
 	}
 	s.acceptPendingReplies()
-	batch[2] = meetingLine{english: "third", Chinese: "三", complete: true}
+	batch[2] = meetingLine{english: "third", chinese: "三", complete: true}
 	s.publishRepliesFor(1, 2, batch, "question", "")
 	if s.view.replies[2].english != "third" {
 		t.Fatal("accepted live batch stopped updating")
@@ -175,7 +175,7 @@ func TestMeetingFinalCancelsActivePreview(t *testing.T) {
 	s.activeASRID = 1
 	work, epoch := s.workSnapshot()
 	q := make(chan meetingAudioTurn, 1)
-	s.queueAudio(q, meetingAudioTurn{Final: true, ID: 1, epoch: epoch, ctx: work})
+	s.queueAudio(q, meetingAudioTurn{final: true, id: 1, epoch: epoch, ctx: work})
 	if ctx.Err() == nil {
 		t.Fatal("final waits behind preview")
 	}
@@ -188,7 +188,7 @@ func TestMeetingCancellationDiscardsUnfinishedLines(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.stop()
 	s.view.replies[0] = meetingLine{english: "I would"}
-	s.view.replies[1] = meetingLine{english: "Could you clarify?", Chinese: "能解释吗", complete: true}
+	s.view.replies[1] = meetingLine{english: "Could you clarify?", chinese: "能解释吗", complete: true}
 	s.view.expression = meetingLine{english: "Partial"}
 	s.setCapturePaused(true)
 	if s.view.replies[0].english != "" || s.view.replies[1].english == "" || s.view.expression.english != "" {
