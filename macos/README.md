@@ -19,7 +19,7 @@ open -R "$APP"
 
 Double-click VoiceRewrite.app in Finder, or use `open "$APP"`. The bundled Helper is built to the active Debug architecture and signed ad hoc. It launches directly via Foundation `Process` and `Pipe`, never a shell or an external network port.
 
-GitHub Actions runs `swift test` in Microphone, Storage and Interaction and `xcodebuild test` in the application project on macos-15. Once these tests pass, CI uploads `VoiceRewrite-macOS-Dev.zip` with a SHA-256 checksum. This is a short-lived **developer build**, not a notarized release.
+GitHub Actions runs `swift test` in Microphone, Storage and Interaction and `xcodebuild test` in the application project on macos-15. When the tests pass, CI uploads **two native developer builds**: `VoiceRewrite-macOS-arm64-Dev` for Apple Silicon (M1/M2/M3/M4 and newer M-series) and `VoiceRewrite-macOS-x64-Dev` for Intel Mac (x86_64). Each artifact contains a ZIP of `VoiceRewrite.app` plus its SHA-256 checksum. The app and bundled `voicebridge` are verified for the matching architecture on their respective macOS 15 runners. Choose the ZIP that matches your Mac's CPU; both are **ad-hoc signed developer builds**, not notarized releases.
 
 ## Use
 
