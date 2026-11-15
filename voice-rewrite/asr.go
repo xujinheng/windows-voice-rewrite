@@ -1,6 +1,7 @@
 package main
 
 import (
+	"voicerewrite/internal/core/provider"
 	"voicerewrite/internal/core/audio"
 	"bytes"
 	"context"
@@ -122,7 +123,7 @@ func newASRRequest(ctx context.Context, cfg Config, pcm []byte) (*http.Request, 
 	if e = w.Close(); e != nil {
 		return nil, e
 	}
-	req, e := http.NewRequestWithContext(ctx, "POST", endpoint(cfg.ASRBaseURL, "/audio/transcriptions"), &out)
+	req, e := http.NewRequestWithContext(ctx, "POST", provider.Endpoint(cfg.ASRBaseURL, "/audio/transcriptions"), &out)
 	if e != nil {
 		return nil, e
 	}
@@ -138,13 +139,13 @@ func transcribeChunk(ctx context.Context, cfg Config, pcm []byte) (string, error
 	if err != nil {
 		return "", err
 	}
-	resp, e := requestClient(90 * time.Second).Do(req)
+	resp, e := provider.RequestClient(90 * time.Second).Do(req)
 	if e != nil {
 		return "", fmt.Errorf("语音转写请求失败（请检查 ASR API 地址及网络）: %w", e)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return "", providerHTTPError("ASR", resp.StatusCode)
+		return "", provider.HTTPError("ASR", resp.StatusCode)
 	}
 	response, e := io.ReadAll(io.LimitReader(resp.Body, 3<<20))
 	if e != nil {
