@@ -427,7 +427,7 @@ func (s *meetingSession) complete(ctx context.Context, priority int, query meeti
 }
 func (s *meetingSession) queueReplies(job meetingCaptionJob) {
 	s.mu.Lock()
-	if s.ctx.Err() != nil || s.view.capturePaused || job.epoch != s.epoch || job.id != s.turnID {
+	if s.ctx.Err() != nil || s.view.capturePaused || job.epoch != s.epoch {
 		s.mu.Unlock()
 		return
 	}
@@ -519,12 +519,22 @@ func (s *meetingSession) acceptPendingReplies() {
 }
 func (s *meetingSession) requestReplies() {
 	s.mu.Lock()
-	if len(s.view.captions) == 0 || s.view.capturePaused {
+	if s.view.capturePaused {
 		s.mu.Unlock()
 		return
 	}
-	last := s.view.captions[len(s.view.captions)-1]
-	job := meetingCaptionJob{latest: last.source, id: last.id, epoch: s.epoch, ctx: s.work, prior: append([]string(nil), s.prior...), ended: time.Now()}
+	last, ok := meetingLastCompletedCaption(s.view.captions)
+	if !ok {
+		s.view.status = "请等当前发言结束后再生成建议"
+		s.dirty = true
+		s.mu.Unlock()
+		return
+	}
+	prior := append([]string(nil), s.prior...)
+	if len(prior) > 0 && strings.TrimSpace(prior[len(prior)-1]) == strings.TrimSpace(last.source) {
+		prior = prior[:len(prior)-1]
+	}
+	job := meetingCaptionJob{latest: last.source, id: last.id, epoch: s.epoch, ctx: s.work, prior: prior, ended: time.Now()}
 	s.mu.Unlock()
 	s.queueReplies(job)
 }
