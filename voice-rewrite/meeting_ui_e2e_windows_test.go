@@ -3,6 +3,7 @@
 package main
 
 import (
+	meetingcore "voicerewrite/internal/core/meeting"
 	"fmt"
 	"os"
 	"runtime"
@@ -121,7 +122,7 @@ func TestMeetingWindowsE2E(t *testing.T) {
 			t.Fatalf("divider %d is missing in full workspace", divider)
 		}
 		before := p.paneHeights
-		a, b, ok := meetingDividerPair(divider, false, false)
+		a, b, ok := meetingcore.DividerPair(divider, false, false)
 		if !ok {
 			t.Fatalf("divider %d cannot be dragged", divider)
 		}
@@ -134,7 +135,7 @@ func TestMeetingWindowsE2E(t *testing.T) {
 		if p.paneHeights[a] >= before[a] || p.paneHeights[b] <= before[b] || p.dragDivider != -1 {
 			t.Fatalf("native divider %d did not resize adjacent panes: before=%v after=%v", divider, before, p.paneHeights)
 		}
-		for index := 0; index < meetingPaneCount; index++ {
+		for index := 0; index < meetingcore.PaneCount; index++ {
 			if index != a && index != b && p.paneHeights[index] != before[index] {
 				t.Fatalf("native drag of divider %d changed unrelated pane %d: %v -> %v", divider, index, before, p.paneHeights)
 			}
