@@ -110,6 +110,7 @@ func meetingTranscript(captions []meetingCaption) (string, bool) {
 // history, so recognition and translation updates cannot move older text.
 type meetingReadingPanels struct {
 	english, chinese, history, hint string
+	currentID                       uint64
 	live                            bool
 	historyCount                    int
 }
@@ -130,6 +131,7 @@ func buildMeetingReadingPanels(captions []meetingCaption) meetingReadingPanels {
 		return result
 	}
 	current := entries[len(entries)-1]
+	result.currentID = current.id
 	result.english = strings.TrimSpace(current.source)
 	result.chinese = strings.TrimSpace(current.chinese)
 	result.live = !current.final
