@@ -1,7 +1,6 @@
 package speech
 
 import (
-	coreconfig "voicerewrite/internal/core/config"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"voicerewrite/internal/core/audio"
+	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
 )
 
