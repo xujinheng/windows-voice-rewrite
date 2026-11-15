@@ -58,6 +58,7 @@ func TestMeetingEnglishExpressionFormats(t *testing.T) {
 		raw, want string
 	}{
 		{"Could you walk us through the schedule for each option?", "Could you walk us through the schedule for each option?"},
+		{"There are several reasons.\nFirst, the age of the data matters.\nSecond, the population definition varies.", "There are several reasons.\r\nFirst, the age of the data matters.\r\nSecond, the population definition varies."},
 		{"SAY\tThanks for sharing.\t谢谢分享。", "Thanks for sharing."},
 		{"SAY<TAB>Could you clarify the timing?<TAB>能澄清时间吗？", "Could you clarify the timing?"},
 		{`{"english":"I'd like to know the schedule."}`, "I'd like to know the schedule."},
