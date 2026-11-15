@@ -3,7 +3,6 @@
 package main
 
 import (
-	"voicerewrite/internal/core/speech"
 	"context"
 	"errors"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 
 	"voicerewrite/internal/core/audio"
 	meetingcore "voicerewrite/internal/core/meeting"
+	"voicerewrite/internal/core/speech"
 )
 
 const (
