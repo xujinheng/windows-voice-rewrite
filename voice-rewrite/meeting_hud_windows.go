@@ -130,6 +130,10 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	currentStyle := uintptr(ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL)
 	p.currentEnglish = child("EDIT", "", currentStyle, 0, false)
 	p.currentChinese = child("EDIT", "", currentStyle, 0, false)
+	for _, control := range []uintptr{p.currentEnglish, p.currentChinese} {
+		margin := p.px(10)
+		procSendMessage.Call(control, uxEMSetMargins, 3, uintptr(uint32(margin)|uint32(margin)<<16))
+	}
 	setFont(p.currentEnglish, p.englishFont)
 	setFont(p.currentChinese, p.chineseFont)
 	p.labels[3] = child("STATIC", "之前的对话", 0, 0, false)
@@ -278,18 +282,30 @@ func (p *meetingHUD) resizeText(delta int32) {
 	if size == p.fontSize {
 		return
 	}
-	font := popupFont(p.px(size), 400)
-	if font == 0 {
+	body := meetingUIFont(p.px(size), 400)
+	english := popupFont(-p.px(size+4), 500)
+	chinese := meetingUIFont(p.px(size+2), 500)
+	if body == 0 || english == 0 || chinese == 0 {
+		for _, font := range []uintptr{body, english, chinese} {
+			if font != 0 {
+				procDeleteObject.Call(font)
+			}
+		}
 		return
 	}
-	old := p.bodyFont
-	p.bodyFont, p.fontSize = font, size
+	old := []uintptr{p.bodyFont, p.englishFont, p.chineseFont}
+	p.bodyFont, p.englishFont, p.chineseFont, p.fontSize = body, english, chinese, size
 	for _, control := range []uintptr{p.captions, p.responses, p.expression, p.instruction, p.profileBackground, p.profileTerms} {
 		if control != 0 {
-			setFont(control, font)
+			setFont(control, body)
 		}
 	}
-	procDeleteObject.Call(old)
+	setFont(p.currentEnglish, english)
+	setFont(p.currentChinese, chinese)
+	for _, font := range old {
+		procDeleteObject.Call(font)
+	}
+	p.layout()
 	p.savePreferences()
 }
 
@@ -499,7 +515,7 @@ func closeMeetingHUD() {
 	p.savePreferences()
 	activeMeetingHUD = nil
 	procDestroyWindow.Call(p.window)
-	for _, handle := range []uintptr{p.labelFont, p.bodyFont, p.background, p.surface} {
+	for _, handle := range []uintptr{p.labelFont, p.bodyFont, p.englishFont, p.chineseFont, p.background, p.surface} {
 		if handle != 0 {
 			procDeleteObject.Call(handle)
 		}
@@ -520,7 +536,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			var bounds rect32
 			popupGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds)))
 			work := uxWorkAreaForPoint(trayPoint{X: bounds.Left, Y: bounds.Top})
-			w, h := desktopFitSize(p.px(600), p.px(640), work, 0)
+			w, h := desktopFitSize(p.px(600), p.px(720), work, 0)
 			info.MinSize = trayPoint{X: w, Y: h}
 			return 0
 
@@ -619,7 +635,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			} else {
 				procSetTextColor.Call(wParam, p.palette.color(p.palette.text))
 			}
-			if lParam == p.captions || lParam == p.live || lParam == p.responses || lParam == p.expression || lParam == p.instruction || lParam == p.profileBackground || lParam == p.profileTerms {
+			if lParam == p.captions || lParam == p.live || lParam == p.currentEnglish || lParam == p.currentChinese || lParam == p.responses || lParam == p.expression || lParam == p.instruction || lParam == p.profileBackground || lParam == p.profileTerms {
 				procSetBkColor.Call(wParam, p.palette.color(p.palette.surface))
 				return p.surface
 			}
