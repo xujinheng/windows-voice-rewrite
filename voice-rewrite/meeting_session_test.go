@@ -87,7 +87,7 @@ func TestMeetingStreamingDoesNotClearTranslation(t *testing.T) {
 func TestMeetingPauseInvalidatesOldWork(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.runtime.Stop()
-	ctx, epoch := s.workSnapshot()
+	ctx, epoch, _ := s.runtime.Snapshot()
 	s.setCapturePaused(true)
 	if ctx.Err() == nil {
 		t.Fatal("capture/request context not canceled")
@@ -97,7 +97,7 @@ func TestMeetingPauseInvalidatesOldWork(t *testing.T) {
 		t.Fatal("stale work overwrote pause")
 	}
 	s.setCapturePaused(false)
-	next, e := s.workSnapshot()
+	next, e, _ := s.runtime.Snapshot()
 	if next.Err() != nil || e == epoch {
 		t.Fatal("resume failed")
 	}
@@ -133,7 +133,7 @@ func TestMeetingFinalCancelsActivePreview(t *testing.T) {
 	ctx, cancel := context.WithCancel(s.runtime.Context())
 	s.activeASRCancel = cancel
 	s.activeASRID = 1
-	work, epoch := s.workSnapshot()
+	work, epoch, _ := s.runtime.Snapshot()
 	q := make(chan meetingAudioTurn, 1)
 	s.queueAudio(q, meetingAudioTurn{final: true, id: 1, epoch: epoch, ctx: work})
 	if ctx.Err() == nil {
