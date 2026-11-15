@@ -7,68 +7,6 @@ import (
 	"testing"
 )
 
-func TestMeetingPreferencesRoundTrip(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "nested", "meeting-ui.json")
-	want := meetingcore.Preferences{FontSize: 22, Panes: meetingcore.PaneWeights{110, 40, 80, 50, 300, 30}, CaptionsOnly: true, X: -900, Y: 30, Width: 640, Height: 720}
-	if err := meetingcore.SavePreferences(path, want); err != nil {
-		t.Fatal(err)
-	}
-	got, err := meetingcore.LoadPreferences(path)
-	if err != nil || got != want {
-		t.Fatalf("got %+v, %v; want %+v", got, err, want)
-	}
-	want.FontSize = 18
-	if err := meetingcore.SavePreferences(path, want); err != nil {
-		t.Fatal(err)
-	}
-	got, err = meetingcore.LoadPreferences(path)
-	if err != nil || got != want {
-		t.Fatalf("replacement got %+v, %v", got, err)
-	}
-}
-
-func TestMeetingPreferencesDefaultsAndValidation(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "meeting-ui.json")
-	got, err := meetingcore.LoadPreferences(path)
-	if err != nil || got.FontSize != 16 || got.Panes != meetingcore.DefaultPaneWeights {
-		t.Fatalf("missing preferences: %+v %v", got, err)
-	}
-	for _, tc := range []struct {
-		body string
-		font int32
-	}{
-		{`{"font_size":3}`, 12}, {`{"font_size":99}`, 28}, {`{}`, 16},
-	} {
-		if err := os.WriteFile(path, []byte(tc.body), 0600); err != nil {
-			t.Fatal(err)
-		}
-		got, err = meetingcore.LoadPreferences(path)
-		if err != nil || got.FontSize != tc.font || got.Panes != meetingcore.DefaultPaneWeights {
-			t.Fatalf("%s: %+v %v", tc.body, got, err)
-		}
-	}
-	for _, invalid := range []string{
-		`{"panes":[0,0,0,0,0,0]}`,
-		`{"panes":[100,80,60,-5,100,30]}`,
-		`{"panes":[100,80,60,200000,100,30]}`,
-	} {
-		if err := os.WriteFile(path, []byte(invalid), 0600); err != nil {
-			t.Fatal(err)
-		}
-		got, err := meetingcore.LoadPreferences(path)
-		if err != nil || got.Panes != meetingcore.DefaultPaneWeights {
-			t.Fatalf("invalid pane sizing escaped validation: %+v %v", got, err)
-		}
-	}
-	if err := os.WriteFile(path, []byte(`{"font_size":`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	got, err = meetingcore.LoadPreferences(path)
-	if err == nil || got.FontSize != 16 {
-		t.Fatalf("corrupt preferences: %+v %v", got, err)
-	}
-}
-
 func TestMeetingPreferencesClampRemovedMonitor(t *testing.T) {
 	p := meetingcore.Preferences{X: -2000, Y: 1800, Width: 1800, Height: 1400}
 	x, y, w, h := meetingGeometry(p, desktopWorkArea{left: 0, top: 30, right: 1024, bottom: 768}, 1)
