@@ -197,6 +197,7 @@ final class WorkspaceModel: ObservableObject {
             sideMouseStatus = "未授权辅助功能；请在系统设置授权后返回应用"
             return
         }
+        let isFreshStart = sideMouse == nil
         let driver = sideMouse ?? SideMouseButtonDriver(
             onHold: { [weak self] action, pid in
                 self?.sideMouseHeld(action, targetPID: pid)
@@ -220,7 +221,7 @@ final class WorkspaceModel: ObservableObject {
         do {
             try driver.start()
             sideMouse = driver
-            sideMouseStatus = "监听已启动；等待 Mouse4/Mouse5 事件"
+            if isFreshStart { sideMouseStatus = "监听已启动；等待 Mouse4/Mouse5 事件" }
         } catch {
             driver.shutdown()
             sideMouse = nil
