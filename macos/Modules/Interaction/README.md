@@ -1,6 +1,6 @@
 # VoiceRewrite macOS Interaction
 
-Standalone Swift Package, restricted to `macos/Modules/Interaction/**` (Issue #46).
+Standalone Swift Package for the native macOS host.
 Requires macOS 12+, a native Swift host application, and user-granted **Privacy & Security → Accessibility** permission for the host. Hotkeys use Carbon and do **not** require Accessibility; cross-app AX reads/writes do. `InteractionSession.accessibilityPermissionGranted(prompt: true)` explicitly requests the system prompt; callers should expose a permission-help UI.
 
 ## Integrating from a Swift App
@@ -53,16 +53,16 @@ cd macos/Modules/Interaction
 swift test
 ```
 
-Shared authorization, lifecycle, registry, and clipboard policy tests also run on Linux. **These mocks are not macOS device acceptance evidence.** The current development environment is Linux and cannot compile the macOS `AppKit` / `ApplicationServices` / Carbon portions or test actual AX writes.
+Platform-neutral authorization, lifecycle, clipboard and text-verification tests run on Linux. macOS CI builds the AppKit / Accessibility / Carbon adapters on Apple Silicon and Intel. Neither test runner supplies physical-mouse or real external-editor acceptance evidence.
 
-## Real macOS acceptance checklist (not yet executed)
+## Physical macOS acceptance checklist
 
 1. Build with Xcode's Swift toolchain (`swift test`) and instantiate the package from a real native host. Grant Accessibility in System Settings, then restart the host if macOS requires it.
 2. Launch TextEdit in a plain-text document; focus an empty caret, trigger the configured global shortcut while TextEdit remains frontmost, capture an insertion snapshot, and verify an ASR string is inserted *only* at that caret using AX. Repeat with selected text and explicit replace-selection intent.
 3. Start a task, then change selected text, caret position, focus within TextEdit, or activate another app before delivering the delayed result. Verify no text is changed. Repeat with an ABA change (switch away and back), cancellation, timeout and overlapping generations.
 4. Focus a system password/secure-text field; verify `secureField` and no text access/write. Revoke Accessibility; verify `accessibilityPermissionDenied` and an actionable permission prompt path.
 5. Register the same shortcut twice and try a known system-reserved shortcut; confirm duplicate/conflict errors. Unregister/re-register; close the host and confirm no shortcut remains registered.
-6. In a disposable TextEdit/plain-text harness, test a deliberately non-settable `AXSelectedText` target with readable `AXValue`: confirm paste writes at the original range and the clipboard is restored. Test change-count takeover, delayed paste, missing AXValue, unrepresentable clipboard formats, emoji offsets, and unconfirmed writes. Confirm that an uncertain outcome does not retry or overwrite clipboard changes.
+6. In a disposable plain-text editor that exposes a non-settable `AXSelectedText` but readable `AXValue`, confirm paste writes at the original range and the clipboard is restored. Test change-count takeover, delayed paste, missing AXValue, unrepresentable clipboard formats, emoji offsets, and unconfirmed writes. Confirm that an uncertain outcome does not retry or overwrite clipboard changes.
 
 ### Remaining risks and boundaries
 
