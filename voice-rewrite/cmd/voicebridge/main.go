@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	coreconfig "voicerewrite/internal/core/config"
+	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/speech"
 	"voicerewrite/internal/core/textedit"
 )
@@ -192,7 +193,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	}
 	s.seen[req.ID] = struct{}{}
 
-	if req.Op != "transcribe" && req.Op != "selected_task" {
+	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "probe_asr" && req.Op != "probe_llm" {
 		s.mu.Unlock()
 		switch req.Op {
 		case "hello":
@@ -274,6 +275,12 @@ func processRequest(ctx context.Context, req request) response {
 		return contextFailure(req.ID, err)
 	}
 	switch req.Op {
+	case "probe_asr":
+		message := serviceprobe.ProbeModel(ctx, "ASR", cfg.ASRBaseURL, cfg.ASRAPIKey, cfg.ASRModel)
+		return success(req.ID, map[string]string{"kind": "ASR", "message": message})
+	case "probe_llm":
+		message := serviceprobe.ProbeModel(ctx, "LLM", cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.TextModel)
+		return success(req.ID, map[string]string{"kind": "LLM", "message": message})
 	case "transcribe":
 		maxBytes := maxPCMBytes
 		if limit := cfg.MaxRecordSeconds * 32000; limit > 0 && limit < maxBytes {
