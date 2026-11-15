@@ -98,7 +98,7 @@ try {
         if ($w -lt 560 -or $h -lt 640 -or
             $bounds.Left -lt $desktop.Left -or $bounds.Top -lt $desktop.Top -or
             $bounds.Right -gt $desktop.Right -or $bounds.Bottom -gt $desktop.Bottom) {
-            throw "$case: window is too small or clipped: $w x $h; virtual desktop $desktop"
+            throw "${case}: window is too small or clipped: $w x $h; virtual desktop $desktop"
         }
         $bitmap = [System.Drawing.Bitmap]::new($w,$h)
         $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
