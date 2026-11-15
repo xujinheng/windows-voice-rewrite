@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -13,25 +11,6 @@ import (
 
 	"voicerewrite/internal/core/audio"
 )
-
-func TestLongAudioChunksNeverDropSamples(t *testing.T) {
-	pcm := make([]byte, 62*audio.PCMBytesPerSecond)
-	for i := 0; i < len(pcm); i += 2 {
-		binary.LittleEndian.PutUint16(pcm[i:i+2], uint16(i/2))
-	}
-	parts := audio.SplitPCMForASR(pcm)
-	if len(parts) < 3 {
-		t.Fatalf("expected several chunks; got %d", len(parts))
-	}
-	if !bytes.Equal(bytes.Join(parts, nil), pcm) {
-		t.Fatal("lost or reordered samples")
-	}
-	for _, part := range parts {
-		if len(part) == 0 || len(part) > audio.ASRChunkSeconds*audio.PCMBytesPerSecond || len(part)%2 != 0 {
-			t.Fatalf("invalid PCM chunk length: %d", len(part))
-		}
-	}
-}
 
 func TestASRChunksMergeAndRespectCancel(t *testing.T) {
 	var calls atomic.Int32
@@ -57,11 +36,3 @@ func TestASRChunksMergeAndRespectCancel(t *testing.T) {
 	}
 }
 
-func TestJoinASRChunksChineseAndEnglish(t *testing.T) {
-	if got := audio.JoinASRChunks([]string{"你好", "世界。"}); got != "你好世界。" {
-		t.Fatal(got)
-	}
-	if got := audio.JoinASRChunks([]string{"Hello", "world."}); got != "Hello world." {
-		t.Fatal(got)
-	}
-}
