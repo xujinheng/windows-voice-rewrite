@@ -58,7 +58,7 @@ func TestMeetingEnglishExpressionFormats(t *testing.T) {
 		raw, want string
 	}{
 		{"Could you walk us through the schedule for each option?", "Could you walk us through the schedule for each option?"},
-		{"SAY\\tThanks for sharing.\\t谢谢分享。", "Thanks for sharing."},
+		{"SAY\tThanks for sharing.\t谢谢分享。", "Thanks for sharing."},
 		{"SAY<TAB>Could you clarify the timing?<TAB>能澄清时间吗？", "Could you clarify the timing?"},
 		{`{"english":"I'd like to know the schedule."}`, "I'd like to know the schedule."},
 		{"<think>internal</think>How long would each option take?", "How long would each option take?"},
@@ -101,7 +101,7 @@ func TestMeetingLiteralAndIntentEnglishDoNotRequireSAYProtocol(t *testing.T) {
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
 				data, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": map[string]string{"content": tc.reply}}}})
-				fmt.Fprintf(w, "data: %s\\n\\ndata: [DONE]\\n\\n", data)
+				fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", data)
 			}))
 			defer server.Close()
 			cfg := defaults()
