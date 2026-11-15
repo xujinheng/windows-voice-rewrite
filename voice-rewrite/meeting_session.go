@@ -1,6 +1,7 @@
 package main
 
 import (
+	"voicerewrite/internal/core/provider"
 	"context"
 	"errors"
 	"strings"
@@ -410,7 +411,7 @@ func (s *meetingSession) complete(ctx context.Context, priority int, query meeti
 	return s.runInference(ctx, priority, stage, func(active context.Context) error {
 		s.modelMu.Lock()
 		if s.model == "" {
-			model, err := discoverModel(active, cfg)
+			model, err := provider.DiscoverModel(active, cfg)
 			if err != nil {
 				s.modelMu.Unlock()
 				return err
