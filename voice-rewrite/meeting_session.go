@@ -263,12 +263,9 @@ func (s *meetingSession) transcribeTurn(turn meetingAudioTurn, state *meetingASR
 			if first == 0 {
 				first = time.Since(began)
 			}
-			// Only the prior completed snapshot confirms a prefix, not individual tokens.
+			// Measure latency without copying every provisional decoder token
+			// to the UI. A complete preview is the unit of presentation.
 			s.applyWork(turn.epoch, func() {
-				s.upsertSourceLocked(turn.id, text, false, false)
-				if cfg.MeetingASRMode != "multipart" {
-					s.setSourcePrefixLocked(turn.id, state.fixed)
-				}
 				s.view.metrics.ASRFirstMS = first.Milliseconds()
 			})
 		})
@@ -312,7 +309,6 @@ func (s *meetingSession) transcribeTurn(turn meetingAudioTurn, state *meetingASR
 	default:
 		select {
 		case old := <-captions:
-			s.updateCaption(old.epoch, old.id, old.latest, "翻译未跟上 · 原文已保留")
 			s.applyWork(turn.epoch, func() { s.view.metrics.Dropped++ })
 		default:
 		}
@@ -349,9 +345,6 @@ func (s *meetingSession) upsertSourceLocked(id uint64, text string, final, confi
 		return
 	}
 	s.view.captions = append(s.view.captions, reviseMeetingCaption(meetingCaption{}, id, text, final))
-	if len(s.view.captions) > 12 {
-		s.view.captions = s.view.captions[1:]
-	}
 }
 func (s *meetingSession) updateCaption(epoch, id uint64, source, chinese string) {
 	s.applyWork(epoch, func() {
@@ -376,14 +369,12 @@ func (s *meetingSession) translateTurns(jobs <-chan meetingCaptionJob) {
 			ctx, cancel := context.WithTimeout(job.ctx, 16*time.Second)
 			s.applyWork(job.epoch, func() { s.stopCaption = cancel; s.captionID = job.id })
 			var displayed, semantic bool
-			var lastTranslation string
 			started := time.Now()
 			err := s.complete(ctx, meetingPriorityCaption, meetingQuery{Mode: "caption", Prior: job.prior, Latest: job.latest, Gate: job.final}, func(line meetingLine) {
 				if line.kind == "GATE" {
 					semantic = strings.EqualFold(line.chinese, "YES")
 					return
 				}
-				lastTranslation = line.chinese
 				s.updateCaption(job.epoch, job.id, job.latest, line.chinese)
 				if !displayed {
 					s.applyWork(job.epoch, func() { s.view.metrics.TranslationFirstMS = time.Since(started).Milliseconds() })
@@ -394,11 +385,9 @@ func (s *meetingSession) translateTurns(jobs <-chan meetingCaptionJob) {
 			s.applyWork(job.epoch, func() { s.view.metrics.TranslationDoneMS = time.Since(started).Milliseconds() })
 			if err != nil && ctx.Err() == nil {
 				s.logger("meeting stage=caption error=%v", err)
-				if !displayed {
-					s.updateCaption(job.epoch, job.id, job.latest, "翻译失败 · 原文已保留")
-				} else {
-					s.updateCaption(job.epoch, job.id, job.latest, lastTranslation+"（翻译未完成）")
-				}
+				// Failure must not destroy a readable translation from a
+				// previous completed snapshot. The original ASR stays visible.
+				s.applyWork(job.epoch, func() { s.view.status = "翻译暂不可用 · 原文已保留" })
 			}
 			canceled := ctx.Err() != nil
 			cancel()
