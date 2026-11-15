@@ -22,18 +22,18 @@ type meetingMetrics struct {
 }
 
 type meetingView struct {
-	status                             string
-	captions                           []meetingCaption
-	replies                            [3]meetingLine
+	status                                               string
+	captions                                             []meetingCaption
+	replies                                              [3]meetingLine
 	tip, replySource, expressionStatus, expressionSource string
-	expression                         meetingLine
-	sourceName, asrMode                string
-	level                              int
-	capturePaused                      bool
-	metrics                            meetingMetrics
-	pendingReplies                     [3]meetingLine
-	pendingReplySource, pendingTip     string
-	replyPending                       bool
+	expression                                           meetingLine
+	sourceName, asrMode                                  string
+	level                                                int
+	capturePaused                                        bool
+	metrics                                              meetingMetrics
+	pendingReplies                                       [3]meetingLine
+	pendingReplySource, pendingTip                       string
+	replyPending                                         bool
 }
 
 func reviseMeetingCaption(old meetingCaption, id uint64, text string, final bool) meetingCaption {
