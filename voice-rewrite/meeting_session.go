@@ -262,12 +262,10 @@ func (s *meetingSession) transcribeTurn(turn meetingAudioTurn, state *meetingASR
 			}
 			if first == 0 {
 				first = time.Since(began)
+				s.applyWork(turn.epoch, func() {
+					s.view.metrics.ASRFirstMS = first.Milliseconds()
+				})
 			}
-			// Measure latency without copying every provisional decoder token
-			// to the UI. A complete preview is the unit of presentation.
-			s.applyWork(turn.epoch, func() {
-				s.view.metrics.ASRFirstMS = first.Milliseconds()
-			})
 		})
 		return err
 	})
