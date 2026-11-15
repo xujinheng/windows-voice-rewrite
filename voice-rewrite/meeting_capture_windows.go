@@ -3,7 +3,6 @@
 package main
 
 import (
-	"voicerewrite/internal/core/audio"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +12,8 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	"voicerewrite/internal/core/audio"
 )
 
 var (
