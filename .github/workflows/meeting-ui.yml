@@ -3,13 +3,37 @@ name: Windows Meeting E2E
 on:
   pull_request:
     paths:
-      - 'voice-rewrite/**'
+      - 'voice-rewrite/meeting_*.go'
+      - 'voice-rewrite/internal/core/audio/**'
+      - 'voice-rewrite/internal/core/config/**'
+      - 'voice-rewrite/internal/core/meeting/**'
+      - 'voice-rewrite/internal/core/provider/**'
+      - 'voice-rewrite/internal/core/speech/**'
+      - 'voice-rewrite/config*.go'
+      - 'voice-rewrite/windows.go'
+      - 'voice-rewrite/appearance_windows.go'
+      - 'voice-rewrite/visual_skin_windows.go'
+      - 'voice-rewrite/settings_windows.go'
+      - 'voice-rewrite/go.mod'
+      - 'voice-rewrite/go.sum'
       - 'scripts/test-meeting-ui.ps1'
       - '.github/workflows/meeting-ui.yml'
   push:
     branches: [meeting-preview]
     paths:
-      - 'voice-rewrite/**'
+      - 'voice-rewrite/meeting_*.go'
+      - 'voice-rewrite/internal/core/audio/**'
+      - 'voice-rewrite/internal/core/config/**'
+      - 'voice-rewrite/internal/core/meeting/**'
+      - 'voice-rewrite/internal/core/provider/**'
+      - 'voice-rewrite/internal/core/speech/**'
+      - 'voice-rewrite/config*.go'
+      - 'voice-rewrite/windows.go'
+      - 'voice-rewrite/appearance_windows.go'
+      - 'voice-rewrite/visual_skin_windows.go'
+      - 'voice-rewrite/settings_windows.go'
+      - 'voice-rewrite/go.mod'
+      - 'voice-rewrite/go.sum'
       - 'scripts/test-meeting-ui.ps1'
       - '.github/workflows/meeting-ui.yml'
   workflow_dispatch:
