@@ -16,8 +16,8 @@ type meetingHUD struct {
 	app                                                         *appState
 	window, owner                                               uintptr
 	status, live, captions, responses, expression, instruction  uintptr
-	currentEnglish, currentChinese, expressionSource              uintptr
-	labelFont, bodyFont, englishFont, chineseFont                uintptr
+	currentEnglish, currentChinese, expressionSource            uintptr
+	labelFont, bodyFont, englishFont, chineseFont               uintptr
 	palette                                                     uiPalette
 	background, surface                                         uintptr
 	labels                                                      [4]uintptr
