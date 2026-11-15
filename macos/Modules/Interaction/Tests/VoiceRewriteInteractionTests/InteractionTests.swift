@@ -6,7 +6,7 @@ private final class FakeAccessibility: AccessibilityClient, @unchecked Sendable 
     var observation = SelectionObservation(
         processID: 123, identity: StringFocusIdentity("editor-a"),
         identityDescription: "editor-a", selectedText: "hello",
-        range: TextRange(location: 2, length: 5), isEditable: true,
+        range: VoiceRewriteInteraction.TextRange(location: 2, length: 5), isEditable: true,
         isSecure: false, revision: 1)
     var captureFailure: InteractionFailure?
     var writeFailure: InteractionFailure?
@@ -23,7 +23,7 @@ private final class FakeAccessibility: AccessibilityClient, @unchecked Sendable 
     }
     func stopMonitoring() { monitorStops += 1 }
     func update(processID: Int32? = nil, focus: String? = nil, text: String? = nil,
-                range: TextRange? = nil, editable: Bool? = nil,
+                range: VoiceRewriteInteraction.TextRange? = nil, editable: Bool? = nil,
                 secure: Bool? = nil, revision: UInt64? = nil) {
         let old = observation
         observation = SelectionObservation(
@@ -151,7 +151,7 @@ final class SelectionGuardTests: XCTestCase {
 
     func testInsertRequiresCaretAndIsSingleUse() async throws {
         let fake = FakeAccessibility(), session = InteractionSession(client: fake)
-        fake.update(text: "", range: TextRange(location: 1, length: 0))
+        fake.update(text: "", range: VoiceRewriteInteraction.TextRange(location: 1, length: 0))
         let gen = try await session.beginTask(targetProcessID: 123)
         let snapshot = try await session.captureSelection(generation: gen, intent: .insertAtCaret)
         try await session.insertIfCurrent(snapshot, text: "ASR", generation: gen)
