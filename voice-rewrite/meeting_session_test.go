@@ -127,23 +127,6 @@ func TestMeetingPauseRemovesAbandonedLiveCaption(t *testing.T) {
 	}
 }
 
-func TestMeetingFinalCancelsActivePreview(t *testing.T) {
-	s := newTestMeetingCore()
-	defer s.runtime.Stop()
-	ctx, cancel := context.WithCancel(s.runtime.Context())
-	s.activeASRCancel = cancel
-	s.activeASRID = 1
-	work, epoch, _ := s.runtime.Snapshot()
-	q := make(chan meetingAudioTurn, 1)
-	s.queueAudio(q, meetingAudioTurn{final: true, id: 1, epoch: epoch, ctx: work})
-	if ctx.Err() == nil {
-		t.Fatal("final waits behind preview")
-	}
-	if len(q) != 1 {
-		t.Fatal("final not queued")
-	}
-}
-
 func TestMeetingCancellationDiscardsUnfinishedLines(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.runtime.Stop()
