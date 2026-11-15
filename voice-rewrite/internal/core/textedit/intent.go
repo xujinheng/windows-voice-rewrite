@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"unicode/utf8"
 	"strings"
 
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
+	"voicerewrite/internal/core/speech"
 )
 
 // AssistantResult contains the generated result and its model-classified intent.
@@ -29,7 +31,7 @@ const (
 	TryReplace Action = "try_replace"
 )
 
-const unifiedPrompt = `你是 Windows 桌面 AI 划词助手。收到用户的语音指令和他选中的文字。
+const unifiedPrompt = `你是桌面 AI 划词助手。收到用户的语音指令和他选中的文字。
 一次完成意图判定和内容生成；意图可以是 edit、translate、answer、summarize、ambiguous。
 - edit：明确要求改写、纠错、润色、缩写或改变选中文字，输出可直接代替原文的正文。
 - translate：要求“写成英文”“翻译成中文”“用日语表达”等文本翻译或语言转换，输出纯译文。程序在可编辑文字中可以将译文直接替换原文。
@@ -164,3 +166,30 @@ func ResolveSelectedTask(ctx context.Context, cfg coreconfig.Config, selected, i
 	}
 	return result, nil
 }
+
+ // ResolveSpokenTask performs the same ASR-instruction and text-edit routing
+ // on every host. The optional callback lets native UI report the stage change
+ // without owning provider requests, prompt rules or classification logic.
+ func ResolveSpokenTask(
+     ctx context.Context, cfg coreconfig.Config, selected string, pcm []byte,
+     onTranscribed func(string),
+ ) (AssistantResult, string, error) {
+     if err := validateSelectedText(ctx, cfg, selected); err != nil {
+         return AssistantResult{}, "", err
+     }
+     if len(pcm) < 3200 || len(pcm)%2 != 0 {
+         return AssistantResult{}, "", errors.New("录音太短（至少约 0.1 秒）或 PCM 格式无效")
+     }
+     instruction, err := speech.Transcribe(ctx, cfg, pcm)
+     if err != nil {
+         return AssistantResult{}, "", err
+     }
+     if err := ctx.Err(); err != nil {
+         return AssistantResult{}, "", err
+     }
+     if onTranscribed != nil {
+         onTranscribed(instruction)
+     }
+     result, err := ResolveSelectedTask(ctx, cfg, selected, instruction)
+     return result, instruction, err
+ }
