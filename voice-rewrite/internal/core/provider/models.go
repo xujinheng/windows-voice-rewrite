@@ -23,20 +23,20 @@ func DiscoverModel(ctx context.Context, cfg coreconfig.Config) (string, error) {
 	if m != "" && !strings.EqualFold(m, "auto") {
 		return m, nil
 	}
-	req, e := http.NewRequestWithContext(ctx, "GET", provider.Endpoint(cfg.LLMBaseURL, "/models"), nil)
+	req, e := http.NewRequestWithContext(ctx, "GET", Endpoint(cfg.LLMBaseURL, "/models"), nil)
 	if e != nil {
 		return "", e
 	}
 	if cfg.LLMAPIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.LLMAPIKey)
 	}
-	resp, e := provider.RequestClient(10 * time.Second).Do(req)
+	resp, e := RequestClient(10 * time.Second).Do(req)
 	if e != nil {
 		return "", fmt.Errorf("无法连接文本处理 API: %w", e)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return "", provider.HTTPError("查询文本模型列表失败", resp.StatusCode)
+		return "", HTTPError("查询文本模型列表失败", resp.StatusCode)
 	}
 	var v struct {
 		Data []modelItem `json:"data"`
