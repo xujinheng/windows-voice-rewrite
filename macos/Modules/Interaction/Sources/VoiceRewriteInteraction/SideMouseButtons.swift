@@ -81,6 +81,7 @@ public final class SideMouseButtonDriver {
     private let onHold: @MainActor (SideMouseAction, Int32?) -> Void
     private let onRelease: @MainActor (SideMouseAction) -> Void
     private let onCancel: @MainActor () -> Void
+    private let onObservedButton: @MainActor (Int) -> Void
 
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
@@ -92,17 +93,28 @@ public final class SideMouseButtonDriver {
         threshold: TimeInterval = 0.28,
         onHold: @escaping @MainActor (SideMouseAction, Int32?) -> Void,
         onRelease: @escaping @MainActor (SideMouseAction) -> Void,
-        onCancel: @escaping @MainActor () -> Void
+        onCancel: @escaping @MainActor () -> Void,
+        onObservedButton: @escaping @MainActor (Int) -> Void = { _ in }
     ) {
         self.threshold = threshold
         self.onHold = onHold
         self.onRelease = onRelease
         self.onCancel = onCancel
+        self.onObservedButton = onObservedButton
     }
 
     public func start() throws {
-        guard tap == nil else { return }
         guard AXIsProcessTrusted() else { throw SideMouseFailure.accessibilityDenied }
+        if let tap {
+            guard CFMachPortIsValid(tap) else { throw SideMouseFailure.eventTapUnavailable }
+            if !CGEvent.tapIsEnabled(tap: tap) {
+                CGEvent.tapEnable(tap: tap, enable: true)
+            }
+            guard CGEvent.tapIsEnabled(tap: tap) else {
+                throw SideMouseFailure.eventTapUnavailable
+            }
+            return
+        }
         let mask = (CGEventMask(1) << CGEventType.otherMouseDown.rawValue)
             | (CGEventMask(1) << CGEventType.otherMouseUp.rawValue)
         guard let created = CGEvent.tapCreate(
@@ -120,6 +132,10 @@ public final class SideMouseButtonDriver {
         source = runLoopSource
         CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: created, enable: true)
+        guard CGEvent.tapIsEnabled(tap: created) else {
+            shutdown()
+            throw SideMouseFailure.eventTapUnavailable
+        }
     }
 
     public func shutdown() {
@@ -149,6 +165,9 @@ public final class SideMouseButtonDriver {
             return Unmanaged.passUnretained(event)
         }
         let button = Int(event.getIntegerValueField(.mouseEventButtonNumber))
+        if type == .otherMouseDown && button >= 3 {
+            onObservedButton(button)
+        }
         guard let action = SideMouseAction(rawValue: button) else {
             return Unmanaged.passUnretained(event)
         }
