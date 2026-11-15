@@ -1,6 +1,7 @@
 package main
 
 import (
+	meetingcore "voicerewrite/internal/core/meeting"
 	"voicerewrite/internal/core/provider"
 	"bufio"
 	"bytes"
@@ -184,7 +185,7 @@ func completeMeeting(ctx context.Context, cfg Config, query meetingQuery, emit f
 			query.Background, query.Terms = "", ""
 		}
 	} else if query.Mode == "compose" {
-		if !meetingUsesConversationContext(query.UserPoints) {
+		if !meetingcore.UsesConversationContext(query.UserPoints) {
 			query.Prior = nil
 			query.Background, query.Terms = "", ""
 		}
