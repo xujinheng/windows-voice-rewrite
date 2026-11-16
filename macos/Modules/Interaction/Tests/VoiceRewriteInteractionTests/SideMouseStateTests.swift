@@ -55,6 +55,25 @@ final class SideMouseStateTests: XCTestCase {
         XCTAssertEqual(state.release(3), .ignored)
     }
 
+    func testPausedOrReboundPendingMouseClickIsReplayedOnlyOnce() {
+        var state = SideButtonHoldState()
+        let pendingToken = state.press(3)!
+        XCTAssertFalse(state.reset())
+        XCTAssertFalse(state.activate(3, token: pendingToken))
+        XCTAssertTrue(state.takeCancelledRelease(3))
+        XCTAssertFalse(state.takeCancelledRelease(3))
+        XCTAssertEqual(state.release(3), .ignored)
+    }
+
+    func testCancelledHoldNeverReplaysNavigationClick() {
+        var state = SideButtonHoldState()
+        let heldToken = state.press(4)!
+        XCTAssertTrue(state.activate(4, token: heldToken))
+        XCTAssertTrue(state.reset())
+        XCTAssertFalse(state.takeCancelledRelease(4))
+        XCTAssertEqual(state.release(4), .ignored)
+    }
+
     func testDifferentButtonsHaveIndependentTokens() {
         var state = SideButtonHoldState()
         let a = state.press(3)!
