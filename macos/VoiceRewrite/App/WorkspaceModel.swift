@@ -588,21 +588,32 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func toggleRecording(from targetPID: Int32? = nil) {
-        if voicePaused && !isRecording { return }
-        if isRecording { stopRecording() }
-        else if !isStarting && !isProcessing { startRecording(targetPID: targetPID) }
+        switch recordingToggle(paused: voicePaused, recording: isRecording, starting: isStarting, processing: isProcessing) {
+        case .ignore:
+            return
+        case .stop:
+            stopRecording()
+        case .start:
+            startRecording(targetPID: targetPID)
+        }
     }
 
     func toggleVoiceSelectedText(from targetPID: Int32?) {
-        if voicePaused && !isRecording { return }
-        if isRecording {
-            if isVoiceSelectionRecording { stopRecording() }
+        let decision = rewriteToggle(
+            paused: voicePaused, recording: isRecording, voiceSelection: isVoiceSelectionRecording,
+            starting: isStarting, processing: isProcessing, targetPID: targetPID)
+        let pid: Int32
+        switch decision {
+        case .ignore:
             return
-        }
-        guard !isStarting && !isProcessing else { return }
-        guard let pid = targetPID, pid > 0 else {
+        case .stop:
+            stopRecording()
+            return
+        case .missingTarget:
             interactionStatus = "无有效前台目标，无法获取选区"
             return
+        case .start(let target):
+            pid = target
         }
         invalidatePending()
         let token = resultGeneration.begin()
