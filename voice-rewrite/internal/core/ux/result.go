@@ -32,6 +32,12 @@ const (
 	PauseVoice        = "暂停语音操作（保留鼠标侧键原功能）"
 	ResumeVoice       = "恢复语音操作"
 	PauseWhileBusy    = "当前任务仍在处理；结束后可暂停语音操作。"
+	// DictationTooShort is shown when a dictation buffer is under 0.1s.
+	DictationTooShort = "语音太短，无法转写"
+	// RewriteTooShort is shown when a spoken rewrite buffer is under 0.1s.
+	RewriteTooShort = "录音太短（至少约 0.1 秒）；请再试一次"
+	// SpokenCaptureInvalid is shown when spoken audio is short or not whole PCM16 samples.
+	SpokenCaptureInvalid = "录音太短（至少约 0.1 秒）或 PCM 格式无效"
 )
 
 // ResultCardTitle is the floating-card heading for a selected-text result.

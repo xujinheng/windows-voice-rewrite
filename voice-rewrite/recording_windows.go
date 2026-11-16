@@ -37,7 +37,7 @@ func winmmCheck(rc uintptr, op string) error {
 	return nil
 }
 func startRecorder(maxSec, deviceID int) (*audioRecorder, error) {
-	f := waveFormatEx{FormatTag: WAVE_FORMAT_PCM, Channels: 1, SamplesPerSec: 16000, AvgBytesPerSec: 32000, BlockAlign: 2, BitsPerSample: 16}
+	f := waveFormatEx{FormatTag: WAVE_FORMAT_PCM, Channels: 1, SamplesPerSec: audio.CaptureSampleRate, AvgBytesPerSec: audio.PCMBytesPerSecond, BlockAlign: 2, BitsPerSample: 16}
 	var h uintptr
 	device := WAVE_MAPPER
 	if deviceID >= 0 {

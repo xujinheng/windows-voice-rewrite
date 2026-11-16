@@ -6,6 +6,15 @@ import (
 	"testing"
 )
 
+func TestMinCaptureIsOneTenthSecond(t *testing.T) {
+	if CaptureSampleRate != 16000 || PCMBytesPerSecond != 32000 || MinCaptureBytes != 3200 {
+		t.Fatalf("rate=%d bps=%d min=%d", CaptureSampleRate, PCMBytesPerSecond, MinCaptureBytes)
+	}
+	if !BelowMinCapture(make([]byte, MinCaptureBytes-1)) || BelowMinCapture(make([]byte, MinCaptureBytes)) {
+		t.Fatal("0.1s boundary")
+	}
+}
+
 func TestLongAudioChunksNeverDropSamples(t *testing.T) {
 	pcm := make([]byte, 62*PCMBytesPerSecond)
 	for i := 0; i < len(pcm); i += 2 {

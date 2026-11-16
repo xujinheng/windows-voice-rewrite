@@ -6,7 +6,7 @@ VoiceRewrite has native Windows (Go/Win32) and macOS (SwiftUI/AppKit with a bund
 
 | Package | Responsibility |
 | --- | --- |
-| `internal/core/audio` | Validate interleaved PCM16 formats and packet sizes; mix channels, resample to 16 kHz and assemble 20 ms mono frames; provide audio framing, voice segmentation, preview timing, transcript chunking, a 0–1000 recording-indicator RMS level, and the `FrameSource` contract. |
+| `internal/core/audio` | Validate interleaved PCM16 formats and packet sizes; mix channels, resample to 16 kHz and assemble 20 ms mono frames; provide audio framing, voice segmentation, preview timing, transcript chunking, the shared 0.1s capture floor, a 0–1000 recording-indicator RMS level, and the `FrameSource` contract. |
 | `internal/core/indicator` | Recording-pill phases, geometry, labels, opacity, waveform motion, progress-wheel beads, microphone-level gain, and the shared pill colors. Hosts paint the window and own the microphone. |
 | `internal/core/input` | Map a physical side button to dictation, rewrite, or ignore, and track one button's press, hold, and release. Hosts own the event tap or mouse hook. |
 | `internal/core/shortcut` | Canonical voice hotkeys: mouse side buttons, function keys, and Ctrl/Alt/Shift combinations. Bare typing keys and Pause/Break are rejected, and two voice actions cannot share a shortcut. Startup rejects a shared side button, keyboard dictation or a side button outside hold mode, and a voice hotkey that matches exit. macOS maps the key name to its own virtual key codes. |

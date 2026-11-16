@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"voicerewrite/internal/core/audio"
 	"voicerewrite/internal/core/clipboard"
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
@@ -108,9 +109,9 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	if !app.epoch.Valid(generation) {
 		return
 	}
-	if r.err != nil || len(r.pcm) < 3200 {
+	if r.err != nil || audio.BelowMinCapture(r.pcm) {
 		if r.err == nil {
-			r.err = errors.New("语音太短，无法转写")
+			r.err = errors.New(ux.DictationTooShort)
 		}
 		app.fail(r.err)
 		app.postHandyPhase(indicator.Error, generation)
@@ -265,11 +266,11 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		app.fail(r.err)
 		return
 	}
-	if len(r.pcm) < 3200 {
-		app.fail(errors.New("录音太短（至少约 0.1 秒）；请再试一次"))
+	if audio.BelowMinCapture(r.pcm) {
+		app.fail(errors.New(ux.RewriteTooShort))
 		return
 	}
-	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/32000)
+	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/audio.PCMBytesPerSecond)
 	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), 240*time.Second)
 	defer cancel()
 	started := time.Now()

@@ -33,4 +33,7 @@ func TestResultCardTitles(t *testing.T) {
 	if VoicePaused != "已暂停 · 鼠标侧键恢复正常功能" || PauseWhileBusy != "当前任务仍在处理；结束后可暂停语音操作。" {
 		t.Fatal("pause")
 	}
+	if DictationTooShort != "语音太短，无法转写" || RewriteTooShort != "录音太短（至少约 0.1 秒）；请再试一次" {
+		t.Fatal("short capture")
+	}
 }

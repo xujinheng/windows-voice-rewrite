@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"voicerewrite/internal/core/ux"
 )
 
 type bridgeHarness struct {
@@ -680,10 +682,11 @@ func TestBridgeSpokenSelectionRejectsBadPCMAndEmptySelection(t *testing.T) {
 		selected string
 		audio    []byte
 		want     string
+		message  string
 	}{
-		{"text", make([]byte, 100), "invalid_pcm"},
-		{"", make([]byte, 3200), "invalid_request"},
-		{"text", make([]byte, 3201), "invalid_pcm"},
+		{"text", make([]byte, 100), "invalid_pcm", ux.RewriteTooShort},
+		{"", make([]byte, 3200), "invalid_request", ""},
+		{"text", make([]byte, 3201), "invalid_pcm", ""},
 	} {
 		id := fmt.Sprintf("invalid-spoken-%d", i)
 		h.send(map[string]any{
@@ -692,8 +695,8 @@ func TestBridgeSpokenSelectionRejectsBadPCMAndEmptySelection(t *testing.T) {
 			"pcm_base64": base64.StdEncoding.EncodeToString(tc.audio),
 		})
 		reply := h.receive()
-		if reply.OK || reply.Error == nil || reply.Error.Code != tc.want {
-			t.Fatalf("unexpected response: %#v; want %s", reply, tc.want)
+		if reply.OK || reply.Error == nil || reply.Error.Code != tc.want || (tc.message != "" && reply.Error.Message != tc.message) {
+			t.Fatalf("unexpected response: %#v; want %s %s", reply, tc.want, tc.message)
 		}
 	}
 	h.close()

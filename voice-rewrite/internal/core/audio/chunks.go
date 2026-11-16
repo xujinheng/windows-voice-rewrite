@@ -7,8 +7,20 @@ import (
 	"unicode/utf8"
 )
 
-const PCMBytesPerSecond = 16000 * 2
-const ASRChunkSeconds = 25
+const (
+	// CaptureSampleRate is the mono PCM16 rate both hosts send to ASR.
+	CaptureSampleRate = 16000
+	// PCMBytesPerSecond is one second of that stream, two bytes per sample.
+	PCMBytesPerSecond = CaptureSampleRate * 2
+	// MinCaptureBytes is 0.1s. Shorter buffers are not sent for transcription.
+	MinCaptureBytes = PCMBytesPerSecond / 10
+	ASRChunkSeconds = 25
+)
+
+// BelowMinCapture reports a buffer shorter than the shared 0.1s floor.
+func BelowMinCapture(pcm []byte) bool {
+	return len(pcm) < MinCaptureBytes
+}
 
 // SplitPCMForASR preserves every sample. For long dictations, it places cuts
 // near low-energy regions in the last four seconds of each 25-second window.

@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/shortcut"
@@ -28,7 +29,7 @@ import (
 const (
 	protocolVersion     = 1
 	maxRequestBytes     = 8 << 20
-	maxPCMBytes         = 16000 * 2 * coreconfig.RecordSecondsMax
+	maxPCMBytes         = audio.PCMBytesPerSecond * coreconfig.RecordSecondsMax
 	maxSelectedBytes    = 1 << 20
 	maxInstructionBytes = 32 << 10
 	maxSeenIDs          = 65536
@@ -270,19 +271,33 @@ func (s *bridgeServer) runTask(ctx context.Context, task *bridgeTask, req reques
 	s.send(reply)
 }
 
-func decodeRequestPCM(req request, cfg coreconfig.Config) ([]byte, bool) {
+func decodeRequestPCM(req request, cfg coreconfig.Config) ([]byte, string) {
 	maxBytes := maxPCMBytes
-	if limit := cfg.MaxRecordSeconds * 32000; limit > 0 && limit < maxBytes {
+	if limit := cfg.MaxRecordSeconds * audio.PCMBytesPerSecond; limit > 0 && limit < maxBytes {
 		maxBytes = limit
 	}
 	if len(req.PCMBase64) == 0 || len(req.PCMBase64) > base64.StdEncoding.EncodedLen(maxBytes) {
-		return nil, false
+		return nil, "invalid"
 	}
 	pcm, err := base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
-	if err != nil || len(pcm) < 3200 || len(pcm)%2 != 0 || len(pcm) > maxBytes {
-		return nil, false
+	if err != nil || len(pcm) == 0 || len(pcm)%2 != 0 || len(pcm) > maxBytes {
+		return nil, "invalid"
 	}
-	return pcm, true
+	if audio.BelowMinCapture(pcm) {
+		return nil, "short"
+	}
+	return pcm, ""
+}
+
+func rejectPCM(id, op, reason string) response {
+	if reason == "short" {
+		message := ux.DictationTooShort
+		if op == "selected_voice_task" {
+			message = ux.RewriteTooShort
+		}
+		return failure(id, "invalid_pcm", message)
+	}
+	return failure(id, "invalid_pcm", "PCM must be 16 kHz mono PCM16, at least 0.1s and within duration limit")
 }
 
 func selectedTaskSuccess(id string, result textedit.AssistantResult, instruction string, spoken bool) response {
@@ -354,9 +369,9 @@ func processRequest(ctx context.Context, req request) response {
 		message := serviceprobe.ProbeModel(ctx, "LLM", cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.TextModel)
 		return success(req.ID, map[string]string{"kind": "LLM", "message": message})
 	case "transcribe":
-		pcm, ok := decodeRequestPCM(req, cfg)
-		if !ok {
-			return failure(req.ID, "invalid_pcm", "PCM must be 16 kHz mono PCM16, at least 0.1s and within duration limit")
+		pcm, reason := decodeRequestPCM(req, cfg)
+		if reason != "" {
+			return rejectPCM(req.ID, req.Op, reason)
 		}
 		text, err := speech.Transcribe(ctx, cfg, pcm)
 		if err != nil {
@@ -381,9 +396,9 @@ func processRequest(ctx context.Context, req request) response {
 			if req.Instruction != "" {
 				return failure(req.ID, "invalid_request", "spoken selected text task must not supply a text instruction")
 			}
-			pcm, ok := decodeRequestPCM(req, cfg)
-			if !ok {
-				return failure(req.ID, "invalid_pcm", "PCM must be 16 kHz mono PCM16, at least 0.1s and within duration limit")
+			pcm, reason := decodeRequestPCM(req, cfg)
+			if reason != "" {
+				return rejectPCM(req.ID, req.Op, reason)
 			}
 			result, instruction, err = textedit.ResolveSpokenTask(ctx, cfg, req.SelectedText, pcm, nil)
 		} else {

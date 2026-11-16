@@ -58,7 +58,7 @@ func EncodeWAV(pcm []byte) ([]byte, error) {
 	if len(pcm) == 0 || len(pcm)%2 != 0 {
 		return nil, errors.New("录音为空或 PCM 长度无效")
 	}
-	if len(pcm) > 16000*2*coreconfig.RecordSecondsMax {
+	if len(pcm) > audio.PCMBytesPerSecond*coreconfig.RecordSecondsMax {
 		return nil, errors.New("录音超出时长限制")
 	}
 	b := make([]byte, 44+len(pcm))
@@ -69,8 +69,8 @@ func EncodeWAV(pcm []byte) ([]byte, error) {
 	binary.LittleEndian.PutUint32(b[16:20], 16)
 	binary.LittleEndian.PutUint16(b[20:22], 1) // PCM
 	binary.LittleEndian.PutUint16(b[22:24], 1) // mono
-	binary.LittleEndian.PutUint32(b[24:28], 16000)
-	binary.LittleEndian.PutUint32(b[28:32], 32000)
+	binary.LittleEndian.PutUint32(b[24:28], audio.CaptureSampleRate)
+	binary.LittleEndian.PutUint32(b[28:32], audio.PCMBytesPerSecond)
 	binary.LittleEndian.PutUint16(b[32:34], 2)
 	binary.LittleEndian.PutUint16(b[34:36], 16)
 	copy(b[36:40], "data")

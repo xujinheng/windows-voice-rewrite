@@ -142,7 +142,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 		s.expressionFailed(app, generation, epoch, serial, "麦克风录音失败", result.err)
 		return
 	}
-	if len(result.pcm) < 3200 {
+	if audio.BelowMinCapture(result.pcm) {
 		s.expressionFailed(app, generation, epoch, serial, "没有录到足够语音", errors.New("请按住快捷键说话后松开"))
 		return
 	}
