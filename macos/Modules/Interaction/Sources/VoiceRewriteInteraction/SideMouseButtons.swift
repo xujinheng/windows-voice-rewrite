@@ -132,7 +132,8 @@ public final class SideMouseButtonDriver {
         guard next.isValid, bindings != next else { return }
         let pending = state.hasPendingPress
         let active = state.reset()
-        downEvents.removeAll()
+        // Keep the intercepted down event until its physical up arrives,
+        // even if this button becomes unbound during the press.
         targetPIDs.removeAll()
         bindings = next
         if active { onCancel() }
@@ -144,7 +145,7 @@ public final class SideMouseButtonDriver {
         guard paused else { return }
         let pending = state.hasPendingPress
         let active = state.reset()
-        downEvents.removeAll()
+        // A captured short press still needs its original click replayed on up.
         targetPIDs.removeAll()
         if active { onCancel() }
         else if pending { onPreviewDismissed() }
@@ -237,10 +238,18 @@ public final class SideMouseButtonDriver {
         if event.getIntegerValueField(.eventSourceUserData) == sideReplayMarker {
             return Unmanaged.passUnretained(event)
         }
+        let button = Int(event.getIntegerValueField(.mouseEventButtonNumber))
+        // A pause or binding change can cancel a pending press after its down
+        // event was suppressed. Replay that click on release, even if unbound.
+        if type == .otherMouseUp, state.pressed[button] == nil,
+           let down = downEvents.removeValue(forKey: button) {
+            targetPIDs.removeValue(forKey: button)
+            replay(down: down, up: event)
+            return nil
+        }
         if voicePaused {
             return Unmanaged.passUnretained(event)
         }
-        let button = Int(event.getIntegerValueField(.mouseEventButtonNumber))
         if type == .otherMouseDown && button >= 3 {
             DispatchQueue.main.async { [weak self] in self?.onObservedButton(button) }
         }
