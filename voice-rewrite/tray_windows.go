@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"voicerewrite/internal/core/history"
+	"voicerewrite/internal/core/ux"
 )
 
 // Windows notification-area (system tray) indicator. The icon is painted in
@@ -78,19 +79,19 @@ type trayStateInfo struct {
 func trayInfo(s trayState) trayStateInfo {
 	switch s {
 	case trayRecording:
-		return trayStateInfo{"正在录音 · 按键松开后提交", 0xe04444}
+		return trayStateInfo{ux.VoiceRecording, 0xe04444}
 	case trayTranscribing:
-		return trayStateInfo{"正在识别语音", 0xe7ae39}
+		return trayStateInfo{ux.VoiceTranscribing, 0xe7ae39}
 	case trayRewriting:
-		return trayStateInfo{"正在改写文字", 0x3987d9}
+		return trayStateInfo{ux.VoiceRewriting, 0x3987d9}
 	case traySuccess:
-		return trayStateInfo{"处理完成", 0x29a568}
+		return trayStateInfo{ux.VoiceSuccess, 0x29a568}
 	case trayError:
-		return trayStateInfo{"操作失败 · 查看错误提示", 0xed8438}
+		return trayStateInfo{ux.VoiceFailed, 0xed8438}
 	case trayPaused:
-		return trayStateInfo{"已暂停 · 鼠标侧键恢复正常功能", 0x8b95a8}
+		return trayStateInfo{ux.VoicePaused, 0x8b95a8}
 	default:
-		return trayStateInfo{"待机 · 使用配置的听写和改写快捷键", 0x7c8794}
+		return trayStateInfo{ux.VoiceIdle, 0x7c8794}
 	}
 }
 
@@ -301,9 +302,9 @@ func (t *trayIndicator) contextMenu(meetingActive bool) (uintptr, error) {
 		return 0, errors.New("CreatePopupMenu failed")
 	}
 	defer procDestroyMenu.Call(m)
-	pauseText := "暂停语音操作（保留鼠标侧键原功能）"
+	pauseText := ux.PauseVoice
 	if t.paused != nil && t.paused.Load() {
-		pauseText = "恢复语音操作"
+		pauseText = ux.ResumeVoice
 	}
 	pauseLabel, _ := syscall.UTF16PtrFromString(pauseText)
 	configLabel, _ := syscall.UTF16PtrFromString("设置与连接检测…")

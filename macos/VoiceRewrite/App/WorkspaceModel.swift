@@ -15,6 +15,14 @@ enum SettingsCopy {
     static let saveWhileBusy = "请先完成当前录音／改写，再保存"
 }
 
+enum VoicePauseCopy {
+    static let paused = "已暂停 · 鼠标侧键恢复正常功能"
+    static let idle = "待机 · 使用配置的听写和改写快捷键"
+    static let pause = "暂停语音操作（保留鼠标侧键原功能）"
+    static let resume = "恢复语音操作"
+    static let busy = "当前任务仍在处理；结束后可暂停语音操作。"
+}
+
 @MainActor
 final class WorkspaceModel: ObservableObject {
     enum Connection: Equatable {
@@ -46,6 +54,7 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var accessibilityAuthorized = false
     @Published private(set) var sessionHistory: [SessionHistoryEntry] = []
     @Published private(set) var restoredHistoryText: String?
+    @Published private(set) var voicePaused = false
     @Published private(set) var updateStatus = "尚未检查更新"
     @Published private(set) var updatePage: String?
     @Published private(set) var isCheckingUpdate = false
@@ -322,7 +331,10 @@ final class WorkspaceModel: ObservableObject {
         do {
             try driver.start()
             sideMouse = driver
-            if isFreshStart { sideMouseStatus = "监听已启动；等待 Mouse4/Mouse5 事件" }
+            driver.setVoicePaused(voicePaused)
+            if isFreshStart {
+                sideMouseStatus = voicePaused ? VoicePauseCopy.paused : "监听已启动；等待 Mouse4/Mouse5 事件"
+            }
         } catch {
             driver.shutdown()
             sideMouse = nil
@@ -330,7 +342,22 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    func toggleVoicePause() {
+        if isRecording || isStarting || isProcessing {
+            interactionStatus = VoicePauseCopy.busy
+            return
+        }
+        voicePaused.toggle()
+        sideMouse?.setVoicePaused(voicePaused)
+        dismissPreviewIndicator()
+        sideMouseStatus = voicePaused ? VoicePauseCopy.paused : VoicePauseCopy.idle
+    }
+
     private func sideMouseHeld(_ action: SideMouseAction, targetPID: Int32?) {
+        guard !voicePaused else {
+            dismissPreviewIndicator()
+            return
+        }
         guard !isRecording && !isStarting && !isProcessing && activeSideAction == nil else {
             dismissPreviewIndicator()
             return
@@ -532,11 +559,13 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func toggleRecording(from targetPID: Int32? = nil) {
+        if voicePaused && !isRecording { return }
         if isRecording { stopRecording() }
         else if !isStarting && !isProcessing { startRecording(targetPID: targetPID) }
     }
 
     func toggleVoiceSelectedText(from targetPID: Int32?) {
+        if voicePaused && !isRecording { return }
         if isRecording {
             if isVoiceSelectionRecording { stopRecording() }
             return
@@ -736,6 +765,10 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func processSelectedText(from targetPID: Int32?) {
+        guard !voicePaused else {
+            interactionStatus = VoicePauseCopy.paused
+            return
+        }
         guard let pid = targetPID, pid > 0 else {
             interactionStatus = "无有效前台目标"
             return

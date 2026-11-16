@@ -69,6 +69,9 @@ struct MainView: View {
                     .disabled(model.isStarting || model.isProcessing)
                     Button("取消任务") { model.cancelCurrent() }
                         .disabled(!model.isRecording && !model.isStarting && !model.isProcessing)
+                    Button(model.voicePaused ? VoicePauseCopy.resume : VoicePauseCopy.pause) {
+                        model.toggleVoicePause()
+                    }
                     Spacer()
                     Button("请求辅助功能权限") { model.requestAccessibility() }
                     Button("重新检测鼠标侧键") { model.refreshSideMouse() }

@@ -30,4 +30,7 @@ func TestResultCardTitles(t *testing.T) {
 	if SaveWhileBusy != "请先完成当前录音／改写，再保存" {
 		t.Fatal("save while busy")
 	}
+	if VoicePaused != "已暂停 · 鼠标侧键恢复正常功能" || PauseWhileBusy != "当前任务仍在处理；结束后可暂停语音操作。" {
+		t.Fatal("pause")
+	}
 }

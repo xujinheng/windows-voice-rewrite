@@ -21,6 +21,17 @@ const (
 	ApplyUnsafe = "无法安全替换，请使用复制结果"
 	// SaveWhileBusy is the settings message when a voice task is still running.
 	SaveWhileBusy = "请先完成当前录音／改写，再保存"
+	// Tray and pause sentences. Hosts paint icons and own the menu window.
+	VoiceRecording    = "正在录音 · 按键松开后提交"
+	VoiceTranscribing = "正在识别语音"
+	VoiceRewriting    = "正在改写文字"
+	VoiceSuccess      = "处理完成"
+	VoiceFailed       = "操作失败 · 查看错误提示"
+	VoicePaused       = "已暂停 · 鼠标侧键恢复正常功能"
+	VoiceIdle         = "待机 · 使用配置的听写和改写快捷键"
+	PauseVoice        = "暂停语音操作（保留鼠标侧键原功能）"
+	ResumeVoice       = "恢复语音操作"
+	PauseWhileBusy    = "当前任务仍在处理；结束后可暂停语音操作。"
 )
 
 // ResultCardTitle is the floating-card heading for a selected-text result.

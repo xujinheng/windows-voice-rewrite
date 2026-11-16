@@ -832,7 +832,7 @@ func runApp() {
 		}
 		if msg.Message == WM_TRAY_TOGGLE_PAUSE {
 			if app.busy.Load() {
-				winErr("当前任务仍在处理；结束后可暂停语音操作。")
+				winErr(ux.PauseWhileBusy)
 				continue
 			}
 			newPaused := !app.paused.Load()

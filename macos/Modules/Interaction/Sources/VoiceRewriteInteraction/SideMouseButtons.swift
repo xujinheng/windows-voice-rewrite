@@ -92,6 +92,18 @@ public final class SideMouseButtonDriver {
     private var state = SideButtonHoldState()
     private var downEvents: [Int: CGEvent] = [:]
     private var targetPIDs: [Int: Int32] = [:]
+    private var voicePaused = false
+
+    public func setVoicePaused(_ paused: Bool) {
+        voicePaused = paused
+        guard paused else { return }
+        let pending = state.hasPendingPress
+        let active = state.reset()
+        downEvents.removeAll()
+        targetPIDs.removeAll()
+        if active { onCancel() }
+        else if pending { onPreviewDismissed() }
+    }
 
     public init(
         threshold: TimeInterval = 0.28,
@@ -174,6 +186,9 @@ public final class SideMouseButtonDriver {
             return Unmanaged.passUnretained(event)
         }
         if event.getIntegerValueField(.eventSourceUserData) == sideReplayMarker {
+            return Unmanaged.passUnretained(event)
+        }
+        if voicePaused {
             return Unmanaged.passUnretained(event)
         }
         let button = Int(event.getIntegerValueField(.mouseEventButtonNumber))
