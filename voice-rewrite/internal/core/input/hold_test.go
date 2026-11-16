@@ -5,6 +5,30 @@ import (
 	"time"
 )
 
+func TestVoiceStartKeepsSideAndKeyboardWindowsApart(t *testing.T) {
+	if !VoiceStartBlocked(false, false, false, false, true) || VoiceStartBlocked(false, false, false, false, false) {
+		t.Fatal("blocked")
+	}
+	if ConfirmSideReady(false, false, false, false) || !ConfirmSideReady(false, false, false, true) {
+		t.Fatal("confirm")
+	}
+	if HoldModeLabel(true, true) != "会议直译" || HoldModeLabel(false, true) != "会议意图" || HoldModeLabel(true, false) != "听写" || HoldModeLabel(false, false) != "改写" {
+		t.Fatal("mode")
+	}
+	if HoldWatchLimit(180) != 182*time.Second {
+		t.Fatal(HoldWatchLimit(180))
+	}
+	if RewriteHotkeyAction(true, false, true, false) != RewriteIgnore || RewriteHotkeyAction(false, true, true, false) != RewriteIgnore {
+		t.Fatal("busy or paused does not finish")
+	}
+	if RewriteHotkeyAction(false, false, true, false) != RewriteFinishToggle || RewriteHotkeyAction(false, false, true, true) != RewriteIgnore {
+		t.Fatal("recording")
+	}
+	if RewriteHotkeyAction(false, false, false, true) != RewriteStartHold || RewriteHotkeyAction(false, false, false, false) != RewritePrepareToggle {
+		t.Fatal("start")
+	}
+}
+
 func TestSideHoldDurationsStayHostSpecific(t *testing.T) {
 	if WindowsSideHold != 250*time.Millisecond || MacSideHold != 280*time.Millisecond {
 		t.Fatalf("windows %s mac %s", WindowsSideHold, MacSideHold)

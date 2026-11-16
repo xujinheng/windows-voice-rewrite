@@ -3,6 +3,73 @@ package input
 import "time"
 
 const (
+	// NoTargetWindow is the keyboard hold failure. A side-button arm with no
+	// foreground window returns without this sentence.
+	NoTargetWindow = "没有可用的目标窗口"
+	// HoldReleaseMissed is shown when the hold watcher never sees the key or button come up.
+	HoldReleaseMissed = "未收到录音按键或鼠标侧键的松开事件，已自动结束。请检查是否有鼠标驱动将侧键映射为其他按键。"
+	// ToggleUINotifyFailed is shown when the toggle worker cannot reach the UI thread.
+	ToggleUINotifyFailed = "无法通知 UI 线程准备录音"
+)
+
+// VoiceStartBlocked is the shared reason a keyboard hold or side-button arm does not start.
+// Callers pass their own extra reason: the settings window for a keyboard hold,
+// or an unbound button for a side arm. A missing window is decided after this.
+func VoiceStartBlocked(paused, busy, recording, pendingSide, extra bool) bool {
+	return paused || busy || recording || pendingSide || extra
+}
+
+// ConfirmSideReady keeps a pending side hold only while that window is still foreground.
+func ConfirmSideReady(paused, busy, recording, targetStillForeground bool) bool {
+	return !paused && !busy && !recording && targetStillForeground
+}
+
+// HoldModeLabel is the recording pill. Meeting dictation and meeting rewrite stay distinct.
+func HoldModeLabel(dictation, meeting bool) string {
+	switch {
+	case meeting && dictation:
+		return "会议直译"
+	case meeting:
+		return "会议意图"
+	case dictation:
+		return "听写"
+	default:
+		return "改写"
+	}
+}
+
+// HoldWatchLimit is the hold watcher deadline: the configured maximum plus two seconds.
+func HoldWatchLimit(maxRecordSeconds int) time.Duration {
+	return time.Duration(maxRecordSeconds+2) * time.Second
+}
+
+// RewriteHotkey is what the rewrite shortcut does. Dictation does not finish an in-progress toggle.
+type RewriteHotkey int
+
+const (
+	RewriteIgnore RewriteHotkey = iota
+	RewriteFinishToggle
+	RewriteStartHold
+	RewritePrepareToggle
+)
+
+func RewriteHotkeyAction(paused, busy, recording, holdMode bool) RewriteHotkey {
+	if paused || busy {
+		return RewriteIgnore
+	}
+	if recording {
+		if holdMode {
+			return RewriteIgnore
+		}
+		return RewriteFinishToggle
+	}
+	if holdMode {
+		return RewriteStartHold
+	}
+	return RewritePrepareToggle
+}
+
+const (
 	// WindowsSideHold is how long Mouse4 or Mouse5 must stay down before recording starts.
 	WindowsSideHold = 250 * time.Millisecond
 	// MacSideHold is the macOS side-button hold. It is longer than the Windows threshold.

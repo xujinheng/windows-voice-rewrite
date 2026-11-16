@@ -487,7 +487,7 @@ func runApp() {
 		holdSession++
 		holdWatch = make(chan struct{})
 		if button != 0 {
-			go watchMouseHoldTimeout(hwnd, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
+			go watchMouseHoldTimeout(hwnd, holdSession, holdWatch, input.HoldWatchLimit(cfg.MaxRecordSeconds), l)
 		} else {
 			vk := recordVK
 			if dictation {
@@ -497,19 +497,9 @@ func runApp() {
 			if dictation {
 				mods = dictationMods
 			}
-			go watchHoldRelease(hwnd, vk, mods, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
+			go watchHoldRelease(hwnd, vk, mods, holdSession, holdWatch, input.HoldWatchLimit(cfg.MaxRecordSeconds), l)
 		}
-		statusMode := "改写"
-		if dictation {
-			statusMode = "听写"
-		}
-		if holdMeeting != nil {
-			if dictation {
-				statusMode = "会议直译"
-			} else {
-				statusMode = "会议意图"
-			}
-		}
+		statusMode := input.HoldModeLabel(dictation, holdMeeting != nil)
 		// Promote the immediate mouse-down preview without recreating its HWND.
 		// Keyboard hold has no preview and uses the usual status path.
 		if button == 0 || !promotePendingHandyStatus(rec, statusMode, holdGeneration) {
@@ -521,15 +511,12 @@ func runApp() {
 	}
 
 	startHold := func(dictation bool, button uint16) {
-		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil {
-			return
-		}
-		if uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
+		if input.VoiceStartBlocked(app.paused.Load(), app.busy.Load(), active != nil, pendingSide != nil, uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window)) {
 			return
 		}
 		win, _, _ := procGetForegroundWindow.Call()
 		if win == 0 {
-			app.fail(errors.New("没有可用的目标窗口"))
+			app.fail(errors.New(input.NoTargetWindow))
 			return
 		}
 		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
@@ -541,10 +528,7 @@ func runApp() {
 	}
 
 	armSide := func(button uint16) {
-		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil {
-			return
-		}
-		if input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "ignore" {
+		if input.VoiceStartBlocked(app.paused.Load(), app.busy.Load(), active != nil, pendingSide != nil, input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "ignore") {
 			return
 		}
 		if uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
@@ -557,10 +541,7 @@ func runApp() {
 		// Paint the provisional status immediately. Recording starts at
 		// physical mouse-down, but only a 250ms hold activates voice mode.
 		// A short click closes this preview and replays browser navigation.
-		mode := "改写"
-		if input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation" {
-			mode = "听写"
-		}
+		mode := input.HoldModeLabel(input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation", false)
 		showPendingHandyStatus(mode)
 		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
 		pendingSide = &sideCapture{button: button, targetWindow: win, recorder: rec, err: err}
@@ -571,8 +552,7 @@ func runApp() {
 			return
 		}
 		p := pendingSide
-		if app.paused.Load() || app.busy.Load() || active != nil ||
-			p.targetWindow == 0 || !isSameForegroundWindow(p.targetWindow) {
+		if !input.ConfirmSideReady(app.paused.Load(), app.busy.Load(), active != nil, p.targetWindow != 0 && isSameForegroundWindow(p.targetWindow)) {
 			discardPendingSide()
 			return
 		}
@@ -868,7 +848,7 @@ func runApp() {
 				go func() { <-rec.result }()
 				l.Print("ERROR: hold watcher exceeded maximum duration without observing key release")
 				app.postHandyPhase(indicator.Error, holdGeneration)
-				app.fail(errors.New("未收到录音按键或鼠标侧键的松开事件，已自动结束。请检查是否有鼠标驱动将侧键映射为其他按键。"))
+				app.fail(errors.New(input.HoldReleaseMissed))
 			}
 			continue
 		}
@@ -934,22 +914,16 @@ func runApp() {
 			}
 			continue
 		case HOTKEY_RECORD:
-			if app.paused.Load() {
+			switch input.RewriteHotkeyAction(app.paused.Load(), app.busy.Load(), active != nil, cfg.RecordMode == "hold") {
+			case input.RewriteFinishToggle:
+				finish()
 				continue
-			}
-			if app.busy.Load() {
-				continue
-			}
-			if active != nil {
-				if cfg.RecordMode == "toggle" {
-					finish()
-				}
-				continue
-			}
-			// Hold mode records immediately and does NOT touch the clipboard
-			// while the hotkey is physically held. Capture is performed on release.
-			if cfg.RecordMode == "hold" {
+			case input.RewriteStartHold:
+				// Hold mode records immediately and does NOT touch the clipboard
+				// while the hotkey is physically held. Capture is performed on release.
 				startHold(false, selectedMouseButton)
+				continue
+			case input.RewriteIgnore:
 				continue
 			}
 			// Legacy toggle mode also prepares its selection on a worker.
@@ -992,7 +966,7 @@ func runApp() {
 				if ok, _, _ := procPostMessage.Call(hwnd, WM_TOGGLE_READY, 0, 0); ok == 0 {
 					rec.Stop()
 					go func() { <-rec.result }()
-					app.fail(errors.New("无法通知 UI 线程准备录音"))
+					app.fail(errors.New(input.ToggleUINotifyFailed))
 					app.busy.Store(false)
 				}
 			}()
