@@ -497,7 +497,7 @@ func handyScreenPositionForMonitor(mon uintptr, w, h int) (int32, int32) {
 	if mon != 0 {
 		info := handyMonitorInfo{Size: uint32(unsafe.Sizeof(handyMonitorInfo{}))}
 		if ok, _, _ := procGetMonitorInfoHandy.Call(mon, uintptr(unsafe.Pointer(&info))); ok != 0 {
-			work := desktop.WorkArea{info.Work.Left, info.Work.Top, info.Work.Right, info.Work.Bottom}
+			work := desktop.WorkArea{Left: info.Work.Left, Top: info.Work.Top, Right: info.Work.Right, Bottom: info.Work.Bottom}
 			x := work.Left + (work.Right-work.Left-int32(w))/2
 			y := work.Bottom - int32(h) - 5
 			return desktop.Clamp(x, y, int32(w), int32(h), work)

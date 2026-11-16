@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	ReleasesAPI  = "https://api.github.com/repos/xujinheng/windows-ai-tool/releases?per_page=15"
-	ReleasesPage = "https://github.com/xujinheng/windows-ai-tool/releases"
+	ReleasesAPI  = "https://api.github.com/repos/xujinheng/windows-voice-rewrite/releases?per_page=15"
+	ReleasesPage = "https://github.com/xujinheng/windows-voice-rewrite/releases"
 	checkTimeout = 8 * time.Second
 )
 

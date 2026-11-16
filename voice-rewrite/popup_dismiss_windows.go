@@ -62,7 +62,7 @@ func popupScreenRect(hwnd uintptr) popup.HitRect {
 	if ok == 0 {
 		return popup.HitRect{}
 	}
-	return popup.HitRect{rect.Left, rect.Top, rect.Right, rect.Bottom}
+	return popup.HitRect{Left: rect.Left, Top: rect.Top, Right: rect.Right, Bottom: rect.Bottom}
 }
 
 func popupDismissAt(p *answerPopup, x, y int32) bool {

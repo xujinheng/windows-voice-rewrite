@@ -51,3 +51,12 @@ func TestUpdateSelection(t *testing.T) {
 		t.Fatal("missing releases summary")
 	}
 }
+
+func TestReleaseSourceMatchesVoiceRewriteRepository(t *testing.T) {
+	if ReleasesAPI != "https://api.github.com/repos/xujinheng/windows-voice-rewrite/releases?per_page=15" {
+		t.Fatalf("unexpected update source: %s", ReleasesAPI)
+	}
+	if ReleasesPage != "https://github.com/xujinheng/windows-voice-rewrite/releases" {
+		t.Fatalf("unexpected release page: %s", ReleasesPage)
+	}
+}
