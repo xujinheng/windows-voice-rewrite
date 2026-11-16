@@ -52,12 +52,6 @@ const (
 	uxRewriteInput            = 9108
 	WM_SETTINGS_CAPTURE_MOUSE = 0x8000 + 105
 	uxMicrophoneInput         = 9107
-	uxASRURLInput             = 9130
-	uxASRModelInput           = 9131
-	uxASRKeyInput             = 9132
-	uxLLMURLInput             = 9133
-	uxLLMModelInput           = 9134
-	uxLLMKeyInput             = 9135
 	uxCBAddString             = 0x0143
 	uxCBSetCurSel             = 0x014E
 	uxCBGetCurSel             = 0x0147
@@ -773,11 +767,11 @@ func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t stri
 	label := settingsform.FieldLabel(row)
 	switch control.ID {
 	case "asr_base_url":
-		placeLabeledEdit(p, makeOne, stat, edit, control, row, 0, app.cfg.ASRBaseURL, uxASRURLInput, false)
+		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.ASRBaseURL)
 	case "asr_model":
-		placeLabeledEdit(p, makeOne, stat, edit, control, row, 1, app.cfg.ASRModel, uxASRModelInput, false)
+		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.ASRModel)
 	case "asr_api_key":
-		placeLabeledEdit(p, makeOne, stat, edit, control, row, 2, app.cfg.ASRAPIKey, uxASRKeyInput, true)
+		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.ASRAPIKey)
 	case "probe_asr_status":
 		if err := placeProbeStatus(p, makeOne, stat, "asr_base_url"); err != nil {
 			return err
@@ -785,11 +779,11 @@ func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t stri
 	case "probe_asr":
 		placeProbeButton(makeOne, btn, control, contract.ProbeASRButton)
 	case "llm_base_url":
-		placeLabeledEdit(p, makeOne, stat, edit, control, row, 3, app.cfg.LLMBaseURL, uxLLMURLInput, false)
+		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.LLMBaseURL)
 	case "text_model":
-		placeLabeledEdit(p, makeOne, stat, edit, control, row, 4, app.cfg.TextModel, uxLLMModelInput, false)
+		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.TextModel)
 	case "llm_api_key":
-		placeLabeledEdit(p, makeOne, stat, edit, control, row, 5, app.cfg.LLMAPIKey, uxLLMKeyInput, true)
+		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.LLMAPIKey)
 	case "probe_llm_status":
 		if err := placeProbeStatus(p, makeOne, stat, "llm_base_url"); err != nil {
 			return err
@@ -833,19 +827,24 @@ func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t stri
 	return nil
 }
 
-func placeLabeledEdit(p *uxSettings, makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, stat, edit uintptr, control contract.Control, row, index int, value string, id uintptr, secret bool) {
+func placeLabeledEdit(p *uxSettings, makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, stat, edit uintptr, control contract.Control, row int, value string) error {
+	index, ok := contract.InputIndex(control.ID)
+	if !ok || index < 0 || index >= len(p.inputs) {
+		return fmt.Errorf("设置页缺少控件布局: %s", control.ID)
+	}
 	label := settingsform.FieldLabel(row)
 	field := settingsform.FieldEdit(row)
 	style := edit
-	if secret {
+	if control.Kind == contract.Secret {
 		style |= uxESPassword
 	}
 	makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
-	hwnd := makeOne("EDIT", value, style, field.X, field.Y, field.W, field.H, id, false)
+	hwnd := makeOne("EDIT", value, style, field.X, field.Y, field.W, field.H, uintptr(contract.EndpointEdit+index), false)
 	p.inputs[index] = hwnd
 	if slot, ok := contract.ProbeSlot(control.ID); ok && slot >= 0 && slot < len(p.probeStatus) {
 		p.probeEdits[hwnd] = slot
 	}
+	return nil
 }
 
 func placeProbeStatus(p *uxSettings, makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, stat uintptr, fieldID string) error {

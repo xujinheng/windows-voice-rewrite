@@ -2,6 +2,22 @@ package contract
 
 import "testing"
 
+func TestInputIndexFollowsWindowsTextFields(t *testing.T) {
+	url, ok := InputIndex("asr_base_url")
+	model, mok := InputIndex("asr_model")
+	key, kok := InputIndex("asr_api_key")
+	llm, lok := InputIndex("llm_api_key")
+	if !ok || !mok || !kok || !lok || url != 0 || model != 1 || key != 2 || llm != 5 || EndpointEdit != 9130 {
+		t.Fatalf("inputs %d %d %d %d", url, model, key, llm)
+	}
+	if _, ok := InputIndex("text_edit_shortcut"); ok {
+		t.Fatal("mac field counted on windows")
+	}
+	if _, ok := InputIndex("microphone"); ok {
+		t.Fatal("choice counted as text")
+	}
+}
+
 func TestProbeSlotsFollowCatalogOrder(t *testing.T) {
 	asr, ok := ProbeSlot("asr_base_url")
 	model, mok := ProbeSlot("asr_model")

@@ -11,6 +11,9 @@ const (
 	NavInput         = 9122
 	CaptureRewrite   = 9140
 	CaptureDictation = 9141
+	// EndpointEdit is the first settings text field. The next fields use the
+	// following ids in catalog order.
+	EndpointEdit = 9130
 )
 
 const WaitingForShortcut = "等待按键…"
@@ -27,6 +30,22 @@ const (
 	ActionProbeASR
 	ActionProbeLLM
 )
+
+// InputIndex is the Windows settings text-field position for this catalog id.
+// Only text and secret fields visible on Windows are counted, in catalog order.
+func InputIndex(id string) (int, bool) {
+	index := 0
+	for _, item := range Controls() {
+		if !item.VisibleOn(Windows) || (item.Kind != Text && item.Kind != Secret) {
+			continue
+		}
+		if item.ID == id {
+			return index, true
+		}
+		index++
+	}
+	return 0, false
+}
 
 // ProbeSlot is the connection check cleared when this field changes.
 // Slots follow the first appearance of each stale-probe name in the catalog.
