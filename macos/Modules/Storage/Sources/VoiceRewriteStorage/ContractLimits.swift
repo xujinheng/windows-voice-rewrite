@@ -49,6 +49,55 @@ public enum ContractLimits {
         while text.hasSuffix("/") { text.removeLast() }
         return text
     }
+
+    public static func baseURLEscapesOK(_ value: String) -> Bool {
+        let bytes = Array(value.utf8)
+        if !percentBytesOK(bytes, hostRule: false) { return false }
+        return percentBytesOK(Array(baseURLHost(value).utf8), hostRule: true)
+    }
+
+    private static func baseURLHost(_ value: String) -> String {
+        guard let marker = value.range(of: "://") else { return "" }
+        var rest = String(value[marker.upperBound...])
+        if let cut = rest.firstIndex(where: { "/?#".contains($0) }) {
+            rest = String(rest[..<cut])
+        }
+        if let at = rest.lastIndex(of: "@") {
+            rest = String(rest[rest.index(after: at)...])
+        }
+        return rest
+    }
+
+    private static func percentBytesOK(_ bytes: [UInt8], hostRule: Bool) -> Bool {
+        var index = 0
+        while index < bytes.count {
+            if bytes[index] != UInt8(ascii: "%") {
+                index += 1
+                continue
+            }
+            if index + 2 >= bytes.count || hexNibble(bytes[index + 1]) < 0 || hexNibble(bytes[index + 2]) < 0 {
+                return false
+            }
+            if hostRule && String(bytes: bytes[index...index + 2], encoding: .utf8) != "%25" && hexNibble(bytes[index + 1]) < 8 {
+                return false
+            }
+            index += 3
+        }
+        return true
+    }
+
+    private static func hexNibble(_ byte: UInt8) -> Int {
+        switch byte {
+        case UInt8(ascii: "0")...UInt8(ascii: "9"):
+            return Int(byte - UInt8(ascii: "0"))
+        case UInt8(ascii: "a")...UInt8(ascii: "f"):
+            return Int(byte - UInt8(ascii: "a")) + 10
+        case UInt8(ascii: "A")...UInt8(ascii: "F"):
+            return Int(byte - UInt8(ascii: "A")) + 10
+        default:
+            return -1
+        }
+    }
 }
 
 public struct CanonicalEndpointFields: Equatable {
@@ -61,7 +110,8 @@ public struct CanonicalEndpointFields: Equatable {
 extension MacSettings {
     public static func acceptsBaseURL(_ value: String) -> Bool {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URLComponents(string: trimmed),
+        guard ContractLimits.baseURLEscapesOK(trimmed),
+              let url = URLComponents(string: trimmed),
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
               let host = url.host, !host.isEmpty,

@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -61,6 +62,12 @@ func TestNormalizeConfig(t *testing.T) {
 	}
 	if _, err := CanonicalEndpoints("http://localhost/v1?key=1", "m", "http://127.0.0.1:1234/v1", "auto"); err == nil {
 		t.Fatal("query URL accepted")
+	}
+	if err := ValidateBaseURL("http://localhost/v1%"); err == nil || ValidateBaseURL("http://localhost/invalid%ZZ") == nil || ValidateBaseURL("http://ex%41mple.com/v1") == nil {
+		t.Fatal("invalid percent escape accepted")
+	}
+	if err := ValidateBaseURL("http://localhost/v1%20ok"); err != nil {
+		t.Fatal(err)
 	}
 	if StoredCredentialTooLong(strings.Repeat(" ", MaxCredentialBytes)) || !StoredCredentialTooLong(strings.Repeat(" ", MaxCredentialBytes+1)) {
 		t.Fatal("credential bytes")
@@ -149,5 +156,34 @@ func TestMeetingASRModesKeepSettingsOrder(t *testing.T) {
 	}
 	if MeetingASRModeTitle(MeetingASRMultipart) != "分段音频识别" || !strings.HasPrefix(MeetingASRModeNote(), MeetingASRLlamaPrefix) {
 		t.Fatal("mode label")
+	}
+}
+
+func TestBaseURLEscapesMatchParser(t *testing.T) {
+	cases := []string{
+		"http://localhost/v1%",
+		"http://localhost/invalid%ZZ",
+		"http://localhost/v1%2",
+		"http://localhost/v1%20ok",
+		"http://localhost/v1%2E",
+		"http://ex%41mple.com/v1",
+		"http://ex%80mple.com/v1",
+		"http://ex%25ample.com/v1",
+		"http://ex%7Fample.com/v1",
+		"http://[fe80::1%25en0]/v1",
+		"http://[fe80::1%20en0]/v1",
+		"http://127.0.0.1:8081/v1",
+		"https://api.example.com/v1%20",
+		"http://localhost:%41/v1",
+	}
+	for _, raw := range cases {
+		trimmed := strings.TrimSpace(raw)
+		_, err := url.Parse(trimmed)
+		if err == nil && !BaseURLEscapesOK(trimmed) {
+			t.Fatalf("parser accepted %q", raw)
+		}
+		if err != nil && strings.Contains(err.Error(), "invalid URL escape") && BaseURLEscapesOK(trimmed) {
+			t.Fatalf("parser rejected %q: %v", raw, err)
+		}
 	}
 }

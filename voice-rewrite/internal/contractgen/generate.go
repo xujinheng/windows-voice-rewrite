@@ -743,6 +743,12 @@ func callsSelector(fn *ast.FuncDecl, name string) bool {
 }
 
 func acceptPolicy(fn *ast.FuncDecl) (fallback, op, limit string, err error) {
+	if err = rejectUnknownCalls(fn, "len", "TrimSpace"); err != nil {
+		return
+	}
+	if err = expectIfCount(fn, 2); err != nil {
+		return
+	}
 	ast.Inspect(fn, func(n ast.Node) bool {
 		if expr, ok := n.(ast.Expr); ok {
 			if text, ok := stringLit(expr); ok && text != "" {
@@ -772,6 +778,12 @@ func acceptPolicy(fn *ast.FuncDecl) (fallback, op, limit string, err error) {
 }
 
 func keepPolicy(fn *ast.FuncDecl) (keepOp, sizeOp string, err error) {
+	if err = rejectUnknownCalls(fn, "len"); err != nil {
+		return
+	}
+	if err = expectIfCount(fn, 1); err != nil {
+		return
+	}
 	ast.Inspect(fn, func(n ast.Node) bool {
 		bin, ok := n.(*ast.BinaryExpr)
 		if !ok {
@@ -793,6 +805,58 @@ func keepPolicy(fn *ast.FuncDecl) (keepOp, sizeOp string, err error) {
 		return "", "", fmt.Errorf("history keep shape")
 	}
 	return keepOp, sizeOp, nil
+}
+
+func rejectUnknownCalls(fn *ast.FuncDecl, allowed ...string) error {
+	if fn == nil {
+		return fmt.Errorf("missing function")
+	}
+	allow := map[string]bool{}
+	for _, name := range allowed {
+		allow[name] = true
+	}
+	var bad string
+	ast.Inspect(fn, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		switch fun := call.Fun.(type) {
+		case *ast.Ident:
+			if !allow[fun.Name] {
+				bad = fun.Name
+			}
+		case *ast.SelectorExpr:
+			if !allow[fun.Sel.Name] {
+				bad = fun.Sel.Name
+			}
+		default:
+			bad = "call"
+		}
+		return true
+	})
+	if bad != "" {
+		return fmt.Errorf("untranslated %s in %s", bad, fn.Name.Name)
+	}
+	return nil
+}
+
+func expectIfCount(fn *ast.FuncDecl, want int) error {
+	got := 0
+	ast.Inspect(fn, func(n ast.Node) bool {
+		if _, ok := n.(*ast.IfStmt); ok {
+			got++
+		}
+		return true
+	})
+	if fn == nil || got != want {
+		name := ""
+		if fn != nil {
+			name = fn.Name.Name
+		}
+		return fmt.Errorf("%s has %d ifs", name, got)
+	}
+	return nil
 }
 
 func swiftHistoryLimit(name string) (string, error) {

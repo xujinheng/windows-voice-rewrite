@@ -203,14 +203,70 @@ func TransformSecrets(cfg Config, transform func(string) (string, error)) (Confi
 	return cfg, nil
 }
 
-// ValidateBaseURL rejects credentials, queries, fragments and non-HTTP schemes
-// before a configured endpoint can be used to carry private data.
+// ValidateBaseURL rejects credentials, queries, fragments, non-HTTP schemes,
+// and percent escapes that the Go URL parser rejects.
 func ValidateBaseURL(base string) error {
-	u, err := url.Parse(strings.TrimSpace(base))
-	if err != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
+	trimmed := strings.TrimSpace(base)
+	u, err := url.Parse(trimmed)
+	if err != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" || !BaseURLEscapesOK(trimmed) {
 		return errors.New("服务地址必须是无用户名、查询参数或锚点的 http(s) API 基础 URL")
 	}
 	return nil
+}
+
+// BaseURLEscapesOK is the percent-escape rule shared with the macOS settings check.
+// A % must be followed by two hex digits. In the host, a decoded byte below 0x80
+// is rejected, except the encoded percent %25.
+func BaseURLEscapesOK(raw string) bool {
+	if !percentHexOK(raw, false) {
+		return false
+	}
+	return percentHexOK(baseURLHost(raw), true)
+}
+
+func baseURLHost(raw string) string {
+	i := strings.Index(raw, "://")
+	if i < 0 {
+		return ""
+	}
+	rest := raw[i+3:]
+	if cut := strings.IndexAny(rest, "/?#"); cut >= 0 {
+		rest = rest[:cut]
+	}
+	if at := strings.LastIndex(rest, "@"); at >= 0 {
+		rest = rest[at+1:]
+	}
+	return rest
+}
+
+func percentHexOK(s string, host bool) bool {
+	for i := 0; i < len(s); {
+		if s[i] != '%' {
+			i++
+			continue
+		}
+		if i+2 >= len(s) || hexNibble(s[i+1]) < 0 || hexNibble(s[i+2]) < 0 {
+			return false
+		}
+		if host && s[i:i+3] != "%25" && hexNibble(s[i+1]) < 8 {
+			return false
+		}
+		i += 3
+	}
+	return true
+}
+
+func hexNibble(c byte) int {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10
+	case c >= 'A' && c <= 'F':
+		return int(c-'A') + 10
+	default:
+		return -1
+	}
 }
 
 const (

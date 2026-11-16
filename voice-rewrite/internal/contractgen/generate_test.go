@@ -1,6 +1,8 @@
 package contractgen
 
 import (
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,11 +56,11 @@ func TestGenerateHostFilesFromCore(t *testing.T) {
 		t.Fatal("history policy was not transcribed from Go")
 	}
 	limits := first[filepath.Join(filepath.Dir(root), "macos/Modules/Storage/Sources/VoiceRewriteStorage/ContractLimits.swift")]
-	if !strings.Contains(limits, "func canonicalEndpoints") || !strings.Contains(limits, "func storedCredentialTooLong") || !strings.Contains(limits, "trimmed.contains(\"://\")") {
+	if !strings.Contains(limits, "func canonicalEndpoints") || !strings.Contains(limits, "func storedCredentialTooLong") || !strings.Contains(limits, "trimmed.contains(\"://\")") || !strings.Contains(limits, "func baseURLEscapesOK") || !strings.Contains(limits, "\"%25\"") {
 		t.Fatal("endpoint rules were not generated from Go")
 	}
 	vectors := first[filepath.Join(filepath.Dir(root), "macos/Modules/Storage/Tests/VoiceRewriteStorageTests/CanonicalEndpointVectors.swift")]
-	if !strings.Contains(vectors, "XCTAssertNil") || !strings.Contains(vectors, "count: 4001") {
+	if !strings.Contains(vectors, "XCTAssertNil") || !strings.Contains(vectors, "count: 4001") || !strings.Contains(vectors, "http://localhost/v1%") || !strings.Contains(vectors, "invalid%ZZ") || !strings.Contains(vectors, "ex%41mple.com") {
 		t.Fatal("endpoint vectors")
 	}
 	bindings, actions, status := settingsMaps()
@@ -90,6 +92,68 @@ func TestGenerateHostFilesFromCore(t *testing.T) {
 	holdText := first[filepath.Join(filepath.Dir(root), "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/SideHold.swift")]
 	if !strings.Contains(holdText, "0.280") {
 		t.Fatal("side hold was not generated from the Go duration")
+	}
+}
+
+func TestGeneratorRejectsAnUntranslatedBranch(t *testing.T) {
+	historySrc := `package history
+import "strings"
+func Accept(title, value string) (string, bool) {
+	if strings.HasPrefix(value, "x") { return "", false }
+	if strings.TrimSpace(value) == "" || len(value) > MaxBytes { return "", false }
+	if strings.TrimSpace(title) == "" { return "语音结果", true }
+	return title, true
+}
+func KeepCount(texts []string) int {
+	bytes := 0
+	keep := 0
+	for _, text := range texts {
+		if strings.Contains(text, "x") { return keep }
+		if keep >= Limit || bytes+len(text) > MaxBytes { return keep }
+		bytes += len(text)
+		keep++
+	}
+	return keep
+}`
+	file, err := parser.ParseFile(token.NewFileSet(), "history.go", historySrc, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := acceptPolicy(findFunc(file, "Accept")); err == nil {
+		t.Fatal("HasPrefix was translated")
+	}
+	plain := `package history
+func Accept(title, value string) (string, bool) {
+	if value == "x" { return "", false }
+	if strings.TrimSpace(value) == "" || len(value) > MaxBytes { return "", false }
+	if strings.TrimSpace(title) == "" { return "语音结果", true }
+	return title, true
+}`
+	plainFile, err := parser.ParseFile(token.NewFileSet(), "history.go", plain, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := acceptPolicy(findFunc(plainFile, "Accept")); err == nil {
+		t.Fatal("extra rejection was ignored")
+	}
+	if _, _, err := keepPolicy(findFunc(file, "KeepCount")); err == nil {
+		t.Fatal("Contains was translated")
+	}
+	escapeSrc := `package config
+import "strings"
+func BaseURLEscapesOK(raw string) bool {
+	if strings.HasPrefix(raw, "http://localhost/v1%") { return false }
+	return percentHexOK(raw, false)
+}
+func percentHexOK(s string, host bool) bool { return true }
+func baseURLHost(raw string) string { return raw }
+func hexNibble(c byte) int { return 0 }`
+	escapeFile, err := parser.ParseFile(token.NewFileSet(), "config.go", escapeSrc, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := requireEscapeClosure(escapeFile); err == nil {
+		t.Fatal("HasPrefix escape branch was ignored")
 	}
 }
 

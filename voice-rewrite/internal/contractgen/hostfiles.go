@@ -252,6 +252,13 @@ func emitLimits(moduleRoot string) (string, error) {
 			return "", fmt.Errorf("ValidateBaseURL missing %s", field)
 		}
 	}
+	if !callsFunc(validate, "BaseURLEscapesOK") {
+		return "", fmt.Errorf("ValidateBaseURL missing BaseURLEscapesOK")
+	}
+	percent, exception, threshold, separators, schemeMark, err := escapeRule(config)
+	if err != nil {
+		return "", err
+	}
 	if err := requireCanonicalEndpoints(config); err != nil {
 		return "", err
 	}
@@ -354,7 +361,8 @@ func emitLimits(moduleRoot string) (string, error) {
 	b.WriteString("        var text = value.trimmingCharacters(in: .whitespacesAndNewlines)\n")
 	b.WriteString("        while text.hasSuffix(\"/\") { text.removeLast() }\n")
 	b.WriteString("        return text\n")
-	b.WriteString("    }\n")
+	b.WriteString("    }\n\n")
+	b.WriteString(swiftEscapeCheck(percent, exception, threshold, separators, schemeMark))
 	b.WriteString("}\n\npublic struct CanonicalEndpointFields: Equatable {\n")
 	b.WriteString("    public var asrBaseURL: String\n")
 	b.WriteString("    public var asrModel: String\n")
@@ -363,7 +371,8 @@ func emitLimits(moduleRoot string) (string, error) {
 	b.WriteString("}\n\nextension MacSettings {\n")
 	b.WriteString("    public static func acceptsBaseURL(_ value: String) -> Bool {\n")
 	b.WriteString("        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)\n")
-	b.WriteString("        guard let url = URLComponents(string: trimmed),\n")
+	b.WriteString("        guard ContractLimits.baseURLEscapesOK(trimmed),\n")
+	b.WriteString("              let url = URLComponents(string: trimmed),\n")
 	b.WriteString("              let scheme = url.scheme?.lowercased(),\n")
 	checks := make([]string, len(schemes))
 	for i, scheme := range schemes {
@@ -649,6 +658,212 @@ func requiredBinding(control contract.Control, bindings map[string]string) (stri
 	return binding, nil
 }
 
+func escapeRule(file *ast.File) (percent, exception string, threshold int, separators, schemeMark string, err error) {
+	if err = requireEscapeClosure(file); err != nil {
+		return
+	}
+	hex := findFunc(file, "percentHexOK")
+	host := findFunc(file, "baseURLHost")
+	if hex == nil || host == nil {
+		err = fmt.Errorf("escape functions")
+		return
+	}
+	var ints []string
+	ast.Inspect(hex, func(n ast.Node) bool {
+		lit, ok := n.(*ast.BasicLit)
+		if ok {
+			switch lit.Kind {
+			case token.CHAR:
+				if lit.Value == "'%'" {
+					percent = "%"
+				}
+			case token.STRING:
+				text, quoteErr := strconv.Unquote(lit.Value)
+				if quoteErr == nil && strings.Contains(text, "%") {
+					exception = text
+				}
+			}
+		}
+		bin, ok := n.(*ast.BinaryExpr)
+		if !ok || bin.Op != token.LSS {
+			return true
+		}
+		call, ok := bin.X.(*ast.CallExpr)
+		bound, ok2 := bin.Y.(*ast.BasicLit)
+		if !ok || !ok2 || bound.Kind != token.INT || bound.Value == "0" {
+			return true
+		}
+		id, ok := call.Fun.(*ast.Ident)
+		if ok && id.Name == "hexNibble" {
+			ints = append(ints, bound.Value)
+		}
+		return true
+	})
+	if len(ints) != 1 {
+		err = fmt.Errorf("escape threshold %v", ints)
+		return
+	}
+	threshold, err = strconv.Atoi(ints[0])
+	if err != nil || percent == "" || exception == "" {
+		err = fmt.Errorf("escape literals")
+		return
+	}
+	separators, err = selectorString(host, "IndexAny", 1)
+	if err != nil {
+		return
+	}
+	schemeMark, err = selectorString(host, "Index", 1)
+	return
+}
+
+func selectorString(fn *ast.FuncDecl, name string, arg int) (string, error) {
+	var text string
+	found := false
+	ast.Inspect(fn, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) <= arg {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != name {
+			return true
+		}
+		if value, ok := stringLit(call.Args[arg]); ok {
+			text = value
+			found = true
+		}
+		return true
+	})
+	if !found {
+		return "", fmt.Errorf("%s argument", name)
+	}
+	return text, nil
+}
+
+func requireEscapeClosure(file *ast.File) error {
+	local := map[string]bool{"percentHexOK": true, "baseURLHost": true, "hexNibble": true}
+	allowedIdent := map[string]bool{"percentHexOK": true, "baseURLHost": true, "hexNibble": true, "int": true, "len": true}
+	allowedSel := map[string]bool{"Index": true, "IndexAny": true, "LastIndex": true}
+	seen := map[string]bool{}
+	var walk func(string) error
+	walk = func(name string) error {
+		if seen[name] {
+			return nil
+		}
+		seen[name] = true
+		fn := findFunc(file, name)
+		if fn == nil {
+			return fmt.Errorf("missing %s", name)
+		}
+		var bad string
+		var next []string
+		ast.Inspect(fn, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			switch fun := call.Fun.(type) {
+			case *ast.Ident:
+				if !allowedIdent[fun.Name] {
+					bad = fun.Name
+				}
+				if local[fun.Name] {
+					next = append(next, fun.Name)
+				}
+			case *ast.SelectorExpr:
+				if !allowedSel[fun.Sel.Name] {
+					bad = fun.Sel.Name
+				}
+			default:
+				bad = "call"
+			}
+			return true
+		})
+		if bad != "" {
+			return fmt.Errorf("untranslated %s in %s", bad, name)
+		}
+		for _, name := range next {
+			if err := walk(name); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := walk("BaseURLEscapesOK"); err != nil {
+		return err
+	}
+	nibble := findFunc(file, "hexNibble")
+	if nibble == nil {
+		return fmt.Errorf("hexNibble")
+	}
+	want := map[string]bool{"'0'": false, "'9'": false, "'a'": false, "'f'": false, "'A'": false, "'F'": false}
+	ast.Inspect(nibble, func(n ast.Node) bool {
+		lit, ok := n.(*ast.BasicLit)
+		if ok && lit.Kind == token.CHAR {
+			if _, known := want[lit.Value]; known {
+				want[lit.Value] = true
+			}
+		}
+		return true
+	})
+	for lit, seenLit := range want {
+		if !seenLit {
+			return fmt.Errorf("hexNibble missing %s", lit)
+		}
+	}
+	return nil
+}
+
+func swiftEscapeCheck(percent, exception string, threshold int, separators, schemeMark string) string {
+	var b strings.Builder
+	b.WriteString("    public static func baseURLEscapesOK(_ value: String) -> Bool {\n")
+	b.WriteString("        let bytes = Array(value.utf8)\n")
+	b.WriteString("        if !percentBytesOK(bytes, hostRule: false) { return false }\n")
+	b.WriteString("        return percentBytesOK(Array(baseURLHost(value).utf8), hostRule: true)\n")
+	b.WriteString("    }\n\n")
+	b.WriteString("    private static func baseURLHost(_ value: String) -> String {\n")
+	b.WriteString("        guard let marker = value.range(of: " + strconv.Quote(schemeMark) + ") else { return \"\" }\n")
+	b.WriteString("        var rest = String(value[marker.upperBound...])\n")
+	b.WriteString("        if let cut = rest.firstIndex(where: { " + strconv.Quote(separators) + ".contains($0) }) {\n")
+	b.WriteString("            rest = String(rest[..<cut])\n")
+	b.WriteString("        }\n")
+	b.WriteString("        if let at = rest.lastIndex(of: \"@\") {\n")
+	b.WriteString("            rest = String(rest[rest.index(after: at)...])\n")
+	b.WriteString("        }\n")
+	b.WriteString("        return rest\n")
+	b.WriteString("    }\n\n")
+	b.WriteString("    private static func percentBytesOK(_ bytes: [UInt8], hostRule: Bool) -> Bool {\n")
+	b.WriteString("        var index = 0\n")
+	b.WriteString("        while index < bytes.count {\n")
+	b.WriteString("            if bytes[index] != UInt8(ascii: " + strconv.Quote(percent) + ") {\n")
+	b.WriteString("                index += 1\n")
+	b.WriteString("                continue\n")
+	b.WriteString("            }\n")
+	b.WriteString("            if index + 2 >= bytes.count || hexNibble(bytes[index + 1]) < 0 || hexNibble(bytes[index + 2]) < 0 {\n")
+	b.WriteString("                return false\n")
+	b.WriteString("            }\n")
+	b.WriteString("            if hostRule && String(bytes: bytes[index...index + 2], encoding: .utf8) != " + strconv.Quote(exception) + " && hexNibble(bytes[index + 1]) < " + strconv.Itoa(threshold) + " {\n")
+	b.WriteString("                return false\n")
+	b.WriteString("            }\n")
+	b.WriteString("            index += 3\n")
+	b.WriteString("        }\n")
+	b.WriteString("        return true\n")
+	b.WriteString("    }\n\n")
+	b.WriteString("    private static func hexNibble(_ byte: UInt8) -> Int {\n")
+	b.WriteString("        switch byte {\n")
+	b.WriteString("        case UInt8(ascii: \"0\")...UInt8(ascii: \"9\"):\n")
+	b.WriteString("            return Int(byte - UInt8(ascii: \"0\"))\n")
+	b.WriteString("        case UInt8(ascii: \"a\")...UInt8(ascii: \"f\"):\n")
+	b.WriteString("            return Int(byte - UInt8(ascii: \"a\")) + 10\n")
+	b.WriteString("        case UInt8(ascii: \"A\")...UInt8(ascii: \"F\"):\n")
+	b.WriteString("            return Int(byte - UInt8(ascii: \"A\")) + 10\n")
+	b.WriteString("        default:\n")
+	b.WriteString("            return -1\n")
+	b.WriteString("        }\n")
+	b.WriteString("    }\n")
+	return b.String()
+}
+
 func requireCanonicalEndpoints(file *ast.File) error {
 	fn := findFunc(file, "CanonicalEndpoints")
 	if fn == nil || !callsSelector(fn, "TrimSpace") || !callsSelector(fn, "TrimRight") || !callsFunc(fn, "ValidateBaseURL") {
@@ -724,6 +939,10 @@ func emitEndpointVectors() (string, error) {
 		{"http://127.0.0.1/v1#frag", "m", "http://127.0.0.1:1234/v1", "auto"},
 		{"file:///tmp/x", "m", "http://127.0.0.1:1234/v1", "auto"},
 		{"http:example.com", "m", "http://127.0.0.1:1234/v1", "auto"},
+		{"http://localhost/v1%", "m", "http://127.0.0.1:1234/v1", "auto"},
+		{"http://localhost/invalid%ZZ", "m", "http://127.0.0.1:1234/v1", "auto"},
+		{"http://ex%41mple.com/v1", "m", "http://127.0.0.1:1234/v1", "auto"},
+		{"http://localhost/v1%20ok", "m", "http://127.0.0.1:1234/v1", "auto"},
 	}
 	var b strings.Builder
 	b.WriteString(sourceNote("voice-rewrite/internal/core/config.CanonicalEndpoints"))
