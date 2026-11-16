@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"voicerewrite/internal/contract"
 	"voicerewrite/internal/core/desktop"
 	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/settingsform"
@@ -810,6 +811,114 @@ func uxCenteredWindow(w, h int32) (int32, int32) {
 
 func uxWorkAreaAtCursor() desktop.WorkArea { return uxWorkAreaForPoint(currentCursorPoint()) }
 
+func layoutSettingsFields(p *uxSettings, app *appState, makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, stat, edit, btn uintptr) error {
+	for pageIndex, page := range contract.Pages() {
+		start := len(p.controls)
+		row := 0
+		for _, control := range contract.PageControls(page.ID, contract.Windows) {
+			if err := placeSettingsControl(p, app, makeOne, stat, edit, btn, control, row); err != nil {
+				return err
+			}
+			if control.Stacked {
+				row++
+			}
+		}
+		for _, created := range p.controls[start:] {
+			p.pages[pageIndex] = append(p.pages[pageIndex], created.hwnd)
+		}
+	}
+	for _, control := range contract.PageControls("save", contract.Windows) {
+		if err := placeSettingsControl(p, app, makeOne, stat, edit, btn, control, 0); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, stat, edit, btn uintptr, control contract.Control, row int) error {
+	label := settingsform.FieldLabel(row)
+	field := settingsform.FieldEdit(row)
+	switch control.ID {
+	case "asr_base_url":
+		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
+		p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, field.X, field.Y, field.W, field.H, uxASRURLInput, false)
+	case "asr_model":
+		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
+		p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, field.X, field.Y, field.W, field.H, uxASRModelInput, false)
+	case "asr_api_key":
+		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
+		p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, field.X, field.Y, field.W, field.H, uxASRKeyInput, false)
+	case "probe_asr_status":
+		p.probeStatus[0] = makeOne("STATIC", serviceprobe.StatusIdle, stat, 352, 324, 435, 48, 0, false)
+	case "probe_asr":
+		makeOne("BUTTON", control.Label, btn, 696, 130, 92, 30, uxProbeASRButton, false)
+	case "llm_base_url":
+		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
+		p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, field.X, field.Y, field.W, field.H, uxLLMURLInput, false)
+	case "text_model":
+		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
+		p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, field.X, field.Y, field.W, field.H, uxLLMModelInput, false)
+	case "llm_api_key":
+		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
+		p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, field.X, field.Y, field.W, field.H, uxLLMKeyInput, false)
+	case "probe_llm_status":
+		p.probeStatus[1] = makeOne("STATIC", serviceprobe.StatusIdle, stat, 352, 324, 435, 48, 0, false)
+	case "probe_llm":
+		makeOne("BUTTON", control.Label, btn, 696, 130, 92, 30, uxProbeLLMButton, false)
+	case "rewrite_shortcut":
+		shortcut := settingsform.ShortcutEdit()
+		shortcut.Y += settingsform.RowStep * int32(row)
+		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
+		p.rewriteShortcut = makeOne("EDIT", app.cfg.HotkeyRecord, edit|0x0800, shortcut.X, shortcut.Y, shortcut.W, shortcut.H, uxRewriteInput, false)
+	case "capture_rewrite":
+		row, ok := stackedSettingsRow("rewrite_shortcut")
+		if !ok {
+			return fmt.Errorf("设置页缺少控件布局: rewrite_shortcut")
+		}
+		frame := settingsform.FieldFrame(row)
+		p.captureButtons[0] = makeOne("BUTTON", control.Label, btn, 593, frame.Y, 194, 34, uxCaptureRewrite, false)
+	case "dictation_shortcut":
+		shortcut := settingsform.ShortcutEdit()
+		shortcut.Y += settingsform.RowStep * int32(row)
+		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
+		p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit|0x0800, shortcut.X, shortcut.Y, shortcut.W, shortcut.H, uxShortcutInput, false)
+	case "capture_dictation":
+		row, ok := stackedSettingsRow("dictation_shortcut")
+		if !ok {
+			return fmt.Errorf("设置页缺少控件布局: dictation_shortcut")
+		}
+		frame := settingsform.FieldFrame(row)
+		p.captureButtons[1] = makeOne("BUTTON", control.Label, btn, 593, frame.Y, 194, 34, uxCaptureDictation, false)
+	case "microphone":
+		frame := settingsform.FieldFrame(row)
+		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
+		p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, frame.X+5, frame.Y+4, frame.W-10, 190, uxMicrophoneInput, false)
+		p.populateMicrophones(app.cfg.AudioDeviceID)
+		resultStyleNativeEdit(p.microphone, p.palette.dark)
+	case "input_note_windows":
+		info := makeOne("STATIC", control.Label, stat, 226, 345, 565, 44, 0, false)
+		setFont(info, p.mutedFont)
+	case "save":
+		makeOne("BUTTON", control.Label, btn, 220, 418, 124, 34, uxSaveButton, false)
+	case "advanced":
+		makeOne("BUTTON", control.Label, btn, 358, 418, 112, 34, uxAdvancedButton, false)
+	case "close":
+		makeOne("BUTTON", control.Label, btn, 710, 418, 94, 34, uxCloseButton, false)
+	default:
+		return fmt.Errorf("设置页缺少控件布局: %s", control.ID)
+	}
+	return nil
+}
+
+func stackedSettingsRow(id string) (int, bool) {
+	for i, control := range contract.Stacked("input", contract.Windows) {
+		if control.ID == id {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
 func showNativeSettings(app *appState) error {
 	restoreDPI := handyAwareWindowThread()
 	defer restoreDPI()
@@ -886,61 +995,18 @@ func showNativeSettings(app *appState) error {
 	edit := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxESAutoScroll)
 	btn := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxBSOwnerDraw)
 	// Native sidebar navigation, one focused form page at a time.
-	p.navButtons[0] = makeOne("BUTTON", "语音识别", btn, 12, 110, 170, 35, uxNavSpeech, false)
-	p.navButtons[1] = makeOne("BUTTON", "AI 写作", btn, 12, 151, 170, 35, uxNavAI, false)
-	p.navButtons[2] = makeOne("BUTTON", "快捷键与设备", btn, 12, 192, 170, 35, uxNavInput, false)
+	pages := contract.Pages()
+	if len(pages) != len(p.navButtons) {
+		return fmt.Errorf("设置导航与页面数量不一致")
+	}
+	for i, page := range pages {
+		p.navButtons[i] = makeOne("BUTTON", page.Title, btn, 12, int32(110+i*41), 170, 35, uxNavSpeech+uintptr(i), false)
+	}
 	head := makeOne("STATIC", "设置", uxWSChild, 0, 0, 1, 1, 0, false)
 	setFont(head, p.titleFont)
-	start := len(p.controls)
-	firstLabel, firstEdit := settingsform.FieldLabel(0), settingsform.FieldEdit(0)
-	secondLabel, secondEdit := settingsform.FieldLabel(1), settingsform.FieldEdit(1)
-	thirdLabel, thirdEdit := settingsform.FieldLabel(2), settingsform.FieldEdit(2)
-	makeOne("STATIC", "API 地址", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
-	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, firstEdit.X, firstEdit.Y, firstEdit.W, firstEdit.H, uxASRURLInput, false)
-	makeOne("STATIC", "模型 ID", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
-	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, secondEdit.X, secondEdit.Y, secondEdit.W, secondEdit.H, uxASRModelInput, false)
-	makeOne("STATIC", "API Key", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
-	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, thirdEdit.X, thirdEdit.Y, thirdEdit.W, thirdEdit.H, uxASRKeyInput, false)
-	p.probeStatus[0] = makeOne("STATIC", serviceprobe.StatusIdle, stat, 352, 324, 435, 48, 0, false)
-	makeOne("BUTTON", "测试连接", btn, 696, 130, 92, 30, uxProbeASRButton, false)
-	for _, c := range p.controls[start:] {
-		p.pages[0] = append(p.pages[0], c.hwnd)
+	if err := layoutSettingsFields(p, app, makeOne, stat, edit, btn); err != nil {
+		return err
 	}
-	start = len(p.controls)
-	makeOne("STATIC", "API 地址", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
-	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, firstEdit.X, firstEdit.Y, firstEdit.W, firstEdit.H, uxLLMURLInput, false)
-	makeOne("STATIC", "模型 ID", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
-	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, secondEdit.X, secondEdit.Y, secondEdit.W, secondEdit.H, uxLLMModelInput, false)
-	makeOne("STATIC", "API Key", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
-	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, thirdEdit.X, thirdEdit.Y, thirdEdit.W, thirdEdit.H, uxLLMKeyInput, false)
-	p.probeStatus[1] = makeOne("STATIC", serviceprobe.StatusIdle, stat, 352, 324, 435, 48, 0, false)
-	makeOne("BUTTON", "测试连接", btn, 696, 130, 92, 30, uxProbeLLMButton, false)
-	for _, c := range p.controls[start:] {
-		p.pages[1] = append(p.pages[1], c.hwnd)
-	}
-	start = len(p.controls)
-	// Shortcut displays are read-only; the recorder button captures physical events.
-	short0 := settingsform.ShortcutEdit()
-	short1 := short0
-	short1.Y += settingsform.RowStep
-	makeOne("STATIC", "语音指令", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
-	p.rewriteShortcut = makeOne("EDIT", app.cfg.HotkeyRecord, edit|0x0800, short0.X, short0.Y, short0.W, short0.H, uxRewriteInput, false)
-	p.captureButtons[0] = makeOne("BUTTON", "录入按键", btn, 593, 169, 194, 34, uxCaptureRewrite, false)
-	makeOne("STATIC", "听写快捷键", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
-	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit|0x0800, short1.X, short1.Y, short1.W, short1.H, uxShortcutInput, false)
-	p.captureButtons[1] = makeOne("BUTTON", "录入按键", btn, 593, 223, 194, 34, uxCaptureDictation, false)
-	makeOne("STATIC", "麦克风", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
-	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 350, 281, 437, 190, uxMicrophoneInput, false)
-	p.populateMicrophones(app.cfg.AudioDeviceID)
-	resultStyleNativeEdit(p.microphone, p.palette.dark)
-	info := makeOne("STATIC", "语音指令用于改写/解释/问答；更换按键或设备后需重启软件。", stat, 226, 345, 565, 44, 0, false)
-	setFont(info, p.mutedFont)
-	for _, c := range p.controls[start:] {
-		p.pages[2] = append(p.pages[2], c.hwnd)
-	}
-	makeOne("BUTTON", "保存设置", btn, 220, 418, 124, 34, uxSaveButton, false)
-	makeOne("BUTTON", "高级配置", btn, 358, 418, 112, 34, uxAdvancedButton, false)
-	makeOne("BUTTON", "关闭", btn, 710, 418, 94, 34, uxCloseButton, false)
 	p.hint = makeOne("STATIC", "", stat, 223, 457, 560, 22, 0, false)
 	setFont(p.hint, p.mutedFont)
 	setFont(p.probeStatus[0], p.mutedFont)

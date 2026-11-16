@@ -38,6 +38,9 @@ jobs:
         run: go test -race -count=1 ./...
       - name: Check portable core package boundaries
         run: python3 scripts/check-portable-core.py
+      - name: Check generated host contracts
+        working-directory: voice-rewrite
+        run: go run ./cmd/contractgen -check
       - name: Compile core on Linux without CGO
         working-directory: voice-rewrite
         env:

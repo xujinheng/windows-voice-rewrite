@@ -44,10 +44,8 @@ public struct MacSettings: Codable, Equatable, Sendable {
     }
 
     public static let defaults = MacSettings()
-    /// Same inclusive range core Normalize keeps. Values outside it become 60.
-    public static let recordSeconds = 1...180
-    /// Same byte limit as core MaxCredentialBytes. A blank field still means keep the saved key.
-    public static let maxCredentialBytes = 4000
+    public static let recordSeconds = ContractLimits.recordSecondsMin...ContractLimits.recordSecondsMax
+    public static let maxCredentialBytes = ContractLimits.maxCredentialBytes
 
     public static func credentialTooLong(_ value: String) -> Bool {
         value.trimmingCharacters(in: .whitespacesAndNewlines).utf8.count > maxCredentialBytes
@@ -61,15 +59,17 @@ public struct MacSettings: Codable, Equatable, Sendable {
         asrModel = asrModel.trimmingCharacters(in: .whitespacesAndNewlines)
         textModel = textModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if !Self.recordSeconds.contains(maxRecordSeconds) {
-            maxRecordSeconds = 60
+            maxRecordSeconds = ContractLimits.defaultRecordSeconds
         }
         if asrModel.isEmpty { asrModel = "whisper-1" }
         if textModel.isEmpty { textModel = "auto" }
         dictationShortcut = normalizedShortcut(dictationShortcut, fallback: "Ctrl+Alt+R")
         rewriteShortcut = normalizedShortcut(rewriteShortcut, fallback: "Ctrl+Alt+E")
         textEditShortcut = normalizedShortcut(textEditShortcut, fallback: "Ctrl+Alt+T")
-        guard asrBaseURL.utf8.count <= 500, llmBaseURL.utf8.count <= 500,
-              asrModel.utf8.count <= 150, textModel.utf8.count <= 150,
+        guard asrBaseURL.utf8.count <= ContractLimits.maxEndpointBytes,
+              llmBaseURL.utf8.count <= ContractLimits.maxEndpointBytes,
+              asrModel.utf8.count <= ContractLimits.maxModelIDBytes,
+              textModel.utf8.count <= ContractLimits.maxModelIDBytes,
               Self.acceptsBaseURL(asrBaseURL),
               Self.acceptsBaseURL(llmBaseURL) else {
             throw SettingsError.invalidValues
@@ -79,23 +79,6 @@ public struct MacSettings: Codable, Equatable, Sendable {
     public func validateForPersistence() throws {
         var copy = self
         try copy.canonicalize()
-    }
-
-    /// Matches core ValidateBaseURL: http(s), host, no userinfo, query, or fragment.
-    public static func acceptsBaseURL(_ value: String) -> Bool {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.contains("://"),
-              let url = URLComponents(string: trimmed),
-              let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https",
-              let host = url.host, !host.isEmpty,
-              url.user == nil, url.password == nil,
-              url.percentEncodedQuery?.isEmpty != false,
-              url.fragment == nil,
-              url.url != nil else {
-            return false
-        }
-        return true
     }
 
     private func trimEndpoint(_ value: String) -> String {

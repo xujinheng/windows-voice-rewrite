@@ -1,7 +1,6 @@
+// Source: voice-rewrite/internal/core/textedit
 import Foundation
 
-/// The same rune limit core `SelectedLengthError` uses. An empty selection is
-/// not an error here; the capture path rejects that separately.
 public enum SelectionLimit {
     public static let defaultMaxScalars = 12000
 

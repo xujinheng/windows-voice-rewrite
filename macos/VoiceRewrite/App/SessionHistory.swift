@@ -1,6 +1,6 @@
+// Source: voice-rewrite/internal/core/history
 import Foundation
 
-/// In-memory session results. Same bounds and menu text as internal/core/history.
 struct SessionHistoryEntry: Identifiable, Equatable {
     let id: UInt64
     let title: String
@@ -45,7 +45,10 @@ struct SessionHistory {
     mutating func clear() { entries.removeAll() }
 
     static func kind(title: String) -> String {
-        title.contains("听写") ? "听写" : "AI 结果"
+        if title.contains("听写") {
+            return "听写"
+        }
+        return "AI 结果"
     }
 
     static func menuLine(index: Int, title: String, createdAt: Date) -> String {

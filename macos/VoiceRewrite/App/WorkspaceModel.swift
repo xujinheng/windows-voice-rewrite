@@ -5,24 +5,6 @@ import Microphone
 import VoiceRewriteInteraction
 import VoiceRewriteStorage
 
-enum ServiceProbeCopy {
-    static let idle = "尚未检测连接"
-    static let running = "正在检测服务…"
-    static let stale = "连接配置已修改 · 请重新检测"
-}
-
-enum SettingsCopy {
-    static let saveWhileBusy = "请先完成当前录音／改写，再保存"
-}
-
-enum VoicePauseCopy {
-    static let paused = "已暂停 · 鼠标侧键恢复正常功能"
-    static let idle = "待机 · 使用配置的听写和改写快捷键"
-    static let pause = "暂停语音操作（保留鼠标侧键原功能）"
-    static let resume = "恢复语音操作"
-    static let busy = "当前任务仍在处理；结束后可暂停语音操作。"
-}
-
 @MainActor
 final class WorkspaceModel: ObservableObject {
     enum Connection: Equatable {
