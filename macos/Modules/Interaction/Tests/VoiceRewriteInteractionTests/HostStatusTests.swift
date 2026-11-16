@@ -2,6 +2,22 @@ import XCTest
 @testable import VoiceRewriteInteraction
 
 final class HostStatusTests: XCTestCase {
+    func testInsertionFailureDistinguishesUncertainDeliveryFromChangedTarget() {
+        let args = (rewrite: false, passwordRewrite: "密码改写", passwordDictation: "密码听写")
+        let uncertain = insertionStatus(InteractionFailure.writeNotConfirmed,
+                                        rewrite: args.rewrite, passwordRewrite: args.passwordRewrite,
+                                        passwordDictation: args.passwordDictation)
+        XCTAssertTrue(uncertain.contains("避免重复粘贴"))
+        let changed = insertionStatus(InteractionFailure.selectionChanged,
+                                      rewrite: args.rewrite, passwordRewrite: args.passwordRewrite,
+                                      passwordDictation: args.passwordDictation)
+        XCTAssertTrue(changed.contains("光标"))
+        let focus = insertionStatus(InteractionFailure.focusChanged,
+                                    rewrite: args.rewrite, passwordRewrite: args.passwordRewrite,
+                                    passwordDictation: args.passwordDictation)
+        XCTAssertTrue(focus.contains("焦点"))
+    }
+
     func testCaptureStatusKeepsTheMacSentences() {
         XCTAssertEqual(
             captureStatus(InteractionFailure.secureField, password: "密码"),
