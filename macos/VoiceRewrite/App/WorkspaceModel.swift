@@ -46,7 +46,7 @@ final class WorkspaceModel: ObservableObject {
     private let microphone = MicrophoneRecorder()
     private let recordingIndicator = RecordingIndicatorController()
     private var indicatorSnapshot = IndicatorSnapshot()
-    private var ignoreNextSideHold = false
+    private var sideGate = SideVoiceGate()
     private let credentials = KeychainCredentials()
     private let interaction = InteractionSession.macOS()
     private var store: SettingsStore?
@@ -61,8 +61,6 @@ final class WorkspaceModel: ObservableObject {
     private var hotKeyDriver: CarbonHotKeyDriver?
     private var hotKeys: HotKeyRegistry?
     private var sideMouse: SideMouseButtonDriver?
-    private var activeSideAction: SideMouseAction?
-    private var pendingSideRelease: SideMouseAction?
 
     private var activeShortcutPlan: MacShortcutPlan?
     private var shortcutGeneration = ResultGeneration()
@@ -387,17 +385,14 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func sideMouseHeld(_ action: SideMouseAction, targetPID: Int32?) {
-        guard !voicePaused else {
+        switch sideGate.hold(paused: voicePaused, busy: isRecording || isStarting || isProcessing) {
+        case .dismissPreview:
             dismissPreviewIndicator()
             return
-        }
-        guard !isRecording && !isStarting && !isProcessing && activeSideAction == nil else {
-            dismissPreviewIndicator()
+        case .ignored:
             return
-        }
-        if ignoreNextSideHold {
-            ignoreNextSideHold = false
-            return
+        case .start:
+            break
         }
         let mappedButton = (activeShortcutPlan?.sideButtons ?? SideMouseBindings()).button(for: action)
         sideMouseStatus = mappedButton.map { "Mouse\($0 + 1) 长按已触发" } ?? "已通过配置的快捷键触发"
@@ -406,26 +401,27 @@ final class WorkspaceModel: ObservableObject {
         case .rewrite: toggleVoiceSelectedText(from: targetPID)
         }
         // Starting a new task invalidates the previous task's input ownership.
-        activeSideAction = action
-        pendingSideRelease = nil
+        sideGate.began(action)
     }
 
     private func sideMouseReleased(_ action: SideMouseAction) {
-        guard activeSideAction == action else { return }
-        if isStarting {
-            pendingSideRelease = action
-        } else if isRecording {
+        switch sideGate.release(action, starting: isStarting, recording: isRecording) {
+        case .none, .wait:
+            return
+        case .stop:
             stopRecording()
-        } else {
-            activeSideAction = nil
+        case .clear:
+            break
         }
     }
 
     private func stopWhenSideMouseReleased(_ action: SideMouseAction) {
-        guard pendingSideRelease == action else { return }
-        pendingSideRelease = nil
-        if isRecording { stopRecording() }
-        else { activeSideAction = nil }
+        switch sideGate.finishStart(action, recording: isRecording) {
+        case .stop:
+            stopRecording()
+        case .none, .wait, .clear:
+            break
+        }
     }
 
     private func requestConfig(for operation: HelperOperation) throws -> JSONValue {
@@ -587,8 +583,7 @@ final class WorkspaceModel: ObservableObject {
         }
         activeVoiceSelection = nil
         isVoiceSelectionRecording = false
-        activeSideAction = nil
-        pendingSideRelease = nil
+        sideGate.clear()
         isProcessing = false
     }
 
@@ -701,8 +696,7 @@ final class WorkspaceModel: ObservableObject {
 
     func stopRecording() {
         guard isRecording else { return }
-        activeSideAction = nil
-        pendingSideRelease = nil
+        sideGate.clear()
         isRecording = false
         isProcessing = true
         showIndicator(phase: .processing, mode: indicatorSnapshot.mode, pending: false)
@@ -984,7 +978,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func dismissPreviewIndicator() {
-        ignoreNextSideHold = false
+        sideGate.allowNextHold()
         guard indicatorSnapshot.pending else { return }
         dismissIndicator()
     }
@@ -1007,7 +1001,7 @@ final class WorkspaceModel: ObservableObject {
             guard let self else { return }
             switch indicatorCancel(pending: self.indicatorSnapshot.pending, terminal: IndicatorMath.terminal(self.indicatorSnapshot.phase)) {
             case .ignoreHold:
-                self.ignoreNextSideHold = true
+                self.sideGate.suppressNextHold()
                 self.dismissIndicator()
             case .dismiss:
                 self.dismissIndicator()
