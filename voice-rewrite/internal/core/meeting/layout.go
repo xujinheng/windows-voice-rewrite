@@ -50,6 +50,50 @@ func KeepFinishedEnglish(complete bool, english string) bool {
 	return complete && strings.TrimSpace(english) != ""
 }
 
+type Box struct{ X, Y, W, H int32 }
+
+type ProfileMetrics struct {
+	Margin, Gap, Label, Chrome, MinEdit          int32
+	ModeHeight, ModeStep, NoteHeight, ButtonSize int32
+	SaveWidth, CloseOffset, CloseWidth           int32
+}
+
+// ProfileLayout stacks the meeting profile controls in logical or physical pixels.
+// The caller scales each metric before calling, because each edge is rounded on its own.
+func ProfileLayout(width, height int32, m ProfileMetrics) []Box {
+	y := m.Margin
+	titleH := m.Label * 2
+	boxes := []Box{{m.Margin, y, width, titleH}}
+	y += titleH + m.Gap
+	available := height - y - m.Margin - m.Chrome
+	editH := m.MinEdit
+	if half := available / 2; half > editH {
+		editH = half
+	}
+	add := func(x, w, h int32) {
+		boxes = append(boxes, Box{x, y, w, h})
+	}
+	add(m.Margin, width, m.Label)
+	y += m.Label
+	add(m.Margin, width, editH)
+	y += editH + m.Gap
+	add(m.Margin, width, m.Label)
+	y += m.Label
+	add(m.Margin, width, editH)
+	y += editH + m.Gap
+	add(m.Margin, width, m.Label)
+	y += m.Label
+	add(m.Margin, width, m.ModeHeight)
+	y += m.ModeStep
+	add(m.Margin, width, m.NoteHeight)
+	y += m.NoteHeight + m.Gap
+	add(m.Margin, width, m.Label)
+	y += m.Label + m.Gap
+	add(m.Margin, m.SaveWidth, m.ButtonSize)
+	add(m.Margin+m.CloseOffset, m.CloseWidth, m.ButtonSize)
+	return boxes
+}
+
 func NextFontSize(current, delta int32) int32 {
 	return max(12, min(28, current+delta))
 }

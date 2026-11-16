@@ -207,6 +207,7 @@ const (
 	MaxEndpointBytes   = 500
 	MaxModelIDBytes    = 150
 	MaxCredentialBytes = 4000
+	CredentialTooLong  = "输入内容过长"
 )
 
 // Endpoints is the non-secret ASR and LLM identity stored by both desktop hosts.
@@ -226,7 +227,7 @@ func CanonicalEndpoints(asrURL, asrModel, llmURL, textModel string) (Endpoints, 
 	asrModel = strings.TrimSpace(asrModel)
 	textModel = strings.TrimSpace(textModel)
 	if len(asrURL) > MaxEndpointBytes || len(llmURL) > MaxEndpointBytes || len(asrModel) > MaxModelIDBytes || len(textModel) > MaxModelIDBytes {
-		return Endpoints{}, errors.New("输入内容过长")
+		return Endpoints{}, errors.New(CredentialTooLong)
 	}
 	if err := ValidateBaseURL(asrURL); err != nil {
 		return Endpoints{}, errors.New("请输入有效的 http:// 或 https:// 服务地址")

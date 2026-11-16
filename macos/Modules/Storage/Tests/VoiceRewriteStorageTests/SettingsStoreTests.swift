@@ -131,6 +131,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.save(settings))
         settings.llmBaseURL = "http:example.com"
         XCTAssertThrowsError(try store.save(settings))
+        XCTAssertEqual(ContractLimits.credentialTooLong, "输入内容过长")
         XCTAssertFalse(MacSettings.credentialTooLong(String(repeating: "k", count: 4000)))
         XCTAssertTrue(MacSettings.credentialTooLong(String(repeating: "k", count: 4001)))
         XCTAssertFalse(MacSettings.credentialTooLong(String(repeating: " ", count: 4001)))

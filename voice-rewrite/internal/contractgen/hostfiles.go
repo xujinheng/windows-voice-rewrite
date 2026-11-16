@@ -260,6 +260,11 @@ func emitLimits(moduleRoot string) (string, error) {
 		}
 		b.WriteString("    public static let " + item.swift + " = " + value + "\n")
 	}
+	if text, ok := stringConsts(config)["CredentialTooLong"]; ok {
+		b.WriteString("    public static let credentialTooLong = " + strconv.Quote(text) + "\n")
+	} else {
+		return "", fmt.Errorf("missing CredentialTooLong")
+	}
 	defaults, err := defaultStrings(config)
 	if err != nil {
 		return "", err

@@ -80,46 +80,30 @@ func (p *meetingHUD) layoutProfile(width, height int32) {
 	if len(p.profileControls) != 11 {
 		return
 	}
-	margin, gap, label := p.px(12), p.px(8), p.px(25)
-	y := p.px(12)
-	p.move(p.profileControls[0], margin, y, width, label*2)
-	y += label*2 + gap
-	available := height - y - margin - p.px(246)
-	editHeight := max(p.px(70), available/2)
-	p.move(p.profileControls[1], margin, y, width, label)
-	y += label
-	p.move(p.profileBackground, margin, y, width, editHeight)
-	y += editHeight + gap
-	p.move(p.profileControls[3], margin, y, width, label)
-	y += label
-	p.move(p.profileTerms, margin, y, width, editHeight)
-	y += editHeight + gap
-	p.move(p.profileControls[5], margin, y, width, label)
-	y += label
-	p.move(p.profileMode, margin, y, width, p.px(180))
-	y += p.px(34)
-	p.move(p.profileControls[7], margin, y, width, p.px(48))
-	y += p.px(48) + gap
-	p.move(p.profileStatus, margin, y, width, label)
-	y += label + gap
-	p.move(p.profileControls[9], margin, y, p.px(130), p.px(32))
-	p.move(p.profileControls[10], margin+p.px(140), y, p.px(96), p.px(32))
+	boxes := meetingcore.ProfileLayout(width, height, meetingcore.ProfileMetrics{
+		Margin: p.px(12), Gap: p.px(8), Label: p.px(25), Chrome: p.px(246), MinEdit: p.px(70),
+		ModeHeight: p.px(180), ModeStep: p.px(34), NoteHeight: p.px(48), ButtonSize: p.px(32),
+		SaveWidth: p.px(130), CloseOffset: p.px(140), CloseWidth: p.px(96),
+	})
+	for i, box := range boxes {
+		p.move(p.profileControls[i], box.X, box.Y, box.W, box.H)
+	}
 	meetingInvalidateRect.Call(p.window, 0, 1)
 }
 
 func (p *meetingHUD) saveProfile() {
-	if p.app == nil || p.app.meeting == nil {
+	s := p.session()
+	if s == nil {
 		return
 	}
-	s := p.app.meeting
 	if err := s.updateProfile(uxWinText(p.profileBackground), uxWinText(p.profileTerms)); err != nil {
-		uxSetText(p.profileStatus, "保存失败: "+err.Error())
+		uxSetText(p.profileStatus, meetingcore.ProfileSaveFailed+err.Error())
 		return
 	}
 	index, _, _ := procSendMessage.Call(p.profileMode, uxCBGetCurSel, 0, 0)
 	mode := config.MeetingASRModeAt(int(index))
 	if err := s.setASRMode(mode); err != nil {
-		uxSetText(p.profileStatus, "资料已保存；识别方式保存失败: "+err.Error())
+		uxSetText(p.profileStatus, meetingcore.ProfileModeFailed+err.Error())
 		return
 	}
 	p.profileOpen = false

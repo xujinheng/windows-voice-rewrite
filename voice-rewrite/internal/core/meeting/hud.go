@@ -15,6 +15,8 @@ const (
 	ProfileBackground = "背景：角色、项目、目标、已知限制"
 	ProfileTerms      = "术语：人名、缩写、产品名和中英对照（每行一条）"
 	ProfileMode       = "会议识别方式"
+	ProfileSaveFailed = "保存失败: "
+	ProfileModeFailed = "资料已保存；识别方式保存失败: "
 )
 
 // ButtonView is the meeting state that changes a button's label.

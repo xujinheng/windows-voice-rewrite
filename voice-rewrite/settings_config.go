@@ -15,7 +15,7 @@ func uxUpdatedConfig(old Config, values [6]string) (Config, error) {
 	asrKey := strings.TrimSpace(values[2])
 	llmKey := strings.TrimSpace(values[5])
 	if len(asrKey) > coreconfig.MaxCredentialBytes || len(llmKey) > coreconfig.MaxCredentialBytes {
-		return old, errors.New("输入内容过长")
+		return old, errors.New(coreconfig.CredentialTooLong)
 	}
 	cfg := old
 	cfg.ASRBaseURL = endpoints.ASRBaseURL

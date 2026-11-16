@@ -77,6 +77,20 @@ func TestMeetingDraggableDividersAreIndependentAndConstrained(t *testing.T) {
 	}
 }
 
+func TestProfileLayoutKeepsTheStackedRows(t *testing.T) {
+	boxes := ProfileLayout(400, 800, ProfileMetrics{
+		Margin: 12, Gap: 8, Label: 25, Chrome: 246, MinEdit: 70,
+		ModeHeight: 180, ModeStep: 34, NoteHeight: 48, ButtonSize: 32,
+		SaveWidth: 130, CloseOffset: 140, CloseWidth: 96,
+	})
+	if len(boxes) != 11 || boxes[0] != (Box{12, 12, 400, 50}) || boxes[2].H != 236 || boxes[6].H != 180 {
+		t.Fatalf("%+v", boxes)
+	}
+	if boxes[9] != (Box{12, 756, 130, 32}) || boxes[10] != (Box{152, 756, 96, 32}) {
+		t.Fatalf("buttons %+v %+v", boxes[9], boxes[10])
+	}
+}
+
 func TestMeetingChromeAndToolbarsStayPut(t *testing.T) {
 	if NextFontSize(16, 2) != 18 || NextFontSize(27, 2) != 28 || NextFontSize(13, -2) != 12 {
 		t.Fatal("font size")

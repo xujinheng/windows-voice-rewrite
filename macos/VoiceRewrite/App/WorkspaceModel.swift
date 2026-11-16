@@ -147,7 +147,7 @@ final class WorkspaceModel: ObservableObject {
             return
         }
         if MacSettings.credentialTooLong(asrKeyInput) || MacSettings.credentialTooLong(llmKeyInput) {
-            settingsStatus = "输入内容过长"
+            settingsStatus = ContractLimits.credentialTooLong
             return
         }
         guard let dictation = ShortcutBinding(canonical: settings.dictationShortcut),
