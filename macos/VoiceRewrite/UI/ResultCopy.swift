@@ -5,6 +5,7 @@ enum ResultCopy {
     static let dictationHistory = "听写结果"
     static let dictationNotInserted = "听写结果 · 未自动插入"
     static let dictationCopyManually = "听写结果 · 请手动复制"
+    static let dictationWriteUnconfirmed = "听写结果 · 请确认是否已输入"
     static let copyAction = "复制结果"
     static let applyAction = "应用到原文"
     static let closeGlyph = "×"
