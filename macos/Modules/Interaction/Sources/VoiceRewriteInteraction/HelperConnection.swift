@@ -23,7 +23,7 @@ public struct HelperConnectionEffect: Equatable, Sendable {
 
 /// The helper connection outcome. A rejected handshake and a failed handshake use different sentences.
 /// A dropped connection clears both probes. A missing bundle leaves the starting status alone.
-public func helperConnectionEffect(_ event: HelperConnection) -> HelperConnectionEffect {
+public func helperConnectionEffect(_ event: HelperConnection, helperName: String, helperVersion: Int) -> HelperConnectionEffect {
     switch event {
     case .bundleMissing:
         return HelperConnectionEffect(failedDetail: helperBundleMissing())
@@ -40,7 +40,7 @@ public func helperConnectionEffect(_ event: HelperConnection) -> HelperConnectio
         return HelperConnectionEffect(failedDetail: helperProtocolRejected(), serviceStatus: helperHandshakeFailedStatus())
     case .connected:
         return HelperConnectionEffect(
-            connectedLabel: helperConnectedLabel(),
+            connectedLabel: helperConnectedLabel(name: helperName, version: helperVersion),
             serviceStatus: helperConnected(),
             checkServices: true,
             refreshShortcuts: true,

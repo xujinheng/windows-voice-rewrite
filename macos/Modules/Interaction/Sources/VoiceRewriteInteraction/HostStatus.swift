@@ -242,6 +242,10 @@ public func helperHandshakeFailed() -> String { "Go Helper 握手失败" }
 
 public func helperConnected() -> String { "Go Helper 已连接" }
 
+public func helperConnectedLabel(name: String, version: Int) -> String {
+    "\(name) / JSONL v\(version)"
+}
+
 public func helperRequired() -> String { "请先连接 Go Helper" }
 
 public func helperNotConnectedProbe() -> String { "Go Helper 未连接" }

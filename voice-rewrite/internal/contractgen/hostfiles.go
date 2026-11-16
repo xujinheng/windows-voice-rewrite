@@ -531,7 +531,7 @@ func numberValue(expr ast.Expr, numbers map[string]string) string {
 }
 
 func settingsMaps() (bindings, actions, status map[string]string) {
-	return map[string]string{
+	bindings = map[string]string{
 		"asr_base_url":       "model.settings.asrBaseURL",
 		"asr_model":          "model.settings.asrModel",
 		"asr_api_key":        "model.asrKeyInput",
@@ -542,14 +542,17 @@ func settingsMaps() (bindings, actions, status map[string]string) {
 		"rewrite_shortcut":   "model.settings.rewriteShortcut",
 		"dictation_shortcut": "model.settings.dictationShortcut",
 		"text_edit_shortcut": "model.settings.textEditShortcut",
-	}, map[string]string{
+	}
+	actions = map[string]string{
 		"probe_asr": "model.checkASRService()",
 		"probe_llm": "model.checkLLMService()",
 		"save":      "model.saveSettings()",
-	}, map[string]string{
+	}
+	status = map[string]string{
 		"probe_asr_status": "model.asrProbeStatus",
 		"probe_llm_status": "model.llmProbeStatus",
 	}
+	return bindings, actions, status
 }
 
 func emitSettings() (string, error) {

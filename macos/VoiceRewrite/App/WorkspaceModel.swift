@@ -918,7 +918,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func applyHelperConnection(_ event: HelperConnection) {
-        let effect = helperConnectionEffect(event)
+        let effect = helperConnectionEffect(event, helperName: ContractLimits.helperName, helperVersion: ContractLimits.protocolVersion)
         if let label = effect.connectedLabel {
             connection = .connected(label)
         } else if let detail = effect.failedDetail {

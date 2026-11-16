@@ -439,17 +439,17 @@ final class HostStatusTests: XCTestCase {
     }
 
     func testHelperConnectionKeepsTheHandshakeSentencesApart() {
-        let missing = helperConnectionEffect(.bundleMissing)
+        let missing = helperConnectionEffect(.bundleMissing, helperName: "VoiceRewrite", helperVersion: 1)
         XCTAssertEqual(missing.failedDetail, helperBundleMissing())
         XCTAssertNil(missing.serviceStatus)
         XCTAssertFalse(missing.cancelProbes)
 
-        let started = helperConnectionEffect(.startFailed)
+        let started = helperConnectionEffect(.startFailed, helperName: "VoiceRewrite", helperVersion: 1)
         XCTAssertEqual(started.failedDetail, helperStartFailed())
         XCTAssertEqual(started.serviceStatus, helperUnavailable())
         XCTAssertNil(started.probeStatus)
 
-        let dropped = helperConnectionEffect(.disconnected("管道关闭"))
+        let dropped = helperConnectionEffect(.disconnected("管道关闭"), helperName: "VoiceRewrite", helperVersion: 1)
         XCTAssertEqual(dropped.failedDetail, "管道关闭")
         XCTAssertEqual(dropped.serviceStatus, helperDisconnected())
         XCTAssertEqual(dropped.probeStatus, helperProbeDisconnected())
@@ -457,20 +457,20 @@ final class HostStatusTests: XCTestCase {
         XCTAssertTrue(dropped.cancelProbes)
         XCTAssertTrue(dropped.invalidatePending)
 
-        let rejected = helperConnectionEffect(.protocolRejected)
+        let rejected = helperConnectionEffect(.protocolRejected, helperName: "VoiceRewrite", helperVersion: 1)
         XCTAssertEqual(rejected.failedDetail, helperProtocolRejected())
         XCTAssertEqual(rejected.serviceStatus, helperHandshakeFailedStatus())
         XCTAssertNotEqual(rejected.serviceStatus, helperHandshakeFailed())
 
-        let connected = helperConnectionEffect(.connected)
-        XCTAssertEqual(connected.connectedLabel, helperConnectedLabel())
+        let connected = helperConnectionEffect(.connected, helperName: "VoiceRewrite", helperVersion: 1)
+        XCTAssertEqual(connected.connectedLabel, helperConnectedLabel(name: "VoiceRewrite", version: 1))
         XCTAssertEqual(connected.serviceStatus, helperConnected())
         XCTAssertTrue(connected.checkServices)
         XCTAssertTrue(connected.refreshShortcuts)
         XCTAssertTrue(connected.logServiceStatus)
         XCTAssertNil(connected.failedDetail)
 
-        let failed = helperConnectionEffect(.handshakeFailed)
+        let failed = helperConnectionEffect(.handshakeFailed, helperName: "VoiceRewrite", helperVersion: 1)
         XCTAssertEqual(failed.failedDetail, helperHandshakeFailed())
         XCTAssertEqual(failed.serviceStatus, helperUnavailable())
         XCTAssertFalse(failed.checkServices)
