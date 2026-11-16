@@ -178,8 +178,10 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         // In that case, keep observing app focus and require a readable full
         // value that is compared again immediately before any write.
         let hasTextNotifications = textStatus == .success || valueStatus == .success
-        guard appStatus == .success,
-              hasTextNotifications || before.fullValue != nil else {
+        guard canMonitorSelection(
+            focusNotifications: appStatus == .success,
+            textNotifications: hasTextNotifications,
+            fullValue: before.fullValue) else {
             throw InteractionFailure.monitoringUnavailable
         }
         observer = created
