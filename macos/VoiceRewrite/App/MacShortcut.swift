@@ -96,9 +96,6 @@ struct MacShortcutPlan: Equatable {
         [dictation, rewrite, textEdit].compactMap { $0 }
     }
 
-    func sameKeyboard(as other: MacShortcutPlan) -> Bool {
-        dictation == other.dictation && rewrite == other.rewrite && textEdit == other.textEdit
-    }
 }
 
 @MainActor
