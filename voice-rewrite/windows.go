@@ -888,11 +888,9 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_SETTINGS_CAPTURE_MOUSE {
-			if p := uxActiveSettings; p != nil && p.capturingShortcut == msg.LParam {
-				if msg.WParam == 1 {
-					p.acceptShortcut("Mouse4")
-				} else if msg.WParam == 2 {
-					p.acceptShortcut("Mouse5")
+			if p := uxActiveSettings; p != nil {
+				if name := input.SettingsMouseCapture(p.capturingShortcut, msg.LParam, msg.WParam); name != "" {
+					p.acceptShortcut(name)
 				}
 			}
 			continue
@@ -910,13 +908,13 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_SIDE_CANCEL {
-			if pendingSide != nil && pendingSide.button == uint16(msg.WParam) {
+			if input.SideCancelApplies(pendingSide != nil, pendingSide != nil && pendingSide.button == uint16(msg.WParam)) {
 				discardPendingSide()
 			}
 			continue
 		}
 		if msg.Message == WM_SIDE_UP {
-			if cfg.RecordMode == "hold" && active != nil && uint16(msg.WParam) == holdButton {
+			if input.SideReleaseApplies(cfg.RecordMode == "hold", active != nil, uint16(msg.WParam) == holdButton) {
 				l.Printf("mouse button %d released; completing recording", holdButton)
 				finish()
 			}

@@ -52,6 +52,15 @@ func TestVoiceStartKeepsSideAndKeyboardWindowsApart(t *testing.T) {
 	if SideConfirm(true, true, true, true) != SideConfirmReport || SideConfirm(true, true, true, false) != SideConfirmActivate {
 		t.Fatal("ready hold")
 	}
+	if !SideCancelApplies(true, true) || SideCancelApplies(true, false) || SideCancelApplies(false, true) {
+		t.Fatal("side cancel")
+	}
+	if !SideReleaseApplies(true, true, true) || SideReleaseApplies(false, true, true) || SideReleaseApplies(true, false, true) || SideReleaseApplies(true, true, false) {
+		t.Fatal("side release")
+	}
+	if SettingsMouseCapture(3, 3, 1) != "Mouse4" || SettingsMouseCapture(3, 3, 2) != "Mouse5" || SettingsMouseCapture(3, 3, 0) != "" || SettingsMouseCapture(3, 4, 1) != "" || SettingsMouseCapture(0, 0, 1) != "Mouse4" {
+		t.Fatal("mouse capture")
+	}
 	if !ShowFreshHoldStatus(false, true) || !ShowFreshHoldStatus(false, false) || ShowFreshHoldStatus(true, true) || !ShowFreshHoldStatus(true, false) {
 		t.Fatal("hold status")
 	}

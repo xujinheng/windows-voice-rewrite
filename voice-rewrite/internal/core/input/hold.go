@@ -237,6 +237,34 @@ func CleanupToggle(fault ToggleFault) ToggleCleanup {
 	}
 }
 
+// SideCancelApplies drops a pending side preview only for the same button.
+// A different button leaves the other preview in place.
+func SideCancelApplies(pending, sameButton bool) bool {
+	return pending && sameButton
+}
+
+// SideReleaseApplies finishes an active hold for the same side button.
+// It does not use the keyboard hold-session check.
+func SideReleaseApplies(holdMode, recording, sameButton bool) bool {
+	return holdMode && recording && sameButton
+}
+
+// SettingsMouseCapture is the shortcut name for a side button pressed while settings capture is aimed at that control.
+// Matching ids are enough, including both zero. Button 1 is Mouse4 and button 2 is Mouse5.
+func SettingsMouseCapture(shortcutID, messageID, button uintptr) string {
+	if shortcutID != messageID {
+		return ""
+	}
+	switch button {
+	case 1:
+		return "Mouse4"
+	case 2:
+		return "Mouse5"
+	default:
+		return ""
+	}
+}
+
 // ReleaseDebounced reports a key release only after two consecutive polls see
 // it up, so a one-sample gap does not cut off dictation.
 func ReleaseDebounced(keyDown bool, upPolls *int) bool {
