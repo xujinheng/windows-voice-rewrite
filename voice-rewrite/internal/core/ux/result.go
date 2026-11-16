@@ -9,6 +9,12 @@ const (
 	DictationNotInserted = "听写结果 · 未自动插入"
 	// DictationCopyManually is the result card when insertion was attempted and failed.
 	DictationCopyManually = "听写结果 · 请手动复制"
+	// CopyAction is the result-card button that puts the text on the clipboard.
+	CopyAction = "复制结果"
+	// ApplyAction is the Windows result-card button that writes the text back.
+	ApplyAction = "应用到原文"
+	// CloseGlyph is the result-card close mark painted by both hosts.
+	CloseGlyph = "×"
 	// CopySucceeded is the card status after the result is on the clipboard.
 	CopySucceeded = "已复制结果到剪贴板"
 	// CopyFailed is the card status when the clipboard cannot be set.

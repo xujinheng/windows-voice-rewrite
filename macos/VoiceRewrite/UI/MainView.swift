@@ -130,7 +130,7 @@ struct MainView: View {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(value, forType: .string)
                     } label: {
-                        Label("复制结果", systemImage: "doc.on.doc")
+                        Label(ResultCopy.copyAction, systemImage: "doc.on.doc")
                     }
                     .accessibilityLabel("复制文本结果")
                     ScrollView {

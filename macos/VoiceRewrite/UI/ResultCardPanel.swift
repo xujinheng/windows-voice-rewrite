@@ -160,12 +160,12 @@ private struct ResultCardView: View {
             .frame(width: CGFloat(editor.w), height: CGFloat(editor.h))
             .position(x: CGFloat(editor.x) + CGFloat(editor.w) / 2, y: CGFloat(editor.y) + CGFloat(editor.h) / 2)
             Button(action: onCopy) {
-                Text("复制结果").frame(width: CGFloat(copy.w), height: CGFloat(copy.h))
+                Text(ResultCopy.copyAction).frame(width: CGFloat(copy.w), height: CGFloat(copy.h))
             }
             .buttonStyle(.borderedProminent)
             .position(x: CGFloat(copy.x) + CGFloat(copy.w) / 2, y: CGFloat(copy.y) + CGFloat(copy.h) / 2)
             Button(action: onClose) {
-                Text("×").frame(width: CGFloat(close.w), height: CGFloat(close.h))
+                Text(ResultCopy.closeGlyph).frame(width: CGFloat(close.w), height: CGFloat(close.h))
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color(indicator: IndicatorMath.closeGlyph))

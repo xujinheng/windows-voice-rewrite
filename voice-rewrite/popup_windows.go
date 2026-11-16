@@ -493,13 +493,13 @@ func drawCardButton(item *drawItemStruct) bool {
 	primary := false
 	switch item.CtlID {
 	case BUTTON_COPY:
-		label = "复制结果"
+		label = ux.CopyAction
 		primary = !activeAnswer.allowApply
 	case BUTTON_APPLY:
-		label = "应用到原文"
+		label = ux.ApplyAction
 		primary = true
 	case BUTTON_CLOSE:
-		label = "×"
+		label = ux.CloseGlyph
 	default:
 		return false
 	}
@@ -639,13 +639,13 @@ func showAnswerPopup(msg popupMessage) error {
 	}
 	if msg.allowApply {
 		applyFrame := corepopup.ApplyButton(cw, ch, scale)
-		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, applyFrame.X, applyFrame.Y, applyFrame.W, applyFrame.H, hwnd, BUTTON_APPLY); err != nil {
+		if _, err = makeChild("BUTTON", ux.ApplyAction, WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, applyFrame.X, applyFrame.Y, applyFrame.W, applyFrame.H, hwnd, BUTTON_APPLY); err != nil {
 			closeActiveAnswer()
 			return err
 		}
 	}
 	copyFrame := corepopup.CopyButton(cw, ch, scale)
-	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, copyFrame.X, copyFrame.Y, copyFrame.W, copyFrame.H, hwnd, BUTTON_COPY); err != nil {
+	if _, err = makeChild("BUTTON", ux.CopyAction, WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, copyFrame.X, copyFrame.Y, copyFrame.W, copyFrame.H, hwnd, BUTTON_COPY); err != nil {
 		closeActiveAnswer()
 		return err
 	}
