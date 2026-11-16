@@ -300,7 +300,7 @@ func (s *meetingSession) start(source audio.FrameSource) {
 			var prior []string
 			s.applyWork(turn.Epoch, func() {
 				s.view.captions = meetingcore.UpsertCaption(s.view.captions, turn.ID, latest, turn.Final, true)
-				if !turn.Final && s.cfg.MeetingASRMode != "multipart" {
+				if !turn.Final && s.cfg.MeetingASRMode != coreconfig.MeetingASRMultipart {
 					meetingcore.SetCaptionPrefix(s.view.captions, turn.ID, stable)
 				}
 				prior = append([]string(nil), s.prior...)

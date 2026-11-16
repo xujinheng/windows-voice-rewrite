@@ -38,11 +38,19 @@ const (
 	RecordSecondsMax        = 180
 	DefaultRecordSeconds    = 60
 	DefaultMaxSelectedRunes = 12000
+	// MeetingASRMultipart and MeetingASRLlamaPrefix are the only persisted
+	// meeting recognizer names. MeetingASRModes is the settings list order.
+	MeetingASRMultipart   = "multipart"
+	MeetingASRLlamaPrefix = "llama-prefix"
 )
+
+func MeetingASRModes() []string {
+	return []string{MeetingASRMultipart, MeetingASRLlamaPrefix}
+}
 
 func Defaults() Config {
 	return Config{
-		MeetingASRMode:         "llama-prefix",
+		MeetingASRMode:         MeetingASRLlamaPrefix,
 		ASRBaseURL:             "http://127.0.0.1:8080/v1",
 		LLMBaseURL:             "http://127.0.0.1:1234/v1",
 		TextModel:              "auto",
@@ -79,7 +87,12 @@ func Marshal(cfg Config) ([]byte, error) {
 
 // KnownMeetingASRMode is the persisted meeting recognizer choice.
 func KnownMeetingASRMode(mode string) bool {
-	return mode == "llama-prefix" || mode == "multipart"
+	for _, known := range MeetingASRModes() {
+		if mode == known {
+			return true
+		}
+	}
+	return false
 }
 
 // Normalize applies the persisted configuration's defaults and validation.
@@ -87,7 +100,7 @@ func KnownMeetingASRMode(mode string) bool {
 func Normalize(cfg Config) (Config, error) {
 	defaults := Defaults()
 	if !KnownMeetingASRMode(cfg.MeetingASRMode) {
-		return cfg, errors.New("meeting_asr_mode 必须是 llama-prefix 或 multipart")
+		return cfg, fmt.Errorf("meeting_asr_mode 必须是 %s 或 %s", MeetingASRLlamaPrefix, MeetingASRMultipart)
 	}
 	if cfg.ASRModel == "" {
 		cfg.ASRModel = defaults.ASRModel

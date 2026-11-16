@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"voicerewrite/internal/core/config"
 	meetingcore "voicerewrite/internal/core/meeting"
 )
 
@@ -40,12 +41,17 @@ func (p *meetingHUD) openProfile() {
 		procSendMessage.Call(p.profileTerms, 0x00C5, uintptr(meetingcore.MaxTermsRunes), 0)
 		child("STATIC", "会议识别方式", 0, 0, false)
 		p.profileMode = child("COMBOBOX", "", 0x00010000|WS_VSCROLL|3, 7203, false)
-		for _, title := range []string{"multipart · 分段音频识别", "llama-prefix · 累积音频 / 前缀续写"} {
+		labels := map[string]string{
+			config.MeetingASRMultipart:   "分段音频识别",
+			config.MeetingASRLlamaPrefix: "累积音频 / 前缀续写",
+		}
+		for _, mode := range config.MeetingASRModes() {
+			title := mode + " · " + labels[mode]
 			ptr, _ := syscall.UTF16PtrFromString(title)
 			procSendMessage.Call(p.profileMode, uxCBAddString, 0, uintptr(unsafe.Pointer(ptr)))
 			runtime.KeepAlive(ptr)
 		}
-		child("STATIC", "llama-prefix 重复提交累积音频并延续文本前缀；不是原生编码器流式识别。需服务支持该协议。保存会取消当前处理并重新开始。", 0, 0, false)
+		child("STATIC", config.MeetingASRLlamaPrefix+" 重复提交累积音频并延续文本前缀；不是原生编码器流式识别。需服务支持该协议。保存会取消当前处理并重新开始。", 0, 0, false)
 		p.profileStatus = child("STATIC", "", 0, 0, false)
 		child("BUTTON", "保存并应用", 0x00010000|uxBSOwnerDraw, meetingcore.ButtonSaveProfile, false)
 		child("BUTTON", "取消", 0x00010000|uxBSOwnerDraw, meetingcore.ButtonCloseProfile, false)
@@ -68,8 +74,11 @@ func (p *meetingHUD) openProfile() {
 	uxSetText(p.profileBackground, cfg.MeetingBackground)
 	uxSetText(p.profileTerms, cfg.MeetingTerms)
 	index := uintptr(0)
-	if cfg.MeetingASRMode == "llama-prefix" {
-		index = 1
+	for i, mode := range config.MeetingASRModes() {
+		if cfg.MeetingASRMode == mode {
+			index = uintptr(i)
+			break
+		}
 	}
 	procSendMessage.Call(p.profileMode, uxCBSetCurSel, index, 0)
 	uxSetText(p.profileStatus, "")
@@ -119,9 +128,9 @@ func (p *meetingHUD) saveProfile() {
 		return
 	}
 	index, _, _ := procSendMessage.Call(p.profileMode, uxCBGetCurSel, 0, 0)
-	mode := "multipart"
-	if index == 1 {
-		mode = "llama-prefix"
+	mode := config.MeetingASRMultipart
+	if modes := config.MeetingASRModes(); index < uintptr(len(modes)) {
+		mode = modes[index]
 	}
 	if err := s.setASRMode(mode); err != nil {
 		uxSetText(p.profileStatus, "资料已保存；识别方式保存失败: "+err.Error())

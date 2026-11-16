@@ -86,7 +86,7 @@ func (s *ASRState) prefix(ctx context.Context, cfg coreconfig.Config) (string, e
 // llama.cpp consumes a bounded cumulative audio window. Text prefix rollback
 // reduces decoder work; it does not provide incremental audio encoder caching.
 func (s *ASRState) Transcribe(ctx context.Context, cfg coreconfig.Config, pcm []byte, emit func(string)) (string, error) {
-	if cfg.MeetingASRMode == "multipart" {
+	if cfg.MeetingASRMode == coreconfig.MeetingASRMultipart {
 		result, err := speech.Transcribe(ctx, cfg, pcm)
 		if err == nil {
 			emit(result)

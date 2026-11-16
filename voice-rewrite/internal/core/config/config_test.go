@@ -120,3 +120,13 @@ func TestTransformSecrets(t *testing.T) {
 		t.Fatalf("lost native error: %v", err)
 	}
 }
+
+func TestMeetingASRModesKeepSettingsOrder(t *testing.T) {
+	modes := MeetingASRModes()
+	if len(modes) != 2 || modes[0] != MeetingASRMultipart || modes[1] != MeetingASRLlamaPrefix {
+		t.Fatalf("%v", modes)
+	}
+	if Defaults().MeetingASRMode != MeetingASRLlamaPrefix || !KnownMeetingASRMode(MeetingASRMultipart) || KnownMeetingASRMode("stream") {
+		t.Fatal("mode set")
+	}
+}
