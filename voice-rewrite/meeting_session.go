@@ -305,12 +305,9 @@ func (s *meetingSession) start(source audio.FrameSource) {
 				}
 				prior = append([]string(nil), s.prior...)
 				if turn.Final {
-					s.prior = append(s.prior, latest)
-					if len(s.prior) > 5 {
-						s.prior = s.prior[len(s.prior)-5:]
-					}
+					s.prior = meetingcore.RememberPrior(s.prior, latest)
 				}
-				s.view.status = "正在聆听 · 按住听写键说中文"
+				s.view.status = meetingcore.ListeningPrompt
 			})
 			return prior
 		},
@@ -341,7 +338,7 @@ func (s *meetingSession) start(source audio.FrameSource) {
 			s.applyWork(job.Epoch, func() {
 				s.view.metrics.TranslationDoneMS = elapsed.Milliseconds()
 				if err != nil {
-					s.view.status = "翻译暂不可用 · 原文已保留"
+					s.view.status = meetingcore.TranslationUnavailable
 				}
 			})
 			if err != nil {
@@ -351,7 +348,7 @@ func (s *meetingSession) start(source audio.FrameSource) {
 		OnDropped: func(epoch uint64) {
 			s.applyWork(epoch, func() {
 				s.view.metrics.Dropped++
-				s.view.status = "处理较慢 · 已跳过过期任务，正在跟上最新语音"
+				s.view.status = meetingcore.DroppedWork
 			})
 		},
 	})
@@ -375,7 +372,7 @@ func (s *meetingSession) start(source audio.FrameSource) {
 				defer s.mu.Unlock()
 				return time.Duration(s.view.metrics.ASRDoneMS+s.view.metrics.TranslationDoneMS) * time.Millisecond
 			}, func() {
-				s.applyWork(epoch, func() { s.view.status = "正在聆听 · 按住听写键说中文" })
+				s.applyWork(epoch, func() { s.view.status = meetingcore.ListeningPrompt })
 			}, func(event meetingcore.AudioEvent) {
 				if event.Meter {
 					pending := s.pipeline.Pending() + s.scheduler.Pending()
@@ -400,7 +397,7 @@ func (s *meetingSession) start(source audio.FrameSource) {
 				continue
 			}
 			if err == nil {
-				err = errors.New("音频采集意外结束")
+				err = errors.New(meetingcore.CaptureEnded)
 			}
 			s.applyWork(epoch, func() { s.captureErr = err })
 			return

@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strings"
 	"syscall"
-	"time"
 	"unsafe"
 
 	"voicerewrite/internal/core/audio"
@@ -121,16 +120,13 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 		return
 	}
 	s.mu.Lock()
-	ctx, cancel, epoch, serial := s.runtime.NewExpression(50 * time.Second)
+	ctx, cancel, epoch, serial := s.runtime.NewExpression(meetingcore.ExpressionTimeout)
 	s.mu.Unlock()
 	stop := context.AfterFunc(app.epoch.ContextFor(generation), cancel)
 	defer stop()
 	defer cancel()
 
-	label := "正在翻译你说的话…"
-	if mode == "compose" {
-		label = "正在理解表达意图…"
-	}
+	label := meetingcore.ExpressionLabel(mode)
 	s.applyExpression(epoch, serial, func() {
 		// Keep the previous completed English available to read and copy
 		// while the next recognition/model request is running.
@@ -138,12 +134,12 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 		s.view.expressionSource = ""
 		s.view.expressionStatus = label
 	})
-	if result.err != nil {
-		s.expressionFailed(app, generation, epoch, serial, "麦克风录音失败", result.err)
-		return
-	}
-	if audio.BelowMinCapture(result.pcm) {
-		s.expressionFailed(app, generation, epoch, serial, "没有录到足够语音", errors.New("请按住快捷键说话后松开"))
+	if label, detail, stop := meetingcore.ExpressCapture(result.err, audio.BelowMinCapture(result.pcm)); stop {
+		cause := result.err
+		if detail != "" {
+			cause = errors.New(detail)
+		}
+		s.expressionFailed(app, generation, epoch, serial, label, cause)
 		return
 	}
 
@@ -157,15 +153,18 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 	if !app.epoch.Valid(generation) || ctx.Err() != nil {
 		return
 	}
-	if err != nil {
-		s.expressionFailed(app, generation, epoch, serial, "语音识别失败", err)
+	var detail string
+	var halted bool
+	label, detail, points, halted = meetingcore.ExpressTranscript(err, points)
+	if halted {
+		cause := err
+		if detail != "" {
+			cause = errors.New(detail)
+		}
+		s.expressionFailed(app, generation, epoch, serial, label, cause)
 		return
 	}
-	points = strings.TrimSpace(points)
-	if points == "" {
-		s.expressionFailed(app, generation, epoch, serial, "语音识别结果为空", errors.New("请调整麦克风音量后重试"))
-		return
-	}
+	label = meetingcore.ExpressionLabel(mode)
 	s.applyExpression(epoch, serial, func() {
 		s.view.expressionSource = points
 		s.view.expressionStatus = label
@@ -190,7 +189,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 		return
 	}
 	if err != nil {
-		s.expressionFailed(app, generation, epoch, serial, "英文生成失败", err)
+		s.expressionFailed(app, generation, epoch, serial, meetingcore.ExpressGenerateFailed, err)
 		return
 	}
 	app.setStatus(traySuccess)
