@@ -58,6 +58,16 @@ func ConfirmSideReady(paused, busy, recording, targetStillForeground bool) bool 
 	return !paused && !busy && !recording && targetStillForeground
 }
 
+// ShowFreshHoldStatus reports that the recording pill must be opened.
+// A keyboard hold has no mouse-down preview, so the promote result is ignored.
+// A side hold reuses that preview when promotion succeeds.
+func ShowFreshHoldStatus(sideButton, promoted bool) bool {
+	if !sideButton {
+		return true
+	}
+	return !promoted
+}
+
 // HoldModeLabel is the recording pill. Meeting dictation and meeting rewrite stay distinct.
 func HoldModeLabel(dictation, meeting bool) string {
 	switch {

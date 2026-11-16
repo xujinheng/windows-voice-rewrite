@@ -520,8 +520,12 @@ func runApp() {
 		}
 		statusMode := input.HoldModeLabel(dictation, holdMeeting != nil)
 		// Promote the immediate mouse-down preview without recreating its HWND.
-		// Keyboard hold has no preview and uses the usual status path.
-		if button == 0 || !promotePendingHandyStatus(rec, statusMode, holdGeneration) {
+		// Keyboard hold has no preview, so the promote call stays on the side-button path.
+		promoted := false
+		if button != 0 {
+			promoted = promotePendingHandyStatus(rec, statusMode, holdGeneration)
+		}
+		if input.ShowFreshHoldStatus(button != 0, promoted) {
 			showHandyStatus(rec, statusMode, indicator.Recording, holdGeneration)
 		}
 		// The native status bar is the start feedback. A synchronous Beep

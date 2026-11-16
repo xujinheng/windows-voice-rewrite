@@ -52,6 +52,9 @@ func TestVoiceStartKeepsSideAndKeyboardWindowsApart(t *testing.T) {
 	if SideConfirm(true, true, true, true) != SideConfirmReport || SideConfirm(true, true, true, false) != SideConfirmActivate {
 		t.Fatal("ready hold")
 	}
+	if !ShowFreshHoldStatus(false, true) || !ShowFreshHoldStatus(false, false) || ShowFreshHoldStatus(true, true) || !ShowFreshHoldStatus(true, false) {
+		t.Fatal("hold status")
+	}
 	if HoldModeLabel(true, true) != "会议直译" || HoldModeLabel(false, true) != "会议意图" || HoldModeLabel(true, false) != "听写" || HoldModeLabel(false, false) != "改写" {
 		t.Fatal("mode")
 	}
