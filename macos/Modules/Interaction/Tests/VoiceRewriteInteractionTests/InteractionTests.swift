@@ -306,6 +306,18 @@ final class ClipboardTests: XCTestCase {
 }
 
 final class TextWriteVerificationTests: XCTestCase {
+    func testUnverifiableAXValueCannotAuthorizeAnyWrite() {
+        XCTAssertNil(TextWriteVerification.expectedValue(
+            original: nil, selectedText: "",
+            range: .init(location: 0, length: 0), replacement: "dictation"))
+        XCTAssertNil(TextWriteVerification.expectedValue(
+            original: nil, selectedText: "old",
+            range: .init(location: 0, length: 3), replacement: "rewrite"))
+        XCTAssertEqual(TextWriteVerification.expectedValue(
+            original: "", selectedText: "",
+            range: .init(location: 0, length: 0), replacement: "dictation"), "dictation")
+    }
+
     func testInsertionAndReplacementUseUTF16Ranges() {
         let baseline = "A😀B"
         XCTAssertEqual(TextWriteVerification.expectedValue(
