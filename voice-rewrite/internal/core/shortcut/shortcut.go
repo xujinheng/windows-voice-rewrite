@@ -264,6 +264,18 @@ func CaptureFailure(err error) (string, bool) {
 	return CaptureFailedPrefix + err.Error(), true
 }
 
+// SettingsSaveAfterFields reports a field error before an in-progress shortcut capture.
+// The host still refuses a busy voice task before it reads the fields.
+func SettingsSaveAfterFields(configErr error, capturing bool) error {
+	if configErr != nil {
+		return configErr
+	}
+	if capturing {
+		return errors.New(CapturePendingMessage)
+	}
+	return nil
+}
+
 // SettingsKey is what the settings window does with one key message.
 type SettingsKey int
 

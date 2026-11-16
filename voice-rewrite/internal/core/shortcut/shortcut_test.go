@@ -5,6 +5,19 @@ import (
 	"testing"
 )
 
+func TestSettingsSaveShowsTheFieldErrorBeforeCapture(t *testing.T) {
+	field := errors.New("地址无效")
+	if err := SettingsSaveAfterFields(field, true); err != field {
+		t.Fatal(err)
+	}
+	if err := SettingsSaveAfterFields(nil, true); err == nil || err.Error() != CapturePendingMessage {
+		t.Fatal(err)
+	}
+	if err := SettingsSaveAfterFields(nil, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestVoiceShortcutNormalization(t *testing.T) {
 	tests := []struct {
 		raw, want string

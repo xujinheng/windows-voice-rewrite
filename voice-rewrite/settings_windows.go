@@ -591,11 +591,8 @@ func (p *uxSettings) save() error {
 		fields[i] = uxWinText(h)
 	}
 	cfg, err := uxUpdatedConfig(p.app.cfg, fields)
-	if err != nil {
+	if err = shortcut.SettingsSaveAfterFields(err, p.capturingShortcut != 0); err != nil {
 		return err
-	}
-	if p.capturingShortcut != 0 {
-		return errors.New(shortcut.CapturePendingMessage)
 	}
 	newRewrite, newDictation, changedShortcut, err := shortcut.AssignPair(cfg.HotkeyRecord, cfg.DictationHotkey, cfg.HotkeyExit, uxWinText(p.rewriteShortcut), uxWinText(p.shortcut))
 	if err != nil {
@@ -609,7 +606,7 @@ func (p *uxSettings) save() error {
 		return err
 	}
 	p.app.cfg = cfg
-	uxSetText(p.hint, ux.WindowsSaveNotice(changedShortcut || changedAudioDevice))
+	uxSetText(p.hint, ux.WindowsSaveNotice(ux.WindowsSaveRestarts(changedShortcut, changedAudioDevice)))
 	p.app.logger.Print("settings updated: connection configuration saved (endpoint/key values redacted)")
 	return nil
 }
