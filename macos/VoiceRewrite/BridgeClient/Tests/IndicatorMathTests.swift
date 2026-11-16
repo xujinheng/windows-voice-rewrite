@@ -13,7 +13,7 @@ final class IndicatorMathTests: XCTestCase {
         XCTAssertEqual(IndicatorMath.label(.applying, mode: "改写"), "正在替换…")
         XCTAssertEqual(IndicatorMath.label(.success, mode: "听写"), "已发送粘贴指令")
         XCTAssertEqual(IndicatorMath.label(.answer, mode: "改写"), "已显示结果")
-        XCTAssertEqual(IndicatorMath.label(.fallback, mode: "听写"), "已复制 · 请手动粘贴")
+        XCTAssertEqual(IndicatorMath.label(.fallback, mode: "听写"), "结果已保留 · 可复制")
         XCTAssertEqual(IndicatorMath.label(.error, mode: "改写"), "操作未完成 · 查看日志")
         XCTAssertEqual(IndicatorMath.label(.recording, mode: "听写"), "")
         XCTAssertEqual(IndicatorMath.accent(phase: .error, mode: "听写"), IndicatorMath.errorAccent)
