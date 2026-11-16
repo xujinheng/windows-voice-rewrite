@@ -24,11 +24,11 @@ public struct MacSettings: Codable, Equatable, Sendable {
     }
 
     public init(
-        asrBaseURL: String = "http://127.0.0.1:8080/v1",
-        llmBaseURL: String = "http://127.0.0.1:1234/v1",
-        asrModel: String = "whisper-1",
-        textModel: String = "auto",
-        maxRecordSeconds: Int = 60,
+        asrBaseURL: String = ContractLimits.defaultASRBaseURL,
+        llmBaseURL: String = ContractLimits.defaultLLMBaseURL,
+        asrModel: String = ContractLimits.defaultASRModel,
+        textModel: String = ContractLimits.defaultTextModel,
+        maxRecordSeconds: Int = ContractLimits.defaultRecordSeconds,
         dictationShortcut: String = "Ctrl+Alt+R",
         rewriteShortcut: String = "Ctrl+Alt+E",
         textEditShortcut: String = "Ctrl+Alt+T"
@@ -61,8 +61,8 @@ public struct MacSettings: Codable, Equatable, Sendable {
         if !Self.recordSeconds.contains(maxRecordSeconds) {
             maxRecordSeconds = ContractLimits.defaultRecordSeconds
         }
-        if asrModel.isEmpty { asrModel = "whisper-1" }
-        if textModel.isEmpty { textModel = "auto" }
+        if asrModel.isEmpty { asrModel = ContractLimits.defaultASRModel }
+        if textModel.isEmpty { textModel = ContractLimits.defaultTextModel }
         dictationShortcut = normalizedShortcut(dictationShortcut, fallback: "Ctrl+Alt+R")
         rewriteShortcut = normalizedShortcut(rewriteShortcut, fallback: "Ctrl+Alt+E")
         textEditShortcut = normalizedShortcut(textEditShortcut, fallback: "Ctrl+Alt+T")

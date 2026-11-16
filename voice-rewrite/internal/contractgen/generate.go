@@ -335,8 +335,131 @@ func emitCopy(core string) (string, error) {
 	b.WriteString("    static let pause = " + quoteConst(values, "PauseVoice") + "\n")
 	b.WriteString("    static let resume = " + quoteConst(values, "ResumeVoice") + "\n")
 	b.WriteString("    static let busy = " + quoteConst(values, "PauseWhileBusy") + "\n")
+	b.WriteString("}\n\n")
+	failure, err := emitFailure(errorsFile, result)
+	if err != nil {
+		return "", err
+	}
+	b.WriteString(failure)
+	return b.String(), nil
+}
+
+func emitFailure(errorsFile, result *ast.File) (string, error) {
+	values := stringConsts(errorsFile)
+	for name, value := range stringConsts(result) {
+		values[name] = value
+	}
+	sentences, err := recoverySentences(findFunc(errorsFile, "fixedRecovery"), values)
+	if err != nil {
+		return "", err
+	}
+	extra, err := recoverySentences(findFunc(errorsFile, "ownedSentence"), values)
+	if err != nil {
+		return "", err
+	}
+	seen := map[string]bool{}
+	ordered := make([]string, 0, len(sentences)+len(extra))
+	for _, sentence := range append(sentences, extra...) {
+		if sentence == "" || seen[sentence] {
+			continue
+		}
+		seen[sentence] = true
+		ordered = append(ordered, sentence)
+	}
+	head, tail, err := selectionAffixes(findFunc(errorsFile, "fixedRecovery"))
+	if err != nil {
+		return "", err
+	}
+	if len(ordered) == 0 || head == "" || tail == "" {
+		return "", fmt.Errorf("failure catalog")
+	}
+	var b strings.Builder
+	b.WriteString("enum FailureCopy {\n")
+	b.WriteString("    static func status(prefix: String, message: String) -> String {\n")
+	b.WriteString("        owned(message) ? message : prefix + message\n")
+	b.WriteString("    }\n\n")
+	b.WriteString("    static func owned(_ message: String) -> Bool {\n")
+	b.WriteString("        switch message {\n")
+	b.WriteString("        case " + quotedList(ordered) + ":\n")
+	b.WriteString("            return true\n")
+	b.WriteString("        default:\n")
+	b.WriteString("            let head = " + strconv.Quote(head) + "\n")
+	b.WriteString("            let tail = " + strconv.Quote(tail) + "\n")
+	b.WriteString("            guard message.hasPrefix(head), message.hasSuffix(tail) else { return false }\n")
+	b.WriteString("            let count = message.dropFirst(head.count).dropLast(tail.count)\n")
+	b.WriteString("            return !count.isEmpty && count.utf8.allSatisfy { $0 >= 48 && $0 <= 57 }\n")
+	b.WriteString("        }\n")
+	b.WriteString("    }\n")
 	b.WriteString("}\n")
 	return b.String(), nil
+}
+
+func recoverySentences(fn *ast.FuncDecl, values map[string]string) ([]string, error) {
+	if fn == nil {
+		return nil, fmt.Errorf("missing recovery function")
+	}
+	var out []string
+	var walkErr error
+	ast.Inspect(fn, func(n ast.Node) bool {
+		clause, ok := n.(*ast.CaseClause)
+		if !ok {
+			return true
+		}
+		for _, item := range clause.List {
+			switch label := item.(type) {
+			case *ast.Ident:
+				text, ok := values[label.Name]
+				if !ok {
+					walkErr = fmt.Errorf("recovery name %s", label.Name)
+					return false
+				}
+				out = append(out, text)
+			case *ast.BasicLit:
+				if text, ok := stringLit(label); ok {
+					out = append(out, text)
+				}
+			}
+		}
+		return true
+	})
+	return out, walkErr
+}
+
+func selectionAffixes(fn *ast.FuncDecl) (string, string, error) {
+	head, tail := "", ""
+	ast.Inspect(fn, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) < 2 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		text, ok := stringLit(call.Args[1])
+		if !ok {
+			return true
+		}
+		switch sel.Sel.Name {
+		case "CutPrefix":
+			head = text
+		case "CutSuffix":
+			tail = text
+		}
+		return true
+	})
+	if head == "" || tail == "" {
+		return "", "", fmt.Errorf("selection sentence pattern")
+	}
+	return head, tail, nil
+}
+
+func quotedList(values []string) string {
+	parts := make([]string, len(values))
+	for i, value := range values {
+		parts[i] = strconv.Quote(value)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func quoteConst(values map[string]string, name string) string {

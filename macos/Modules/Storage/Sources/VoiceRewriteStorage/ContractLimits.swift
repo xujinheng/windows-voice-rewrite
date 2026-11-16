@@ -8,6 +8,10 @@ public enum ContractLimits {
     public static let maxEndpointBytes = 500
     public static let maxModelIDBytes = 150
     public static let maxCredentialBytes = 4000
+    public static let defaultASRBaseURL = "http://127.0.0.1:8080/v1"
+    public static let defaultLLMBaseURL = "http://127.0.0.1:1234/v1"
+    public static let defaultASRModel = "whisper-1"
+    public static let defaultTextModel = "auto"
 }
 
 extension MacSettings {

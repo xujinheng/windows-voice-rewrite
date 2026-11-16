@@ -260,6 +260,22 @@ func emitLimits(moduleRoot string) (string, error) {
 		}
 		b.WriteString("    public static let " + item.swift + " = " + value + "\n")
 	}
+	defaults, err := defaultStrings(config)
+	if err != nil {
+		return "", err
+	}
+	for _, item := range []struct{ goName, swift string }{
+		{"ASRBaseURL", "defaultASRBaseURL"},
+		{"LLMBaseURL", "defaultLLMBaseURL"},
+		{"ASRModel", "defaultASRModel"},
+		{"TextModel", "defaultTextModel"},
+	} {
+		value, ok := defaults[item.goName]
+		if !ok {
+			return "", fmt.Errorf("missing default %s", item.goName)
+		}
+		b.WriteString("    public static let " + item.swift + " = " + strconv.Quote(value) + "\n")
+	}
 	b.WriteString("}\n\nextension MacSettings {\n")
 	b.WriteString("    public static func acceptsBaseURL(_ value: String) -> Bool {\n")
 	b.WriteString("        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)\n")
@@ -283,6 +299,35 @@ func emitLimits(moduleRoot string) (string, error) {
 	}
 	b.WriteString(",\n              url.url != nil else {\n            return false\n        }\n        return true\n    }\n}\n")
 	return b.String(), nil
+}
+
+func defaultStrings(file *ast.File) (map[string]string, error) {
+	fn := findFunc(file, "Defaults")
+	if fn == nil {
+		return nil, fmt.Errorf("Defaults")
+	}
+	out := map[string]string{}
+	ast.Inspect(fn, func(n ast.Node) bool {
+		lit, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		for _, elt := range lit.Elts {
+			kv, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				continue
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			if text, ok := stringLit(kv.Value); ok {
+				out[key.Name] = text
+			}
+		}
+		return true
+	})
+	return out, nil
 }
 
 func schemeLits(fn *ast.FuncDecl) []string {

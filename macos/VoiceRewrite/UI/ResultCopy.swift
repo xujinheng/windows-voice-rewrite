@@ -60,3 +60,22 @@ enum VoicePauseCopy {
     static let resume = "恢复语音操作"
     static let busy = "当前任务仍在处理；结束后可暂停语音操作。"
 }
+
+enum FailureCopy {
+    static func status(prefix: String, message: String) -> String {
+        owned(message) ? message : prefix + message
+    }
+
+    static func owned(_ message: String) -> Bool {
+        switch message {
+        case "ASR 没有识别到语音，请检查麦克风输入设备", "录音为空或 PCM 长度无效", "录音超出时长限制", "ASR 响应不是有效的 JSON {text:...} 或 text/plain", "选中文字为空", "语音指令为空", "文本模型返回空 choices", "文本模型返回空内容；请换用非 thinking 模式的 Instruct 文本模型", "听写结果为空", "录音太短（至少约 0.1 秒）或 PCM 格式无效", "语音太短，无法转写", "录音太短（至少约 0.1 秒）；请再试一次", "密码输入框不接受自动听写，请使用普通输入方式", "密码输入框不允许读取选中文字或发送给 AI", "已拒绝在密码输入框中自动改写", "语音接口不支持上传的音频格式（HTTP 415）。请确认 ASR 服务提供 /v1/audio/transcriptions，而不只是 /v1/chat/completions。", "API 验证失败。检查服务地址、模型 ID 和 API Key。", "无法连接模型服务。请启动 ASR / LLM 服务并检查端口，然后在设置中测试连接。", "模型服务响应超时。检查模型是否仍在加载、GPU 内存与网络连接。", "原选区或编辑窗口发生变化，自动写入已取消。请重新选中文字再试。":
+            return true
+        default:
+            let head = "选中文字超过 "
+            let tail = " 字限制"
+            guard message.hasPrefix(head), message.hasSuffix(tail) else { return false }
+            let count = message.dropFirst(head.count).dropLast(tail.count)
+            return !count.isEmpty && count.utf8.allSatisfy { $0 >= 48 && $0 <= 57 }
+        }
+    }
+}

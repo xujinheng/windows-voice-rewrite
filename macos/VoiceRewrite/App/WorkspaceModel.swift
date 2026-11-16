@@ -755,7 +755,7 @@ final class WorkspaceModel: ObservableObject {
                         switch reply {
                         case .success(let response):
                             guard response.ok, let text = response.result?["text"]?.string else {
-                                self.recordingStatus = "ASR 请求失败：\(response.error?.userText ?? "invalid_reply")"
+                                self.recordingStatus = FailureCopy.status(prefix: "ASR 请求失败：", message: response.error?.userText ?? "invalid_reply")
                                 self.asrProbeStatus = "ASR：实际转写失败"
                                 self.showIndicator(phase: .error, mode: "听写", pending: false)
                                 return
@@ -889,7 +889,7 @@ final class WorkspaceModel: ObservableObject {
         switch reply {
         case .success(let response):
             guard response.ok, let text = response.result?["text"]?.string else {
-                interactionStatus = "模型处理失败：\(response.error?.userText ?? "invalid_reply")"
+                interactionStatus = FailureCopy.status(prefix: "模型处理失败：", message: response.error?.userText ?? "invalid_reply")
                 if spoken {
                     recordingStatus = "语音修改未完成"
                     asrProbeStatus = "ASR / LLM：语音选区任务失败"

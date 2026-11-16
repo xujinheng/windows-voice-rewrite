@@ -39,6 +39,24 @@ func TestClassifyForwardsOwnedSentences(t *testing.T) {
 	}
 }
 
+func TestHostMessageKeepsCatalogSentences(t *testing.T) {
+	for _, message := range []string{
+		NoSpeech, DictationTooShort, RewriteTooShort, PasswordDictation,
+		authFailed, "选中文字超过 9 字限制",
+	} {
+		if got := HostMessage("ASR 请求失败：", message); got != message {
+			t.Fatalf("catalog sentence prefixed: %q", got)
+		}
+	}
+	const prefix = "模型处理失败："
+	if got := HostMessage(prefix, "speech transcription failed"); got != prefix+"speech transcription failed" {
+		t.Fatalf("unclassified = %q", got)
+	}
+	if got := HostMessage("ASR 请求失败：", NoSpeech+" sk-secret"); got != "ASR 请求失败："+NoSpeech+" sk-secret" {
+		t.Fatalf("suffixed catalog sentence forwarded: %q", got)
+	}
+}
+
 func TestClassifyLeavesUnknownErrorsUnmapped(t *testing.T) {
 	secret := "private-selection-and-key"
 	message, ok := Classify(errors.New("LLM HTTP 500: " + secret))

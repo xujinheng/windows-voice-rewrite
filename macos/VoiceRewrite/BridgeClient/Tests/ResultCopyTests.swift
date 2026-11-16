@@ -21,5 +21,12 @@ final class ResultCopyTests: XCTestCase {
         XCTAssertEqual(ResultCopy.passwordRewrite, "已拒绝在密码输入框中自动改写")
         XCTAssertEqual(ResultCopy.dictationEmpty, "听写结果为空")
         XCTAssertEqual(ResultCopy.noSpeech, "ASR 没有识别到语音，请检查麦克风输入设备")
+        XCTAssertEqual(FailureCopy.status(prefix: "ASR 请求失败：", message: ResultCopy.noSpeech), ResultCopy.noSpeech)
+        XCTAssertEqual(FailureCopy.status(prefix: "ASR 请求失败：", message: "语音太短，无法转写"), "语音太短，无法转写")
+        XCTAssertEqual(FailureCopy.status(prefix: "模型处理失败：", message: "选中文字超过 9 字限制"), "选中文字超过 9 字限制")
+        XCTAssertEqual(FailureCopy.status(prefix: "模型处理失败：", message: "speech transcription failed"), "模型处理失败：speech transcription failed")
+        XCTAssertEqual(
+            FailureCopy.status(prefix: "ASR 请求失败：", message: ResultCopy.noSpeech + " sk-secret"),
+            "ASR 请求失败：" + ResultCopy.noSpeech + " sk-secret")
     }
 }

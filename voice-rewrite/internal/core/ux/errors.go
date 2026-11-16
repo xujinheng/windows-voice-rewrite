@@ -55,7 +55,8 @@ func fixedRecovery(message string) (string, bool) {
 	switch message {
 	case NoSpeech, EmptyRecording, RecordingTooLong, BadASRResponse,
 		EmptySelection, EmptyInstruction, EmptyChoices, EmptyModelText,
-		DictationEmpty, SpokenCaptureInvalid:
+		DictationEmpty, SpokenCaptureInvalid, DictationTooShort, RewriteTooShort,
+		PasswordDictation, PasswordSelection, PasswordRewrite:
 		return message, true
 	}
 	rest, ok := strings.CutPrefix(message, "选中文字超过 ")
@@ -72,6 +73,27 @@ func fixedRecovery(message string) (string, bool) {
 		}
 	}
 	return message, true
+}
+
+func ownedSentence(message string) bool {
+	if _, ok := fixedRecovery(message); ok {
+		return true
+	}
+	switch message {
+	case unsupportedAudio, authFailed, unreachable, timedOut, selectionMoved:
+		return true
+	default:
+		return false
+	}
+}
+
+// HostMessage is the status line for a bridge failure. A catalog sentence is
+// shown as Windows shows it. Any other text keeps the host's own prefix.
+func HostMessage(prefix, message string) string {
+	if ownedSentence(message) {
+		return message
+	}
+	return prefix + message
 }
 
 // Present is the Windows host message: a catalog recovery string, or the
