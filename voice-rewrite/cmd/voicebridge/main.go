@@ -31,6 +31,10 @@ const (
 	maxPCMBytes         = audio.PCMBytesPerSecond * coreconfig.RecordSecondsMax
 	maxSelectedBytes    = 1 << 20
 	maxInstructionBytes = 32 << 10
+	msgUnsupported      = "unsupported operation"
+	msgCanceled         = "request canceled"
+	msgTimedOut         = "request timed out"
+	msgInvalidConfig    = "invalid configuration"
 )
 
 var errFrameTooLarge = errors.New("frame exceeds limit")
@@ -220,7 +224,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 			s.mu.Unlock()
 			s.send(success(req.ID, map[string]bool{"found": found}))
 		default:
-			s.send(failure(req.ID, "unsupported_op", "unsupported operation"))
+			s.send(failure(req.ID, "unsupported_op", msgUnsupported))
 		}
 		return
 	}
@@ -260,9 +264,9 @@ func (s *bridgeServer) runTask(ctx context.Context, task *bridgeTask, req reques
 
 	s.mu.Lock()
 	if task.canceled || errors.Is(ctx.Err(), context.Canceled) {
-		reply = failure(req.ID, "canceled", "request canceled")
+		reply = failure(req.ID, "canceled", msgCanceled)
 	} else if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		reply = failure(req.ID, "timeout", "request timed out")
+		reply = failure(req.ID, "timeout", msgTimedOut)
 	}
 	delete(s.active, req.ID)
 	s.mu.Unlock()
@@ -350,11 +354,11 @@ func processRequest(ctx context.Context, req request) response {
 	}
 	cfg, err := coreconfig.Parse(req.Config)
 	if err != nil {
-		return failure(req.ID, "invalid_config", "invalid configuration")
+		return failure(req.ID, "invalid_config", msgInvalidConfig)
 	}
 	cfg, err = coreconfig.Normalize(cfg)
 	if err != nil {
-		return failure(req.ID, "invalid_config", "invalid configuration")
+		return failure(req.ID, "invalid_config", msgInvalidConfig)
 	}
 	if err := ctx.Err(); err != nil {
 		return contextFailure(req.ID, err)
@@ -414,7 +418,7 @@ func processRequest(ctx context.Context, req request) response {
 		}
 		return selectedTaskSuccess(req.ID, result, instruction, req.Op == "selected_voice_task")
 	}
-	return failure(req.ID, "unsupported_op", "unsupported operation")
+	return failure(req.ID, "unsupported_op", msgUnsupported)
 }
 
 // Classified recovery text is a fixed catalog. Anything else stays a constant
@@ -428,9 +432,9 @@ func providerFailure(id, code, fallback string, err error) response {
 
 func contextFailure(id string, err error) response {
 	if errors.Is(err, context.DeadlineExceeded) {
-		return failure(id, "timeout", "request timed out")
+		return failure(id, "timeout", msgTimedOut)
 	}
-	return failure(id, "canceled", "request canceled")
+	return failure(id, "canceled", msgCanceled)
 }
 
 func serveWithOptions(input io.Reader, output io.Writer, options bridgeOptions) error {

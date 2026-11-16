@@ -165,8 +165,9 @@ func insertDictationText(hwnd, target uintptr, text string, valid func() bool) e
 	if !waitKeysReleased(2 * time.Second) {
 		return errors.New("请松开快捷键后重试")
 	}
+	windowChanged := errors.New("写入前窗口已变化，已取消听写")
 	if !valid() || !isSameForegroundWindow(target) {
-		return errors.New("写入前窗口已变化，已取消听写")
+		return windowChanged
 	}
 	if nativePasswordFieldFocused(target) {
 		return errors.New(ux.PasswordDictation)
@@ -183,7 +184,7 @@ func insertDictationText(hwnd, target uintptr, text string, valid func() bool) e
 	backup.markOwned(clipboardSeq())
 	defer backup.restoreIfOwned(hwnd)
 	if !valid() || !isSameForegroundWindow(target) {
-		return errors.New("写入前窗口已变化，已取消听写")
+		return windowChanged
 	}
 	if err = sendCombo('V'); err != nil {
 		return err
