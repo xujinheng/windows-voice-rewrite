@@ -166,14 +166,20 @@ func (p *uxSettings) layout() {
 // switchPage only hides controls; input values and in-flight probe results
 // remain intact so navigation cannot discard unsaved changes.
 func (p *uxSettings) switchPage(next int) {
-	if p == nil || next < 0 || next >= len(p.pages) {
+	if p == nil {
 		return
 	}
-	if next != p.page {
+	step := settingsform.SettingsPageSwitch(p.page, next, len(p.pages))
+	if !step.Apply {
+		return
+	}
+	if step.StopCapture {
 		p.stopShortcutCapture()
 	}
 	p.page = next
-	p.focusRow = -1
+	if step.ClearFocus {
+		p.focusRow = -1
+	}
 	for page, windows := range p.pages {
 		for _, handle := range windows {
 			how := uintptr(0) // SW_HIDE

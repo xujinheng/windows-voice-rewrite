@@ -94,6 +94,22 @@ func AnchoredX(anchor Anchor, viewW, width, x int32) (int32, int32) {
 	}
 }
 
+// PageSwitch is a settings navigation change.
+// An out-of-range page is ignored. Leaving the current page stops shortcut capture.
+// Staying on the page leaves capture alone. Either applied change clears the field focus.
+type PageSwitch struct {
+	Apply       bool
+	StopCapture bool
+	ClearFocus  bool
+}
+
+func SettingsPageSwitch(current, next, pageCount int) PageSwitch {
+	if next < 0 || next >= pageCount {
+		return PageSwitch{}
+	}
+	return PageSwitch{Apply: true, StopCapture: next != current, ClearFocus: true}
+}
+
 // ScrollStep is one scrollbar request in logical pixels.
 // edge is -1 at the top, 1 at the bottom, and 0 when delta applies.
 func ScrollStep(request uint16, view int32) (delta int32, edge int) {

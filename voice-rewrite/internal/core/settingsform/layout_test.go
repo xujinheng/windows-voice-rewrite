@@ -6,6 +6,20 @@ import (
 	"voicerewrite/internal/contract"
 )
 
+func TestSettingsPageSwitchStopsCaptureOnlyWhenLeaving(t *testing.T) {
+	if SettingsPageSwitch(1, -1, 4).Apply || SettingsPageSwitch(1, 4, 4).Apply {
+		t.Fatal("range")
+	}
+	same := SettingsPageSwitch(1, 1, 4)
+	if !same.Apply || same.StopCapture || !same.ClearFocus {
+		t.Fatal("same page")
+	}
+	next := SettingsPageSwitch(1, 2, 4)
+	if !next.Apply || !next.StopCapture || !next.ClearFocus {
+		t.Fatal("other page")
+	}
+}
+
 func TestResponsiveSettingsRect(t *testing.T) {
 	input := Spec{X: 350, Y: 173, W: 325, H: 34, Stretch: true}
 	right := Spec{X: 687, Y: 173, W: 92, H: 34, Right: true}
