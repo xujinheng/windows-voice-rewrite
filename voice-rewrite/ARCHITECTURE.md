@@ -14,7 +14,7 @@ VoiceRewrite has native Windows (Go/Win32) and macOS (SwiftUI/AppKit with a bund
 | `internal/core/popup` | Result-card size for a text length, the editor, note, close, copy, and apply frames, and which clicks dismiss the card instead of the text or its buttons. |
 | `internal/core/settingsform` | Logical-pixel geometry for the settings window: stretching rows and the shared field, label, and shortcut rectangles. Hosts scale them to the monitor DPI. |
 | `internal/core/texttarget` | Win32 edit, rich edit, and WinForms edit classes, including password style, plus Chrome, Edge, Firefox, CEF, and Electron window classes. A renderer surface only authorizes a guarded paste probe. When a password probe cannot run, the whole browser or Electron window is treated as sensitive. |
-| `internal/core/logfile` | Rotate a diagnostic log before it is opened: one active file up to 4 MiB and three numbered backups. Hosts choose the path and write the lines. macOS uses the same size and backup count. |
+| `internal/core/logfile` | Rotate a diagnostic log before it is opened: one active file up to 4 MiB and three numbered backups. Hosts choose the path and write the lines. macOS uses the same size, backup count, and rotation steps. |
 | `internal/core/jsonl` | Voicebridge frame limits shared with the macOS client: protocol version 1, an 8 MiB frame, a 128-byte request ID, and 65536 retained request IDs. |
 | `internal/core/session` | The active voice-task generation. Starting another generation cancels the previous context. Hosts still verify the editor target before writing. |
 | `internal/core/history` | Current-session voice results in memory: at most 10 entries and 4 MiB, newest first, never a partial transcript. Menu text is the category and time only. |

@@ -47,6 +47,20 @@ func TestGenerateHostFilesFromCore(t *testing.T) {
 	if !strings.Contains(settings, "测试连接") || !strings.Contains(settings, "asr_base_url") {
 		t.Fatal("settings view is not driven by the catalog")
 	}
+	logText := first[filepath.Join(filepath.Dir(root), "macos/VoiceRewrite/App/DiagnosticLog.swift")]
+	for _, piece := range []string{
+		"invalid log rotation policy",
+		"log path is a directory:",
+		"try manager.moveItem(atPath: path, toPath: oldest)",
+	} {
+		if !strings.Contains(logText, piece) {
+			t.Fatalf("log rotation missing %s", piece)
+		}
+	}
+	holdText := first[filepath.Join(filepath.Dir(root), "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/SideHold.swift")]
+	if !strings.Contains(holdText, "0.280") {
+		t.Fatal("side hold was not generated from the Go duration")
+	}
 }
 
 func moduleRoot(t *testing.T) string {

@@ -48,6 +48,12 @@ func Generate(moduleRoot string) (map[string]string, error) {
 		return nil, fmt.Errorf("hold: %w", err)
 	}
 	out[filepath.Join(repo, "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/SideHold.swift")] = hold
+	logPath := filepath.Join(repo, "macos/VoiceRewrite/App/DiagnosticLog.swift")
+	logText, err := emitDiagnosticLog(logPath, filepath.Join(core, "logfile", "rotate.go"))
+	if err != nil {
+		return nil, fmt.Errorf("log: %w", err)
+	}
+	out[logPath] = logText
 	out[filepath.Join(repo, "macos/VoiceRewrite/UI/SettingsView.swift")] = emitSettings()
 	return out, nil
 }
