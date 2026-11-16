@@ -488,7 +488,7 @@ func updateMeetingHUD(view meetingView) {
 	newTurn := panels.CurrentID != p.currentID || panels.HistoryCount > p.historyCount
 	p.currentID = panels.CurrentID
 	p.setText(p.live, "● "+panels.Hint, false)
-	if newTurn || !panels.Live || time.Since(p.lastTranscript) >= 280*time.Millisecond {
+	if meetingcore.TextDue(p.lastTranscript, time.Now(), newTurn || !panels.Live) {
 		p.setText(p.currentEnglish, panels.English, true)
 		p.setText(p.currentChinese, panels.Chinese, true)
 		if newTurn {
@@ -534,7 +534,7 @@ func updateMeetingHUD(view meetingView) {
 		expression = "听写键：直译自己的发言；改写键：提问、回答、补充观点。"
 	}
 	p.setText(p.labels[2], meetingcore.ExpressionHeading(view.expressionStatus, view.expression.complete), false)
-	if view.expression.complete || time.Since(p.lastExpression) >= 280*time.Millisecond {
+	if meetingcore.TextDue(p.lastExpression, time.Now(), view.expression.complete) {
 		p.setText(p.expression, expression, true)
 		if newEnglish {
 			procSendMessage.Call(p.expression, 0x0115, 6, 0) // WM_VSCROLL / SB_TOP
@@ -566,7 +566,7 @@ func (p *meetingHUD) renderReply() {
 	if p.displayedTip != "" {
 		text += "\r\n提示 · " + p.displayedTip
 	}
-	if reply.Complete || time.Since(p.lastReply) >= 280*time.Millisecond {
+	if meetingcore.TextDue(p.lastReply, time.Now(), reply.Complete) {
 		p.setText(p.responses, text, true)
 		p.lastReply = time.Now()
 	}

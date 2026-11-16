@@ -2,6 +2,7 @@ package meeting
 
 import (
 	"testing"
+	"time"
 )
 
 func TestMeetingAdjustablePaneLayout(t *testing.T) {
@@ -73,5 +74,12 @@ func TestMeetingDraggableDividersAreIndependentAndConstrained(t *testing.T) {
 	}
 	if _, _, ok := DividerPair(2, true, false); ok {
 		t.Fatal("assistant divider must hide in captions-only mode")
+	}
+}
+
+func TestStreamingTextPaintsOnItsInterval(t *testing.T) {
+	start := time.Unix(0, 0)
+	if TextRefresh != 280*time.Millisecond || !TextDue(start, start.Add(TextRefresh), false) || TextDue(start, start.Add(TextRefresh-time.Millisecond), false) || !TextDue(start, start, true) {
+		t.Fatal(TextRefresh)
 	}
 }

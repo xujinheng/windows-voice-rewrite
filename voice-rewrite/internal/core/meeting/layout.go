@@ -1,7 +1,10 @@
 // Package meeting contains platform-neutral reading and layout rules.
 package meeting
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 // The six reading surfaces share the space left after fixed controls.
 // Values are logical 96-DPI pixels, independent of the physical monitor DPI.
@@ -19,6 +22,13 @@ type PaneWeights [PaneCount]int32
 
 var DefaultPaneWeights = PaneWeights{85, 50, 85, 65, 230, 40}
 var PaneMinimums = [PaneCount]int32{46, 32, 34, 36, 62, 28}
+
+// TextRefresh is how long a streaming meeting panel keeps its previous paint.
+const TextRefresh = 280 * time.Millisecond
+
+func TextDue(last, now time.Time, immediate bool) bool {
+	return immediate || now.Sub(last) >= TextRefresh
+}
 
 func ValidPaneWeights(value PaneWeights) PaneWeights {
 	var sum int32
