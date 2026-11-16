@@ -7,6 +7,38 @@ import (
 	"voicerewrite/internal/core/indicator"
 )
 
+func TestDictationInsertStopsAtTheFirstFailure(t *testing.T) {
+	called := 0
+	err := DictationInsertReady("  ", func() bool { called++; return true }, func() bool { called++; return true }, func() bool { called++; return true })
+	if err == nil || err.Error() != DictationEmpty || called != 0 {
+		t.Fatalf("empty %v %d", err, called)
+	}
+	err = DictationInsertReady("你好", func() bool { return false }, func() bool { t.Fatal("window"); return true }, func() bool { return true })
+	if err == nil || err.Error() != DictationReleaseKeys {
+		t.Fatal(err)
+	}
+	err = DictationInsertReady("你好", func() bool { return true }, func() bool { return false }, func() bool { t.Fatal("password"); return true })
+	if err == nil || err.Error() != DictationWindowChanged {
+		t.Fatal(err)
+	}
+	err = DictationInsertReady("你好", func() bool { return true }, func() bool { return true }, func() bool { return true })
+	if err == nil || err.Error() != PasswordDictation {
+		t.Fatal(err)
+	}
+	if err = DictationInsertReady("你好", func() bool { return true }, func() bool { return true }, func() bool { return false }); err != nil {
+		t.Fatal(err)
+	}
+	if err = DictationWindowStillOpen(func() bool { return false }); err == nil || err.Error() != DictationWindowChanged {
+		t.Fatal(err)
+	}
+	if DictationClipboardRestored(nil) != nil {
+		t.Fatal("nil restore")
+	}
+	if err = DictationClipboardRestored(errors.New("full")); err == nil || err.Error() != DictationRestoreFailed+": full" {
+		t.Fatal(err)
+	}
+}
+
 func TestDictationDeliveryKeepsTheCardAndPillPair(t *testing.T) {
 	if err := DictationCaptureProblem(errors.New("mic"), true); err == nil || err.Error() != "mic" {
 		t.Fatal(err)

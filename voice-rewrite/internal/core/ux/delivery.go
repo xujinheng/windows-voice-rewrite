@@ -2,9 +2,54 @@ package ux
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 
 	"voicerewrite/internal/core/indicator"
 )
+
+const (
+	// DictationReleaseKeys is the Windows wait for a held shortcut. Callers keep their own timeouts.
+	DictationReleaseKeys = "请松开快捷键后重试"
+	// DictationWindowChanged is the Windows dictation paste cancelled because the target window moved.
+	DictationWindowChanged = "写入前窗口已变化，已取消听写"
+	// DictationRestoreFailed is the dictation clipboard restore failure. The replace path keeps its own sentence.
+	DictationRestoreFailed = "已触发粘贴，但剪贴板恢复失败"
+)
+
+// DictationInsertReady is the order of checks before a dictation paste changes the clipboard.
+// Later checks are not called after an earlier one fails.
+func DictationInsertReady(text string, keysReleased, windowOK, password func() bool) error {
+	if strings.TrimSpace(text) == "" {
+		return errors.New(DictationEmpty)
+	}
+	if !keysReleased() {
+		return errors.New(DictationReleaseKeys)
+	}
+	if !windowOK() {
+		return errors.New(DictationWindowChanged)
+	}
+	if password() {
+		return errors.New(PasswordDictation)
+	}
+	return nil
+}
+
+// DictationWindowStillOpen repeats the window check after the clipboard already holds the transcript.
+func DictationWindowStillOpen(windowOK func() bool) error {
+	if !windowOK() {
+		return errors.New(DictationWindowChanged)
+	}
+	return nil
+}
+
+// DictationClipboardRestored wraps a restore error. A nil error stays nil.
+func DictationClipboardRestored(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", DictationRestoreFailed, err)
+}
 
 // DictationCaptureProblem prefers a capture error over the short-buffer sentence.
 func DictationCaptureProblem(err error, tooShort bool) error {

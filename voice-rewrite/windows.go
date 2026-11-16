@@ -958,7 +958,7 @@ func runApp() {
 			app.setStatus(trayTranscribing)
 			go func() {
 				if !waitKeysReleased(2500 * time.Millisecond) {
-					app.fail(errors.New("请松开快捷键后重试"))
+					app.fail(errors.New(ux.DictationReleaseKeys))
 					app.busy.Store(false)
 					return
 				}

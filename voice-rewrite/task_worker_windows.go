@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"runtime/debug"
-	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -159,18 +158,9 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 // Dictation preserves multi-format clipboard contents. If a format cannot be
 // backed up safely, use direct Unicode input rather than changing clipboard.
 func insertDictationText(hwnd, target uintptr, text string, valid func() bool) error {
-	if strings.TrimSpace(text) == "" {
-		return errors.New(ux.DictationEmpty)
-	}
-	if !waitKeysReleased(2 * time.Second) {
-		return errors.New("请松开快捷键后重试")
-	}
-	windowChanged := errors.New("写入前窗口已变化，已取消听写")
-	if !valid() || !isSameForegroundWindow(target) {
-		return windowChanged
-	}
-	if nativePasswordFieldFocused(target) {
-		return errors.New(ux.PasswordDictation)
+	windowOK := func() bool { return valid() && isSameForegroundWindow(target) }
+	if err := ux.DictationInsertReady(text, func() bool { return waitKeysReleased(2 * time.Second) }, windowOK, func() bool { return nativePasswordFieldFocused(target) }); err != nil {
+		return err
 	}
 	backup, err := snapshotClipboard(hwnd)
 	if err != nil {
@@ -183,15 +173,15 @@ func insertDictationText(hwnd, target uintptr, text string, valid func() bool) e
 	}
 	backup.markOwned(clipboardSeq())
 	defer backup.restoreIfOwned(hwnd)
-	if !valid() || !isSameForegroundWindow(target) {
-		return windowChanged
+	if err = ux.DictationWindowStillOpen(windowOK); err != nil {
+		return err
 	}
 	if err = sendCombo('V'); err != nil {
 		return err
 	}
 	time.Sleep(250 * time.Millisecond)
 	if err = backup.restoreIfOwned(hwnd); err != nil {
-		return fmt.Errorf("已触发粘贴，但剪贴板恢复失败: %w", err)
+		return ux.DictationClipboardRestored(err)
 	}
 	return nil // SendInput accepted; insertion cannot be proven in all editors.
 }
