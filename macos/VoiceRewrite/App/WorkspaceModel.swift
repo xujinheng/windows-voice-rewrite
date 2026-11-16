@@ -217,12 +217,15 @@ final class WorkspaceModel: ObservableObject {
                       rewrite: settings.rewriteShortcut,
                       textEdit: settings.textEditShortcut)
         parseShortcut(values.dictation) { [weak self] dictation in
-            guard let self, self.shortcutGeneration.accepts(token), let dictation else { return }
+            guard let self else { return }
+            guard shortcutRefresh(tokenValid: self.shortcutGeneration.accepts(token), parsed: dictation != nil, remaining: 2) == .parseNext, let dictation else { return }
             self.parseShortcut(values.rewrite) { [weak self] rewrite in
-                guard let self, self.shortcutGeneration.accepts(token), let rewrite else { return }
+                guard let self else { return }
+                guard shortcutRefresh(tokenValid: self.shortcutGeneration.accepts(token), parsed: rewrite != nil, remaining: 1) == .parseNext, let rewrite else { return }
                 self.parseShortcut(values.textEdit) { [weak self] textEdit in
-                    guard let self, self.shortcutGeneration.accepts(token), let textEdit else { return }
-                    if self.register(dictation: dictation, rewrite: rewrite, textEdit: textEdit) {
+                    guard let self else { return }
+                    guard shortcutRefresh(tokenValid: self.shortcutGeneration.accepts(token), parsed: textEdit != nil, remaining: 0) == .register, let textEdit else { return }
+                    if shortcutRefreshStores(self.register(dictation: dictation, rewrite: rewrite, textEdit: textEdit)) {
                         self.settings.dictationShortcut = dictation.normalized
                         self.settings.rewriteShortcut = rewrite.normalized
                         self.settings.textEditShortcut = textEdit.normalized
