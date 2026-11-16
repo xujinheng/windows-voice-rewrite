@@ -3,21 +3,16 @@
 package main
 
 import (
-	"errors"
-	"fmt"
 	"sync"
 	"unsafe"
+
+	"voicerewrite/internal/core/clipboard"
 )
 
 // clipboardSnapshot is an in-memory copy of the clipboard formats whose data
 // is a movable HGLOBAL. It is deliberately conservative: GDI/owner-display
 // handles and uncopyable formats make capture fail BEFORE Ctrl+C or Ctrl+V can
 // destroy the user's clipboard. Clipboard contents are never logged or saved.
-const (
-	clipboardFormatMaxBytes = 16 << 20
-	clipboardTotalMaxBytes  = 48 << 20
-)
-
 type savedClipboardFormat struct {
 	id   uintptr
 	data []byte
@@ -31,14 +26,6 @@ type clipboardSnapshot struct {
 }
 
 var procEnumClipboardFormats = user32.NewProc("EnumClipboardFormats")
-
-func clipboardHandleFormat(id uintptr) bool {
-	switch id {
-	case 2, 3, 9, 14, 0x80, 0x82, 0x83, 0x8e: // bitmap, palette, metafile, owner-display
-		return true
-	}
-	return false
-}
 
 func snapshotClipboard(hwnd uintptr) (*clipboardSnapshot, error) {
 	if err := openClipboard(hwnd); err != nil {
@@ -54,20 +41,18 @@ func snapshotClipboard(hwnd uintptr) (*clipboardSnapshot, error) {
 			break
 		}
 		previous = id
-		if clipboardHandleFormat(id) {
-			return nil, fmt.Errorf("剪贴板包含图像或系统对象（格式 %d），为避免丢失数据已取消自动操作", id)
-		}
-		h, _, _ := procGetClipboardData.Call(id)
-		if h == 0 {
-			return nil, fmt.Errorf("剪贴板格式 %d 无法复制，已取消自动操作", id)
-		}
-		size, _, _ := procGlobalSize.Call(h)
-		if size == 0 || size > clipboardFormatMaxBytes || total+size > clipboardTotalMaxBytes {
-			return nil, fmt.Errorf("剪贴板格式 %d 不是可安全复制的内存数据，已取消自动操作", id)
-		}
-		p, _, _ := procGlobalLock.Call(h)
-		if p == 0 {
-			return nil, fmt.Errorf("无法锁定剪贴板格式 %d，已取消自动操作", id)
+		var h, size, p uintptr
+		if err := clipboard.SnapshotFormatReady(uint32(id), func() bool {
+			h, _, _ = procGetClipboardData.Call(id)
+			return h != 0
+		}, func() bool {
+			size, _, _ = procGlobalSize.Call(h)
+			return clipboard.SnapshotFits(size, total)
+		}, func() bool {
+			p, _, _ = procGlobalLock.Call(h)
+			return p != 0
+		}); err != nil {
+			return nil, err
 		}
 		buf := make([]byte, size)
 		copy(buf, unsafe.Slice((*byte)(unsafe.Pointer(p)), int(size)))
@@ -144,20 +129,20 @@ func (s *clipboardSnapshot) restoreIfOwned(hwnd uintptr) error {
 		h, _, _ := procGlobalAlloc.Call(GMEM_MOVEABLE, uintptr(len(f.data)))
 		if h == 0 {
 			freeSnapshotHandles(handles)
-			return errors.New("剪贴板恢复失败：内存分配失败，原内容尚未更改")
+			return clipboard.RestoreAllocError()
 		}
 		handles[i] = h
 		p, _, _ := procGlobalLock.Call(h)
 		if p == 0 {
 			freeSnapshotHandles(handles)
-			return errors.New("剪贴板恢复失败：无法锁定内存，原内容尚未更改")
+			return clipboard.RestoreLockError()
 		}
 		copy(unsafe.Slice((*byte)(unsafe.Pointer(p)), len(f.data)), f.data)
 		procGlobalUnlock.Call(h)
 	}
 	if ok, _, _ := procEmptyClipboard.Call(); ok == 0 {
 		freeSnapshotHandles(handles)
-		return errors.New("剪贴板恢复失败：无法清空临时内容")
+		return clipboard.RestoreEmptyError()
 	}
 	s.finished = true
 	var failed int
@@ -170,7 +155,7 @@ func (s *clipboardSnapshot) restoreIfOwned(hwnd uintptr) error {
 	}
 	freeSnapshotHandles(handles)
 	if failed > 0 {
-		return fmt.Errorf("剪贴板恢复部分失败：%d 个格式未能写回", failed)
+		return clipboard.RestorePartial(failed)
 	}
 	return nil
 }

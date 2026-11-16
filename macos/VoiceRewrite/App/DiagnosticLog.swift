@@ -1,10 +1,11 @@
 import AppKit
 import Foundation
+import VoiceRewriteStorage
 
-/// Bounded diagnostic log. Same 4 MiB active file and three backups as Windows.
+/// Bounded diagnostic log. Size, backup count, and rotation steps come from the shared log policy.
 enum DiagnosticLog {
-    static let maxBytes: Int64 = 4 << 20
-    static let backups = 3
+    static let maxBytes = Int64(ContractLimits.logMaxBytes)
+    static let backups = ContractLimits.logBackups
 
     static var fileURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -47,24 +48,34 @@ enum DiagnosticLog {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
+    // Source: voice-rewrite/internal/core/logfile/rotate.go
     static func rotate(_ path: String, maxBytes: Int64, backups: Int) throws {
-        guard backups >= 1, maxBytes >= 1 else { throw CocoaError(.fileReadUnknown) }
         let manager = FileManager.default
+        if backups < 1 || maxBytes < 1 {
+            throw NSError(domain: "VoiceRewriteLog", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid log rotation policy"])
+        }
         guard manager.fileExists(atPath: path) else { return }
         let info = try manager.attributesOfItem(atPath: path)
-        if (info[.type] as? FileAttributeType) == .typeDirectory { throw CocoaError(.fileReadUnknown) }
+        if (info[.type] as? FileAttributeType) == .typeDirectory {
+            throw NSError(domain: "VoiceRewriteLog", code: 1, userInfo: [NSLocalizedDescriptionKey: "log path is a directory: \(path)"])
+        }
         let size = (info[.size] as? NSNumber)?.int64Value ?? 0
-        if size < maxBytes { return }
-        if backups > 1 {
-            for index in stride(from: backups, to: 1, by: -1) {
-                let previous = "\(path).\(index - 1)"
-                let next = "\(path).\(index)"
-                guard manager.fileExists(atPath: previous) else { continue }
-                if manager.fileExists(atPath: next) {
-                    try manager.removeItem(atPath: next)
-                }
-                try manager.moveItem(atPath: previous, toPath: next)
+        if size < maxBytes {
+            return
+        }
+        var i = backups
+        while i > 1 {
+            let previous = "\(path).\(i - 1)"
+            let next = "\(path).\(i)"
+            if !manager.fileExists(atPath: previous) {
+                i -= 1
+                continue
             }
+            if manager.fileExists(atPath: next) {
+                try manager.removeItem(atPath: next)
+            }
+            try manager.moveItem(atPath: previous, toPath: next)
+            i -= 1
         }
         let oldest = path + ".1"
         if manager.fileExists(atPath: oldest) {

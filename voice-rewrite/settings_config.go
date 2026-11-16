@@ -1,12 +1,10 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"strings"
 
 	coreconfig "voicerewrite/internal/core/config"
-	"voicerewrite/internal/core/serviceprobe"
 )
 
 func uxUpdatedConfig(old Config, values [6]string) (Config, error) {
@@ -14,10 +12,11 @@ func uxUpdatedConfig(old Config, values [6]string) (Config, error) {
 	if err != nil {
 		return old, err
 	}
+	// Windows stores the trimmed field, so the shared byte check sees that stored value.
 	asrKey := strings.TrimSpace(values[2])
 	llmKey := strings.TrimSpace(values[5])
-	if len(asrKey) > 4000 || len(llmKey) > 4000 {
-		return old, errors.New("输入内容过长")
+	if coreconfig.StoredCredentialTooLong(asrKey) || coreconfig.StoredCredentialTooLong(llmKey) {
+		return old, errors.New(coreconfig.CredentialTooLong)
 	}
 	cfg := old
 	cfg.ASRBaseURL = endpoints.ASRBaseURL
@@ -27,17 +26,4 @@ func uxUpdatedConfig(old Config, values [6]string) (Config, error) {
 	cfg.TextModel = endpoints.TextModel
 	cfg.LLMAPIKey = llmKey
 	return cfg, nil
-}
-
-// Windows surfaces the shared Core probe result in native Win32 settings.
-func uxProbe(ctx context.Context, kind, base string) string {
-	return uxProbeWithKey(ctx, kind, base, "")
-}
-
-func uxProbeWithKey(ctx context.Context, kind, base, apiKey string) string {
-	return uxProbeModel(ctx, kind, base, apiKey, "")
-}
-
-func uxProbeModel(ctx context.Context, kind, base, apiKey, configuredModel string) string {
-	return serviceprobe.ProbeModel(ctx, kind, base, apiKey, configuredModel)
 }

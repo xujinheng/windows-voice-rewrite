@@ -15,6 +15,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"voicerewrite/internal/core/jsonl"
+	"voicerewrite/internal/core/ux"
 )
 
 type bridgeHarness struct {
@@ -385,7 +388,7 @@ func TestBridgePCMAndFrameLimits(t *testing.T) {
 			t.Fatalf("invalid PCM accepted: %#v", reply)
 		}
 	}
-	h.raw(strings.Repeat("x", maxRequestBytes) + "\n")
+	h.raw(strings.Repeat("x", jsonl.MaxRequestBytes) + "\n")
 	if reply := h.receive(); reply.OK || reply.Error == nil || reply.Error.Code != "request_too_large" {
 		t.Fatalf("oversized request not rejected: %#v", reply)
 	}
@@ -417,6 +420,21 @@ func TestBridgeClassifiedFailureUsesSharedRecovery(t *testing.T) {
 	}
 	if reply.OK || reply.Error == nil || reply.Error.Code != "asr_failed" || !strings.Contains(reply.Error.Message, "API 验证失败") {
 		t.Fatalf("expected shared recovery text: %#v", reply)
+	}
+	h.close()
+}
+
+func TestBridgeEmptyTranscriptUsesSharedSentence(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"text":"   "}`))
+	}))
+	defer srv.Close()
+	h := startBridge(t, defaultOptions())
+	h.send(requestForASR("empty", configFor(srv.URL)))
+	reply := h.receive()
+	if reply.OK || reply.Error == nil || reply.Error.Code != "asr_failed" || reply.Error.Message != ux.NoSpeech {
+		t.Fatalf("empty transcript: %#v", reply)
 	}
 	h.close()
 }
@@ -680,10 +698,11 @@ func TestBridgeSpokenSelectionRejectsBadPCMAndEmptySelection(t *testing.T) {
 		selected string
 		audio    []byte
 		want     string
+		message  string
 	}{
-		{"text", make([]byte, 100), "invalid_pcm"},
-		{"", make([]byte, 3200), "invalid_request"},
-		{"text", make([]byte, 3201), "invalid_pcm"},
+		{"text", make([]byte, 100), "invalid_pcm", ux.RewriteTooShort},
+		{"", make([]byte, 3200), "invalid_request", ""},
+		{"text", make([]byte, 3201), "invalid_pcm", ""},
 	} {
 		id := fmt.Sprintf("invalid-spoken-%d", i)
 		h.send(map[string]any{
@@ -692,8 +711,8 @@ func TestBridgeSpokenSelectionRejectsBadPCMAndEmptySelection(t *testing.T) {
 			"pcm_base64": base64.StdEncoding.EncodeToString(tc.audio),
 		})
 		reply := h.receive()
-		if reply.OK || reply.Error == nil || reply.Error.Code != tc.want {
-			t.Fatalf("unexpected response: %#v; want %s", reply, tc.want)
+		if reply.OK || reply.Error == nil || reply.Error.Code != tc.want || (tc.message != "" && reply.Error.Message != tc.message) {
+			t.Fatalf("unexpected response: %#v; want %s %s", reply, tc.want, tc.message)
 		}
 	}
 	h.close()

@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -45,21 +46,31 @@ func TestNormalizeConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ASRModel != "whisper-1" || got.HotkeyRecord != "Mouse5" || got.DictationHotkey != "Mouse4" || got.RecordMode != "hold" || got.HotkeyExit != "Ctrl+Alt+F10" {
+	want := Defaults()
+	if got.ASRModel != want.ASRModel || got.HotkeyRecord != want.HotkeyRecord || got.DictationHotkey != want.DictationHotkey || got.RecordMode != want.RecordMode || got.HotkeyExit != want.HotkeyExit {
 		t.Fatalf("missing defaults: %+v", got)
 	}
-	if got.MaxResponseTokens != 1200 || got.MaxRecordSeconds != 60 || got.MaxSelectedRunes != 12000 || got.SelectionCopyAttempts != 3 || got.SelectionCopyTimeoutMS != 1800 {
+	if got.MaxResponseTokens != want.MaxResponseTokens || got.MaxRecordSeconds != DefaultRecordSeconds || got.MaxSelectedRunes != DefaultMaxSelectedRunes || got.SelectionCopyAttempts != 3 || got.SelectionCopyTimeoutMS != 1800 {
 		t.Fatalf("invalid bounds not clamped: %+v", got)
 	}
 	if got.ASRAPIKey != "opaque" || cfg.ASRAPIKey != "opaque" {
 		t.Fatal("normalization must not handle secrets")
 	}
 	endpoints, err := CanonicalEndpoints(" http://127.0.0.1:8081/v1/ ", " qwen3-asr ", "http://127.0.0.1:1234/v1", "")
-	if err != nil || endpoints.ASRBaseURL != "http://127.0.0.1:8081/v1" || endpoints.ASRModel != "qwen3-asr" || endpoints.TextModel != "auto" {
+	if err != nil || endpoints.ASRBaseURL != "http://127.0.0.1:8081/v1" || endpoints.ASRModel != "qwen3-asr" || endpoints.TextModel != Defaults().TextModel {
 		t.Fatalf("endpoints %+v %v", endpoints, err)
 	}
 	if _, err := CanonicalEndpoints("http://localhost/v1?key=1", "m", "http://127.0.0.1:1234/v1", "auto"); err == nil {
 		t.Fatal("query URL accepted")
+	}
+	if err := ValidateBaseURL("http://localhost/v1%"); err == nil || ValidateBaseURL("http://localhost/invalid%ZZ") == nil || ValidateBaseURL("http://ex%41mple.com/v1") == nil {
+		t.Fatal("invalid percent escape accepted")
+	}
+	if err := ValidateBaseURL("http://localhost/v1%20ok"); err != nil {
+		t.Fatal(err)
+	}
+	if StoredCredentialTooLong(strings.Repeat(" ", MaxCredentialBytes)) || !StoredCredentialTooLong(strings.Repeat(" ", MaxCredentialBytes+1)) {
+		t.Fatal("credential bytes")
 	}
 	spaced := Defaults()
 	spaced.ASRBaseURL = "  http://127.0.0.1:8080/v1  "
@@ -117,5 +128,62 @@ func TestTransformSecrets(t *testing.T) {
 	})
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("lost native error: %v", err)
+	}
+}
+
+func TestMeetingASRModesKeepSettingsOrder(t *testing.T) {
+	modes := MeetingASRModes()
+	if len(modes) != 2 || modes[0] != MeetingASRMultipart || modes[1] != MeetingASRLlamaPrefix {
+		t.Fatalf("%v", modes)
+	}
+	if Defaults().MeetingASRMode != MeetingASRLlamaPrefix || !KnownMeetingASRMode(MeetingASRMultipart) || KnownMeetingASRMode("stream") {
+		t.Fatal("mode set")
+	}
+	if MeetingASRModeAt(1) != MeetingASRLlamaPrefix || MeetingASRModeAt(99) != MeetingASRMultipart || MeetingASRModeAt(-1) != MeetingASRMultipart {
+		t.Fatal("mode at index")
+	}
+	if MeetingASRModeIndex(MeetingASRLlamaPrefix) != 1 || MeetingASRModeIndex("stream") != 0 {
+		t.Fatal("mode index")
+	}
+	if id, changed := ChooseAudioDevice(4, 1, true, []int{4, 9}); id != 9 || !changed {
+		t.Fatalf("device %d %v", id, changed)
+	}
+	if id, changed := ChooseAudioDevice(4, 0, true, []int{4, 9}); id != 4 || changed {
+		t.Fatal("same device")
+	}
+	if id, changed := ChooseAudioDevice(4, 3, false, []int{4, 9}); id != 4 || changed {
+		t.Fatal("closed combo")
+	}
+	if MeetingASRModeTitle(MeetingASRMultipart) != "分段音频识别" || !strings.HasPrefix(MeetingASRModeNote(), MeetingASRLlamaPrefix) {
+		t.Fatal("mode label")
+	}
+}
+
+func TestBaseURLEscapesMatchParser(t *testing.T) {
+	cases := []string{
+		"http://localhost/v1%",
+		"http://localhost/invalid%ZZ",
+		"http://localhost/v1%2",
+		"http://localhost/v1%20ok",
+		"http://localhost/v1%2E",
+		"http://ex%41mple.com/v1",
+		"http://ex%80mple.com/v1",
+		"http://ex%25ample.com/v1",
+		"http://ex%7Fample.com/v1",
+		"http://[fe80::1%25en0]/v1",
+		"http://[fe80::1%20en0]/v1",
+		"http://127.0.0.1:8081/v1",
+		"https://api.example.com/v1%20",
+		"http://localhost:%41/v1",
+	}
+	for _, raw := range cases {
+		trimmed := strings.TrimSpace(raw)
+		_, err := url.Parse(trimmed)
+		if err == nil && !BaseURLEscapesOK(trimmed) {
+			t.Fatalf("parser accepted %q", raw)
+		}
+		if err != nil && strings.Contains(err.Error(), "invalid URL escape") && BaseURLEscapesOK(trimmed) {
+			t.Fatalf("parser rejected %q: %v", raw, err)
+		}
 	}
 }

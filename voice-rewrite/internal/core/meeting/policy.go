@@ -2,6 +2,7 @@ package meeting
 
 import (
 	"strings"
+	"time"
 	"unicode/utf16"
 )
 
@@ -59,6 +60,28 @@ func ExpressionDetail(status, source string) string {
 	}
 }
 
+// TranscriptAtBottom reports whether an edit control is within two lines of its end.
+func TranscriptAtBottom(maxPos, pos, page int32) bool {
+	remaining := maxPos - pos - max(int32(0), page-1)
+	return remaining <= 2
+}
+
+func TranscriptStep(currentID, previousID uint64, historyCount, previousHistory int, live bool, last, now time.Time) (newTurn, paint bool) {
+	newTurn = currentID != previousID || historyCount > previousHistory
+	paint = TextDue(last, now, newTurn || !live)
+	return newTurn, paint
+}
+
+func ExpressionStep(complete bool, english, previous string, captionsOnly, expanded bool, last, now time.Time) (copy string, captions, expand, fresh, paint bool) {
+	fresh = complete && english != "" && english != previous
+	captions, expand = ExpressionFocus(complete, fresh, captionsOnly, expanded)
+	if complete {
+		copy = english
+	}
+	paint = TextDue(last, now, complete)
+	return copy, captions, expand, fresh, paint
+}
+
 func ExpressionFocus(completed, newResult, captionsOnly, expanded bool) (bool, bool) {
 	if !completed || !newResult {
 		return captionsOnly, expanded
@@ -71,6 +94,27 @@ func VoiceMode(dictation bool) string {
 		return "express"
 	}
 	return "compose"
+}
+
+// RefreshReading reports whether captions, replies, and the expression update.
+// A paused meeting still updates the status line and the button faces.
+func RefreshReading(paused bool) bool {
+	return !paused
+}
+
+// ShownUnread clears the unread count when the reader is on the latest turn.
+// That clear still happens when the history text itself did not change.
+func ShownUnread(following bool, unread int) int {
+	if following {
+		return 0
+	}
+	return unread
+}
+
+// ExpressionCopyEnabled is the expression copy button.
+// Reply copy also requires a finished reply. A stored expression is enough here.
+func ExpressionCopyEnabled(expression string) bool {
+	return expression != ""
 }
 
 // Only new completed history turns count as unread while a reader is away.

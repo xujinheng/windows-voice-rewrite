@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"syscall"
 	"unsafe"
+
+	"voicerewrite/internal/core/settingsform"
 )
 
 // resultD2D renders the actual AI result window with Windows Direct2D and
@@ -89,9 +91,9 @@ func resultColor(c uint32) resultD2DColor {
 func (d *resultRenderer) palette(dark bool) {
 	d.dark = dark
 	if dark {
-		d.colors = [9]uint32{0x101218, 0x181b23, 0x232631, 0x2b2e3a, 0xf2f1f7, 0xa4a5b7, 0x353948, 0xbaaeff, 0xdcd7ff}
+		d.colors = [9]uint32{0x101218, settingsform.RailColor(true), 0x232631, 0x2b2e3a, 0xf2f1f7, 0xa4a5b7, 0x353948, 0xbaaeff, 0xdcd7ff}
 	} else {
-		d.colors = [9]uint32{0xf8f9fc, 0xf0f1f6, 0xffffff, 0xf8f9fc, 0x252637, 0x777b8c, 0xe5e6ef, 0x7258cf, 0xeeeafd}
+		d.colors = [9]uint32{0xf8f9fc, settingsform.RailColor(false), 0xffffff, 0xf8f9fc, 0x252637, 0x777b8c, 0xe5e6ef, 0x7258cf, 0xeeeafd}
 	}
 }
 func newResultRenderer(hwnd uintptr, scale float64, title string, dark, allowApply bool) (*resultRenderer, error) {

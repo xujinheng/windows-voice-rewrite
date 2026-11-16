@@ -55,7 +55,7 @@ struct MainView: View {
                             if model.updatePage != nil {
                                 Button("打开发布页面") { model.openUpdatePage() }
                             }
-                            Button("查看诊断日志") { DiagnosticLog.reveal() }
+                            Button(ResultCopy.viewDiagnosticLog) { DiagnosticLog.reveal() }
                             Spacer()
                         }
                     }
@@ -94,10 +94,10 @@ struct MainView: View {
                     }
                 }
 
-                GroupBox("最近 10 次结果（仅当前会话）") {
+                GroupBox(SessionHistory.sectionTitle) {
                     VStack(alignment: .leading, spacing: 8) {
                         if model.sessionHistory.isEmpty {
-                            Text("当前会话还没有可恢复的语音结果。")
+                            Text(SessionHistory.emptySession)
                                 .foregroundStyle(.secondary)
                         } else {
                             ForEach(Array(model.sessionHistory.enumerated()), id: \.element.id) { index, entry in
@@ -109,7 +109,7 @@ struct MainView: View {
                             if let restoredHistoryText = model.restoredHistoryText, !restoredHistoryText.isEmpty {
                                 resultView(restoredHistoryText, empty: "")
                             }
-                            Button("清空本次会话历史") { model.clearSessionHistory() }
+                            Button(SessionHistory.clearSession) { model.clearSessionHistory() }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -130,7 +130,7 @@ struct MainView: View {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(value, forType: .string)
                     } label: {
-                        Label("复制结果", systemImage: "doc.on.doc")
+                        Label(ResultCopy.copyAction, systemImage: "doc.on.doc")
                     }
                     .accessibilityLabel("复制文本结果")
                     ScrollView {

@@ -8,6 +8,13 @@ import (
 	"time"
 )
 
+func TestSessionHistoryLabelsFollowTheLimit(t *testing.T) {
+	title := SectionTitle()
+	if !strings.Contains(title, fmt.Sprint(Limit)) || EmptySession == "" || ClearSession == "" || Cleared == EmptySession || ShownError("") != NoErrorRecorded || ShownError("读配置失败") != "读配置失败" {
+		t.Fatalf("labels %q %q %q", title, EmptySession, ClearSession)
+	}
+}
+
 func TestHistoryBoundedNewestFirstAndPrivate(t *testing.T) {
 	var h Store
 	for i := 0; i < 14; i++ {
@@ -23,6 +30,12 @@ func TestHistoryBoundedNewestFirstAndPrivate(t *testing.T) {
 	}
 	if _, found := h.Get(1); found {
 		t.Fatal("evicted result still accessible")
+	}
+	if stored, ok := Accept("  spaced  ", "x"); !ok || stored != "  spaced  " {
+		t.Fatalf("title %q %v", stored, ok)
+	}
+	if _, ok := Accept("title", strings.Repeat("x", MaxBytes+1)); ok {
+		t.Fatal("oversize accepted")
 	}
 	h.Remember("", "   ")
 	if len(h.Snapshot()) != Limit {

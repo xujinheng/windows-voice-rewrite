@@ -4,14 +4,13 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"runtime/debug"
-	"strings"
 	"time"
 	"unicode/utf8"
 
+	"voicerewrite/internal/core/audio"
 	"voicerewrite/internal/core/clipboard"
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
@@ -108,11 +107,8 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	if !app.epoch.Valid(generation) {
 		return
 	}
-	if r.err != nil || len(r.pcm) < 3200 {
-		if r.err == nil {
-			r.err = errors.New("语音太短，无法转写")
-		}
-		app.fail(r.err)
+	if err := ux.DictationCaptureProblem(r.err, audio.BelowMinCapture(r.pcm)); err != nil {
+		app.fail(err)
 		app.postHandyPhase(indicator.Error, generation)
 		return
 	}
@@ -136,39 +132,34 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	if !isSameForegroundWindow(expectedWindow) {
 		// A result card preserves the transcript without requiring the user to
 		// guess what happened to their clipboard after a focus change.
-		app.rememberResult(ux.DictationHistoryTitle, text)
-		app.showAnswer(ux.DictationNotInserted, text, currentCursorPoint(), nil, false, generation)
-		app.postHandyPhase(indicator.Fallback, generation)
+		follow := ux.DictationUnfocused()
+		app.history.Remember(ux.DictationHistoryTitle, text)
+		app.showAnswer(follow.Title, text, currentCursorPoint(), nil, false, generation)
+		app.postHandyPhase(follow.Phase, generation)
 		return
 	}
 	start = time.Now()
-	if err = insertDictationText(app.Window, expectedWindow, text, func() bool { return app.epoch.Valid(generation) }); err != nil {
+	err = insertDictationText(app.Window, expectedWindow, text, func() bool { return app.epoch.Valid(generation) })
+	follow := ux.DictationInserted(err)
+	if follow.ShowCard {
 		app.fail(err)
-		app.rememberResult(ux.DictationHistoryTitle, text)
-		app.showAnswer(ux.DictationCopyManually, text, currentCursorPoint(), nil, false, generation)
-		app.postHandyPhase(indicator.Fallback, generation)
+		app.history.Remember(ux.DictationHistoryTitle, text)
+		app.showAnswer(follow.Title, text, currentCursorPoint(), nil, false, generation)
+		app.postHandyPhase(follow.Phase, generation)
 		return
 	}
-	app.rememberResult(ux.DictationHistoryTitle, text)
+	app.history.Remember(ux.DictationHistoryTitle, text)
 	app.logger.Printf("stage=paste flow=dictation ms=%d chars=%d status=unverified", time.Since(start).Milliseconds(), utf8.RuneCountInString(text))
 	app.setStatus(traySuccess)
-	app.postHandyPhase(indicator.Success, generation)
+	app.postHandyPhase(follow.Phase, generation)
 }
 
 // Dictation preserves multi-format clipboard contents. If a format cannot be
 // backed up safely, use direct Unicode input rather than changing clipboard.
 func insertDictationText(hwnd, target uintptr, text string, valid func() bool) error {
-	if strings.TrimSpace(text) == "" {
-		return errors.New("听写结果为空")
-	}
-	if !waitKeysReleased(2 * time.Second) {
-		return errors.New("请松开快捷键后重试")
-	}
-	if !valid() || !isSameForegroundWindow(target) {
-		return errors.New("写入前窗口已变化，已取消听写")
-	}
-	if nativePasswordFieldFocused(target) {
-		return errors.New("密码输入框不接受自动听写，请使用普通输入方式")
+	windowOK := func() bool { return valid() && isSameForegroundWindow(target) }
+	if err := ux.DictationInsertReady(text, func() bool { return waitKeysReleased(2 * time.Second) }, windowOK, func() bool { return nativePasswordFieldFocused(target) }); err != nil {
+		return err
 	}
 	backup, err := snapshotClipboard(hwnd)
 	if err != nil {
@@ -181,15 +172,15 @@ func insertDictationText(hwnd, target uintptr, text string, valid func() bool) e
 	}
 	backup.markOwned(clipboardSeq())
 	defer backup.restoreIfOwned(hwnd)
-	if !valid() || !isSameForegroundWindow(target) {
-		return errors.New("写入前窗口已变化，已取消听写")
+	if err = ux.DictationWindowStillOpen(windowOK); err != nil {
+		return err
 	}
 	if err = sendCombo('V'); err != nil {
 		return err
 	}
 	time.Sleep(250 * time.Millisecond)
 	if err = backup.restoreIfOwned(hwnd); err != nil {
-		return fmt.Errorf("已触发粘贴，但剪贴板恢复失败: %w", err)
+		return ux.DictationClipboardRestored(err)
 	}
 	return nil // SendInput accepted; insertion cannot be proven in all editors.
 }
@@ -210,21 +201,21 @@ func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintp
 			app.fail(fmt.Errorf("录音处理线程发生错误：%v", reason))
 		}
 	}()
-	if !isSameForegroundWindow(expectedWindow) {
+	if err := ux.HoldEditorReady(isSameForegroundWindow(expectedWindow)); err != nil {
 		rec.Stop()
 		go func() { <-rec.result }()
-		app.fail(errors.New("编辑窗口已经变化，取消自动替换"))
+		app.fail(err)
 		return
 	}
 	sel, err := captureSelection(app.Window, app.cfg)
 	sel.Anchor = anchor
 	defer restoreSelectionClipboardIfOwned(app.Window, sel)
 	app.logger.Printf("stage=selection mode=hold ms=%d", time.Since(started).Milliseconds())
-	if err == nil && sel.TargetWindow != expectedWindow {
-		err = errors.New("选区所属窗口已变化")
+	if err == nil {
+		err = ux.HoldCapturedWindow(sel.TargetWindow == expectedWindow)
 	}
-	if err == nil && utf8.RuneCountInString(sel.Text) > app.cfg.MaxSelectedRunes {
-		err = fmt.Errorf("选中文字超过 %d 字限制", app.cfg.MaxSelectedRunes)
+	if err == nil {
+		err = textedit.SelectedLengthError(app.cfg.MaxSelectedRunes, sel.Text)
 	}
 	if err != nil {
 		go func() { <-rec.result }()
@@ -261,15 +252,11 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	if !app.epoch.Valid(generation) {
 		return
 	}
-	if r.err != nil {
-		app.fail(r.err)
+	if err := ux.RewriteCaptureProblem(r.err, audio.BelowMinCapture(r.pcm)); err != nil {
+		app.fail(err)
 		return
 	}
-	if len(r.pcm) < 3200 {
-		app.fail(errors.New("录音太短（至少约 0.1 秒）；请再试一次"))
-		return
-	}
-	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/32000)
+	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/audio.PCMBytesPerSecond)
 	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), 240*time.Second)
 	defer cancel()
 	started := time.Now()
@@ -295,20 +282,23 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	action := textedit.RouteTask(answer, instruction, editable)
 	app.logger.Printf("route=%s intent=%s native_editable=%t browser_surface=%t", action, answer.Intent, editable, browserSurface)
 	allowApply := action == textedit.Replace || action == textedit.TryReplace
-	app.rememberResult(ux.HistoryTitle(answer.Intent), answer.Result)
+	app.history.Remember(ux.HistoryTitle(answer.Intent), answer.Result)
 	if allowApply {
-		app.postHandyPhase(indicator.Applying, generation)
+		app.postHandyPhase(ux.RewriteApplying().Phase, generation)
 		startedPaste := time.Now()
 		// All unknown controls receive the same pre/post paste checks as a browser.
 		e = replaceSelectionWithGuard(app.Window, sel, answer.Result, app.cfg, action == textedit.TryReplace, func() bool { return app.epoch.Valid(generation) })
 		app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
-		if e == nil {
-			app.setStatus(traySuccess)
-			app.postHandyPhase(indicator.Success, generation)
-			// Completion is indicated by the non-blocking status bar; no sound.
-			app.logger.Printf("paste_status=unverified intent=%s result_chars=%d (SendInput accepted, editor insertion not provable)", answer.Intent, utf8.RuneCountInString(answer.Result))
-			return
-		}
+	}
+	follow := ux.RewritePasted(allowApply, e)
+	if !follow.ShowCard {
+		app.setStatus(traySuccess)
+		app.postHandyPhase(follow.Phase, generation)
+		// Completion is indicated by the non-blocking status bar; no sound.
+		app.logger.Printf("paste_status=unverified intent=%s result_chars=%d (SendInput accepted, editor insertion not provable)", answer.Intent, utf8.RuneCountInString(answer.Result))
+		return
+	}
+	if allowApply && e != nil {
 		app.logger.Printf("auto replacement failed; preview instead: %v", e)
 	}
 	title := ux.ResultCardTitle(answer.Intent)

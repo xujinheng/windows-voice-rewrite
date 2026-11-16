@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	coreconfig "voicerewrite/internal/core/config"
+	"voicerewrite/internal/core/serviceprobe"
 )
 
 func TestModelProbeStatuses(t *testing.T) {
@@ -27,12 +28,12 @@ func TestModelProbeStatuses(t *testing.T) {
 		{"auto", "可发现 2 个模型"},
 	}
 	for _, tc := range checks {
-		got := uxProbeModel(context.Background(), "LLM", base, "demo", tc.model)
+		got := serviceprobe.ProbeModel(context.Background(), "LLM", base, "demo", tc.model)
 		if !strings.Contains(got, tc.want) {
 			t.Fatalf("model=%q got %q", tc.model, got)
 		}
 	}
-	got := uxProbeModel(context.Background(), "LLM", base, "wrong", "qwen3.5-9b")
+	got := serviceprobe.ProbeModel(context.Background(), "LLM", base, "wrong", "qwen3.5-9b")
 	if !strings.Contains(got, "API Key") {
 		t.Fatal(got)
 	}

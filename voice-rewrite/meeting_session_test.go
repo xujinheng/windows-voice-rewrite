@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,6 +48,26 @@ func TestMeetingSettingsUseInjectedStore(t *testing.T) {
 	}
 	if notified != persisted || s.configSnapshot() != persisted {
 		t.Fatal("session/app config not synchronized after successful save")
+	}
+}
+
+func TestMeetingProfileRejectsOverlongTextBeforeSave(t *testing.T) {
+	var calls int
+	s := newMeetingCore(defaults(), func(string, ...any) {}, func(Config) error {
+		calls++
+		return nil
+	})
+	defer s.runtime.Stop()
+	err := s.updateProfile(" "+strings.Repeat("字", meetingcore.MaxBackgroundRunes), "terms")
+	if err == nil || err.Error() != "背景最多 4000 字，术语最多 2000 字" || calls != 0 {
+		t.Fatalf("background: %v calls=%d", err, calls)
+	}
+	err = s.updateProfile("bg", strings.Repeat("词", meetingcore.MaxTermsRunes+1))
+	if err == nil || err.Error() != "背景最多 4000 字，术语最多 2000 字" || calls != 0 {
+		t.Fatalf("terms: %v calls=%d", err, calls)
+	}
+	if err = s.updateProfile(strings.Repeat("字", meetingcore.MaxBackgroundRunes), strings.Repeat("词", meetingcore.MaxTermsRunes)); err != nil || calls != 1 {
+		t.Fatalf("limit accepted: %v calls=%d", err, calls)
 	}
 }
 

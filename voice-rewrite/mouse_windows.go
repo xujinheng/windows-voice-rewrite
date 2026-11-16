@@ -62,7 +62,6 @@ type mouseHookReady struct {
 // Used by the settings recorder across UI/mouse-hook threads.
 var sideShortcutCapture atomic.Uint32
 
-const sideHoldThreshold = 250 * time.Millisecond
 const sideReplayExtraInfo = uintptr(0x56525842)
 
 const (
@@ -185,7 +184,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 					mu.Unlock()
 					return callNextMouseHook(hook, code, message, data)
 				}
-				timers[button] = time.AfterFunc(sideHoldThreshold, func() {
+				timers[button] = time.AfterFunc(input.WindowsSideHold, func() {
 					mu.Lock()
 					defer mu.Unlock()
 					if closed || (paused != nil && paused.Load()) || !buttons[button].CanActivate(token) {

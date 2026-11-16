@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -25,6 +24,7 @@ import (
 	meetingcore "voicerewrite/internal/core/meeting"
 	"voicerewrite/internal/core/session"
 	"voicerewrite/internal/core/shortcut"
+	"voicerewrite/internal/core/textedit"
 	"voicerewrite/internal/core/update"
 	"voicerewrite/internal/core/ux"
 )
@@ -77,7 +77,6 @@ var (
 const (
 	WM_HOTKEY        = 0x0312
 	WM_TIMER         = 0x0113
-	RECORD_TIMER_ID  = 3001
 	WM_HOLD_RELEASE  = 0x8000 + 50
 	WM_HOLD_TIMEOUT  = 0x8000 + 51
 	WM_TOGGLE_READY  = 0x8000 + 56
@@ -90,11 +89,8 @@ const (
 	HOTKEY_DICTATION = 102
 	MOD_ALT          = 0x0001
 	MOD_CTRL         = 0x0002
-	MOD_NOREPEAT     = 0x4000
 	MOD_SHIFT        = 0x0004
 	VK_F9            = 0x78
-	VK_PAUSE         = 0x13
-	VK_F10           = 0x79
 	VK_CONTROL       = 0x11
 	VK_MENU          = 0x12
 	VK_SHIFT         = 0x10
@@ -227,13 +223,6 @@ func (a *appState) showAnswer(title, body string, anchor trayPoint, selection *s
 	}
 }
 
-func (a *appState) rememberResult(title, value string) {
-	if strings.TrimSpace(value) == "" {
-		return
-	}
-	a.history.Remember(title, value)
-}
-
 func winErr(msg string) {
 	title, _ := syscall.UTF16PtrFromString("VoiceRewrite - 语音改写")
 	content, _ := syscall.UTF16PtrFromString(msg)
@@ -251,18 +240,6 @@ func (a *appState) fail(e error) {
 	a.lastError = ux.Present(e)
 	a.lastErrorMu.Unlock()
 	a.setStatus(trayError) // nonmodal; available via tray's last-error command
-}
-
-// Reuse the portable capture/parser rules for registration.
-func parseHotkey(s string) (uintptr, uintptr, error) {
-	_, mods, vk, mouse, err := shortcut.Parse(s)
-	if err != nil {
-		return 0, 0, err
-	}
-	if mouse {
-		return 0, 0, fmt.Errorf("mouse button %q must use the mouse hook", s)
-	}
-	return uintptr(mods), uintptr(vk), nil
 }
 
 var recordVirtualKey uintptr = VK_F9
@@ -284,6 +261,23 @@ func singleInstanceGuard() (func(), error) {
 		return nil, errors.New("VoiceRewrite 已在运行，请先从托盘退出旧版本（或在任务管理器结束旧进程）")
 	}
 	return func() { procCloseHandle.Call(handle) }, nil
+}
+
+func finishTogglePrepare(app *appState, hwnd uintptr, sel selectedText, rec *audioRecorder, fault input.ToggleFault, err error) {
+	cleanup := input.CleanupToggle(fault)
+	if cleanup.RestoreClipboard {
+		restoreSelectionClipboardIfOwned(hwnd, sel)
+	}
+	if cleanup.StopRecorder && rec != nil {
+		rec.Stop()
+		go func() { <-rec.result }()
+	}
+	if cleanup.Report && err != nil {
+		app.fail(err)
+	}
+	if cleanup.ClearBusy {
+		app.busy.Store(false)
+	}
 }
 
 func runApp() {
@@ -351,52 +345,18 @@ func runApp() {
 	defer closeNativeSettings()
 	defer closeHandyStatus()
 	activeHandyAppWindow = hwnd
-	selectedMouseButton, usingMouse := shortcut.WindowsSideButton(cfg.HotkeyRecord)
-	dictationButton, dictationMouse := shortcut.WindowsSideButton(cfg.DictationHotkey)
-	var dictationVK, dictationMods uintptr
-	if !dictationMouse {
-		dictationMods, dictationVK, e = parseHotkey(cfg.DictationHotkey)
-		if e != nil || dictationVK == VK_PAUSE {
-			winErr("听写快捷键无效，请重新录入（支持功能键和 Ctrl/Alt 组合键）")
-			return
-		}
-	}
-	if dictationMouse && usingMouse && dictationButton == selectedMouseButton {
-		winErr("听写和改写不能占用同一个鼠标侧键")
-		return
-	}
-	if cfg.RecordMode != "hold" && !dictationMouse {
-		winErr("键盘听写快捷键当前只支持按住说话模式（record_mode=hold）")
-		return
-	}
-	var recordMods, recordVK uintptr
-	if usingMouse {
-		if cfg.RecordMode != "hold" {
-			winErr("Mouse4/Mouse5 目前仅支持 record_mode=hold")
-			return
-		}
-	} else {
-		recordMods, recordVK, e = parseHotkey(cfg.HotkeyRecord)
-		if e != nil {
-			winErr(e.Error())
-			return
-		}
-	}
-	exitMods, exitVK, e := parseHotkey(cfg.HotkeyExit)
+	ready, e := shortcut.ValidateStartup(cfg.RecordMode, cfg.DictationHotkey, cfg.HotkeyRecord, cfg.HotkeyExit)
 	if e != nil {
 		winErr(e.Error())
 		return
 	}
-	if (!usingMouse && recordMods == exitMods && recordVK == exitVK) ||
-		(!usingMouse && !dictationMouse && recordMods == dictationMods && recordVK == dictationVK) ||
-		(!dictationMouse && exitMods == dictationMods && exitVK == dictationVK) {
-		winErr("Record and exit hotkeys must differ")
-		return
-	}
-	if cfg.RecordMode == "hold" && !usingMouse && recordVK == VK_PAUSE {
-		winErr("Pause/Break 不支持按住录音模式")
-		return
-	}
+	usingMouse := ready.RewriteMouse
+	dictationMouse := ready.DictationMouse
+	selectedMouseButton := ready.RewriteButton
+	dictationButton := ready.DictationButton
+	dictationMods, dictationVK := uintptr(ready.DictationMods), uintptr(ready.DictationVK)
+	recordMods, recordVK := uintptr(ready.RewriteMods), uintptr(ready.RewriteVK)
+	exitMods, exitVK := uintptr(ready.ExitMods), uintptr(ready.ExitVK)
 	if !usingMouse {
 		recordVirtualKey = recordVK
 		if rv, _, _ := procRegisterHotKey.Call(0, HOTKEY_RECORD, recordMods, recordVK); rv == 0 {
@@ -494,26 +454,36 @@ func runApp() {
 		app.busy.Store(true) // no second operation until the worker is finished
 		app.setStatus(trayTranscribing)
 		l.Print("recording stop requested; selection/model processing moved to worker")
-		if cfg.RecordMode == "hold" && (holdIsDictation || holdMeeting != nil) {
+		kind := input.FinishRecording(cfg.RecordMode == "hold", holdIsDictation, holdMeeting != nil)
+		if input.FinishShowsProcessing(kind) {
 			app.postHandyPhase(indicator.Processing, holdGeneration)
-			if holdMeeting != nil {
-				if holdMeeting.runtime.Context().Err() == nil {
-					mode := meetingcore.VoiceMode(holdIsDictation)
-					go holdMeeting.express(app, rec, holdGeneration, mode)
-				} else {
-					go func() { <-rec.result }()
-					app.busy.Store(false)
-					app.setStatus(trayIdle)
-					closeHandyStatus()
-				}
-			} else {
-				go processDictationHold(app, rec, holdTargetWindow, holdGeneration)
+		} else if kind == input.FinishSpokenRewrite {
+			app.postHandyPhase(indicator.Selection, holdGeneration)
+		}
+		switch kind {
+		case input.FinishMeeting:
+			stop := meetingcore.MeetingStopAction(holdMeeting.runtime.Context().Err() != nil)
+			if stop.Express {
+				go holdMeeting.express(app, rec, holdGeneration, meetingcore.VoiceMode(holdIsDictation))
+			}
+			if stop.DrainRecorder {
+				go func() { <-rec.result }()
+			}
+			if stop.ClearBusy {
+				app.busy.Store(false)
+			}
+			if stop.IdleTray {
+				app.setStatus(trayIdle)
+			}
+			if stop.ClosePill {
+				closeHandyStatus()
 			}
 			holdMeeting = nil
-		} else if cfg.RecordMode == "hold" {
-			app.postHandyPhase(indicator.Selection, holdGeneration)
+		case input.FinishDictation:
+			go processDictationHold(app, rec, holdTargetWindow, holdGeneration)
+		case input.FinishSpokenRewrite:
 			go processRecordedHold(app, rec, holdTargetWindow, currentCursorPoint(), holdGeneration)
-		} else {
+		default:
 			sel := selected
 			sel.Anchor = currentCursorPoint()
 			go processRecorded(app, rec, sel, selectedGeneration)
@@ -527,7 +497,7 @@ func runApp() {
 		holdButton = button
 		holdIsDictation = dictation
 		holdMeeting = nil
-		if app.meeting != nil && !app.meeting.demo {
+		if meetingcore.HoldUsesMeeting(app.meeting != nil, app.meeting != nil && app.meeting.demo) {
 			holdMeeting = app.meeting
 		}
 		holdGeneration = app.epoch.Start()
@@ -536,7 +506,7 @@ func runApp() {
 		holdSession++
 		holdWatch = make(chan struct{})
 		if button != 0 {
-			go watchMouseHoldTimeout(hwnd, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
+			go watchMouseHoldTimeout(hwnd, holdSession, holdWatch, input.HoldWatchLimit(cfg.MaxRecordSeconds), l)
 		} else {
 			vk := recordVK
 			if dictation {
@@ -546,22 +516,16 @@ func runApp() {
 			if dictation {
 				mods = dictationMods
 			}
-			go watchHoldRelease(hwnd, vk, mods, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
+			go watchHoldRelease(hwnd, vk, mods, holdSession, holdWatch, input.HoldWatchLimit(cfg.MaxRecordSeconds), l)
 		}
-		statusMode := "改写"
-		if dictation {
-			statusMode = "听写"
-		}
-		if holdMeeting != nil {
-			if dictation {
-				statusMode = "会议直译"
-			} else {
-				statusMode = "会议意图"
-			}
-		}
+		statusMode := input.HoldModeLabel(dictation, holdMeeting != nil)
 		// Promote the immediate mouse-down preview without recreating its HWND.
-		// Keyboard hold has no preview and uses the usual status path.
-		if button == 0 || !promotePendingHandyStatus(rec, statusMode, holdGeneration) {
+		// Keyboard hold has no preview, so the promote call stays on the side-button path.
+		promoted := false
+		if button != 0 {
+			promoted = promotePendingHandyStatus(rec, statusMode, holdGeneration)
+		}
+		if input.ShowFreshHoldStatus(button != 0, promoted) {
 			showHandyStatus(rec, statusMode, indicator.Recording, holdGeneration)
 		}
 		// The native status bar is the start feedback. A synchronous Beep
@@ -570,15 +534,14 @@ func runApp() {
 	}
 
 	startHold := func(dictation bool, button uint16) {
-		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil {
-			return
-		}
-		if uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
+		if input.VoiceStartBlocked(app.paused.Load(), app.busy.Load(), active != nil, pendingSide != nil, uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window)) {
 			return
 		}
 		win, _, _ := procGetForegroundWindow.Call()
 		if win == 0 {
-			app.fail(errors.New("没有可用的目标窗口"))
+			if input.ReportMissingWindow(false) {
+				app.fail(errors.New(input.NoTargetWindow))
+			}
 			return
 		}
 		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
@@ -590,10 +553,7 @@ func runApp() {
 	}
 
 	armSide := func(button uint16) {
-		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil {
-			return
-		}
-		if input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "ignore" {
+		if input.VoiceStartBlocked(app.paused.Load(), app.busy.Load(), active != nil, pendingSide != nil, input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "ignore") {
 			return
 		}
 		if uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
@@ -601,39 +561,45 @@ func runApp() {
 		}
 		win, _, _ := procGetForegroundWindow.Call()
 		if win == 0 {
+			if input.ReportMissingWindow(true) {
+				app.fail(errors.New(input.NoTargetWindow))
+			}
 			return
 		}
 		// Paint the provisional status immediately. Recording starts at
 		// physical mouse-down, but only a 250ms hold activates voice mode.
 		// A short click closes this preview and replays browser navigation.
-		mode := "改写"
-		if input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation" {
-			mode = "听写"
-		}
+		mode := input.HoldModeLabel(input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation", false)
 		showPendingHandyStatus(mode)
 		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
 		pendingSide = &sideCapture{button: button, targetWindow: win, recorder: rec, err: err}
 	}
 
 	confirmSide := func(button uint16) {
-		if pendingSide == nil || pendingSide.button != button {
-			return
+		hasPending := pendingSide != nil
+		same := hasPending && pendingSide.button == button
+		var ready, failed bool
+		var held *sideCapture
+		if same {
+			held = pendingSide
+			ready = input.ConfirmSideReady(app.paused.Load(), app.busy.Load(), active != nil, held.targetWindow != 0 && isSameForegroundWindow(held.targetWindow))
+			failed = held.err != nil
 		}
-		p := pendingSide
-		if app.paused.Load() || app.busy.Load() || active != nil ||
-			p.targetWindow == 0 || !isSameForegroundWindow(p.targetWindow) {
+		switch input.SideConfirm(hasPending, same, ready, failed) {
+		case input.SideConfirmIgnore:
+			return
+		case input.SideConfirmDiscard:
 			discardPendingSide()
-			return
-		}
-		pendingSide = nil
-		if p.err != nil {
+		case input.SideConfirmReport:
+			pendingSide = nil
 			if activeHandyStatus != nil && activeHandyStatus.pending {
 				closeHandyStatus()
 			}
-			app.fail(p.err)
-			return
+			app.fail(held.err)
+		default:
+			pendingSide = nil
+			activateHold(held.recorder, input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation", button, held.targetWindow)
 		}
-		activateHold(p.recorder, input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation", button, p.targetWindow)
 	}
 
 	for {
@@ -643,57 +609,61 @@ func runApp() {
 			break
 		}
 		switch msg.Message {
-		case WM_MEETING_START:
-			if !app.paused.Load() {
+		case WM_MEETING_START, WM_MEETING_SUGGEST, WM_MEETING_DEMO, WM_MEETING_STOP, WM_MEETING_REFRESH:
+			message := meetingcore.PostedRefresh
+			switch msg.Message {
+			case WM_MEETING_START:
+				message = meetingcore.PostedStart
+			case WM_MEETING_SUGGEST:
+				message = meetingcore.PostedSuggest
+			case WM_MEETING_DEMO:
+				message = meetingcore.PostedDemo
+			case WM_MEETING_STOP:
+				message = meetingcore.PostedStop
+			}
+			switch meetingcore.PostedMeetingEffect(message, app.paused.Load(), app.meeting != nil, app.meeting != nil && app.meeting.demo) {
+			case meetingcore.PostedBegin:
 				app.beginMeeting(uint32(msg.WParam), false)
-			}
-			continue
-		case WM_MEETING_SUGGEST:
-			if app.meeting != nil && !app.meeting.demo {
+			case meetingcore.PostedBeginDemo:
+				app.beginMeeting(0, true)
+			case meetingcore.PostedReplies:
 				app.meeting.requestReplies()
+			case meetingcore.PostedStopMeeting:
+				app.closeMeeting()
+				if holdMeeting != nil {
+					closeHandyStatus()
+				}
+			case meetingcore.PostedRefreshMeeting:
+				app.refreshMeeting()
 			}
-			continue
-		case WM_MEETING_DEMO:
-			app.beginMeeting(0, true)
-			continue
-		case WM_MEETING_STOP:
-			app.closeMeeting()
-			if holdMeeting != nil {
-				closeHandyStatus()
-			}
-			continue
-		case WM_MEETING_REFRESH:
-			app.refreshMeeting()
 			continue
 		}
 		if msg.Message == WM_STATUS_UPDATE {
-			if app.epoch.Valid(uint64(msg.LParam)) && activeHandyStatus != nil && activeHandyStatus.owner == uint64(msg.LParam) {
+			hasPill := activeHandyStatus != nil
+			if indicator.PhaseUpdateApplies(app.epoch.Valid(uint64(msg.LParam)), hasPill, hasPill && activeHandyStatus.owner == uint64(msg.LParam)) {
 				updateHandyStatus(indicator.Phase(msg.WParam))
 			}
 			continue
 		}
 		if msg.Message == WM_STATUS_CANCEL {
-			if activeHandyStatus != nil && activeHandyStatus.pending && msg.WParam == 0 {
+			status := activeHandyStatus
+			switch indicator.CancelChoice(status != nil && status.pending && msg.WParam == 0, status != nil && app.epoch.Valid(uint64(msg.WParam)) && status.owner == uint64(msg.WParam), status != nil && indicator.Terminal(status.phase)) {
+			case indicator.CancelPending:
 				discardPendingSide()
-				continue
-			}
-			if !app.epoch.Valid(uint64(msg.WParam)) || activeHandyStatus == nil || activeHandyStatus.owner != uint64(msg.WParam) {
-				continue // a cancel click queued by a previous session
-			}
-			if indicator.Terminal(activeHandyStatus.phase) {
+			case indicator.CancelDismiss:
 				closeHandyStatus() // close a completed status, not the answer card
-				continue
+			case indicator.CancelWork:
+				app.epoch.Start() // cancel either Mouse4 or Mouse5 before paste
+				if active != nil {
+					stopHoldWatch()
+					rec := active
+					active = nil
+					rec.Stop()
+					go func() { <-rec.result }()
+				}
+				closeHandyStatus()
+				app.setStatus(trayIdle)
 			}
-			app.epoch.Start() // cancel either Mouse4 or Mouse5 before paste
-			if active != nil {
-				stopHoldWatch()
-				rec := active
-				active = nil
-				rec.Stop()
-				go func() { <-rec.result }()
-			}
-			closeHandyStatus()
-			app.setStatus(trayIdle)
 			continue
 		}
 		if msg.Message == WM_APPLY_RESULT {
@@ -750,7 +720,8 @@ func runApp() {
 		}
 		if msg.Message == WM_TRAY_UPDATE {
 			state := trayState(app.status.Load())
-			if state == trayError && activeHandyStatus != nil && !indicator.Terminal(activeHandyStatus.phase) && app.epoch.Valid(activeHandyStatus.owner) {
+			hasPill := activeHandyStatus != nil
+			if ux.TrayShowsError(state == trayError, hasPill, hasPill && indicator.Terminal(activeHandyStatus.phase), hasPill && app.epoch.Valid(activeHandyStatus.owner)) {
 				updateHandyStatus(indicator.Error)
 			}
 			// Always run Shell_NotifyIconW on the thread that owns the tray window.
@@ -758,20 +729,19 @@ func runApp() {
 				l.Printf("tray state update failed: %v", err)
 			}
 			procKillTimer.Call(0, TRAY_RESET_TIMER_ID)
-			if state == traySuccess || state == trayError {
-				procSetTimer.Call(0, TRAY_RESET_TIMER_ID, 4500, 0)
+			if ux.TrayArmsReset(state == traySuccess, state == trayError) {
+				procSetTimer.Call(0, TRAY_RESET_TIMER_ID, uintptr(ux.TrayResetAfter/time.Millisecond), 0)
 			}
 			continue
 		}
 		if msg.Message == WM_TIMER && msg.WParam == TRAY_RESET_TIMER_ID {
 			procKillTimer.Call(0, TRAY_RESET_TIMER_ID)
 			state := trayState(app.status.Load())
-			if state == traySuccess || state == trayError {
-				if app.paused.Load() {
-					app.setStatus(trayPaused)
-				} else {
-					app.setStatus(trayIdle)
-				}
+			switch ux.TrayAfterTimer(state == traySuccess, state == trayError, app.paused.Load()) {
+			case ux.TrayRestPaused:
+				app.setStatus(trayPaused)
+			case ux.TrayRestIdle:
+				app.setStatus(trayIdle)
 			}
 			continue
 		}
@@ -790,7 +760,7 @@ func runApp() {
 		}
 		if msg.Message == WM_TRAY_CHECK_UPDATE {
 			if !app.updateBusy.CompareAndSwap(false, true) {
-				winErr("正在检查更新，请稍后。")
+				winErr(update.AlreadyChecking)
 				continue
 			}
 			go func() {
@@ -808,11 +778,11 @@ func runApp() {
 			app.updateBusy.Store(false)
 			select {
 			case notice := <-app.updateReady:
-				if notice.Err != nil || !notice.Found || !notice.Newer {
+				if !notice.AsksToOpen() {
 					winErr(notice.Summary(buildID))
 				} else if askViewUpdate(notice.Latest) {
 					if err := shellOpenLocalFile(update.ReleasesPage); err != nil {
-						winErr("无法打开发布页面：" + err.Error())
+						winErr(update.PageOpenFailed + err.Error())
 					}
 				}
 			default:
@@ -831,17 +801,16 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_TRAY_TOGGLE_PAUSE {
-			if app.busy.Load() {
+			switch ux.ChoosePause(app.busy.Load(), app.paused.Load()) {
+			case ux.PauseRefused:
 				winErr(ux.PauseWhileBusy)
-				continue
-			}
-			newPaused := !app.paused.Load()
-			app.paused.Store(newPaused)
-			if newPaused {
+			case ux.PauseOn:
+				app.paused.Store(true)
 				app.closeMeeting()
 				discardPendingSide()
 				app.setStatus(trayPaused)
-			} else {
+			case ux.PauseOff:
+				app.paused.Store(false)
 				app.setStatus(trayIdle)
 			}
 			continue
@@ -849,7 +818,7 @@ func runApp() {
 		if msg.Message == WM_TRAY_LAST_RESULT {
 			recent := app.history.Snapshot()
 			if len(recent) == 0 {
-				winErr("当前会话还没有可恢复的语音结果。")
+				winErr(history.EmptySession)
 			} else {
 				app.showAnswer(ux.HistoryRestoreTitle(recent[0].Title), recent[0].Text, currentCursorPoint(), nil, false, app.epoch.Current())
 			}
@@ -859,7 +828,7 @@ func runApp() {
 			if entry, ok := app.history.Get(uint64(msg.WParam)); ok {
 				app.showAnswer(ux.HistoryRestoreTitle(entry.Title), entry.Text, currentCursorPoint(), nil, false, app.epoch.Current())
 			} else {
-				winErr("该结果已从本次会话历史中清除。")
+				winErr(history.Cleared)
 			}
 			continue
 		}
@@ -872,10 +841,7 @@ func runApp() {
 			app.lastErrorMu.Lock()
 			latest := app.lastError
 			app.lastErrorMu.Unlock()
-			if latest == "" {
-				latest = "目前没有记录到错误。"
-			}
-			winErr(latest)
+			winErr(history.ShownError(latest))
 			continue
 		}
 		if msg.Message == WM_TRAY_LOG {
@@ -902,14 +868,14 @@ func runApp() {
 			return
 		}
 		if msg.Message == WM_HOLD_RELEASE {
-			if cfg.RecordMode == "hold" && active != nil && msg.WParam == holdSession {
+			if input.HoldEventApplies(cfg.RecordMode == "hold", active != nil, msg.WParam == holdSession) {
 				l.Print("hold key released; completing recording")
 				finish()
 			}
 			continue
 		}
 		if msg.Message == WM_HOLD_TIMEOUT {
-			if cfg.RecordMode == "hold" && active != nil && msg.WParam == holdSession {
+			if input.HoldEventApplies(cfg.RecordMode == "hold", active != nil, msg.WParam == holdSession) {
 				stopHoldWatch()
 				rec := active
 				active = nil
@@ -917,16 +883,14 @@ func runApp() {
 				go func() { <-rec.result }()
 				l.Print("ERROR: hold watcher exceeded maximum duration without observing key release")
 				app.postHandyPhase(indicator.Error, holdGeneration)
-				app.fail(errors.New("未收到录音按键或鼠标侧键的松开事件，已自动结束。请检查是否有鼠标驱动将侧键映射为其他按键。"))
+				app.fail(errors.New(input.HoldReleaseMissed))
 			}
 			continue
 		}
 		if msg.Message == WM_SETTINGS_CAPTURE_MOUSE {
-			if p := uxActiveSettings; p != nil && p.capturingShortcut == msg.LParam {
-				if msg.WParam == 1 {
-					p.acceptShortcut("Mouse4")
-				} else if msg.WParam == 2 {
-					p.acceptShortcut("Mouse5")
+			if p := uxActiveSettings; p != nil {
+				if name := input.SettingsMouseCapture(p.capturingShortcut, msg.LParam, msg.WParam); name != "" {
+					p.acceptShortcut(name)
 				}
 			}
 			continue
@@ -944,13 +908,13 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_SIDE_CANCEL {
-			if pendingSide != nil && pendingSide.button == uint16(msg.WParam) {
+			if input.SideCancelApplies(pendingSide != nil, pendingSide != nil && pendingSide.button == uint16(msg.WParam)) {
 				discardPendingSide()
 			}
 			continue
 		}
 		if msg.Message == WM_SIDE_UP {
-			if cfg.RecordMode == "hold" && active != nil && uint16(msg.WParam) == holdButton {
+			if input.SideReleaseApplies(cfg.RecordMode == "hold", active != nil, uint16(msg.WParam) == holdButton) {
 				l.Printf("mouse button %d released; completing recording", holdButton)
 				finish()
 			}
@@ -983,22 +947,16 @@ func runApp() {
 			}
 			continue
 		case HOTKEY_RECORD:
-			if app.paused.Load() {
+			switch input.RewriteHotkeyAction(app.paused.Load(), app.busy.Load(), active != nil, cfg.RecordMode == "hold") {
+			case input.RewriteFinishToggle:
+				finish()
 				continue
-			}
-			if app.busy.Load() {
-				continue
-			}
-			if active != nil {
-				if cfg.RecordMode == "toggle" {
-					finish()
-				}
-				continue
-			}
-			// Hold mode records immediately and does NOT touch the clipboard
-			// while the hotkey is physically held. Capture is performed on release.
-			if cfg.RecordMode == "hold" {
+			case input.RewriteStartHold:
+				// Hold mode records immediately and does NOT touch the clipboard
+				// while the hotkey is physically held. Capture is performed on release.
 				startHold(false, selectedMouseButton)
+				continue
+			case input.RewriteIgnore:
 				continue
 			}
 			// Legacy toggle mode also prepares its selection on a worker.
@@ -1007,42 +965,31 @@ func runApp() {
 			app.setStatus(trayTranscribing)
 			go func() {
 				if !waitKeysReleased(2500 * time.Millisecond) {
-					app.fail(errors.New("请松开快捷键后重试"))
-					app.busy.Store(false)
+					finishTogglePrepare(app, hwnd, selectedText{}, nil, input.ToggleKeysHeld, errors.New(ux.DictationReleaseKeys))
 					return
 				}
 				begin := time.Now()
 				sel, err := captureSelection(hwnd, cfg)
 				l.Printf("stage=selection mode=toggle ms=%d", time.Since(begin).Milliseconds())
-				if err == nil && utf8.RuneCountInString(sel.Text) > cfg.MaxSelectedRunes {
-					err = fmt.Errorf("选中文字超过 %d 字限制", cfg.MaxSelectedRunes)
+				if err == nil {
+					err = textedit.SelectedLengthError(cfg.MaxSelectedRunes, sel.Text)
 				}
 				if err != nil {
-					restoreSelectionClipboardIfOwned(hwnd, sel)
-					app.fail(err)
-					app.busy.Store(false)
+					finishTogglePrepare(app, hwnd, sel, nil, input.ToggleSelectionFailed, err)
 					return
 				}
 				rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
 				if err != nil {
-					restoreSelectionClipboardIfOwned(hwnd, sel)
-					app.fail(err)
-					app.busy.Store(false)
+					finishTogglePrepare(app, hwnd, sel, nil, input.ToggleSelectionFailed, err)
 					return
 				}
 				if !app.epoch.Valid(generation) {
-					restoreSelectionClipboardIfOwned(hwnd, sel)
-					rec.Stop()
-					go func() { <-rec.result }()
-					app.busy.Store(false)
+					finishTogglePrepare(app, hwnd, sel, rec, input.ToggleGenerationStale, nil)
 					return
 				}
 				toggleResult <- togglePrepareResult{rec: rec, sel: sel, generation: generation}
 				if ok, _, _ := procPostMessage.Call(hwnd, WM_TOGGLE_READY, 0, 0); ok == 0 {
-					rec.Stop()
-					go func() { <-rec.result }()
-					app.fail(errors.New("无法通知 UI 线程准备录音"))
-					app.busy.Store(false)
+					finishTogglePrepare(app, hwnd, sel, rec, input.ToggleNotifyMissed, errors.New(input.ToggleUINotifyFailed))
 				}
 			}()
 		}

@@ -27,15 +27,13 @@ const (
 	StatusStale = "连接配置已修改 · 请重新检测"
 )
 
-func validURL(value string) bool { return coreconfig.ValidateBaseURL(value) == nil }
-
 // A service health response and a compatible model are two separate facts.
 // This probe never uploads microphone audio or sends text prompts.
 func ProbeModel(ctx context.Context, kind, base, apiKey, configuredModel string) string {
 	if kind == "ASR" && strings.TrimSpace(configuredModel) != "" {
 		return ProbeASRAudio(ctx, base, apiKey, configuredModel)
 	}
-	if !validURL(base) {
+	if coreconfig.ValidateBaseURL(base) != nil {
 		return kind + "：服务地址无效"
 	}
 	u, err := url.Parse(strings.TrimRight(strings.TrimSpace(base), "/"))
@@ -97,7 +95,7 @@ func ProbeModel(ctx context.Context, kind, base, apiKey, configuredModel string)
 // The probe sends only locally generated silence, never microphone recordings.
 func ProbeASRAudio(ctx context.Context, base, apiKey, model string) string {
 	const prefix = "ASR："
-	if !validURL(base) || strings.TrimSpace(model) == "" {
+	if coreconfig.ValidateBaseURL(base) != nil || strings.TrimSpace(model) == "" {
 		return prefix + "请填写有效的服务地址和模型 ID"
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)

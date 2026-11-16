@@ -16,7 +16,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
+	"voicerewrite/internal/core/jsonl"
 	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/shortcut"
 	"voicerewrite/internal/core/speech"
@@ -26,12 +28,13 @@ import (
 )
 
 const (
-	protocolVersion     = 1
-	maxRequestBytes     = 8 << 20
-	maxPCMBytes         = 16000 * 2 * coreconfig.RecordSecondsMax
+	maxPCMBytes         = audio.PCMBytesPerSecond * coreconfig.RecordSecondsMax
 	maxSelectedBytes    = 1 << 20
 	maxInstructionBytes = 32 << 10
-	maxSeenIDs          = 65536
+	msgUnsupported      = "unsupported operation"
+	msgCanceled         = "request canceled"
+	msgTimedOut         = "request timed out"
+	msgInvalidConfig    = "invalid configuration"
 )
 
 var errFrameTooLarge = errors.New("frame exceeds limit")
@@ -93,11 +96,11 @@ type bridgeServer struct {
 }
 
 func failure(id, code, message string) response {
-	return response{Version: protocolVersion, ID: id, Error: &bridgeError{Code: code, Message: message}}
+	return response{Version: jsonl.Version, ID: id, Error: &bridgeError{Code: code, Message: message}}
 }
 
 func success(id string, value any) response {
-	return response{Version: protocolVersion, ID: id, OK: true, Result: value}
+	return response{Version: jsonl.Version, ID: id, OK: true, Result: value}
 }
 
 // readFrame bounds memory even if a client sends a line without a terminator.
@@ -108,7 +111,7 @@ func readFrame(r *bufio.Reader) ([]byte, error) {
 	for {
 		chunk, err := r.ReadSlice('\n')
 		if !oversized {
-			if len(frame)+len(chunk) > maxRequestBytes {
+			if len(frame)+len(chunk) > jsonl.MaxRequestBytes {
 				frame = nil
 				oversized = true
 			} else {
@@ -178,12 +181,12 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		s.send(failure("", "invalid_json", "invalid request JSON"))
 		return
 	}
-	if req.Version != protocolVersion {
+	if req.Version != jsonl.Version {
 		s.send(failure(req.ID, "protocol_version", "unsupported protocol version"))
 		return
 	}
-	if req.ID == "" || len(req.ID) > 128 {
-		s.send(failure(req.ID, "invalid_id", "request ID must be 1..128 bytes"))
+	if req.ID == "" || len(req.ID) > jsonl.MaxIDBytes {
+		s.send(failure(req.ID, "invalid_id", fmt.Sprintf("request ID must be 1..%d bytes", jsonl.MaxIDBytes)))
 		return
 	}
 
@@ -193,7 +196,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		s.send(failure(req.ID, "duplicate_id", "request ID already used"))
 		return
 	}
-	if len(s.seen) >= maxSeenIDs {
+	if len(s.seen) >= jsonl.MaxSeenIDs {
 		s.mu.Unlock()
 		s.send(failure(req.ID, "id_limit", "helper request limit reached; restart helper"))
 		return
@@ -204,7 +207,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		s.mu.Unlock()
 		switch req.Op {
 		case "hello":
-			s.send(success(req.ID, map[string]any{"name": "VoiceRewrite", "protocol": protocolVersion}))
+			s.send(success(req.ID, map[string]any{"name": jsonl.HelloName, "protocol": jsonl.Version}))
 		case "parse_shortcut":
 			s.send(parseShortcut(req))
 		case "cancel":
@@ -221,7 +224,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 			s.mu.Unlock()
 			s.send(success(req.ID, map[string]bool{"found": found}))
 		default:
-			s.send(failure(req.ID, "unsupported_op", "unsupported operation"))
+			s.send(failure(req.ID, "unsupported_op", msgUnsupported))
 		}
 		return
 	}
@@ -261,28 +264,42 @@ func (s *bridgeServer) runTask(ctx context.Context, task *bridgeTask, req reques
 
 	s.mu.Lock()
 	if task.canceled || errors.Is(ctx.Err(), context.Canceled) {
-		reply = failure(req.ID, "canceled", "request canceled")
+		reply = failure(req.ID, "canceled", msgCanceled)
 	} else if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		reply = failure(req.ID, "timeout", "request timed out")
+		reply = failure(req.ID, "timeout", msgTimedOut)
 	}
 	delete(s.active, req.ID)
 	s.mu.Unlock()
 	s.send(reply)
 }
 
-func decodeRequestPCM(req request, cfg coreconfig.Config) ([]byte, bool) {
+func decodeRequestPCM(req request, cfg coreconfig.Config) ([]byte, string) {
 	maxBytes := maxPCMBytes
-	if limit := cfg.MaxRecordSeconds * 32000; limit > 0 && limit < maxBytes {
+	if limit := cfg.MaxRecordSeconds * audio.PCMBytesPerSecond; limit > 0 && limit < maxBytes {
 		maxBytes = limit
 	}
 	if len(req.PCMBase64) == 0 || len(req.PCMBase64) > base64.StdEncoding.EncodedLen(maxBytes) {
-		return nil, false
+		return nil, "invalid"
 	}
 	pcm, err := base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
-	if err != nil || len(pcm) < 3200 || len(pcm)%2 != 0 || len(pcm) > maxBytes {
-		return nil, false
+	if err != nil || len(pcm) == 0 || len(pcm)%2 != 0 || len(pcm) > maxBytes {
+		return nil, "invalid"
 	}
-	return pcm, true
+	if audio.BelowMinCapture(pcm) {
+		return nil, "short"
+	}
+	return pcm, ""
+}
+
+func rejectPCM(id, op, reason string) response {
+	if reason == "short" {
+		message := ux.DictationTooShort
+		if op == "selected_voice_task" {
+			message = ux.RewriteTooShort
+		}
+		return failure(id, "invalid_pcm", message)
+	}
+	return failure(id, "invalid_pcm", "PCM must be 16 kHz mono PCM16, at least 0.1s and within duration limit")
 }
 
 func selectedTaskSuccess(id string, result textedit.AssistantResult, instruction string, spoken bool) response {
@@ -337,11 +354,11 @@ func processRequest(ctx context.Context, req request) response {
 	}
 	cfg, err := coreconfig.Parse(req.Config)
 	if err != nil {
-		return failure(req.ID, "invalid_config", "invalid configuration")
+		return failure(req.ID, "invalid_config", msgInvalidConfig)
 	}
 	cfg, err = coreconfig.Normalize(cfg)
 	if err != nil {
-		return failure(req.ID, "invalid_config", "invalid configuration")
+		return failure(req.ID, "invalid_config", msgInvalidConfig)
 	}
 	if err := ctx.Err(); err != nil {
 		return contextFailure(req.ID, err)
@@ -354,9 +371,9 @@ func processRequest(ctx context.Context, req request) response {
 		message := serviceprobe.ProbeModel(ctx, "LLM", cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.TextModel)
 		return success(req.ID, map[string]string{"kind": "LLM", "message": message})
 	case "transcribe":
-		pcm, ok := decodeRequestPCM(req, cfg)
-		if !ok {
-			return failure(req.ID, "invalid_pcm", "PCM must be 16 kHz mono PCM16, at least 0.1s and within duration limit")
+		pcm, reason := decodeRequestPCM(req, cfg)
+		if reason != "" {
+			return rejectPCM(req.ID, req.Op, reason)
 		}
 		text, err := speech.Transcribe(ctx, cfg, pcm)
 		if err != nil {
@@ -381,9 +398,9 @@ func processRequest(ctx context.Context, req request) response {
 			if req.Instruction != "" {
 				return failure(req.ID, "invalid_request", "spoken selected text task must not supply a text instruction")
 			}
-			pcm, ok := decodeRequestPCM(req, cfg)
-			if !ok {
-				return failure(req.ID, "invalid_pcm", "PCM must be 16 kHz mono PCM16, at least 0.1s and within duration limit")
+			pcm, reason := decodeRequestPCM(req, cfg)
+			if reason != "" {
+				return rejectPCM(req.ID, req.Op, reason)
 			}
 			result, instruction, err = textedit.ResolveSpokenTask(ctx, cfg, req.SelectedText, pcm, nil)
 		} else {
@@ -401,7 +418,7 @@ func processRequest(ctx context.Context, req request) response {
 		}
 		return selectedTaskSuccess(req.ID, result, instruction, req.Op == "selected_voice_task")
 	}
-	return failure(req.ID, "unsupported_op", "unsupported operation")
+	return failure(req.ID, "unsupported_op", msgUnsupported)
 }
 
 // Classified recovery text is a fixed catalog. Anything else stays a constant
@@ -415,9 +432,9 @@ func providerFailure(id, code, fallback string, err error) response {
 
 func contextFailure(id string, err error) response {
 	if errors.Is(err, context.DeadlineExceeded) {
-		return failure(id, "timeout", "request timed out")
+		return failure(id, "timeout", msgTimedOut)
 	}
-	return failure(id, "canceled", "request canceled")
+	return failure(id, "canceled", msgCanceled)
 }
 
 func serveWithOptions(input io.Reader, output io.Writer, options bridgeOptions) error {
@@ -434,7 +451,7 @@ func serveWithOptions(input io.Reader, output io.Writer, options bridgeOptions) 
 		frame, err := readFrame(reader)
 		switch {
 		case errors.Is(err, errFrameTooLarge):
-			s.send(failure("", "request_too_large", "request exceeds 8 MiB"))
+			s.send(failure("", "request_too_large", fmt.Sprintf("request exceeds %d MiB", jsonl.MaxRequestBytes>>20)))
 		case errors.Is(err, io.EOF):
 			goto done
 		case err != nil:

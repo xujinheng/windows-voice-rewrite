@@ -17,6 +17,27 @@ type Preferences struct {
 	Height       int32       `json:"height"`
 }
 
+// RememberBounds reports whether the current rectangle should replace the stored one.
+// A minimized or maximized window keeps the last normal rectangle.
+func RememberBounds(iconic, zoomed bool) bool {
+	return !iconic && !zoomed
+}
+
+type CloseChoice int
+
+const (
+	CloseLocal CloseChoice = iota
+	CloseOwner
+)
+
+// ChooseClose quits a demo window. A live meeting asks its owner to stop.
+func ChooseClose(hasOwner bool) CloseChoice {
+	if hasOwner {
+		return CloseOwner
+	}
+	return CloseLocal
+}
+
 func LoadPreferences(path string) (Preferences, error) {
 	p := Preferences{FontSize: 16, Panes: DefaultPaneWeights}
 	data, err := os.ReadFile(path)

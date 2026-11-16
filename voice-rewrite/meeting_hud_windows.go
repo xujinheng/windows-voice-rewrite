@@ -116,10 +116,12 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	activeMeetingHUD = p
 	p.background, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.background))
 	p.surface, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.surface))
-	p.labelFont = meetingUIFont(p.px(14), 600)
-	p.bodyFont = meetingUIFont(p.px(p.fontSize), 400)
-	p.englishFont = popupFont(-p.px(p.fontSize+1), 450)
-	p.chineseFont = meetingUIFont(p.px(p.fontSize+6), 600)
+	label := meetingcore.LabelFont()
+	body, english, chinese := meetingcore.ReadingFonts(p.fontSize)
+	p.labelFont = meetingUIFont(p.px(label.Size), label.Weight)
+	p.bodyFont = meetingUIFont(p.px(body.Size), body.Weight)
+	p.englishFont = popupFont(-p.px(english.Size), english.Weight)
+	p.chineseFont = meetingUIFont(p.px(chinese.Size), chinese.Weight)
 	applyWindowPalette(hwnd, p.palette)
 	child := func(class, text string, style uintptr, id uintptr, body bool) uintptr {
 		if err != nil {
@@ -137,12 +139,14 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	}
 	// Native tab stops include selectable read-only text and the rewrite input.
 	p.status = child("STATIC", "", 0, 0, false)
-	for i, title := range []string{"冻结画面", "专注字幕", "A−", "A+", "复制回复", "复制英文", "生成建议", "暂停采集", "会议资料", "1 直接回应", "2 澄清一下", "3 争取时间", "查看新建议", "改写回复", "回到最新", "放大英文"} {
-		p.buttons[i] = child("BUTTON", title, 0x00010000|uxBSOwnerDraw, uintptr(7100+i), false)
+	idle := meetingcore.ButtonView{SelectedReply: -1}
+	for i := 0; i <= meetingcore.ButtonExpression-meetingcore.ButtonPause; i++ {
+		id := meetingcore.ButtonPause + i
+		p.buttons[i] = child("BUTTON", meetingcore.ButtonFace(id, idle), 0x00010000|uxBSOwnerDraw, uintptr(id), false)
 	}
-	p.labels[0] = child("STATIC", "当前发言 · 中文优先", 0, 0, false)
+	p.labels[0] = child("STATIC", meetingcore.SpeakerLabel, 0, 0, false)
 	editStyle := uintptr(WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_BORDER | 0x00010000)
-	p.live = child("STATIC", "● 等待发言", 0, 0, false)
+	p.live = child("STATIC", meetingcore.LiveCaption(meetingcore.WaitingHint), 0, 0, false)
 	currentStyle := uintptr(ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL)
 	p.currentEnglish = child("EDIT", "", currentStyle, 0, false)
 	p.currentChinese = child("EDIT", "", currentStyle, 0, false)
@@ -152,17 +156,17 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	}
 	setFont(p.currentEnglish, p.englishFont)
 	setFont(p.currentChinese, p.chineseFont)
-	p.labels[3] = child("STATIC", "之前的对话", 0, 0, false)
+	p.labels[3] = child("STATIC", meetingcore.HistoryTitle, 0, 0, false)
 	p.captions = child("EDIT", "", editStyle, 0, true)
 	procSendMessage.Call(p.captions, 0x00C5, 1<<20, 0) // EM_LIMITTEXT: retain in-session history
-	p.labels[1] = child("STATIC", "回复建议", 0, 0, false)
+	p.labels[1] = child("STATIC", meetingcore.ReplyLabel, 0, 0, false)
 	p.responses = child("EDIT", "", editStyle, 0, true)
 	p.instruction = child("EDIT", "", WS_BORDER|0x00010000|0x0080, 0, true)
-	procSendMessage.Call(p.instruction, 0x00C5, 600, 0) // EM_LIMITTEXT
-	cue, _ := syscall.UTF16PtrFromString("改写要求，例如：更简短、先说明风险")
+	procSendMessage.Call(p.instruction, 0x00C5, uintptr(meetingcore.RefineFieldLimit), 0) // EM_LIMITTEXT
+	cue, _ := syscall.UTF16PtrFromString(meetingcore.RefineCue)
 	procSendMessage.Call(p.instruction, 0x1501, 1, uintptr(unsafe.Pointer(cue))) // EM_SETCUEBANNER
 	runtime.KeepAlive(cue)
-	p.labels[2] = child("STATIC", "我的英文表达", 0, 0, false)
+	p.labels[2] = child("STATIC", meetingcore.ExpressionHeading("", false), 0, 0, false)
 	p.expression = child("EDIT", "", editStyle, 0, true)
 	setFont(p.expression, p.englishFont)
 	p.expressionSource = child("EDIT", "", ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL|WS_VSCROLL, 0, false)
@@ -192,8 +196,7 @@ func (p *meetingHUD) move(control uintptr, x, y, w, h int32) {
 func (p *meetingHUD) layout() {
 	var bounds rect32
 	procGetClientRect.Call(p.window, uintptr(unsafe.Pointer(&bounds)))
-	margin, gap, label, button := p.px(16), p.px(8), p.px(24), p.px(32)
-	width := max(p.px(200), bounds.Right-2*margin)
+	width := max(p.px(200), bounds.Right-2*p.px(16))
 	for _, control := range p.mainControls {
 		procShowWindow.Call(control, meetingShow(!p.profileOpen))
 	}
@@ -208,115 +211,64 @@ func (p *meetingHUD) layout() {
 
 	// Status and secondary controls occupy two compact rows. Reading always
 	// starts at the same Y coordinate, regardless of reply suggestions.
-	y := p.px(8)
-	p.move(p.status, margin, y, width, p.px(40))
-	y += p.px(40) + p.px(6)
-	x := margin
-	for _, item := range []struct {
-		index int
-		width int32
-	}{{7, 96}, {1, 92}, {0, 90}, {2, 36}, {3, 36}, {8, 92}} {
-		p.move(p.buttons[item.index], x, y, p.px(item.width), button)
-		x += p.px(item.width) + gap
+	lay := meetingcore.LayoutReading(bounds.Right, bounds.Bottom, p.scale, p.paneWeights, p.captionsOnly, p.expressionExpanded)
+	p.paneHeights = lay.PaneHeights
+	p.splitterY, p.splitterVisible = lay.SplitterY, lay.SplitterOn
+	p.move(p.status, lay.Status.X, lay.Status.Y, lay.Status.W, lay.Status.H)
+	indexes, _ := meetingcore.TopToolbar()
+	for i, index := range indexes {
+		box := lay.Toolbar[i]
+		p.move(p.buttons[index], box.X, box.Y, box.W, box.H)
 	}
-	y += button + gap
-	p.move(p.labels[0], margin, y, width-p.px(264), label)
-	p.move(p.live, margin+width-p.px(264), y, p.px(264), label)
-	y += label + p.px(3)
-
-	// Six content surfaces share the remaining height. Divider gaps are
-	// mouse-draggable and the proportions survive window resizing.
-	footer := bounds.Bottom - margin
-	overhead := int32(5*8 + 24 + 8 + 120 + 24)
-	if p.captionsOnly {
-		overhead = 2*8 + 24 + 8
-	} else if p.expressionExpanded {
-		overhead = 4*8 + 24 + 8 + 24
-	}
-	space := int32(float64(footer-y)/p.scale) - overhead
-	p.paneHeights = meetingcore.PaneHeights(space, p.paneWeights, p.captionsOnly, p.expressionExpanded)
-	divider := func(index int) {
-		p.splitterY[index] = y + p.px(4)
-		p.splitterVisible[index] = true
-		y += p.px(8)
-	}
-	p.move(p.currentChinese, margin, y, width, p.px(p.paneHeights[meetingcore.PaneChinese]))
-	y += p.px(p.paneHeights[meetingcore.PaneChinese])
-	divider(0)
-	p.move(p.currentEnglish, margin, y, width, p.px(p.paneHeights[meetingcore.PaneEnglish]))
-	y += p.px(p.paneHeights[meetingcore.PaneEnglish])
-	divider(1)
-	p.move(p.labels[3], margin, y, width-p.px(114), label)
-	p.move(p.buttons[14], margin+width-p.px(110), y-p.px(3), p.px(110), button)
-	y += label + gap
-	p.move(p.captions, margin, y, width, p.px(p.paneHeights[meetingcore.PaneHistory]))
-	y += p.px(p.paneHeights[meetingcore.PaneHistory])
-
+	p.move(p.labels[0], lay.Speaker.X, lay.Speaker.Y, lay.Speaker.W, lay.Speaker.H)
+	p.move(p.live, lay.Live.X, lay.Live.Y, lay.Live.W, lay.Live.H)
+	p.move(p.currentChinese, lay.Chinese.X, lay.Chinese.Y, lay.Chinese.W, lay.Chinese.H)
+	p.move(p.currentEnglish, lay.English.X, lay.English.Y, lay.English.W, lay.English.H)
+	p.move(p.labels[3], lay.HistoryLabel.X, lay.HistoryLabel.Y, lay.HistoryLabel.W, lay.HistoryLabel.H)
+	p.move(p.buttons[14], lay.HistoryButton.X, lay.HistoryButton.Y, lay.HistoryButton.W, lay.HistoryButton.H)
+	p.move(p.captions, lay.History.X, lay.History.Y, lay.History.W, lay.History.H)
+	shown := meetingcore.VisiblePanes(p.captionsOnly, p.expressionExpanded)
 	for _, control := range []uintptr{p.labels[1], p.responses, p.instruction, p.buttons[4], p.buttons[6], p.buttons[9], p.buttons[10], p.buttons[11], p.buttons[12], p.buttons[13]} {
-		procShowWindow.Call(control, meetingShow(!p.captionsOnly && !p.expressionExpanded))
+		procShowWindow.Call(control, meetingShow(shown[meetingcore.PaneReply]))
 	}
 	for _, control := range []uintptr{p.labels[2], p.expression, p.expressionSource, p.buttons[5], p.buttons[15]} {
-		procShowWindow.Call(control, meetingShow(!p.captionsOnly))
+		procShowWindow.Call(control, meetingShow(shown[meetingcore.PaneExpression]))
 	}
-	if p.captionsOnly {
-		meetingInvalidateRect.Call(p.window, 0, 1)
-		return
-	}
-
-	divider(2)
-	if !p.expressionExpanded {
-		p.move(p.labels[1], margin, y, width-p.px(316), button)
-		p.move(p.buttons[6], margin+width-p.px(310), y, p.px(92), button)
-		p.move(p.buttons[12], margin+width-p.px(210), y, p.px(108), button)
-		p.move(p.buttons[4], margin+width-p.px(94), y, p.px(94), button)
-		y += button + gap
-		x = margin
-		for _, item := range []struct {
-			index int
-			width int32
-		}{{9, 112}, {10, 112}, {11, 112}} {
-			p.move(p.buttons[item.index], x, y, p.px(item.width), button)
-			x += p.px(item.width) + gap
+	if lay.Reply {
+		p.move(p.labels[1], lay.ReplyLabel.X, lay.ReplyLabel.Y, lay.ReplyLabel.W, lay.ReplyLabel.H)
+		p.move(p.buttons[6], lay.Request.X, lay.Request.Y, lay.Request.W, lay.Request.H)
+		p.move(p.buttons[12], lay.Accept.X, lay.Accept.Y, lay.Accept.W, lay.Accept.H)
+		p.move(p.buttons[4], lay.CopyReply.X, lay.CopyReply.Y, lay.CopyReply.W, lay.CopyReply.H)
+		indexes, _ = meetingcore.ReplyToolbar()
+		for i, index := range indexes {
+			box := lay.ReplyButtons[i]
+			p.move(p.buttons[index], box.X, box.Y, box.W, box.H)
 		}
-		y += button + gap
-		p.move(p.responses, margin, y, width, p.px(p.paneHeights[meetingcore.PaneReply]))
-		y += p.px(p.paneHeights[meetingcore.PaneReply]) + gap
-		p.move(p.instruction, margin, y, width-p.px(112)-gap, button)
-		p.move(p.buttons[13], margin+width-p.px(112), y, p.px(112), button)
-		y += button
-		divider(3)
+		p.move(p.responses, lay.Responses.X, lay.Responses.Y, lay.Responses.W, lay.Responses.H)
+		p.move(p.instruction, lay.Instruction.X, lay.Instruction.Y, lay.Instruction.W, lay.Instruction.H)
+		p.move(p.buttons[13], lay.Refine.X, lay.Refine.Y, lay.Refine.W, lay.Refine.H)
 	}
-
-	p.move(p.labels[2], margin, y, width-p.px(240), label)
-	p.move(p.buttons[15], margin+width-p.px(226), y-p.px(4), p.px(110), button)
-	p.move(p.buttons[5], margin+width-p.px(112), y-p.px(4), p.px(112), button)
-	y += label
-	p.move(p.expression, margin, y, width, p.px(p.paneHeights[meetingcore.PaneExpression]))
-	y += p.px(p.paneHeights[meetingcore.PaneExpression])
-	divider(4)
-	p.move(p.expressionSource, margin, y, width, p.px(p.paneHeights[meetingcore.PaneSource]))
+	if lay.Expression {
+		p.move(p.labels[2], lay.ExpressionLabel.X, lay.ExpressionLabel.Y, lay.ExpressionLabel.W, lay.ExpressionLabel.H)
+		p.move(p.buttons[15], lay.Expand.X, lay.Expand.Y, lay.Expand.W, lay.Expand.H)
+		p.move(p.buttons[5], lay.CopyExpression.X, lay.CopyExpression.Y, lay.CopyExpression.W, lay.CopyExpression.H)
+		p.move(p.expression, lay.ExpressionBody.X, lay.ExpressionBody.Y, lay.ExpressionBody.W, lay.ExpressionBody.H)
+		p.move(p.expressionSource, lay.Source.X, lay.Source.Y, lay.Source.W, lay.Source.H)
+	}
 	meetingInvalidateRect.Call(p.window, 0, 1)
 }
 
 // Divider hit regions are the unobstructed eight-pixel bands between
 // independent EDIT controls. Capture keeps the drag active outside the band.
 func (p *meetingHUD) splitterAt(y int32) int {
-	if p.profileOpen {
-		return -1
-	}
-	for index, visible := range p.splitterVisible {
-		if visible && y >= p.splitterY[index]-p.px(4) && y < p.splitterY[index]+p.px(4) {
-			return index
-		}
-	}
-	return -1
+	return meetingcore.SplitterHit(y, p.splitterY, p.splitterVisible, p.px(4), p.profileOpen)
 }
 
 func (p *meetingHUD) dragSplitterTo(y int32) {
 	if p.dragDivider < 0 {
 		return
 	}
-	delta := int32(float64(y-p.dragY) / p.scale)
+	delta := meetingcore.LogicalDrag(y, p.dragY, p.scale)
 	if delta == 0 {
 		return
 	}
@@ -342,14 +294,15 @@ func meetingBool(value bool) uintptr {
 }
 
 func (p *meetingHUD) resizeText(delta int32) {
-	size := max(12, min(28, p.fontSize+delta))
+	size := meetingcore.NextFontSize(p.fontSize, delta)
 	if size == p.fontSize {
 		return
 	}
-	body := meetingUIFont(p.px(size), 400)
-	english := popupFont(-p.px(size+1), 450)
-	chinese := meetingUIFont(p.px(size+6), 600)
-	if body == 0 || english == 0 || chinese == 0 {
+	bodyFace, englishFace, chineseFace := meetingcore.ReadingFonts(size)
+	body := meetingUIFont(p.px(bodyFace.Size), bodyFace.Weight)
+	english := popupFont(-p.px(englishFace.Size), englishFace.Weight)
+	chinese := meetingUIFont(p.px(chineseFace.Size), chineseFace.Weight)
+	if !meetingcore.ReplaceReadingFonts(body, english, chinese) {
 		for _, font := range []uintptr{body, english, chinese} {
 			if font != 0 {
 				procDeleteObject.Call(font)
@@ -359,14 +312,24 @@ func (p *meetingHUD) resizeText(delta int32) {
 	}
 	old := []uintptr{p.bodyFont, p.englishFont, p.chineseFont}
 	p.bodyFont, p.englishFont, p.chineseFont, p.fontSize = body, english, chinese, size
-	for _, control := range []uintptr{p.captions, p.responses, p.instruction, p.profileBackground, p.profileTerms} {
-		if control != 0 {
-			setFont(control, body)
+	assign := func(control uintptr, text meetingcore.MeetingText) {
+		font := body
+		switch meetingcore.MeetingTextFace(text) {
+		case meetingcore.FaceEnglish:
+			font = english
+		case meetingcore.FaceChinese:
+			font = chinese
 		}
+		setFont(control, font)
 	}
-	setFont(p.currentEnglish, english)
-	setFont(p.currentChinese, chinese)
-	setFont(p.expression, english)
+	assign(p.captions, meetingcore.MeetingCaptions)
+	assign(p.responses, meetingcore.MeetingResponses)
+	assign(p.instruction, meetingcore.MeetingInstruction)
+	assign(p.profileBackground, meetingcore.MeetingProfileBackground)
+	assign(p.profileTerms, meetingcore.MeetingProfileTerms)
+	assign(p.currentEnglish, meetingcore.MeetingEnglish)
+	assign(p.currentChinese, meetingcore.MeetingChinese)
+	assign(p.expression, meetingcore.MeetingExpression)
 	for _, font := range old {
 		procDeleteObject.Call(font)
 	}
@@ -382,8 +345,7 @@ func (p *meetingHUD) transcriptAtBottom(control uintptr) bool {
 	if ok == 0 {
 		return false
 	}
-	remaining := info.Max - info.Pos - max(0, int32(info.Page)-1)
-	return remaining <= 2
+	return meetingcore.TranscriptAtBottom(info.Max, info.Pos, int32(info.Page))
 }
 
 func (p *meetingHUD) scrollToLatest() {
@@ -449,46 +411,28 @@ func updateMeetingHUD(view meetingView) {
 		return
 	}
 	p.latest = view
-	source := strings.Join(strings.Fields(view.sourceName), " ")
-	if source == "" {
-		source = "等待音频源"
+	buttons := meetingcore.ButtonView{Paused: p.paused, CapturePaused: view.capturePaused, CaptionsOnly: p.captionsOnly, ExpressionExpanded: p.expressionExpanded, Pending: view.reply.PendingAvailable}
+	p.setText(p.status, meetingcore.StatusText(view.sourceName, view.status, view.metrics.Stage, view.metrics.Dropped, view.capturePaused, p.paused), false)
+	p.setText(p.buttons[0], meetingcore.ButtonFace(meetingcore.ButtonPause, buttons), false)
+	p.setText(p.buttons[7], meetingcore.ButtonFace(meetingcore.ButtonToggleCapture, buttons), false)
+	p.setText(p.buttons[1], meetingcore.ButtonFace(meetingcore.ButtonCaptions, buttons), false)
+	p.setText(p.buttons[15], meetingcore.ButtonFace(meetingcore.ButtonExpression, buttons), false)
+	for id := meetingcore.ButtonPause; id <= meetingcore.ButtonExpression; id++ {
+		if meetingcore.NeedsMeetingOwner(id) {
+			meetingEnableWindow.Call(p.buttons[id-meetingcore.ButtonPause], meetingBool(p.owner != 0))
+		}
 	}
-	if runes := []rune(source); len(runes) > 34 {
-		source = string(runes[:33]) + "…"
-	}
-	state := view.status
-	if view.capturePaused {
-		state = "采集已暂停 · 不再接收音频"
-	} else if p.paused {
-		state = "画面已冻结 · 后台继续处理"
-	} else if state == "" {
-		state = "正在聆听"
-	}
-	detail := source
-	if view.metrics.Stage != "" {
-		detail += "  ·  " + view.metrics.Stage
-	}
-	if view.metrics.Dropped > 0 {
-		detail += fmt.Sprintf("  ·  跳过 %d 个过期片段", view.metrics.Dropped)
-	}
-	p.setText(p.status, state+"\r\n"+detail, false)
-	p.setText(p.buttons[0], map[bool]string{false: "冻结画面", true: "恢复画面"}[p.paused], false)
-	p.setText(p.buttons[7], map[bool]string{false: "暂停采集", true: "恢复采集"}[view.capturePaused], false)
-	p.setText(p.buttons[1], map[bool]string{false: "专注字幕", true: "完整视图"}[p.captionsOnly], false)
-	p.setText(p.buttons[15], map[bool]string{false: "放大英文", true: "收起英文"}[p.expressionExpanded], false)
-	for _, i := range []int{6, 7, 8} {
-		meetingEnableWindow.Call(p.buttons[i], meetingBool(p.owner != 0))
-	}
-	meetingEnableWindow.Call(p.buttons[12], meetingBool(p.owner != 0 && view.reply.PendingAvailable && !p.paused))
-	p.setText(p.buttons[12], map[bool]string{false: "无新建议", true: "查看新建议"}[view.reply.PendingAvailable], false)
-	if p.paused {
+	meetingEnableWindow.Call(p.buttons[12], meetingBool(meetingcore.AcceptEnabled(p.owner != 0, view.reply.PendingAvailable, p.paused)))
+	p.setText(p.buttons[12], meetingcore.ButtonFace(meetingcore.ButtonAcceptReplies, buttons), false)
+	if !meetingcore.RefreshReading(p.paused) {
 		return
 	}
 	panels := meetingcore.BuildReadingPanels(view.captions)
-	newTurn := panels.CurrentID != p.currentID || panels.HistoryCount > p.historyCount
+	now := time.Now()
+	newTurn, paintTranscript := meetingcore.TranscriptStep(panels.CurrentID, p.currentID, panels.HistoryCount, p.historyCount, panels.Live, p.lastTranscript, now)
 	p.currentID = panels.CurrentID
-	p.setText(p.live, "● "+panels.Hint, false)
-	if newTurn || !panels.Live || time.Since(p.lastTranscript) >= 280*time.Millisecond {
+	p.setText(p.live, meetingcore.LiveCaption(panels.Hint), false)
+	if paintTranscript {
 		p.setText(p.currentEnglish, panels.English, true)
 		p.setText(p.currentChinese, panels.Chinese, true)
 		if newTurn {
@@ -497,7 +441,7 @@ func updateMeetingHUD(view meetingView) {
 			procSendMessage.Call(p.currentEnglish, 0x0115, 6, 0) // WM_VSCROLL / SB_TOP
 			procSendMessage.Call(p.currentChinese, 0x0115, 6, 0)
 		}
-		p.lastTranscript = time.Now()
+		p.lastTranscript = now
 	}
 	// Only completed older turns are added to the history control. If the
 	// reader scrolled away, count unseen turns instead of moving the viewport.
@@ -506,72 +450,53 @@ func updateMeetingHUD(view meetingView) {
 		p.unreadHistory = meetingcore.UnreadHistory(p.unreadHistory, p.historyCount, panels.HistoryCount, p.followLatest)
 		p.historyCount = panels.HistoryCount
 	}
-	if p.followLatest {
-		p.unreadHistory = 0
-	}
-	historyLabel := fmt.Sprintf("之前的对话 · %d 段", panels.HistoryCount)
-	if p.unreadHistory > 0 {
-		historyLabel += fmt.Sprintf(" · %d 条新内容", p.unreadHistory)
-	}
-	p.setText(p.labels[3], historyLabel, false)
+	p.unreadHistory = meetingcore.ShownUnread(p.followLatest, p.unreadHistory)
+	p.setText(p.labels[3], meetingcore.HistoryHeading(panels.HistoryCount, p.unreadHistory), false)
 	p.displayedReplies, p.displayedTip = view.reply.Displayed.Lines, view.reply.Displayed.Tip
 	p.renderReply()
-	newEnglish := view.expression.complete && view.expression.english != "" && view.expression.english != p.copyExpression
-	captionsOnly, expanded := meetingcore.ExpressionFocus(view.expression.complete, newEnglish, p.captionsOnly, p.expressionExpanded)
+	now = time.Now()
+	copy, captionsOnly, expanded, freshEnglish, paintExpression := meetingcore.ExpressionStep(view.expression.complete, view.expression.english, p.copyExpression, p.captionsOnly, p.expressionExpanded, p.lastExpression, now)
 	if captionsOnly != p.captionsOnly || expanded != p.expressionExpanded {
 		p.captionsOnly, p.expressionExpanded = captionsOnly, expanded
 		p.layout()
 	}
 	// Show the last successful utterance while recognition or generation is
 	// underway. Transient status belongs below the result, not in its place.
-	expression := view.expression.english
-	if view.expression.complete {
-		p.copyExpression = view.expression.english
-	} else {
-		p.copyExpression = ""
-	}
-	if expression == "" {
-		expression = "听写键：直译自己的发言；改写键：提问、回答、补充观点。"
-	}
+	p.copyExpression = copy
 	p.setText(p.labels[2], meetingcore.ExpressionHeading(view.expressionStatus, view.expression.complete), false)
-	if view.expression.complete || time.Since(p.lastExpression) >= 280*time.Millisecond {
-		p.setText(p.expression, expression, true)
-		if newEnglish {
+	if paintExpression {
+		p.setText(p.expression, meetingcore.ExpressionShown(view.expression.english), true)
+		if freshEnglish {
 			procSendMessage.Call(p.expression, 0x0115, 6, 0) // WM_VSCROLL / SB_TOP
 		}
-		p.lastExpression = time.Now()
+		p.lastExpression = now
 	}
 	original := meetingcore.ExpressionDetail(view.expressionStatus, view.expressionSource)
 	p.setText(p.expressionSource, original, true)
-	meetingEnableWindow.Call(p.buttons[5], meetingBool(p.copyExpression != ""))
+	meetingEnableWindow.Call(p.buttons[5], meetingBool(meetingcore.ExpressionCopyEnabled(p.copyExpression)))
 }
 
 func (p *meetingHUD) renderReply() {
 	reply := p.displayedReplies[p.selectedReply]
-	names := [3]string{"直接回应", "澄清一下", "争取时间"}
-	for i := range names {
-		title := fmt.Sprintf("%d %s", i+1, names[i])
-		if i == p.selectedReply {
-			title = "● " + title
-		}
-		p.setText(p.buttons[9+i], title, false)
+	for i := 0; i < 3; i++ {
+		p.setText(p.buttons[9+i], meetingcore.ButtonFace(meetingcore.ButtonReplyFirst+i, meetingcore.ButtonView{SelectedReply: p.selectedReply}), false)
 	}
-	text := reply.English + "\r\n" + reply.Chinese
-	if reply.English != "" && !reply.Complete {
-		text += "\r\n正在生成…（完成后可复制或改写）"
-	}
-	if reply.English == "" {
-		text = "听到提问后生成建议；新建议可点击“查看新建议”后阅读。"
-	}
-	if p.displayedTip != "" {
-		text += "\r\n提示 · " + p.displayedTip
-	}
-	if reply.Complete || time.Since(p.lastReply) >= 280*time.Millisecond {
+	text := meetingcore.ReplyBody(reply.English, reply.Chinese, p.displayedTip, reply.Complete)
+	now := time.Now()
+	if meetingcore.TextDue(p.lastReply, now, reply.Complete) {
 		p.setText(p.responses, text, true)
-		p.lastReply = time.Now()
+		p.lastReply = now
 	}
-	meetingEnableWindow.Call(p.buttons[4], meetingBool(reply.Complete && reply.English != ""))
-	meetingEnableWindow.Call(p.buttons[13], meetingBool(p.owner != 0 && reply.Complete && reply.English != "" && !p.paused))
+	canCopy := meetingcore.ReplyCopyEnabled(reply.Complete, reply.English)
+	meetingEnableWindow.Call(p.buttons[4], meetingBool(canCopy))
+	meetingEnableWindow.Call(p.buttons[13], meetingBool(meetingcore.RefineButtonEnabled(p.owner != 0, reply.Complete, reply.English, p.paused)))
+}
+
+func (p *meetingHUD) session() *meetingSession {
+	if p == nil || p.app == nil {
+		return nil
+	}
+	return p.app.meeting
 }
 
 func (p *meetingHUD) savePreferences() {
@@ -584,7 +509,7 @@ func (p *meetingHUD) savePreferences() {
 	maximized, _, _ := user32.NewProc("IsZoomed").Call(p.window)
 	prefs, _ := meetingcore.LoadPreferences(meetingPreferencesPath())
 	prefs.FontSize, prefs.CaptionsOnly, prefs.Panes = p.fontSize, p.captionsOnly, p.paneWeights
-	if minimized == 0 && maximized == 0 {
+	if meetingcore.RememberBounds(minimized != 0, maximized != 0) {
 		prefs.X, prefs.Y, prefs.Width, prefs.Height = bounds.Left, bounds.Top, bounds.Right-bounds.Left, bounds.Bottom-bounds.Top
 	}
 	if err := meetingcore.SavePreferences(meetingPreferencesPath(), prefs); err != nil && p.app != nil {
@@ -621,19 +546,19 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			var bounds rect32
 			popupGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds)))
 			work := uxWorkAreaForPoint(trayPoint{X: bounds.Left, Y: bounds.Top})
-			w, h := desktop.Fit(p.px(600), p.px(720), work, 0)
+			w, h := desktop.Fit(p.px(meetingcore.MinClientWidth), p.px(meetingcore.MinClientHeight), work, 0)
 			info.MinSize = trayPoint{X: w, Y: h}
 			return 0
 
 		case uxWMDrawItem:
 			if lParam != 0 {
 				item := (*drawItemStruct)(unsafe.Pointer(lParam))
-				if item.CtlID >= 7100 && item.CtlID <= 7115 {
-					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(p.buttons[item.CtlID-7100]), item.CtlID == 7106 || item.CtlID == 7112 && p.latest.reply.PendingAvailable || item.CtlID == 7115 && p.expressionExpanded)
+				if item.CtlID >= meetingcore.ButtonPause && item.CtlID <= meetingcore.ButtonExpression {
+					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(p.buttons[item.CtlID-meetingcore.ButtonPause]), meetingcore.ButtonPrimary(int(item.CtlID), p.latest.reply.PendingAvailable, p.expressionExpanded))
 					return 1
 				}
-				if item.CtlID == 7205 || item.CtlID == 7206 {
-					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(item.HwndItem), item.CtlID == 7205)
+				if item.CtlID == meetingcore.ButtonSaveProfile || item.CtlID == meetingcore.ButtonCloseProfile {
+					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(item.HwndItem), meetingcore.ButtonPrimary(int(item.CtlID), false, false))
 					return 1
 				}
 			}
@@ -663,7 +588,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				return 0
 			}
 		case 0x0202: // WM_LBUTTONUP
-			if p.dragDivider >= 0 {
+			if meetingcore.MeetingDragEnd(p.dragDivider >= 0, true) == meetingcore.DragEndCommit {
 				p.dragSplitterTo(int32(int16(uint16(lParam >> 16))))
 				p.dragDivider = -1
 				meetingReleaseCapture.Call()
@@ -671,72 +596,69 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				return 0
 			}
 		case 0x0215: // WM_CAPTURECHANGED
-			p.dragDivider = -1
+			if meetingcore.MeetingDragEnd(p.dragDivider >= 0, false) == meetingcore.DragEndCancel {
+				p.dragDivider = -1
+			}
 		case WM_COMMAND:
 			if wParam>>16 != 0 {
 				break
 			}
-			switch wParam & 0xffff {
-			case 7100:
-				p.paused = !p.paused
+			action, index := meetingcore.CommandFor(int(wParam & 0xffff))
+			flags := meetingcore.HUDFlags{Paused: p.paused, CaptionsOnly: p.captionsOnly, ExpressionExpanded: p.expressionExpanded, ProfileOpen: p.profileOpen, SelectedReply: p.selectedReply}
+			next, effect := meetingcore.ApplyCommand(flags, action, index)
+			p.paused, p.captionsOnly, p.expressionExpanded, p.profileOpen, p.selectedReply = next.Paused, next.CaptionsOnly, next.ExpressionExpanded, next.ProfileOpen, next.SelectedReply
+			switch effect {
+			case meetingcore.EffectRefresh:
 				updateMeetingHUD(p.latest)
-			case 7101:
-				p.captionsOnly = !p.captionsOnly
+			case meetingcore.EffectLayoutSaveRefresh:
 				p.layout()
 				p.savePreferences()
 				updateMeetingHUD(p.latest)
-			case 7102:
+			case meetingcore.EffectSmallerText:
 				p.resizeText(-2)
-			case 7103:
+			case meetingcore.EffectLargerText:
 				p.resizeText(2)
-			case 7104, 7105:
-				value := p.displayedReplies[p.selectedReply].English
-				if !p.displayedReplies[p.selectedReply].Complete {
-					value = ""
-				}
-				if wParam&0xffff == 7105 {
-					value = p.copyExpression
-				}
+			case meetingcore.EffectCopy:
+				reply := p.displayedReplies[p.selectedReply]
+				value := meetingcore.CopyText(action, reply.English, reply.Complete, p.copyExpression)
 				if value != "" {
 					if err := setClipboardText(hwnd, value); err != nil {
-						winErr("复制失败: " + err.Error())
+						winErr(meetingcore.CopyFailed + err.Error())
 					}
 				}
-			case 7106:
-				if p.app != nil && p.app.meeting != nil {
-					p.app.meeting.requestReplies()
+			case meetingcore.EffectRequestReplies:
+				if session := p.session(); session != nil {
+					session.requestReplies()
 				}
-			case 7107:
-				if p.app != nil && p.app.meeting != nil {
-					p.app.meeting.setCapturePaused(!p.latest.capturePaused)
+			case meetingcore.EffectToggleCapture:
+				if session := p.session(); session != nil {
+					session.setCapturePaused(!p.latest.capturePaused)
 					p.app.refreshMeeting()
 				}
-			case 7108:
+			case meetingcore.EffectOpenProfile:
 				p.openProfile()
-			case 7109, 7110, 7111:
-				p.selectedReply = int(wParam&0xffff) - 7109
+			case meetingcore.EffectSelectReply:
 				p.lastReply = time.Time{}
 				p.renderReply()
-			case 7114:
+			case meetingcore.EffectScrollLatest:
 				p.scrollToLatest()
-			case 7115:
-				p.expressionExpanded = !p.expressionExpanded
+			case meetingcore.EffectLayoutRefresh:
 				p.layout()
 				updateMeetingHUD(p.latest)
-			case 7112:
-				if p.app != nil && p.app.meeting != nil && !p.paused {
-					p.app.meeting.acceptPendingReplies()
+			case meetingcore.EffectAccept:
+				if session := p.session(); session != nil && meetingcore.AcceptClick(p.paused) {
+					session.acceptPendingReplies()
 					p.app.refreshMeeting()
 				}
-			case 7113:
+			case meetingcore.EffectRefine:
+				reply := p.displayedReplies[p.selectedReply]
 				instruction := strings.TrimSpace(uxWinText(p.instruction))
-				if instruction != "" && p.displayedReplies[p.selectedReply].Complete && p.app != nil && p.app.meeting != nil && !p.paused {
-					p.app.meeting.refineReply(p.selectedReply, instruction)
+				if session := p.session(); session != nil && meetingcore.RefineEnabled(reply.Complete, instruction, p.paused) {
+					session.refineReply(p.selectedReply, instruction)
 				}
-			case 7205:
+			case meetingcore.EffectSaveProfile:
 				p.saveProfile()
-			case 7206:
-				p.profileOpen = false
+			case meetingcore.EffectCloseProfile:
 				p.layout()
 			}
 			return 0
@@ -746,20 +668,23 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			}
 			return 0
 		case WM_CLOSE:
-			if p.owner == 0 {
+			switch meetingcore.ChooseClose(p.owner != 0) {
+			case meetingcore.CloseOwner:
+				procPostMessage.Call(p.owner, WM_MEETING_STOP, 0, 0)
+			default:
 				closeMeetingHUD()
 				postMeetingQuit.Call(0)
-			} else {
-				procPostMessage.Call(p.owner, WM_MEETING_STOP, 0, 0)
 			}
 			return 0
 		case WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC:
-			if lParam == p.live {
+			reading := meetingcore.ReadingBody(lParam == p.captions, lParam == p.currentEnglish, lParam == p.currentChinese, lParam == p.responses, lParam == p.expression, lParam == p.expressionSource, lParam == p.instruction, lParam == p.profileBackground, lParam == p.profileTerms)
+			primary, surface := meetingcore.ReadingPaint(lParam == p.live, reading)
+			if primary {
 				procSetTextColor.Call(wParam, p.palette.color(p.palette.primary))
 			} else {
 				procSetTextColor.Call(wParam, p.palette.color(p.palette.text))
 			}
-			if lParam == p.captions || lParam == p.live || lParam == p.currentEnglish || lParam == p.currentChinese || lParam == p.responses || lParam == p.expression || lParam == p.expressionSource || lParam == p.instruction || lParam == p.profileBackground || lParam == p.profileTerms {
+			if surface {
 				procSetBkColor.Call(wParam, p.palette.color(p.palette.surface))
 				return p.surface
 			}
@@ -774,8 +699,8 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 					if !shown {
 						continue
 					}
-					for offset := int32(-2); offset <= 2; offset += 4 {
-						rail := rect32{Left: bounds.Right/2 - p.px(22), Top: p.splitterY[index] + offset, Right: bounds.Right/2 + p.px(22), Bottom: p.splitterY[index] + offset + p.px(1)}
+					for _, mark := range meetingcore.SplitterRails(bounds.Right/2, p.splitterY[index], p.px(22), p.px(1)) {
+						rail := rect32{Left: mark.X, Top: mark.Y, Right: mark.X + mark.W, Bottom: mark.Y + mark.H}
 						procFillRect.Call(wParam, uintptr(unsafe.Pointer(&rail)), p.surface)
 					}
 				}
@@ -788,23 +713,11 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 }
 
 func demoMeeting() meetingView {
+	demo := meetingcore.Sample()
 	return meetingView{
-		status:     "演示数据 · 试用界面无需音频或模型",
-		sourceName: "Zoom.exe · 演示会议", asrMode: "multipart", level: 36,
-		metrics: meetingMetrics{Stage: "聆听", ASRFirstMS: 340, ASRDoneMS: 720, TranslationFirstMS: 120, TranslationDoneMS: 310},
-		captions: []meetingcore.Caption{
-			{Final: true, Source: "The impact seems to be limited to peak hours.", Chinese: "影响似乎仅限于高峰时段。"},
-			{Final: true, Source: "We're seeing high tail latency on vector search. How would you start investigating?", Chinese: "向量检索的尾延迟偏高。你会从哪里开始排查？"},
-		},
-		reply: meetingcore.ReplyState{Displayed: meetingcore.ReplyBatch{
-			Lines: [3]meetingcore.Line{
-				{Kind: "ONE", Complete: true, English: "I'd start by separating time spent waiting in the queue from time spent running the search.", Chinese: "我会先把排队耗时和实际检索耗时分开看。"},
-				{Kind: "TWO", Complete: true, English: "Is the spike limited to certain queries, or does it affect the whole cluster?", Chinese: "是部分查询出现尖峰，还是整个集群都受影响？"},
-				{Kind: "THREE", Complete: true, English: "Let me take a moment to think through where we'd get the clearest signal.", Chinese: "我先理一下从哪里入手能最快弄清情况。"},
-			},
-			Source: "We're seeing high tail latency on vector search. How would you start investigating?",
-			Tip:    "先对照高峰期的 p99 排队时间与分片耗时，再核对是否集中在特定索引或查询类型。",
-		}},
-		expression: meetingLine{kind: "SAY", complete: true, english: "We can do that, but by Friday I can only share an initial version.", chinese: "可以做，但周五前我只能给初版。"},
+		status: demo.Status, sourceName: demo.SourceName, asrMode: demo.ASRMode, level: demo.Level,
+		metrics:  meetingMetrics{Stage: demo.Stage, ASRFirstMS: demo.ASRFirstMS, ASRDoneMS: demo.ASRDoneMS, TranslationFirstMS: demo.TranslationFirstMS, TranslationDoneMS: demo.TranslationDoneMS},
+		captions: demo.Captions, reply: demo.Reply,
+		expression: meetingLine{kind: demo.Expression.Kind, english: demo.Expression.English, chinese: demo.Expression.Chinese, complete: demo.Expression.Complete},
 	}
 }

@@ -34,11 +34,21 @@ type Release struct {
 	Prerelease bool   `json:"prerelease"`
 }
 
+const (
+	AlreadyChecking = "正在检查更新，请稍后。"
+	PageOpenFailed  = "无法打开发布页面："
+)
+
 type Notice struct {
 	Latest string
 	Newer  bool
 	Found  bool
 	Err    error
+}
+
+// AsksToOpen is true only for a newer release that was found without an error.
+func (n Notice) AsksToOpen() bool {
+	return n.Err == nil && n.Found && n.Newer
 }
 
 func Parse(s string) (Version, bool) {

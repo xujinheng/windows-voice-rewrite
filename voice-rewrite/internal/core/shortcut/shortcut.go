@@ -22,6 +22,53 @@ const (
 	Shift = shift
 )
 
+// macOS settings defaults. Windows defaults stay Mouse4, Mouse5, and Ctrl+Alt+F10.
+const (
+	MacDictationShortcut = "Ctrl+Alt+R"
+	MacRewriteShortcut   = "Ctrl+Alt+E"
+	MacTextEditShortcut  = "Ctrl+Alt+T"
+)
+
+const (
+	KeyRejectedMessage      = "该按键不能用作全局录音快捷键"
+	WindowsComboMessage     = "Windows 系统键组合不支持录音快捷键"
+	BareKeyMessage          = "单键仅支持 F1–F24；字母、数字和方向键请搭配 Ctrl 或 Alt"
+	ShiftLetterMessage      = "Shift+字母会干扰打字，请同时使用 Ctrl 或 Alt"
+	EmptyShortcutMessage    = "请按下快捷键"
+	CtrlRepeatMessage       = "Ctrl 重复"
+	AltRepeatMessage        = "Alt 重复"
+	ShiftRepeatMessage      = "Shift 重复"
+	WinCaptureMessage       = "Windows 系统键组合不可录入，请使用 Ctrl/Alt/Shift"
+	CaptureCanceledMessage  = "已取消快捷键录入"
+	CapturePendingMessage   = "请先完成按键录入，或按 Esc 取消"
+	CaptureListeningMessage = "正在监听按键… 按下键盘组合键、F1–F24 或 Mouse4/Mouse5；Esc 取消"
+	CaptureFailedPrefix     = "无法录入："
+	PauseReleaseMessage     = "Pause/Break 没有可靠的松开事件"
+	DictationInvalidMessage = "听写快捷键无效，请重新录入（支持功能键和 Ctrl/Alt 组合键）"
+	SameMouseMessage        = "听写和改写不能占用同一个鼠标侧键"
+	DictationHoldMessage    = "键盘听写快捷键当前只支持按住说话模式（record_mode=hold）"
+	MouseHoldMessage        = "Mouse4/Mouse5 目前仅支持 record_mode=hold"
+	PauseHoldMessage        = "Pause/Break 不支持按住录音模式"
+	RecordExitDifferMessage = "Record and exit hotkeys must differ"
+	UnknownModifierPrefix   = "未知修饰键 "
+	ShortcutCollisionSuffix = "不能与另一语音功能或退出快捷键相同"
+	MouseExitPrefix         = "mouse button "
+)
+
+// FixedMessage reports a shortcut sentence a host can show unchanged.
+func FixedMessage(message string) bool {
+	switch message {
+	case KeyRejectedMessage, WindowsComboMessage, BareKeyMessage, ShiftLetterMessage,
+		EmptyShortcutMessage, CtrlRepeatMessage, AltRepeatMessage, ShiftRepeatMessage,
+		PauseReleaseMessage, DictationInvalidMessage, SameMouseMessage, DictationHoldMessage,
+		MouseHoldMessage, PauseHoldMessage, RecordExitDifferMessage:
+		return true
+	}
+	return strings.HasPrefix(message, UnknownModifierPrefix) ||
+		strings.HasSuffix(message, ShortcutCollisionSuffix) ||
+		strings.HasPrefix(message, MouseExitPrefix)
+}
+
 var namedKeys = map[string]uint32{
 	"SPACE": 0x20, "TAB": 0x09, "ENTER": 0x0D,
 	"LEFT": 0x25, "UP": 0x26, "RIGHT": 0x27, "DOWN": 0x28,
@@ -51,20 +98,47 @@ func keyName(vk uint32) string {
 	return ""
 }
 
+var ErrSkipCapture = errors.New("shortcut capture skipped")
+
+func modifierVK(vk uint32) bool {
+	switch vk {
+	case 0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5:
+		return true
+	default:
+		return false
+	}
+}
+
+// CaptureKey accepts one physical key while the settings window is listening.
+// Modifier keys are ignored. A held Windows key is rejected before parsing.
+func CaptureKey(vk, mods uint32, winDown bool) (string, error) {
+	if modifierVK(vk) {
+		return "", ErrSkipCapture
+	}
+	if winDown {
+		return "", errors.New(WinCaptureMessage)
+	}
+	return FromKey(vk, mods)
+}
+
+func CaptureSaved(name string) string {
+	return "已录入 " + name + "。点击「保存设置」并重启软件后生效。"
+}
+
 // FromKey formats a physical key and Ctrl/Alt/Shift into the stored shortcut.
 func FromKey(vk, modifiers uint32) (string, error) {
 	name := keyName(vk)
 	if name == "" {
-		return "", errors.New("该按键不能用作全局录音快捷键")
+		return "", errors.New(KeyRejectedMessage)
 	}
 	if modifiers & ^(alt|ctrl|shift) != 0 {
-		return "", errors.New("Windows 系统键组合不支持录音快捷键")
+		return "", errors.New(WindowsComboMessage)
 	}
 	if modifiers == 0 && (vk < 0x70 || vk > 0x87) {
-		return "", errors.New("单键仅支持 F1–F24；字母、数字和方向键请搭配 Ctrl 或 Alt")
+		return "", errors.New(BareKeyMessage)
 	}
 	if modifiers == shift && (vk < 0x70 || vk > 0x87) {
-		return "", errors.New("Shift+字母会干扰打字，请同时使用 Ctrl 或 Alt")
+		return "", errors.New(ShiftLetterMessage)
 	}
 	parts := []string{}
 	if modifiers&ctrl != 0 {
@@ -106,28 +180,28 @@ func Parse(raw string) (string, uint32, uint32, bool, error) {
 	}
 	parts := strings.Split(key, "+")
 	if len(parts) == 0 {
-		return "", 0, 0, false, errors.New("请按下快捷键")
+		return "", 0, 0, false, errors.New(EmptyShortcutMessage)
 	}
 	var modifiers uint32
 	for _, token := range parts[:len(parts)-1] {
 		switch strings.ToLower(strings.TrimSpace(token)) {
 		case "ctrl", "control":
 			if modifiers&ctrl != 0 {
-				return "", 0, 0, false, errors.New("Ctrl 重复")
+				return "", 0, 0, false, errors.New(CtrlRepeatMessage)
 			}
 			modifiers |= ctrl
 		case "alt", "option":
 			if modifiers&alt != 0 {
-				return "", 0, 0, false, errors.New("Alt 重复")
+				return "", 0, 0, false, errors.New(AltRepeatMessage)
 			}
 			modifiers |= alt
 		case "shift":
 			if modifiers&shift != 0 {
-				return "", 0, 0, false, errors.New("Shift 重复")
+				return "", 0, 0, false, errors.New(ShiftRepeatMessage)
 			}
 			modifiers |= shift
 		default:
-			return "", 0, 0, false, fmt.Errorf("未知修饰键 %q", token)
+			return "", 0, 0, false, fmt.Errorf(UnknownModifierPrefix+"%q", token)
 		}
 	}
 	last := strings.ToUpper(strings.TrimSpace(parts[len(parts)-1]))
@@ -158,12 +232,12 @@ func validate(candidate, other, exit, label string) (string, error) {
 		return "", err
 	}
 	if !mouse && vk == 0x13 {
-		return "", errors.New("Pause/Break 没有可靠的松开事件")
+		return "", errors.New(PauseReleaseMessage)
 	}
 	otherValue, _, _, _, _ := Parse(other)
 	exitValue, _, _, _, _ := Parse(exit)
 	if normalized == otherValue || normalized == exitValue {
-		return "", fmt.Errorf("%s不能与另一语音功能或退出快捷键相同", label)
+		return "", fmt.Errorf("%s"+ShortcutCollisionSuffix, label)
 	}
 	return normalized, nil
 }
@@ -174,6 +248,176 @@ func ValidateDictation(candidate, rewrite, exit string) (string, error) {
 
 func ValidateRewrite(candidate, dictation, exit string) (string, error) {
 	return validate(candidate, dictation, exit, "语音指令快捷键")
+}
+
+// AssignPair trims the two settings fields, validates rewrite, then dictation.
+// A validation error leaves the stored shortcuts unchanged.
+// ShortcutCaptureStep is what the settings window does after a capture attempt.
+type ShortcutCaptureStep int
+
+const (
+	ShortcutCaptureHint ShortcutCaptureStep = iota
+	ShortcutCaptureIgnore
+	ShortcutCaptureAccept
+	ShortcutCaptureStore
+)
+
+// AfterCaptureKey is the physical-key result.
+// A known failure shows the hint and keeps capturing.
+// A skipped modifier stays silent and keeps capturing.
+// A candidate continues into field validation.
+func AfterCaptureKey(err error) ShortcutCaptureStep {
+	if _, ok := CaptureFailure(err); ok {
+		return ShortcutCaptureHint
+	}
+	if err != nil {
+		return ShortcutCaptureIgnore
+	}
+	return ShortcutCaptureAccept
+}
+
+// AfterCaptureField is the field-validation result.
+// A known failure shows the hint and keeps capturing.
+// Success stores the shortcut and stops capture.
+// A non-hint error still stores, unlike the physical-key step.
+func AfterCaptureField(err error) ShortcutCaptureStep {
+	if _, ok := CaptureFailure(err); ok {
+		return ShortcutCaptureHint
+	}
+	return ShortcutCaptureStore
+}
+
+// CaptureFailure is the settings hint for a capture error.
+// A modifier that should be ignored returns ok=false. The Windows-key sentence has no prefix.
+func CaptureFailure(err error) (string, bool) {
+	if err == nil || errors.Is(err, ErrSkipCapture) {
+		return "", false
+	}
+	if err.Error() == WinCaptureMessage {
+		return WinCaptureMessage, true
+	}
+	return CaptureFailedPrefix + err.Error(), true
+}
+
+// SettingsSaveAfterFields reports a field error before an in-progress shortcut capture.
+// The host still refuses a busy voice task before it reads the fields.
+func SettingsSaveAfterFields(configErr error, capturing bool) error {
+	if configErr != nil {
+		return configErr
+	}
+	if capturing {
+		return errors.New(CapturePendingMessage)
+	}
+	return nil
+}
+
+// SettingsKey is what the settings window does with one key message.
+type SettingsKey int
+
+const (
+	SettingsKeyIgnore SettingsKey = iota
+	SettingsKeyCancel
+	SettingsKeyAccept
+	SettingsKeyClose
+)
+
+// SettingsKeyAction distinguishes capture from closing the window.
+// Escape during capture cancels. Escape otherwise closes. Any other capture key is stored.
+func SettingsKeyAction(capturing bool, message, vk uint32) SettingsKey {
+	if capturing && (message == 0x0100 || message == 0x0104) {
+		if vk == 0x1B {
+			return SettingsKeyCancel
+		}
+		return SettingsKeyAccept
+	}
+	if message == 0x0100 && vk == 0x1B {
+		return SettingsKeyClose
+	}
+	return SettingsKeyIgnore
+}
+
+func AssignPair(record, dictation, exit, nextRecord, nextDictation string) (string, string, bool, error) {
+	nextRecord = strings.TrimSpace(nextRecord)
+	nextDictation = strings.TrimSpace(nextDictation)
+	var err error
+	nextRecord, err = ValidateRewrite(nextRecord, nextDictation, exit)
+	if err != nil {
+		return record, dictation, false, err
+	}
+	nextDictation, err = ValidateDictation(nextDictation, nextRecord, exit)
+	if err != nil {
+		return record, dictation, false, err
+	}
+	changed := record != nextRecord || dictation != nextDictation
+	return nextRecord, nextDictation, changed, nil
+}
+
+const pauseVK uint32 = 0x13
+
+// Startup is the keyboard and mouse registration decided before a host installs hooks.
+type Startup struct {
+	DictationMouse             bool
+	DictationButton            uint16
+	DictationMods, DictationVK uint32
+	RewriteMouse               bool
+	RewriteButton              uint16
+	RewriteMods, RewriteVK     uint32
+	ExitMods, ExitVK           uint32
+}
+
+// ValidateStartup applies the Windows launch rules in their existing order.
+// Dictation parse failures keep one message. Rewrite and exit parse failures
+// keep the parser's own message. An exit shortcut cannot be a mouse button.
+func ValidateStartup(mode, dictation, rewrite, exit string) (Startup, error) {
+	var out Startup
+	dictationButton, dictationMouse := WindowsSideButton(dictation)
+	rewriteButton, rewriteMouse := WindowsSideButton(rewrite)
+	out.DictationMouse = dictationMouse
+	out.DictationButton = dictationButton
+	out.RewriteMouse = rewriteMouse
+	out.RewriteButton = rewriteButton
+	if !dictationMouse {
+		_, mods, vk, _, err := Parse(dictation)
+		if err != nil || vk == pauseVK {
+			return Startup{}, errors.New(DictationInvalidMessage)
+		}
+		out.DictationMods, out.DictationVK = mods, vk
+	}
+	if dictationMouse && rewriteMouse && dictationButton == rewriteButton {
+		return Startup{}, errors.New(SameMouseMessage)
+	}
+	if mode != "hold" && !dictationMouse {
+		return Startup{}, errors.New(DictationHoldMessage)
+	}
+	if rewriteMouse {
+		if mode != "hold" {
+			return Startup{}, errors.New(MouseHoldMessage)
+		}
+	} else {
+		_, mods, vk, _, err := Parse(rewrite)
+		if err != nil {
+			return Startup{}, err
+		}
+		out.RewriteMods, out.RewriteVK = mods, vk
+	}
+	_, exitMods, exitVK, exitMouse, err := Parse(exit)
+	if err != nil {
+		return Startup{}, err
+	}
+	if exitMouse {
+		return Startup{}, fmt.Errorf(MouseExitPrefix+"%q must use the mouse hook", exit)
+	}
+	out.ExitMods, out.ExitVK = exitMods, exitVK
+	sameRewriteExit := !rewriteMouse && out.RewriteMods == exitMods && out.RewriteVK == exitVK
+	sameRewriteDictation := !rewriteMouse && !dictationMouse && out.RewriteMods == out.DictationMods && out.RewriteVK == out.DictationVK
+	sameDictationExit := !dictationMouse && exitMods == out.DictationMods && exitVK == out.DictationVK
+	if sameRewriteExit || sameRewriteDictation || sameDictationExit {
+		return Startup{}, errors.New(RecordExitDifferMessage)
+	}
+	if mode == "hold" && !rewriteMouse && out.RewriteVK == pauseVK {
+		return Startup{}, errors.New(PauseHoldMessage)
+	}
+	return out, nil
 }
 
 // Binding is the keyboard or mouse action described by a stored shortcut.

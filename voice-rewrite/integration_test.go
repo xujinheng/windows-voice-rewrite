@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/speech"
 )
 
@@ -61,6 +62,15 @@ func TestConfigValuesValidation(t *testing.T) {
 	if e == nil {
 		t.Fatal("must reject unsupported API URL")
 	}
+	longKey := strings.Repeat("k", 4001)
+	_, e = uxUpdatedConfig(cfg, [6]string{"http://127.0.0.1:8081/v1", "m", longKey, "http://127.0.0.1:1234/v1", "auto", "  " + longKey})
+	if e == nil || e.Error() != "输入内容过长" {
+		t.Fatalf("credential length: %v", e)
+	}
+	_, e = uxUpdatedConfig(cfg, [6]string{"http://127.0.0.1:8081/v1", "m", strings.Repeat("k", 4000), "http://127.0.0.1:1234/v1", "auto", ""})
+	if e != nil {
+		t.Fatalf("4000-byte key rejected: %v", e)
+	}
 }
 func TestNativeServiceProbe(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -71,10 +81,10 @@ func TestNativeServiceProbe(t *testing.T) {
 		http.NotFound(w, r)
 	}))
 	defer srv.Close()
-	if got := uxProbe(context.Background(), "ASR", srv.URL+"/v1"); !strings.Contains(got, "HTTP 200") {
+	if got := serviceprobe.ProbeModel(context.Background(), "ASR", srv.URL+"/v1", "", ""); !strings.Contains(got, "HTTP 200") {
 		t.Fatal(got)
 	}
-	if got := uxProbe(context.Background(), "LLM", srv.URL+"/v1"); !strings.Contains(got, "HTTP 200") {
+	if got := serviceprobe.ProbeModel(context.Background(), "LLM", srv.URL+"/v1", "", ""); !strings.Contains(got, "HTTP 200") {
 		t.Fatal(got)
 	}
 }

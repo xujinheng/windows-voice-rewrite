@@ -24,14 +24,14 @@ public struct MacSettings: Codable, Equatable, Sendable {
     }
 
     public init(
-        asrBaseURL: String = "http://127.0.0.1:8080/v1",
-        llmBaseURL: String = "http://127.0.0.1:1234/v1",
-        asrModel: String = "whisper-1",
-        textModel: String = "auto",
-        maxRecordSeconds: Int = 60,
-        dictationShortcut: String = "Ctrl+Alt+R",
-        rewriteShortcut: String = "Ctrl+Alt+E",
-        textEditShortcut: String = "Ctrl+Alt+T"
+        asrBaseURL: String = ContractLimits.defaultASRBaseURL,
+        llmBaseURL: String = ContractLimits.defaultLLMBaseURL,
+        asrModel: String = ContractLimits.defaultASRModel,
+        textModel: String = ContractLimits.defaultTextModel,
+        maxRecordSeconds: Int = ContractLimits.defaultRecordSeconds,
+        dictationShortcut: String = ContractLimits.macDictationShortcut,
+        rewriteShortcut: String = ContractLimits.macRewriteShortcut,
+        textEditShortcut: String = ContractLimits.macTextEditShortcut
     ) {
         self.asrBaseURL = asrBaseURL
         self.llmBaseURL = llmBaseURL
@@ -44,58 +44,38 @@ public struct MacSettings: Codable, Equatable, Sendable {
     }
 
     public static let defaults = MacSettings()
-    /// Same inclusive range core Normalize keeps. Values outside it become 60.
-    public static let recordSeconds = 1...180
+    public static let recordSeconds = ContractLimits.recordSecondsMin...ContractLimits.recordSecondsMax
+    public static let maxCredentialBytes = ContractLimits.maxCredentialBytes
+
+    public static func credentialTooLong(_ value: String) -> Bool {
+        ContractLimits.storedCredentialTooLong(value)
+    }
+
+    /// An empty field keeps the Keychain value. Spaces are a typed value and replace it.
+    public static func replacesStoredCredential(_ value: String) -> Bool {
+        !value.isEmpty
+    }
 
     /// Applies the core recording-length and base-URL rules before the values
     /// are stored or sent to the helper.
     public mutating func canonicalize() throws {
-        asrBaseURL = trimEndpoint(asrBaseURL)
-        llmBaseURL = trimEndpoint(llmBaseURL)
-        asrModel = asrModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        textModel = textModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !Self.recordSeconds.contains(maxRecordSeconds) {
-            maxRecordSeconds = 60
-        }
-        if asrModel.isEmpty { asrModel = "whisper-1" }
-        if textModel.isEmpty { textModel = "auto" }
-        dictationShortcut = normalizedShortcut(dictationShortcut, fallback: "Ctrl+Alt+R")
-        rewriteShortcut = normalizedShortcut(rewriteShortcut, fallback: "Ctrl+Alt+E")
-        textEditShortcut = normalizedShortcut(textEditShortcut, fallback: "Ctrl+Alt+T")
-        guard asrBaseURL.utf8.count <= 500, llmBaseURL.utf8.count <= 500,
-              asrModel.utf8.count <= 150, textModel.utf8.count <= 150,
-              Self.acceptsBaseURL(asrBaseURL),
-              Self.acceptsBaseURL(llmBaseURL) else {
+        guard let endpoints = ContractLimits.canonicalEndpoints(
+            asrBaseURL: asrBaseURL,
+            asrModel: asrModel,
+            llmBaseURL: llmBaseURL,
+            textModel: textModel) else {
             throw SettingsError.invalidValues
         }
-    }
-
-    public func validateForPersistence() throws {
-        var copy = self
-        try copy.canonicalize()
-    }
-
-    /// Matches core ValidateBaseURL: http(s), host, no userinfo, query, or fragment.
-    public static func acceptsBaseURL(_ value: String) -> Bool {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.contains("://"),
-              let url = URLComponents(string: trimmed),
-              let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https",
-              let host = url.host, !host.isEmpty,
-              url.user == nil, url.password == nil,
-              url.percentEncodedQuery?.isEmpty != false,
-              url.fragment == nil,
-              url.url != nil else {
-            return false
+        asrBaseURL = endpoints.asrBaseURL
+        llmBaseURL = endpoints.llmBaseURL
+        asrModel = endpoints.asrModel
+        textModel = endpoints.textModel
+        if !Self.recordSeconds.contains(maxRecordSeconds) {
+            maxRecordSeconds = ContractLimits.defaultRecordSeconds
         }
-        return true
-    }
-
-    private func trimEndpoint(_ value: String) -> String {
-        var text = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        while text.hasSuffix("/") { text.removeLast() }
-        return text
+        dictationShortcut = normalizedShortcut(dictationShortcut, fallback: ContractLimits.macDictationShortcut)
+        rewriteShortcut = normalizedShortcut(rewriteShortcut, fallback: ContractLimits.macRewriteShortcut)
+        textEditShortcut = normalizedShortcut(textEditShortcut, fallback: ContractLimits.macTextEditShortcut)
     }
 
     private func normalizedShortcut(_ value: String, fallback: String) -> String {
@@ -110,9 +90,9 @@ public struct MacSettings: Codable, Equatable, Sendable {
             throw SettingsError.invalidJSON
         }
         let shortcutDefaults = [
-            "dictation_shortcut": "Ctrl+Alt+R",
-            "rewrite_shortcut": "Ctrl+Alt+E",
-            "text_edit_shortcut": "Ctrl+Alt+T",
+            "dictation_shortcut": ContractLimits.macDictationShortcut,
+            "rewrite_shortcut": ContractLimits.macRewriteShortcut,
+            "text_edit_shortcut": ContractLimits.macTextEditShortcut,
         ]
         for (key, value) in shortcutDefaults where values[key] == nil {
             values[key] = value

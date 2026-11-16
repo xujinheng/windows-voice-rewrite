@@ -21,6 +21,20 @@ func Fit(w, h int32, work WorkArea, margin int32) (int32, int32) {
 	return w, h
 }
 
+// Center places a window in the middle of the work area. A window larger
+// than that area stays at the top-left; it is not pulled in from the right.
+func Center(w, h int32, work WorkArea) (int32, int32) {
+	x := work.Left + (work.Right-work.Left-w)/2
+	y := work.Top + (work.Bottom-work.Top-h)/2
+	if x < work.Left {
+		x = work.Left
+	}
+	if y < work.Top {
+		y = work.Top
+	}
+	return x, y
+}
+
 func Clamp(x, y, w, h int32, work WorkArea) (int32, int32) {
 	maxX, maxY := work.Right-w, work.Bottom-h
 	if maxX < work.Left {

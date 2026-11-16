@@ -8,9 +8,11 @@ import (
 	"regexp"
 	"strings"
 
+	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
 	"voicerewrite/internal/core/speech"
+	"voicerewrite/internal/core/ux"
 )
 
 // AssistantResult contains the generated result and its model-classified intent.
@@ -176,8 +178,8 @@ func ResolveSpokenTask(
 	if err := validateSelectedText(ctx, cfg, selected); err != nil {
 		return AssistantResult{}, "", err
 	}
-	if len(pcm) < 3200 || len(pcm)%2 != 0 {
-		return AssistantResult{}, "", errors.New("录音太短（至少约 0.1 秒）或 PCM 格式无效")
+	if audio.BelowMinCapture(pcm) || len(pcm)%2 != 0 {
+		return AssistantResult{}, "", errors.New(ux.SpokenCaptureInvalid)
 	}
 	instruction, err := speech.Transcribe(ctx, cfg, pcm)
 	if err != nil {

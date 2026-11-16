@@ -7,11 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
-	"strings"
 	"sync"
 	"syscall"
 	"unsafe"
 
+	"voicerewrite/internal/contract"
+	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/desktop"
 	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/settingsform"
@@ -47,26 +48,10 @@ const (
 	uxBSOwnerDraw             = 0x000B
 	uxEMSetMargins            = 0x00D3
 	uxWMProbeDone             = 0x8000 + 104
-	uxSaveButton              = 9101
-	uxCloseButton             = 9102
-	uxAdvancedButton          = 9103
-	uxProbeASRButton          = 9104
-	uxProbeLLMButton          = 9105
 	uxShortcutInput           = 9106
 	uxRewriteInput            = 9108
-	uxCaptureRewrite          = 9140
-	uxCaptureDictation        = 9141
 	WM_SETTINGS_CAPTURE_MOUSE = 0x8000 + 105
 	uxMicrophoneInput         = 9107
-	uxNavSpeech               = 9120
-	uxNavAI                   = 9121
-	uxNavInput                = 9122
-	uxASRURLInput             = 9130
-	uxASRModelInput           = 9131
-	uxASRKeyInput             = 9132
-	uxLLMURLInput             = 9133
-	uxLLMModelInput           = 9134
-	uxLLMKeyInput             = 9135
 	uxCBAddString             = 0x0143
 	uxCBSetCurSel             = 0x014E
 	uxCBGetCurSel             = 0x0147
@@ -76,7 +61,6 @@ const (
 	uxWSTabStop               = 0x00010000
 	uxESAutoScroll            = 0x0080
 	uxESPassword              = 0x0020
-	uxWSBorder                = 0x00800000
 	uxWSCaption               = 0x00C00000
 	uxWSSysMenu               = 0x00080000
 	uxWSMinimizeBox           = 0x00020000
@@ -85,9 +69,6 @@ const (
 var (
 	uxGetWindowText  = user32.NewProc("GetWindowTextW")
 	uxSetTextColor   = gdi32.NewProc("SetTextColor")
-	uxSelectObject   = gdi32.NewProc("SelectObject")
-	uxRoundRect      = gdi32.NewProc("RoundRect")
-	uxGetStockObject = gdi32.NewProc("GetStockObject")
 	uxSetBkMode      = gdi32.NewProc("SetBkMode")
 	uxWindowCallback = syscall.NewCallback(uxSettingsWndProc)
 	uxActiveSettings *uxSettings
@@ -110,6 +91,7 @@ type uxSettings struct {
 	editBrush                               uintptr
 	palette                                 uiPalette
 	cardStatics                             map[uintptr]bool
+	probeEdits                              map[uintptr]int
 	probeMu                                 sync.Mutex
 	probeResult                             [2]string
 	probeStatus                             [2]uintptr
@@ -132,10 +114,6 @@ type uxControl struct {
 	stretch    bool
 	right      bool
 	id         uintptr
-}
-
-func uxLayoutRect(c uxControl, clientWidth int32) (x, y, w, h int32) {
-	return settingsform.Layout(settingsform.Spec{X: c.x, Y: c.y, W: c.w, H: c.h, Stretch: c.stretch, Right: c.right}, clientWidth)
 }
 
 // 96-DPI logical coordinate scrolling avoids inaccessible buttons on small
@@ -162,13 +140,8 @@ func (p *uxSettings) layout() {
 	if viewH < 1 {
 		viewH = 1
 	}
-	maxX, maxY := uxContentWidth-viewW, uxContentHeight-viewH
-	if maxX < 0 {
-		maxX = 0
-	}
-	if maxY < 0 {
-		maxY = 0
-	}
+	maxX := settingsform.ScrollLimit(uxContentWidth, viewW)
+	maxY := settingsform.ScrollLimit(uxContentHeight, viewH)
 	p.scrollX = settingsform.ClampScroll(p.scrollX, maxX)
 	p.scrollY = settingsform.ClampScroll(p.scrollY, maxY)
 	for _, spec := range []struct {
@@ -182,49 +155,10 @@ func (p *uxSettings) layout() {
 			Min: 0, Max: spec.content - 1, Page: uint32(spec.page), Pos: spec.pos}
 		procSetScrollInfoUX.Call(p.window, spec.axis, uintptr(unsafe.Pointer(&info)), 1)
 	}
-	contentW := viewW
-	if contentW < uxContentWidth {
-		contentW = uxContentWidth
-	}
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*p.scale + 0.5)) }
 	for _, ctrl := range p.controls {
-		x, y, w, h := uxLayoutRect(ctrl, contentW)
-		x -= p.scrollX
-		// Keep the primary footer actions horizontally accessible even when
-		// the form itself needs horizontal scrolling at high DPI.
-		switch ctrl.id {
-		case uxSaveButton:
-			x = 220
-			if viewW < 650 {
-				x = 12
-			}
-		case uxAdvancedButton:
-			x = 358
-			if viewW < 650 {
-				x = 149
-			}
-		case uxCloseButton:
-			x = viewW - w - 18
-			if viewW < 650 {
-				x = 276
-			}
-		case uxNavSpeech, uxNavAI, uxNavInput:
-			x = ctrl.x
-		}
-		if ctrl.hwnd == p.hint {
-			x = 223
-			if viewW < 650 {
-				x = 14
-			}
-			if w > viewW-x-12 {
-				w = viewW - x - 12
-			}
-		}
-		if ctrl.id == uxNavSpeech || ctrl.id == uxNavAI || ctrl.id == uxNavInput {
-			procMoveWindow.Call(ctrl.hwnd, sc(x), sc(y), sc(w), sc(h), 1)
-		} else {
-			procMoveWindow.Call(ctrl.hwnd, sc(x), sc(y-p.scrollY), sc(w), sc(h), 1)
-		}
+		x, y, w, h := settingsform.Place(settingsform.Spec{X: ctrl.x, Y: ctrl.y, W: ctrl.w, H: ctrl.h, Stretch: ctrl.stretch, Right: ctrl.right}, int(ctrl.id), ctrl.hwnd == p.hint, viewW, p.scrollX, p.scrollY)
+		procMoveWindow.Call(ctrl.hwnd, sc(x), sc(y), sc(w), sc(h), 1)
 	}
 	procInvalidateRectSettings.Call(p.window, 0, 1)
 }
@@ -232,14 +166,20 @@ func (p *uxSettings) layout() {
 // switchPage only hides controls; input values and in-flight probe results
 // remain intact so navigation cannot discard unsaved changes.
 func (p *uxSettings) switchPage(next int) {
-	if p == nil || next < 0 || next >= len(p.pages) {
+	if p == nil {
 		return
 	}
-	if next != p.page {
+	step := settingsform.SettingsPageSwitch(p.page, next, len(p.pages))
+	if !step.Apply {
+		return
+	}
+	if step.StopCapture {
 		p.stopShortcutCapture()
 	}
 	p.page = next
-	p.focusRow = -1
+	if step.ClearFocus {
+		p.focusRow = -1
+	}
 	for page, windows := range p.pages {
 		for _, handle := range windows {
 			how := uintptr(0) // SW_HIDE
@@ -272,30 +212,22 @@ func (p *uxSettings) scroll(axis, request uintptr) {
 		content = uxContentWidth
 		pos = &p.scrollX
 	}
-	max := content - view
-	if max < 0 {
-		max = 0
-	}
-	var delta int32
-	switch request & 0xffff {
-	case 0:
-		delta = -24
-	case 1:
-		delta = 24
-	case 2:
-		delta = -view + 48
-	case 3:
-		delta = view - 48
-	case 6:
-		*pos = 0
-	case 7:
-		*pos = max
-	case 4, 5:
+	max := settingsform.ScrollLimit(content, view)
+	code := uint16(request)
+	if code == 4 || code == 5 {
 		info := uxScrollInfo{Size: uint32(unsafe.Sizeof(uxScrollInfo{})), Mask: uxSIFTrackPos}
 		procGetScrollInfoUX.Call(p.window, axis, uintptr(unsafe.Pointer(&info)))
 		*pos = info.TrackPos
+	} else {
+		delta, edge := settingsform.ScrollStep(code, view)
+		if edge < 0 {
+			*pos = 0
+		} else if edge > 0 {
+			*pos = max
+		}
+		*pos += delta
 	}
-	*pos = settingsform.ClampScroll(*pos+delta, max)
+	*pos = settingsform.ClampScroll(*pos, max)
 	p.layout()
 }
 
@@ -352,7 +284,7 @@ func (p *uxSettings) beginShortcutCapture(id uintptr) {
 			refreshNativeWindow(button)
 		}
 	}
-	uxSetText(p.hint, "正在监听按键… 按下键盘组合键、F1–F24 或 Mouse4/Mouse5；Esc 取消")
+	uxSetText(p.hint, shortcut.CaptureListeningMessage)
 }
 func uxCurrentShortcutModifiers() uint32 {
 	var mods uint32
@@ -373,22 +305,19 @@ func (p *uxSettings) acceptShortcutKey(vk, mods uint32) {
 	if p == nil || p.capturingShortcut == 0 {
 		return
 	}
-	if vk == 0x10 || vk == 0x11 || vk == 0x12 || vk == 0xA0 || vk == 0xA1 ||
-		vk == 0xA2 || vk == 0xA3 || vk == 0xA4 || vk == 0xA5 {
-		return
-	}
 	winL, _, _ := procGetAsyncKeyState.Call(0x5B)
 	winR, _, _ := procGetAsyncKeyState.Call(0x5C)
-	if winL&0x8000 != 0 || winR&0x8000 != 0 {
-		uxSetText(p.hint, "Windows 系统键组合不可录入，请使用 Ctrl/Alt/Shift")
+	candidate, err := shortcut.CaptureKey(vk, mods, winL&0x8000 != 0 || winR&0x8000 != 0)
+	switch shortcut.AfterCaptureKey(err) {
+	case shortcut.ShortcutCaptureHint:
+		text, _ := shortcut.CaptureFailure(err)
+		uxSetText(p.hint, text)
 		return
-	}
-	candidate, err := shortcut.FromKey(vk, mods)
-	if err != nil {
-		uxSetText(p.hint, "无法录入："+err.Error())
+	case shortcut.ShortcutCaptureIgnore:
 		return
+	default:
+		p.acceptShortcut(candidate)
 	}
-	p.acceptShortcut(candidate)
 }
 func (p *uxSettings) acceptShortcut(candidate string) {
 	if p == nil || p.capturingShortcut == 0 {
@@ -397,20 +326,21 @@ func (p *uxSettings) acceptShortcut(candidate string) {
 	var normalized string
 	var err error
 	var target uintptr
-	if p.capturingShortcut == uxCaptureRewrite {
+	if p.capturingShortcut == contract.CaptureRewrite {
 		target = p.rewriteShortcut
 		normalized, err = shortcut.ValidateRewrite(candidate, uxWinText(p.shortcut), p.app.cfg.HotkeyExit)
 	} else {
 		target = p.shortcut
 		normalized, err = shortcut.ValidateDictation(candidate, uxWinText(p.rewriteShortcut), p.app.cfg.HotkeyExit)
 	}
-	if err != nil {
-		uxSetText(p.hint, "无法录入："+err.Error())
+	if shortcut.AfterCaptureField(err) == shortcut.ShortcutCaptureHint {
+		text, _ := shortcut.CaptureFailure(err)
+		uxSetText(p.hint, text)
 		return
 	}
 	uxSetText(target, normalized)
 	p.stopShortcutCapture()
-	uxSetText(p.hint, "已录入 "+normalized+"。点击「保存设置」并重启软件后生效。")
+	uxSetText(p.hint, shortcut.CaptureSaved(normalized))
 }
 func uxSettingsKeyMessage(msg winMSG) bool {
 	p := uxActiveSettings
@@ -423,20 +353,20 @@ func uxSettingsKeyMessage(msg winMSG) bool {
 			return false
 		}
 	}
-	if p.capturingShortcut != 0 && (msg.Message == WM_KEYDOWN || msg.Message == 0x0104) {
-		if msg.WParam == VK_ESCAPE {
-			p.stopShortcutCapture()
-			uxSetText(p.hint, "已取消快捷键录入")
-		} else {
-			p.acceptShortcutKey(uint32(msg.WParam), uxCurrentShortcutModifiers())
-		}
+	switch shortcut.SettingsKeyAction(p.capturingShortcut != 0, msg.Message, uint32(msg.WParam)) {
+	case shortcut.SettingsKeyCancel:
+		p.stopShortcutCapture()
+		uxSetText(p.hint, shortcut.CaptureCanceledMessage)
 		return true
-	}
-	if msg.Message != WM_KEYDOWN || msg.WParam != VK_ESCAPE {
+	case shortcut.SettingsKeyAccept:
+		p.acceptShortcutKey(uint32(msg.WParam), uxCurrentShortcutModifiers())
+		return true
+	case shortcut.SettingsKeyClose:
+		procDestroyWindow.Call(p.window)
+		return true
+	default:
 		return false
 	}
-	procDestroyWindow.Call(p.window)
-	return true
 }
 
 func (p *uxSettings) refreshTheme() {
@@ -485,7 +415,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMMouseWheel:
 		if p != nil && p.window == hwnd {
 			delta := int32(int16((wParam >> 16) & 0xffff))
-			p.scrollY -= delta / 120 * 72
+			p.scrollY = settingsform.WheelScroll(p.scrollY, delta)
 			p.layout()
 		}
 		return 0
@@ -501,13 +431,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		if p != nil && lParam != 0 {
 			bounds := (*uxMinMaxInfo)(unsafe.Pointer(lParam))
 			work := uxWorkAreaAtCursor()
-			minW, minH := int32(480*p.scale), int32(420*p.scale)
-			if minW > work.Right-work.Left-12 {
-				minW = work.Right - work.Left - 12
-			}
-			if minH > work.Bottom-work.Top-12 {
-				minH = work.Bottom - work.Top - 12
-			}
+			minW, minH := settingsform.MinimumSize(p.scale, work.Right-work.Left, work.Bottom-work.Top)
 			bounds.MinSize = trayPoint{X: minW, Y: minH}
 		}
 		return 0
@@ -570,28 +494,12 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMDrawItem:
 		if p != nil && p.window == hwnd && lParam != 0 {
 			item := (*drawItemStruct)(unsafe.Pointer(lParam))
-			if item.CtlID >= uxNavSpeech && item.CtlID <= uxNavInput {
-				if p.drawSidebarItem(item, int(item.CtlID-uxNavSpeech)) {
+			if item.CtlID >= contract.NavSpeech && item.CtlID <= contract.NavInput {
+				if p.drawSidebarItem(item, int(item.CtlID-contract.NavSpeech)) {
 					return 1
 				}
 			}
-			label := ""
-			primary := false
-			switch item.CtlID {
-			case uxSaveButton:
-				label, primary = "保存设置", true
-			case uxCloseButton:
-				label = "关闭"
-			case uxAdvancedButton:
-				label = "高级配置"
-			case uxProbeASRButton, uxProbeLLMButton:
-				label = "测试连接"
-			case uxCaptureRewrite, uxCaptureDictation:
-				label = "录入按键"
-				if p.capturingShortcut == uintptr(item.CtlID) {
-					label = "等待按键…"
-				}
-			}
+			label, primary := contract.ButtonLabel(int(item.CtlID), p.capturingShortcut == uintptr(item.CtlID))
 			if label != "" && uiDrawActionButton(item, p.palette, p.font, label, primary) {
 				return 1
 			}
@@ -599,7 +507,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMColorStatic:
 		if p != nil && p.window == hwnd && p.background != 0 {
 			color := p.palette.text
-			if lParam == p.hint || lParam == p.probeStatus[0] || lParam == p.probeStatus[1] {
+			if settingsform.MutedControl(lParam, p.hint, p.probeStatus[0], p.probeStatus[1]) {
 				color = p.palette.muted
 			}
 			uxSetTextColor.Call(wParam, p.palette.color(color))
@@ -632,64 +540,49 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			// Native focus events keep the D2D field outline keyboard-visible.
 			notification := (wParam >> 16) & 0xffff
 			if notification == 0x0100 || notification == 0x0200 { // EN_SETFOCUS/EN_KILLFOCUS
-				if notification == 0x0200 {
-					p.focusRow = -1
-				} else {
-					p.focusRow = -1
+				index := -1
+				if notification == 0x0100 {
 					for idx, edit := range p.inputs {
 						if edit == lParam {
-							p.focusRow = idx % 3
+							index = idx
 						}
 					}
-					if p.rewriteShortcut == lParam {
-						p.focusRow = 0
-					}
-					if p.shortcut == lParam {
-						p.focusRow = 1
-					}
 				}
+				p.focusRow = settingsform.FocusRow(index, notification == 0x0100 && p.rewriteShortcut == lParam, notification == 0x0100 && p.shortcut == lParam)
 				refreshNativeWindow(hwnd)
 			}
 			if (wParam>>16)&0xffff == 0x0300 { // EN_CHANGE
-				for idx, controls := range [2][3]uintptr{{p.inputs[0], p.inputs[1], p.inputs[2]}, {p.inputs[3], p.inputs[4], p.inputs[5]}} {
-					for _, edit := range controls {
-						if lParam == edit {
-							p.probeMu.Lock()
-							p.probeSerial[idx]++ // reject in-flight stale response
-							p.probeMu.Unlock()
-							uxSetText(p.probeStatus[idx], serviceprobe.StatusStale)
-							break
-						}
-					}
+				if idx, ok := p.probeEdits[lParam]; ok {
+					p.bumpProbe(idx) // reject in-flight stale response
+					uxSetText(p.probeStatus[idx], serviceprobe.StatusStale)
 				}
 			}
-			switch wParam & 0xffff {
-			case uxNavSpeech, uxNavAI, uxNavInput:
-				p.switchPage(int((wParam & 0xffff) - uxNavSpeech))
+			switch action, page := contract.Command(int(wParam & 0xffff)); action {
+			case contract.ActionPage:
+				p.switchPage(page)
 				return 0
-			case uxCaptureRewrite, uxCaptureDictation:
+			case contract.ActionCapture:
 				p.beginShortcutCapture(wParam & 0xffff)
 				return 0
-			case uxSaveButton:
+			case contract.ActionSave:
+				// save() writes the restart notice or the immediate-effect line.
 				if err := p.save(); err != nil {
-					uxSetText(p.hint, "保存失败："+err.Error())
-				} else {
-					// save() provides the precise message, including restart notices.
+					uxSetText(p.hint, ux.SaveFailedPrefix+err.Error())
 				}
 				return 0
-			case uxCloseButton:
+			case contract.ActionClose:
 				procDestroyWindow.Call(hwnd)
 				return 0
-			case uxAdvancedButton:
+			case contract.ActionAdvanced:
 				if err := shellOpenLocalFile(configPath()); err != nil {
-					uxSetText(p.hint, "打开高级配置失败："+err.Error())
+					uxSetText(p.hint, ux.OpenAdvancedFailedPrefix+err.Error())
 				}
 				return 0
-			case uxProbeASRButton:
-				p.check("ASR", uxWinText(p.inputs[0]), uxWinText(p.inputs[2]), uxWinText(p.inputs[1]))
+			case contract.ActionProbeASR:
+				p.probe("ASR")
 				return 0
-			case uxProbeLLMButton:
-				p.check("LLM", uxWinText(p.inputs[3]), uxWinText(p.inputs[5]), uxWinText(p.inputs[4]))
+			case contract.ActionProbeLLM:
+				p.probe("LLM")
 				return 0
 			}
 		}
@@ -707,59 +600,63 @@ func (p *uxSettings) save() error {
 		fields[i] = uxWinText(h)
 	}
 	cfg, err := uxUpdatedConfig(p.app.cfg, fields)
+	if err = shortcut.SettingsSaveAfterFields(err, p.capturingShortcut != 0); err != nil {
+		return err
+	}
+	newRewrite, newDictation, changedShortcut, err := shortcut.AssignPair(cfg.HotkeyRecord, cfg.DictationHotkey, cfg.HotkeyExit, uxWinText(p.rewriteShortcut), uxWinText(p.shortcut))
 	if err != nil {
 		return err
 	}
-	if p.capturingShortcut != 0 {
-		return errors.New("请先完成按键录入，或按 Esc 取消")
-	}
-	newRewrite := strings.TrimSpace(uxWinText(p.rewriteShortcut))
-	newDictation := strings.TrimSpace(uxWinText(p.shortcut))
-	newRewrite, err = shortcut.ValidateRewrite(newRewrite, newDictation, cfg.HotkeyExit)
-	if err != nil {
-		return err
-	}
-	newDictation, err = shortcut.ValidateDictation(newDictation, newRewrite, cfg.HotkeyExit)
-	if err != nil {
-		return err
-	}
-	changedShortcut := cfg.HotkeyRecord != newRewrite || cfg.DictationHotkey != newDictation
-	cfg.HotkeyRecord = newRewrite
-	cfg.DictationHotkey = newDictation
+	cfg.HotkeyRecord, cfg.DictationHotkey = newRewrite, newDictation
 	selected, _, _ := procSendMessage.Call(p.microphone, uxCBGetCurSel, 0, 0)
-	if p.microphone != 0 && selected != ^uintptr(0) && selected < uintptr(len(p.microphoneIDs)) {
-		cfg.AudioDeviceID = p.microphoneIDs[selected]
-	}
-	changedAudioDevice := cfg.AudioDeviceID != p.app.cfg.AudioDeviceID
+	deviceID, changedAudioDevice := coreconfig.ChooseAudioDevice(cfg.AudioDeviceID, int(selected), p.microphone != 0 && selected != ^uintptr(0), p.microphoneIDs)
+	cfg.AudioDeviceID = deviceID
 	if err = saveConfig(cfg); err != nil {
 		return err
 	}
 	p.app.cfg = cfg
-	if changedShortcut || changedAudioDevice {
-		uxSetText(p.hint, "设置已保存。快捷键和录音设备将在重启 VoiceRewrite 后生效。")
-	} else {
-		uxSetText(p.hint, "✓ 已保存，API 地址和模型立即生效")
-	}
+	uxSetText(p.hint, ux.WindowsSaveNotice(ux.WindowsSaveRestarts(changedShortcut, changedAudioDevice)))
 	p.app.logger.Print("settings updated: connection configuration saved (endpoint/key values redacted)")
 	return nil
 }
 
-func (p *uxSettings) check(kind, base, key, model string) {
-	if p == nil || p.window == 0 {
-		return
+func (p *uxSettings) inputValue(id string) string {
+	index, ok := contract.InputIndex(id)
+	if p == nil || !ok || index < 0 || index >= len(p.inputs) {
+		return ""
 	}
-	idx := 0
-	if kind == "LLM" {
-		idx = 1
-	}
+	return uxWinText(p.inputs[index])
+}
+
+func (p *uxSettings) bumpProbe(idx int) uint64 {
 	p.probeMu.Lock()
 	p.probeSerial[idx]++
 	serial := p.probeSerial[idx]
 	p.probeMu.Unlock()
+	return serial
+}
+
+func (p *uxSettings) probe(kind string) {
+	field, url, key, model, ok := contract.ProbeInputs(kind)
+	if !ok {
+		return
+	}
+	p.check(kind, p.inputValue(url), p.inputValue(key), p.inputValue(model), field)
+}
+
+func (p *uxSettings) check(kind, base, key, model, field string) {
+	if p == nil || p.window == 0 {
+		return
+	}
+	idx, ok := contract.ProbeSlot(field)
+	if !ok || idx < 0 || idx >= len(p.probeStatus) {
+		return
+	}
+	serial := p.bumpProbe(idx)
 	uxSetText(p.probeStatus[idx], serviceprobe.StatusRunning)
 	h := p.window
 	go func() {
-		result := uxProbeModel(context.Background(), kind, base, key, model)
+		result := serviceprobe.ProbeModel(context.Background(), kind, base, key, model)
 		p.probeMu.Lock()
 		if serial == p.probeSerial[idx] {
 			p.probeResult[idx] = result
@@ -782,33 +679,162 @@ func uxCreateControl(parent uintptr, class, text string, style uintptr, x, y, w,
 	return handle
 }
 
-// Center a settings window inside the monitor work area; the recording
-// pill remains bottom-centered, but a full settings window should not be.
-func uxCenteredWindow(w, h int32) (int32, int32) {
-	pt := currentCursorPoint()
-	packed := uint64(uint32(pt.X)) | uint64(uint32(pt.Y))<<32
-	mon, _, _ := procMonitorFromPointHandy.Call(uintptr(packed), MONITOR_DEFAULTTONEAREST)
-	if mon != 0 {
-		info := handyMonitorInfo{Size: uint32(unsafe.Sizeof(handyMonitorInfo{}))}
-		if ok, _, _ := procGetMonitorInfoHandy.Call(mon, uintptr(unsafe.Pointer(&info))); ok != 0 {
-			area := info.Work
-			x := area.Left + (area.Right-area.Left-w)/2
-			y := area.Top + (area.Bottom-area.Top-h)/2
-			if x < area.Left {
-				x = area.Left
+func uxWorkAreaAtCursor() desktop.WorkArea { return uxWorkAreaForPoint(currentCursorPoint()) }
+
+func layoutSettingsFields(p *uxSettings, app *appState, makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, stat, edit, btn uintptr) error {
+	for pageIndex, page := range contract.Pages() {
+		start := len(p.controls)
+		row := 0
+		for _, control := range contract.PageControls(page.ID, contract.Windows) {
+			if err := placeSettingsControl(p, app, makeOne, stat, edit, btn, control, row); err != nil {
+				return err
 			}
-			if y < area.Top {
-				y = area.Top
+			if control.Stacked {
+				row++
 			}
-			return x, y
+		}
+		for _, created := range p.controls[start:] {
+			p.pages[pageIndex] = append(p.pages[pageIndex], created.hwnd)
 		}
 	}
-	width, _, _ := procGetSystemMetrics.Call(0)
-	height, _, _ := procGetSystemMetrics.Call(1)
-	return (int32(width) - w) / 2, (int32(height) - h) / 2
+	for _, control := range contract.PageControls("save", contract.Windows) {
+		if err := placeSettingsControl(p, app, makeOne, stat, edit, btn, control, 0); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func uxWorkAreaAtCursor() desktop.WorkArea { return uxWorkAreaForPoint(currentCursorPoint()) }
+func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, stat, edit, btn uintptr, control contract.Control, row int) error {
+	label := settingsform.FieldLabel(row)
+	switch control.ID {
+	case "asr_base_url":
+		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.ASRBaseURL)
+	case "asr_model":
+		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.ASRModel)
+	case "asr_api_key":
+		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.ASRAPIKey)
+	case "probe_asr_status":
+		if err := placeProbeStatus(p, makeOne, stat, "asr_base_url"); err != nil {
+			return err
+		}
+	case "probe_asr":
+		placeProbeButton(makeOne, btn, control, contract.ProbeASRButton)
+	case "llm_base_url":
+		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.LLMBaseURL)
+	case "text_model":
+		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.TextModel)
+	case "llm_api_key":
+		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.LLMAPIKey)
+	case "probe_llm_status":
+		if err := placeProbeStatus(p, makeOne, stat, "llm_base_url"); err != nil {
+			return err
+		}
+	case "probe_llm":
+		placeProbeButton(makeOne, btn, control, contract.ProbeLLMButton)
+	case "rewrite_shortcut":
+		p.rewriteShortcut = placeShortcutEdit(makeOne, stat, edit, control, row, app.cfg.HotkeyRecord, uxRewriteInput)
+	case "capture_rewrite":
+		button, err := placeCaptureButton(makeOne, btn, control, "rewrite_shortcut", contract.CaptureRewrite)
+		if err != nil {
+			return err
+		}
+		p.captureButtons[0] = button
+	case "dictation_shortcut":
+		p.shortcut = placeShortcutEdit(makeOne, stat, edit, control, row, app.cfg.DictationHotkey, uxShortcutInput)
+	case "capture_dictation":
+		button, err := placeCaptureButton(makeOne, btn, control, "dictation_shortcut", contract.CaptureDictation)
+		if err != nil {
+			return err
+		}
+		p.captureButtons[1] = button
+	case "microphone":
+		list := settingsform.MicrophoneList(row)
+		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
+		p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, list.X, list.Y, list.W, list.H, uxMicrophoneInput, false)
+		p.populateMicrophones(app.cfg.AudioDeviceID)
+		resultStyleNativeEdit(p.microphone, p.palette.dark)
+	case "input_note_windows":
+		note := settingsform.WindowsInputNote()
+		info := makeOne("STATIC", control.Label, stat, note.X, note.Y, note.W, note.H, 0, false)
+		setFont(info, p.mutedFont)
+	case "save":
+		placeFooterButton(makeOne, btn, control.Label, settingsform.AnchorSave, contract.SaveButton)
+	case "advanced":
+		placeFooterButton(makeOne, btn, control.Label, settingsform.AnchorAdvanced, contract.AdvancedButton)
+	case "close":
+		placeFooterButton(makeOne, btn, control.Label, settingsform.AnchorClose, contract.CloseButton)
+	default:
+		return fmt.Errorf("设置页缺少控件布局: %s", control.ID)
+	}
+	return nil
+}
+
+func placeLabeledEdit(p *uxSettings, makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, stat, edit uintptr, control contract.Control, row int, value string) error {
+	index, ok := contract.InputIndex(control.ID)
+	if !ok || index < 0 || index >= len(p.inputs) {
+		return fmt.Errorf("设置页缺少控件布局: %s", control.ID)
+	}
+	label := settingsform.FieldLabel(row)
+	field := settingsform.FieldEdit(row)
+	style := edit
+	if control.Kind == contract.Secret {
+		style |= uxESPassword
+	}
+	makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
+	hwnd := makeOne("EDIT", value, style, field.X, field.Y, field.W, field.H, uintptr(contract.EndpointEdit+index), false)
+	p.inputs[index] = hwnd
+	if slot, ok := contract.ProbeSlot(control.ID); ok && slot >= 0 && slot < len(p.probeStatus) {
+		p.probeEdits[hwnd] = slot
+	}
+	return nil
+}
+
+func placeProbeStatus(p *uxSettings, makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, stat uintptr, fieldID string) error {
+	slot, ok := contract.ProbeSlot(fieldID)
+	if !ok || slot < 0 || slot >= len(p.probeStatus) {
+		return fmt.Errorf("设置页缺少连接检测: %s", fieldID)
+	}
+	box := settingsform.ProbeStatusBox()
+	p.probeStatus[slot] = makeOne("STATIC", serviceprobe.StatusIdle, stat, box.X, box.Y, box.W, box.H, 0, false)
+	return nil
+}
+
+func placeProbeButton(makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, btn uintptr, control contract.Control, id uintptr) {
+	box := settingsform.ProbeButtonBox()
+	makeOne("BUTTON", control.Label, btn, box.X, box.Y, box.W, box.H, id, false)
+}
+
+func placeFooterButton(makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, btn uintptr, label string, anchor settingsform.Anchor, id uintptr) {
+	box := settingsform.FooterButton(anchor)
+	makeOne("BUTTON", label, btn, box.X, box.Y, box.W, box.H, id, false)
+}
+
+func placeShortcutEdit(makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, stat, edit uintptr, control contract.Control, row int, value string, id uintptr) uintptr {
+	label := settingsform.FieldLabel(row)
+	shortcut := settingsform.ShortcutEdit()
+	shortcut.Y += settingsform.RowStep * int32(row)
+	makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
+	return makeOne("EDIT", value, edit|0x0800, shortcut.X, shortcut.Y, shortcut.W, shortcut.H, id, false)
+}
+
+func placeCaptureButton(makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, btn uintptr, control contract.Control, shortcutID string, id uintptr) (uintptr, error) {
+	row, ok := stackedSettingsRow(shortcutID)
+	if !ok {
+		return 0, fmt.Errorf("设置页缺少控件布局: %s", shortcutID)
+	}
+	box := settingsform.CaptureButton(row)
+	return makeOne("BUTTON", control.Label, btn, box.X, box.Y, box.W, box.H, id, false), nil
+}
+
+func stackedSettingsRow(id string) (int, bool) {
+	for i, control := range contract.Stacked("input", contract.Windows) {
+		if control.ID == id {
+			return i, true
+		}
+	}
+	return 0, false
+}
 
 func showNativeSettings(app *appState) error {
 	restoreDPI := handyAwareWindowThread()
@@ -827,20 +853,21 @@ func showNativeSettings(app *appState) error {
 		return fmt.Errorf("无法注册设置窗口: %w", regErr)
 	}
 	// 96-DPI logical layout; all children use the same scale as the parent.
-	scale := handyMonitorScale()
+	scale := uxMonitorScaleForPoint(currentCursorPoint())
 	if scale < 1 {
 		scale = 1
 	}
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*scale + 0.5)) }
 	work := uxWorkAreaAtCursor()
-	winW, winH := desktop.Fit(int32(sc(860)), int32(sc(530)), work, 12)
-	x, y := uxCenteredWindow(winW, winH)
+	winW, winH := desktop.Fit(int32(sc(settingsform.WindowWidth)), int32(sc(settingsform.WindowHeight)), work, settingsform.MinWorkMargin)
+	// The recording pill stays near the bottom of the work area. Settings opens in the middle.
+	x, y := desktop.Center(winW, winH, work)
 	h, _, createErr := procCreateWindow.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),
 		uxWSCaption|uxWSSysMenu|uxWSMinimizeBox|uxWSThickFrame|WS_VSCROLL|0x00100000, uintptr(x), uintptr(y), uintptr(winW), uintptr(winH), 0, 0, module, 0)
 	if h == 0 {
 		return fmt.Errorf("创建设置窗口失败: %w", createErr)
 	}
-	p := &uxSettings{window: h, app: app, scale: scale, focusRow: -1, cardStatics: make(map[uintptr]bool), palette: resultCardPalette()}
+	p := &uxSettings{window: h, app: app, scale: scale, focusRow: -1, cardStatics: make(map[uintptr]bool), probeEdits: make(map[uintptr]int), palette: resultCardPalette()}
 	uxActiveSettings = p
 	p.background, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.background))
 	p.cardBrush, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.surface))
@@ -886,65 +913,24 @@ func showNativeSettings(app *appState) error {
 	edit := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxESAutoScroll)
 	btn := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxBSOwnerDraw)
 	// Native sidebar navigation, one focused form page at a time.
-	p.navButtons[0] = makeOne("BUTTON", "语音识别", btn, 12, 110, 170, 35, uxNavSpeech, false)
-	p.navButtons[1] = makeOne("BUTTON", "AI 写作", btn, 12, 151, 170, 35, uxNavAI, false)
-	p.navButtons[2] = makeOne("BUTTON", "快捷键与设备", btn, 12, 192, 170, 35, uxNavInput, false)
+	pages := contract.Pages()
+	if len(pages) != len(p.navButtons) {
+		return fmt.Errorf("设置导航与页面数量不一致")
+	}
+	for i, page := range pages {
+		nav := settingsform.NavButton(i)
+		p.navButtons[i] = makeOne("BUTTON", page.Title, btn, nav.X, nav.Y, nav.W, nav.H, contract.NavSpeech+uintptr(i), false)
+	}
 	head := makeOne("STATIC", "设置", uxWSChild, 0, 0, 1, 1, 0, false)
 	setFont(head, p.titleFont)
-	start := len(p.controls)
-	firstLabel, firstEdit := settingsform.FieldLabel(0), settingsform.FieldEdit(0)
-	secondLabel, secondEdit := settingsform.FieldLabel(1), settingsform.FieldEdit(1)
-	thirdLabel, thirdEdit := settingsform.FieldLabel(2), settingsform.FieldEdit(2)
-	makeOne("STATIC", "API 地址", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
-	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, firstEdit.X, firstEdit.Y, firstEdit.W, firstEdit.H, uxASRURLInput, false)
-	makeOne("STATIC", "模型 ID", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
-	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, secondEdit.X, secondEdit.Y, secondEdit.W, secondEdit.H, uxASRModelInput, false)
-	makeOne("STATIC", "API Key", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
-	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, thirdEdit.X, thirdEdit.Y, thirdEdit.W, thirdEdit.H, uxASRKeyInput, false)
-	p.probeStatus[0] = makeOne("STATIC", serviceprobe.StatusIdle, stat, 352, 324, 435, 48, 0, false)
-	makeOne("BUTTON", "测试连接", btn, 696, 130, 92, 30, uxProbeASRButton, false)
-	for _, c := range p.controls[start:] {
-		p.pages[0] = append(p.pages[0], c.hwnd)
+	if err := layoutSettingsFields(p, app, makeOne, stat, edit, btn); err != nil {
+		return err
 	}
-	start = len(p.controls)
-	makeOne("STATIC", "API 地址", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
-	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, firstEdit.X, firstEdit.Y, firstEdit.W, firstEdit.H, uxLLMURLInput, false)
-	makeOne("STATIC", "模型 ID", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
-	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, secondEdit.X, secondEdit.Y, secondEdit.W, secondEdit.H, uxLLMModelInput, false)
-	makeOne("STATIC", "API Key", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
-	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, thirdEdit.X, thirdEdit.Y, thirdEdit.W, thirdEdit.H, uxLLMKeyInput, false)
-	p.probeStatus[1] = makeOne("STATIC", serviceprobe.StatusIdle, stat, 352, 324, 435, 48, 0, false)
-	makeOne("BUTTON", "测试连接", btn, 696, 130, 92, 30, uxProbeLLMButton, false)
-	for _, c := range p.controls[start:] {
-		p.pages[1] = append(p.pages[1], c.hwnd)
+	hint := settingsform.SettingsHint()
+	p.hint = makeOne("STATIC", "", stat, hint.X, hint.Y, hint.W, hint.H, 0, false)
+	for _, hwnd := range settingsform.MutedControls(p.hint, p.probeStatus[0], p.probeStatus[1]) {
+		setFont(hwnd, p.mutedFont)
 	}
-	start = len(p.controls)
-	// Shortcut displays are read-only; the recorder button captures physical events.
-	short0 := settingsform.ShortcutEdit()
-	short1 := short0
-	short1.Y += settingsform.RowStep
-	makeOne("STATIC", "语音指令", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
-	p.rewriteShortcut = makeOne("EDIT", app.cfg.HotkeyRecord, edit|0x0800, short0.X, short0.Y, short0.W, short0.H, uxRewriteInput, false)
-	p.captureButtons[0] = makeOne("BUTTON", "录入按键", btn, 593, 169, 194, 34, uxCaptureRewrite, false)
-	makeOne("STATIC", "听写快捷键", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
-	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit|0x0800, short1.X, short1.Y, short1.W, short1.H, uxShortcutInput, false)
-	p.captureButtons[1] = makeOne("BUTTON", "录入按键", btn, 593, 223, 194, 34, uxCaptureDictation, false)
-	makeOne("STATIC", "麦克风", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
-	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 350, 281, 437, 190, uxMicrophoneInput, false)
-	p.populateMicrophones(app.cfg.AudioDeviceID)
-	resultStyleNativeEdit(p.microphone, p.palette.dark)
-	info := makeOne("STATIC", "语音指令用于改写/解释/问答；更换按键或设备后需重启软件。", stat, 226, 345, 565, 44, 0, false)
-	setFont(info, p.mutedFont)
-	for _, c := range p.controls[start:] {
-		p.pages[2] = append(p.pages[2], c.hwnd)
-	}
-	makeOne("BUTTON", "保存设置", btn, 220, 418, 124, 34, uxSaveButton, false)
-	makeOne("BUTTON", "高级配置", btn, 358, 418, 112, 34, uxAdvancedButton, false)
-	makeOne("BUTTON", "关闭", btn, 710, 418, 94, 34, uxCloseButton, false)
-	p.hint = makeOne("STATIC", "", stat, 223, 457, 560, 22, 0, false)
-	setFont(p.hint, p.mutedFont)
-	setFont(p.probeStatus[0], p.mutedFont)
-	setFont(p.probeStatus[1], p.mutedFont)
 	p.switchPage(0)
 	p.layout()
 	// Windows 11 DWM-rounded frame and non-activating status pill are separate.

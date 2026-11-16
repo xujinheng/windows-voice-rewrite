@@ -81,7 +81,7 @@ func BuildReadingPanels(captions []Caption) ReadingPanels {
 		result.English = "等待对方发言…"
 		result.Chinese = "中文释义会显示在这里。"
 		result.History = "之前的对话会保留在这里，阅读时不会被新字幕打断。"
-		result.Hint = "等待发言"
+		result.Hint = WaitingHint
 		return result
 	}
 	current := entries[len(entries)-1]

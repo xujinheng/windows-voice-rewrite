@@ -3,7 +3,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"runtime"
 	"strings"
@@ -33,10 +32,8 @@ const (
 	WM_CTLCOLORSTATIC              = 0x0138
 	WM_DRAWITEM                    = 0x002B
 	VK_ESCAPE                      = 0x1b
-	WS_OVERLAPPED                  = 0
 	resultWSPopup                  = 0x80000000
 	resultWMNCHitTest              = 0x0084
-	resultHTCaption                = 2
 	resultHTClient                 = 1
 	resultWMSize                   = 0x0005
 	WS_CAPTION                     = 0x00c00000
@@ -60,10 +57,6 @@ const (
 	GWL_STYLE                      = ^uintptr(15)
 	WS_DISABLED                    = 0x08000000
 	GA_ROOT                        = 2
-	SM_XVIRTUALSCREEN              = 76
-	SM_YVIRTUALSCREEN              = 77
-	SM_CXVIRTUALSCREEN             = 78
-	SM_CYVIRTUALSCREEN             = 79
 	DT_CENTER                      = 1
 	DT_VCENTER                     = 4
 	DT_SINGLELINE                  = 0x20
@@ -218,7 +211,6 @@ func currentCursorPoint() trayPoint {
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&p)))
 	return p
 }
-func colorRGB(r, g, b uint32) uintptr { return uintptr(r | (g << 8) | (b << 16)) }
 
 func (p *answerPopup) setNote(s string) {
 	if p == nil || p.note == 0 {
@@ -229,29 +221,40 @@ func (p *answerPopup) setNote(s string) {
 	runtime.KeepAlive(label)
 }
 func (p *answerPopup) apply() {
-	if p == nil || p.app == nil || p.selection == nil || !p.allowApply || p.canceled.Load() || !p.app.epoch.Valid(p.generation) {
+	if p == nil || p.app == nil || corepopup.ApplyIgnored(p.selection != nil, p.allowApply, p.canceled.Load(), p.app.epoch.Valid(p.generation)) {
 		return
 	}
-	if !p.app.busy.CompareAndSwap(false, true) {
+	var app *appState
+	var sel selectedText
+	var body string
+	var hwnd uintptr
+	busyTaken := p.app.busy.CompareAndSwap(false, true)
+	editorOpen := false
+	if busyTaken {
+		app = p.app
+		sel = *p.selection
+		body = p.body
+		hwnd = p.window
+		p.applyResult = make(chan error, 1)
+		p.setNote(ux.ApplyChecking)
+		valid, _, _ := procIsWindow.Call(sel.TargetWindow)
+		editorOpen = valid != 0
+	}
+	switch corepopup.ContinueApply(busyTaken, editorOpen) {
+	case corepopup.ApplyBusyNote:
 		p.setNote(ux.ApplyBusy)
 		return
-	}
-	app := p.app
-	sel := *p.selection
-	body := p.body
-	hwnd := p.window
-	p.applyResult = make(chan error, 1)
-	p.setNote(ux.ApplyChecking)
-	if valid, _, _ := procIsWindow.Call(sel.TargetWindow); valid == 0 {
-		p.applyResult <- errors.New("原编辑窗口已关闭")
+	case corepopup.ApplyEditorClosed:
+		p.applyResult <- ux.ApplyEditorOpen(false)
 		procPostMessage.Call(app.Window, WM_APPLY_RESULT, 0, 0)
 		app.busy.Store(false)
 		return
+	default:
 	}
 	procSetForegroundWindow.Call(sel.TargetWindow)
 	go func() {
 		defer app.busy.Store(false)
-		time.Sleep(90 * time.Millisecond)
+		time.Sleep(ux.ApplySettle)
 		err := replaceSelectionWithGuard(app.Window, sel, body, app.cfg, !isSafelyEditableControl(sel.TargetWindow), func() bool { return !p.canceled.Load() && app.epoch.Valid(p.generation) })
 		if err != nil {
 			app.logger.Printf("manual apply failed: %v", err)
@@ -345,17 +348,9 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	switch uint32(msg) {
 	case resultWMNCHitTest:
 		if activeAnswer != nil && activeAnswer.window == hwnd {
-			var bounds rect32
-			if ok, _, _ := user32.NewProc("GetWindowRect").Call(hwnd, uintptr(unsafe.Pointer(&bounds))); ok != 0 {
-				x := int32(int16(uint16(lParam & 0xffff)))
-				y := int32(int16(uint16((lParam >> 16) & 0xffff)))
-				_ = x
-				_ = y
-				_ = bounds
-				// This is a dismissible utility card, not a draggable dashboard.
-				// A click on its empty header should be treated as an ordinary click.
-				return resultHTClient
-			}
+			// This is a dismissible utility card, not a draggable dashboard.
+			// A click on its empty header is an ordinary client click.
+			return resultHTClient
 		}
 	case resultWMSize:
 		if activeAnswer != nil && activeAnswer.window == hwnd && activeAnswer.renderer != nil {
@@ -418,23 +413,20 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case WM_CTLCOLORSTATIC:
 		if activeAnswer != nil && activeAnswer.window == hwnd {
 			procSetBkMode.Call(wParam, TRANSPARENT)
+			kind := ux.CardChrome
 			if lParam == activeAnswer.edit {
-				procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.text))
-				procSetBkColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.surface))
+				kind = ux.CardEditor
+			} else if activeAnswer.note == lParam {
+				kind = ux.CardNote
+			}
+			if paintCardInk(wParam, kind) {
 				return activeAnswer.editBrush
 			}
-			if activeAnswer.note == lParam {
-				procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.muted))
-			} else {
-				procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.text))
-			}
-			procSetBkColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.background))
 			return activeAnswer.bgBrush
 		}
 	case WM_CTLCOLOREDIT:
 		if activeAnswer != nil && activeAnswer.window == hwnd && activeAnswer.editBrush != 0 {
-			procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.text))
-			procSetBkColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.surface))
+			paintCardInk(wParam, ux.CardEditor)
 			return activeAnswer.editBrush
 		}
 	case WM_DRAWITEM:
@@ -492,22 +484,36 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	return result
 }
 
+func paintCardInk(dc uintptr, kind ux.CardSurface) bool {
+	muted, editor := ux.CardInk(kind)
+	color := activeAnswer.palette.text
+	if muted {
+		color = activeAnswer.palette.muted
+	}
+	procSetTextColor.Call(dc, activeAnswer.palette.color(color))
+	if editor {
+		procSetBkColor.Call(dc, activeAnswer.palette.color(activeAnswer.palette.surface))
+		return true
+	}
+	procSetBkColor.Call(dc, activeAnswer.palette.color(activeAnswer.palette.background))
+	return false
+}
+
 func drawCardButton(item *drawItemStruct) bool {
 	if item == nil || activeAnswer == nil {
 		return false
 	}
-	label := ""
-	primary := false
+	button := ux.CardButton(-1)
 	switch item.CtlID {
 	case BUTTON_COPY:
-		label = "复制结果"
-		primary = !activeAnswer.allowApply
+		button = ux.CardCopy
 	case BUTTON_APPLY:
-		label = "应用到原文"
-		primary = true
+		button = ux.CardApply
 	case BUTTON_CLOSE:
-		label = "×"
-	default:
+		button = ux.CardClose
+	}
+	label, primary, ok := ux.CardButtonFace(button, activeAnswer.allowApply)
+	if !ok {
 		return false
 	}
 	var font uintptr
@@ -560,8 +566,8 @@ func showAnswerPopup(msg popupMessage) error {
 	restoreDPI := handyAwareWindowThread()
 	defer restoreDPI()
 	closeActiveAnswer()
-	if strings.TrimSpace(msg.body) == "" {
-		return errors.New("AI 未返回可显示的文字")
+	if err := corepopup.ResultShown(msg.body); err != nil {
+		return err
 	}
 	// Never truncate a model response: users must be able to review and copy
 	// the full answer, including large translations and generated documents.
@@ -621,7 +627,7 @@ func showAnswerPopup(msg popupMessage) error {
 	}
 	popup.note = note
 	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | uxWSTabStop | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
-	editorText := strings.ReplaceAll(strings.ReplaceAll(msg.body, "\r\n", "\n"), "\n", "\r\n")
+	editorText := corepopup.EditorText(msg.body)
 	editorFrame := corepopup.Editor(cw, ch, scale)
 	editor, err := makeChild("EDIT", "", bodyStyle, editorFrame.X, editorFrame.Y, editorFrame.W, editorFrame.H, hwnd, 0)
 	if err != nil {
@@ -636,7 +642,7 @@ func showAnswerPopup(msg popupMessage) error {
 	uxSetText(editor, editorText)
 	if size, _, _ := procGetWindowTextLength.Call(editor); size == 0 {
 		closeActiveAnswer()
-		return errors.New("结果正文未写入文本控件")
+		return corepopup.ResultWritten(0)
 	}
 	// The header Close action stays outside the draggable caption hit area.
 	closeFrame := corepopup.CloseButton(cw, scale)
@@ -646,13 +652,13 @@ func showAnswerPopup(msg popupMessage) error {
 	}
 	if msg.allowApply {
 		applyFrame := corepopup.ApplyButton(cw, ch, scale)
-		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, applyFrame.X, applyFrame.Y, applyFrame.W, applyFrame.H, hwnd, BUTTON_APPLY); err != nil {
+		if _, err = makeChild("BUTTON", ux.ApplyAction, WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, applyFrame.X, applyFrame.Y, applyFrame.W, applyFrame.H, hwnd, BUTTON_APPLY); err != nil {
 			closeActiveAnswer()
 			return err
 		}
 	}
 	copyFrame := corepopup.CopyButton(cw, ch, scale)
-	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, copyFrame.X, copyFrame.Y, copyFrame.W, copyFrame.H, hwnd, BUTTON_COPY); err != nil {
+	if _, err = makeChild("BUTTON", ux.CopyAction, WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, copyFrame.X, copyFrame.Y, copyFrame.W, copyFrame.H, hwnd, BUTTON_COPY); err != nil {
 		closeActiveAnswer()
 		return err
 	}

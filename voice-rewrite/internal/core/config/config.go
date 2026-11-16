@@ -34,14 +34,65 @@ type Config struct {
 }
 
 const (
-	RecordSecondsMin     = 1
-	RecordSecondsMax     = 180
-	DefaultRecordSeconds = 60
+	RecordSecondsMin        = 1
+	RecordSecondsMax        = 180
+	DefaultRecordSeconds    = 60
+	DefaultMaxSelectedRunes = 12000
+	// MeetingASRMultipart and MeetingASRLlamaPrefix are the only persisted
+	// meeting recognizer names. MeetingASRModes is the settings list order.
+	MeetingASRMultipart   = "multipart"
+	MeetingASRLlamaPrefix = "llama-prefix"
 )
+
+func MeetingASRModes() []string {
+	return []string{MeetingASRMultipart, MeetingASRLlamaPrefix}
+}
+
+func MeetingASRModeAt(index int) string {
+	modes := MeetingASRModes()
+	if index < 0 || index >= len(modes) {
+		return MeetingASRMultipart
+	}
+	return modes[index]
+}
+
+func MeetingASRModeIndex(mode string) int {
+	for i, item := range MeetingASRModes() {
+		if item == mode {
+			return i
+		}
+	}
+	return 0
+}
+
+func MeetingASRModeTitle(mode string) string {
+	switch mode {
+	case MeetingASRMultipart:
+		return "分段音频识别"
+	case MeetingASRLlamaPrefix:
+		return "累积音频 / 前缀续写"
+	default:
+		return ""
+	}
+}
+
+// ChooseAudioDevice keeps the current device unless the combo index is in range.
+// The second result is whether the chosen id differs from the current one.
+func ChooseAudioDevice(current, index int, selectable bool, ids []int) (int, bool) {
+	if !selectable || index < 0 || index >= len(ids) {
+		return current, false
+	}
+	next := ids[index]
+	return next, next != current
+}
+
+func MeetingASRModeNote() string {
+	return MeetingASRLlamaPrefix + " 重复提交累积音频并延续文本前缀；不是原生编码器流式识别。需服务支持该协议。保存会取消当前处理并重新开始。"
+}
 
 func Defaults() Config {
 	return Config{
-		MeetingASRMode:         "llama-prefix",
+		MeetingASRMode:         MeetingASRLlamaPrefix,
 		ASRBaseURL:             "http://127.0.0.1:8080/v1",
 		LLMBaseURL:             "http://127.0.0.1:1234/v1",
 		TextModel:              "auto",
@@ -52,7 +103,7 @@ func Defaults() Config {
 		RecordMode:             "hold",
 		HotkeyExit:             "Ctrl+Alt+F10",
 		MaxRecordSeconds:       DefaultRecordSeconds,
-		MaxSelectedRunes:       12000,
+		MaxSelectedRunes:       DefaultMaxSelectedRunes,
 		MaxResponseTokens:      1200,
 		SelectionCopyAttempts:  2,
 		SelectionCopyTimeoutMS: 750,
@@ -76,41 +127,52 @@ func Marshal(cfg Config) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
+// KnownMeetingASRMode is the persisted meeting recognizer choice.
+func KnownMeetingASRMode(mode string) bool {
+	for _, known := range MeetingASRModes() {
+		if mode == known {
+			return true
+		}
+	}
+	return false
+}
+
 // Normalize applies the persisted configuration's defaults and validation.
 // It does not inspect or transform secrets.
 func Normalize(cfg Config) (Config, error) {
-	if cfg.MeetingASRMode != "llama-prefix" && cfg.MeetingASRMode != "multipart" {
-		return cfg, errors.New("meeting_asr_mode 必须是 llama-prefix 或 multipart")
+	defaults := Defaults()
+	if !KnownMeetingASRMode(cfg.MeetingASRMode) {
+		return cfg, fmt.Errorf("meeting_asr_mode 必须是 %s 或 %s", MeetingASRLlamaPrefix, MeetingASRMultipart)
 	}
 	if cfg.ASRModel == "" {
-		cfg.ASRModel = "whisper-1"
+		cfg.ASRModel = defaults.ASRModel
 	}
 	if cfg.HotkeyRecord == "" {
-		cfg.HotkeyRecord = "Mouse5"
+		cfg.HotkeyRecord = defaults.HotkeyRecord
 	}
 	if cfg.DictationHotkey == "" {
-		cfg.DictationHotkey = "Mouse4"
+		cfg.DictationHotkey = defaults.DictationHotkey
 	}
 	if cfg.RecordMode == "" {
-		cfg.RecordMode = "hold"
+		cfg.RecordMode = defaults.RecordMode
 	}
 	if cfg.RecordMode != "toggle" && cfg.RecordMode != "hold" {
 		return cfg, fmt.Errorf("invalid record_mode %q: use toggle or hold", cfg.RecordMode)
 	}
 	if cfg.HotkeyExit == "" {
-		cfg.HotkeyExit = "Ctrl+Alt+F10"
+		cfg.HotkeyExit = defaults.HotkeyExit
 	}
 	if cfg.AudioDeviceID < -1 || cfg.AudioDeviceID > 255 {
 		return cfg, fmt.Errorf("录音设备编号无效：%d", cfg.AudioDeviceID)
 	}
 	if cfg.MaxResponseTokens < 128 || cfg.MaxResponseTokens > 4096 {
-		cfg.MaxResponseTokens = 1200
+		cfg.MaxResponseTokens = defaults.MaxResponseTokens
 	}
 	if cfg.MaxRecordSeconds < RecordSecondsMin || cfg.MaxRecordSeconds > RecordSecondsMax {
 		cfg.MaxRecordSeconds = DefaultRecordSeconds
 	}
 	if cfg.MaxSelectedRunes <= 0 || cfg.MaxSelectedRunes > 100000 {
-		cfg.MaxSelectedRunes = 12000
+		cfg.MaxSelectedRunes = DefaultMaxSelectedRunes
 	}
 	if cfg.SelectionCopyAttempts < 1 || cfg.SelectionCopyAttempts > 5 {
 		cfg.SelectionCopyAttempts = 3
@@ -141,20 +203,85 @@ func TransformSecrets(cfg Config, transform func(string) (string, error)) (Confi
 	return cfg, nil
 }
 
-// ValidateBaseURL rejects credentials, queries, fragments and non-HTTP schemes
-// before a configured endpoint can be used to carry private data.
+// ValidateBaseURL rejects credentials, queries, fragments, non-HTTP schemes,
+// and percent escapes that the Go URL parser rejects.
 func ValidateBaseURL(base string) error {
-	u, err := url.Parse(strings.TrimSpace(base))
-	if err != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
+	trimmed := strings.TrimSpace(base)
+	u, err := url.Parse(trimmed)
+	if err != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" || !BaseURLEscapesOK(trimmed) {
 		return errors.New("服务地址必须是无用户名、查询参数或锚点的 http(s) API 基础 URL")
 	}
 	return nil
 }
 
+// BaseURLEscapesOK is the percent-escape rule shared with the macOS settings check.
+// A % must be followed by two hex digits. In the host, a decoded byte below 0x80
+// is rejected, except the encoded percent %25.
+func BaseURLEscapesOK(raw string) bool {
+	if !percentHexOK(raw, false) {
+		return false
+	}
+	return percentHexOK(baseURLHost(raw), true)
+}
+
+func baseURLHost(raw string) string {
+	i := strings.Index(raw, "://")
+	if i < 0 {
+		return ""
+	}
+	rest := raw[i+3:]
+	if cut := strings.IndexAny(rest, "/?#"); cut >= 0 {
+		rest = rest[:cut]
+	}
+	if at := strings.LastIndex(rest, "@"); at >= 0 {
+		rest = rest[at+1:]
+	}
+	return rest
+}
+
+func percentHexOK(s string, host bool) bool {
+	for i := 0; i < len(s); {
+		if s[i] != '%' {
+			i++
+			continue
+		}
+		if i+2 >= len(s) || hexNibble(s[i+1]) < 0 || hexNibble(s[i+2]) < 0 {
+			return false
+		}
+		if host && s[i:i+3] != "%25" && hexNibble(s[i+1]) < 8 {
+			return false
+		}
+		i += 3
+	}
+	return true
+}
+
+func hexNibble(c byte) int {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10
+	case c >= 'A' && c <= 'F':
+		return int(c-'A') + 10
+	default:
+		return -1
+	}
+}
+
 const (
-	MaxEndpointBytes = 500
-	MaxModelIDBytes  = 150
+	MaxEndpointBytes   = 500
+	MaxModelIDBytes    = 150
+	MaxCredentialBytes = 4000
+	CredentialTooLong  = "输入内容过长"
 )
+
+// StoredCredentialTooLong reports that the credential bytes about to be stored
+// exceed the settings limit. The caller passes the stored form: macOS passes
+// the typed field, and Windows passes the trimmed field it writes.
+func StoredCredentialTooLong(value string) bool {
+	return len(value) > MaxCredentialBytes
+}
 
 // Endpoints is the non-secret ASR and LLM identity stored by both desktop hosts.
 type Endpoints struct {
@@ -173,7 +300,7 @@ func CanonicalEndpoints(asrURL, asrModel, llmURL, textModel string) (Endpoints, 
 	asrModel = strings.TrimSpace(asrModel)
 	textModel = strings.TrimSpace(textModel)
 	if len(asrURL) > MaxEndpointBytes || len(llmURL) > MaxEndpointBytes || len(asrModel) > MaxModelIDBytes || len(textModel) > MaxModelIDBytes {
-		return Endpoints{}, errors.New("输入内容过长")
+		return Endpoints{}, errors.New(CredentialTooLong)
 	}
 	if err := ValidateBaseURL(asrURL); err != nil {
 		return Endpoints{}, errors.New("请输入有效的 http:// 或 https:// 服务地址")
@@ -181,11 +308,12 @@ func CanonicalEndpoints(asrURL, asrModel, llmURL, textModel string) (Endpoints, 
 	if err := ValidateBaseURL(llmURL); err != nil {
 		return Endpoints{}, errors.New("请输入有效的 http:// 或 https:// 服务地址")
 	}
+	defaults := Defaults()
 	if asrModel == "" {
-		asrModel = "whisper-1"
+		asrModel = defaults.ASRModel
 	}
 	if textModel == "" {
-		textModel = "auto"
+		textModel = defaults.TextModel
 	}
 	return Endpoints{ASRBaseURL: asrURL, ASRModel: asrModel, LLMBaseURL: llmURL, TextModel: textModel}, nil
 }

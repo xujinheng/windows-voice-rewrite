@@ -14,6 +14,7 @@ import (
 
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
+	"voicerewrite/internal/core/ux"
 )
 
 // validateRequest applies platform-independent selection and instruction limits
@@ -23,11 +24,19 @@ func validateSelectedText(ctx context.Context, cfg coreconfig.Config, selected s
 		return err
 	}
 	if strings.TrimSpace(selected) == "" {
-		return errors.New("选中文字为空")
+		return errors.New(ux.EmptySelection)
 	}
-	limit := cfg.MaxSelectedRunes
+	if err := SelectedLengthError(cfg.MaxSelectedRunes, selected); err != nil {
+		return err
+	}
+	return nil
+}
+
+// SelectedLengthError reports a selection that exceeds the configured rune limit.
+// An empty selection is allowed; callers that require text check that separately.
+func SelectedLengthError(limit int, selected string) error {
 	if limit <= 0 {
-		limit = 12000
+		limit = coreconfig.DefaultMaxSelectedRunes
 	}
 	if utf8.RuneCountInString(selected) > limit {
 		return fmt.Errorf("选中文字超过 %d 字限制", limit)
@@ -40,7 +49,7 @@ func validateRequest(ctx context.Context, cfg coreconfig.Config, selected, instr
 		return err
 	}
 	if strings.TrimSpace(instruction) == "" {
-		return errors.New("语音指令为空")
+		return errors.New(ux.EmptyInstruction)
 	}
 	return nil
 }
@@ -90,7 +99,7 @@ func completionText(ctx context.Context, cfg coreconfig.Config, system, prompt s
 		return "", fmt.Errorf("%s JSON response: %w", service, err)
 	}
 	if len(v.Choices) == 0 {
-		return "", errors.New("文本模型返回空 choices")
+		return "", errors.New(ux.EmptyChoices)
 	}
 	return strings.TrimSpace(provider.ThinkingTag.ReplaceAllString(v.Choices[0].Message.Content, "")), nil
 }
@@ -119,7 +128,7 @@ func Rewrite(ctx context.Context, cfg coreconfig.Config, original, instruction s
 	}
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return "", errors.New("文本模型返回空内容；请换用非 thinking 模式的 Instruct 文本模型")
+		return "", errors.New(ux.EmptyModelText)
 	}
 	return text, nil
 }

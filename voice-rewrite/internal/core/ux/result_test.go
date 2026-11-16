@@ -24,13 +24,30 @@ func TestResultCardTitles(t *testing.T) {
 	if DictationNotInserted != "听写结果 · 未自动插入" || DictationCopyManually != "听写结果 · 请手动复制" {
 		t.Fatal("dictation card titles")
 	}
+	if CopyAction != "复制结果" || ApplyAction != "应用到原文" || CloseGlyph != "×" {
+		t.Fatal("result actions")
+	}
 	if CopySucceeded != "已复制结果到剪贴板" || CopyFailed != "复制失败，请尝试选中正文复制" {
 		t.Fatal("copy status")
 	}
 	if SaveWhileBusy != "请先完成当前录音／改写，再保存" {
 		t.Fatal("save while busy")
 	}
+	if WindowsSaveNotice(true) != "设置已保存。快捷键和录音设备将在重启 VoiceRewrite 后生效。" || WindowsSaveNotice(false) != "✓ 已保存，API 地址和模型立即生效" || SaveFailedPrefix != "保存失败：" || OpenAdvancedFailedPrefix != "打开高级配置失败：" {
+		t.Fatal("windows save notice")
+	}
+	if !WindowsSaveRestarts(true, false) || !WindowsSaveRestarts(false, true) || WindowsSaveRestarts(false, false) {
+		t.Fatal("restart notice")
+	}
 	if VoicePaused != "已暂停 · 鼠标侧键恢复正常功能" || PauseWhileBusy != "当前任务仍在处理；结束后可暂停语音操作。" {
 		t.Fatal("pause")
+	}
+	if DictationTooShort != "语音太短，无法转写" || RewriteTooShort != "录音太短（至少约 0.1 秒）；请再试一次" {
+		t.Fatal("short capture")
+	}
+	if PasswordDictation != "密码输入框不接受自动听写，请使用普通输入方式" ||
+		PasswordSelection != "密码输入框不允许读取选中文字或发送给 AI" ||
+		PasswordRewrite != "已拒绝在密码输入框中自动改写" {
+		t.Fatal("password refusal")
 	}
 }
