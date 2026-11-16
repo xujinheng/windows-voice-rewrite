@@ -4,8 +4,9 @@ import Foundation
 /// A clipboard paste is not considered successful merely because Cmd+V was posted.
 public enum TextWriteVerification {
     public static func expectedValue(
-        original: String, selectedText: String, range: TextRange, replacement: String
+        original: String?, selectedText: String, range: TextRange, replacement: String
     ) -> String? {
+        guard let original else { return nil }
         guard range.location >= 0, range.length >= 0,
               range.length <= Int.max - range.location,
               range.location + range.length <= original.utf16.count,
