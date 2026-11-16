@@ -137,12 +137,14 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	}
 	// Native tab stops include selectable read-only text and the rewrite input.
 	p.status = child("STATIC", "", 0, 0, false)
-	for i, title := range []string{"冻结画面", "专注字幕", "A−", "A+", "复制回复", "复制英文", "生成建议", "暂停采集", "会议资料", "1 直接回应", "2 澄清一下", "3 争取时间", "查看新建议", "改写回复", "回到最新", "放大英文"} {
-		p.buttons[i] = child("BUTTON", title, 0x00010000|uxBSOwnerDraw, uintptr(meetingcore.ButtonPause+i), false)
+	idle := meetingcore.ButtonView{SelectedReply: -1}
+	for i := 0; i <= meetingcore.ButtonExpression-meetingcore.ButtonPause; i++ {
+		id := meetingcore.ButtonPause + i
+		p.buttons[i] = child("BUTTON", meetingcore.ButtonFace(id, idle), 0x00010000|uxBSOwnerDraw, uintptr(id), false)
 	}
-	p.labels[0] = child("STATIC", "当前发言 · 中文优先", 0, 0, false)
+	p.labels[0] = child("STATIC", meetingcore.SpeakerLabel, 0, 0, false)
 	editStyle := uintptr(WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_BORDER | 0x00010000)
-	p.live = child("STATIC", "● 等待发言", 0, 0, false)
+	p.live = child("STATIC", meetingcore.LiveCaption(meetingcore.WaitingHint), 0, 0, false)
 	currentStyle := uintptr(ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_VSCROLL)
 	p.currentEnglish = child("EDIT", "", currentStyle, 0, false)
 	p.currentChinese = child("EDIT", "", currentStyle, 0, false)
@@ -152,17 +154,17 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	}
 	setFont(p.currentEnglish, p.englishFont)
 	setFont(p.currentChinese, p.chineseFont)
-	p.labels[3] = child("STATIC", "之前的对话", 0, 0, false)
+	p.labels[3] = child("STATIC", meetingcore.HistoryTitle, 0, 0, false)
 	p.captions = child("EDIT", "", editStyle, 0, true)
 	procSendMessage.Call(p.captions, 0x00C5, 1<<20, 0) // EM_LIMITTEXT: retain in-session history
-	p.labels[1] = child("STATIC", "回复建议", 0, 0, false)
+	p.labels[1] = child("STATIC", meetingcore.ReplyLabel, 0, 0, false)
 	p.responses = child("EDIT", "", editStyle, 0, true)
 	p.instruction = child("EDIT", "", WS_BORDER|0x00010000|0x0080, 0, true)
 	procSendMessage.Call(p.instruction, 0x00C5, 600, 0) // EM_LIMITTEXT
-	cue, _ := syscall.UTF16PtrFromString("改写要求，例如：更简短、先说明风险")
+	cue, _ := syscall.UTF16PtrFromString(meetingcore.RefineCue)
 	procSendMessage.Call(p.instruction, 0x1501, 1, uintptr(unsafe.Pointer(cue))) // EM_SETCUEBANNER
 	runtime.KeepAlive(cue)
-	p.labels[2] = child("STATIC", "我的英文表达", 0, 0, false)
+	p.labels[2] = child("STATIC", meetingcore.ExpressionHeading("", false), 0, 0, false)
 	p.expression = child("EDIT", "", editStyle, 0, true)
 	setFont(p.expression, p.englishFont)
 	p.expressionSource = child("EDIT", "", ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL|WS_VSCROLL, 0, false)
@@ -449,45 +451,24 @@ func updateMeetingHUD(view meetingView) {
 		return
 	}
 	p.latest = view
-	source := strings.Join(strings.Fields(view.sourceName), " ")
-	if source == "" {
-		source = "等待音频源"
-	}
-	if runes := []rune(source); len(runes) > 34 {
-		source = string(runes[:33]) + "…"
-	}
-	state := view.status
-	if view.capturePaused {
-		state = "采集已暂停 · 不再接收音频"
-	} else if p.paused {
-		state = "画面已冻结 · 后台继续处理"
-	} else if state == "" {
-		state = "正在聆听"
-	}
-	detail := source
-	if view.metrics.Stage != "" {
-		detail += "  ·  " + view.metrics.Stage
-	}
-	if view.metrics.Dropped > 0 {
-		detail += fmt.Sprintf("  ·  跳过 %d 个过期片段", view.metrics.Dropped)
-	}
-	p.setText(p.status, state+"\r\n"+detail, false)
-	p.setText(p.buttons[0], map[bool]string{false: "冻结画面", true: "恢复画面"}[p.paused], false)
-	p.setText(p.buttons[7], map[bool]string{false: "暂停采集", true: "恢复采集"}[view.capturePaused], false)
-	p.setText(p.buttons[1], map[bool]string{false: "专注字幕", true: "完整视图"}[p.captionsOnly], false)
-	p.setText(p.buttons[15], map[bool]string{false: "放大英文", true: "收起英文"}[p.expressionExpanded], false)
+	buttons := meetingcore.ButtonView{Paused: p.paused, CapturePaused: view.capturePaused, CaptionsOnly: p.captionsOnly, ExpressionExpanded: p.expressionExpanded, Pending: view.reply.PendingAvailable}
+	p.setText(p.status, meetingcore.StatusText(view.sourceName, view.status, view.metrics.Stage, view.metrics.Dropped, view.capturePaused, p.paused), false)
+	p.setText(p.buttons[0], meetingcore.ButtonFace(meetingcore.ButtonPause, buttons), false)
+	p.setText(p.buttons[7], meetingcore.ButtonFace(meetingcore.ButtonToggleCapture, buttons), false)
+	p.setText(p.buttons[1], meetingcore.ButtonFace(meetingcore.ButtonCaptions, buttons), false)
+	p.setText(p.buttons[15], meetingcore.ButtonFace(meetingcore.ButtonExpression, buttons), false)
 	for _, i := range []int{6, 7, 8} {
 		meetingEnableWindow.Call(p.buttons[i], meetingBool(p.owner != 0))
 	}
 	meetingEnableWindow.Call(p.buttons[12], meetingBool(p.owner != 0 && view.reply.PendingAvailable && !p.paused))
-	p.setText(p.buttons[12], map[bool]string{false: "无新建议", true: "查看新建议"}[view.reply.PendingAvailable], false)
+	p.setText(p.buttons[12], meetingcore.ButtonFace(meetingcore.ButtonAcceptReplies, buttons), false)
 	if p.paused {
 		return
 	}
 	panels := meetingcore.BuildReadingPanels(view.captions)
 	newTurn := panels.CurrentID != p.currentID || panels.HistoryCount > p.historyCount
 	p.currentID = panels.CurrentID
-	p.setText(p.live, "● "+panels.Hint, false)
+	p.setText(p.live, meetingcore.LiveCaption(panels.Hint), false)
 	if meetingcore.TextDue(p.lastTranscript, time.Now(), newTurn || !panels.Live) {
 		p.setText(p.currentEnglish, panels.English, true)
 		p.setText(p.currentChinese, panels.Chinese, true)
@@ -509,11 +490,7 @@ func updateMeetingHUD(view meetingView) {
 	if p.followLatest {
 		p.unreadHistory = 0
 	}
-	historyLabel := fmt.Sprintf("之前的对话 · %d 段", panels.HistoryCount)
-	if p.unreadHistory > 0 {
-		historyLabel += fmt.Sprintf(" · %d 条新内容", p.unreadHistory)
-	}
-	p.setText(p.labels[3], historyLabel, false)
+	p.setText(p.labels[3], meetingcore.HistoryHeading(panels.HistoryCount, p.unreadHistory), false)
 	p.displayedReplies, p.displayedTip = view.reply.Displayed.Lines, view.reply.Displayed.Tip
 	p.renderReply()
 	newEnglish := view.expression.complete && view.expression.english != "" && view.expression.english != p.copyExpression
@@ -530,12 +507,9 @@ func updateMeetingHUD(view meetingView) {
 	} else {
 		p.copyExpression = ""
 	}
-	if expression == "" {
-		expression = "听写键：直译自己的发言；改写键：提问、回答、补充观点。"
-	}
 	p.setText(p.labels[2], meetingcore.ExpressionHeading(view.expressionStatus, view.expression.complete), false)
 	if meetingcore.TextDue(p.lastExpression, time.Now(), view.expression.complete) {
-		p.setText(p.expression, expression, true)
+		p.setText(p.expression, meetingcore.ExpressionShown(expression), true)
 		if newEnglish {
 			procSendMessage.Call(p.expression, 0x0115, 6, 0) // WM_VSCROLL / SB_TOP
 		}
@@ -548,24 +522,10 @@ func updateMeetingHUD(view meetingView) {
 
 func (p *meetingHUD) renderReply() {
 	reply := p.displayedReplies[p.selectedReply]
-	names := [3]string{"直接回应", "澄清一下", "争取时间"}
-	for i := range names {
-		title := fmt.Sprintf("%d %s", i+1, names[i])
-		if i == p.selectedReply {
-			title = "● " + title
-		}
-		p.setText(p.buttons[9+i], title, false)
+	for i := 0; i < 3; i++ {
+		p.setText(p.buttons[9+i], meetingcore.ButtonFace(meetingcore.ButtonReplyFirst+i, meetingcore.ButtonView{SelectedReply: p.selectedReply}), false)
 	}
-	text := reply.English + "\r\n" + reply.Chinese
-	if reply.English != "" && !reply.Complete {
-		text += "\r\n正在生成…（完成后可复制或改写）"
-	}
-	if reply.English == "" {
-		text = "听到提问后生成建议；新建议可点击“查看新建议”后阅读。"
-	}
-	if p.displayedTip != "" {
-		text += "\r\n提示 · " + p.displayedTip
-	}
+	text := meetingcore.ReplyBody(reply.English, reply.Chinese, p.displayedTip, reply.Complete)
 	if meetingcore.TextDue(p.lastReply, time.Now(), reply.Complete) {
 		p.setText(p.responses, text, true)
 		p.lastReply = time.Now()
