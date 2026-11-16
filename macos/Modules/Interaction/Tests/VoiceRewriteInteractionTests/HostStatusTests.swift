@@ -337,6 +337,30 @@ final class HostStatusTests: XCTestCase {
         XCTAssertTrue(failed.showError)
     }
 
+    func testSidePreviewStaysHiddenWhileBusy() {
+        XCTAssertEqual(sidePreview(recording: true, starting: false, processing: false, dictation: true), .hidden)
+        XCTAssertEqual(sidePreview(recording: false, starting: true, processing: false, dictation: false), .hidden)
+        XCTAssertEqual(sidePreview(recording: false, starting: false, processing: true, dictation: true), .hidden)
+        XCTAssertEqual(sidePreview(recording: false, starting: false, processing: false, dictation: true), .dictation)
+        XCTAssertEqual(sidePreview(recording: false, starting: false, processing: false, dictation: false), .rewrite)
+        XCTAssertEqual(previewDismiss(pending: true), PreviewDismiss(allowNextHold: true, dismissIndicator: true))
+        XCTAssertEqual(previewDismiss(pending: false), PreviewDismiss(allowNextHold: true, dismissIndicator: false))
+        let earlier = Date(timeIntervalSince1970: 10)
+        let now = Date(timeIntervalSince1970: 20)
+        let shown = indicatorTiming(wasVisible: false, wasPending: false, wasPhase: 1, pending: true, phase: 1, now: now, started: earlier, changed: earlier)
+        XCTAssertEqual(shown.started, now)
+        XCTAssertEqual(shown.changed, now)
+        let same = indicatorTiming(wasVisible: true, wasPending: true, wasPhase: 1, pending: true, phase: 1, now: now, started: earlier, changed: earlier)
+        XCTAssertEqual(same.started, earlier)
+        XCTAssertEqual(same.changed, earlier)
+        let phase = indicatorTiming(wasVisible: true, wasPending: true, wasPhase: 1, pending: true, phase: 2, now: now, started: earlier, changed: earlier)
+        XCTAssertEqual(phase.started, earlier)
+        XCTAssertEqual(phase.changed, now)
+        let pending = indicatorTiming(wasVisible: true, wasPending: false, wasPhase: 1, pending: true, phase: 1, now: now, started: earlier, changed: earlier)
+        XCTAssertEqual(pending.started, earlier)
+        XCTAssertEqual(pending.changed, now)
+    }
+
     func testShortcutRefreshStopsBeforeTheLastParse() {
         XCTAssertEqual(shortcutRefresh(tokenValid: false, parsed: true, remaining: 0), .stop)
         XCTAssertEqual(shortcutRefresh(tokenValid: true, parsed: false, remaining: 0), .stop)

@@ -1041,24 +1041,31 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func previewIndicator(_ action: SideMouseAction) {
-        guard !isRecording && !isStarting && !isProcessing else { return }
-        showIndicator(phase: .recording, mode: action == .dictation ? "听写" : "改写", pending: true)
+        switch sidePreview(recording: isRecording, starting: isStarting, processing: isProcessing, dictation: action == .dictation) {
+        case .hidden:
+            return
+        case .dictation:
+            showIndicator(phase: .recording, mode: "听写", pending: true)
+        case .rewrite:
+            showIndicator(phase: .recording, mode: "改写", pending: true)
+        }
     }
 
     private func dismissPreviewIndicator() {
-        sideGate.allowNextHold()
-        guard indicatorSnapshot.pending else { return }
-        dismissIndicator()
+        let step = previewDismiss(pending: indicatorSnapshot.pending)
+        if step.allowNextHold {
+            sideGate.allowNextHold()
+        }
+        if step.dismissIndicator {
+            dismissIndicator()
+        }
     }
 
     private func showIndicator(phase: IndicatorPhase, mode: String, pending: Bool) {
         let now = Date()
-        if !indicatorSnapshot.visible {
-            indicatorSnapshot.started = now
-        }
-        if !indicatorSnapshot.visible || indicatorSnapshot.phase != phase || indicatorSnapshot.pending != pending {
-            indicatorSnapshot.changed = now
-        }
+        let timing = indicatorTiming(wasVisible: indicatorSnapshot.visible, wasPending: indicatorSnapshot.pending, wasPhase: indicatorSnapshot.phase.rawValue, pending: pending, phase: phase.rawValue, now: now, started: indicatorSnapshot.started, changed: indicatorSnapshot.changed)
+        indicatorSnapshot.started = timing.started
+        indicatorSnapshot.changed = timing.changed
         indicatorSnapshot.visible = true
         indicatorSnapshot.pending = pending
         indicatorSnapshot.phase = phase
