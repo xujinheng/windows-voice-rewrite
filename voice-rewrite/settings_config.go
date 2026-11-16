@@ -1,12 +1,10 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"strings"
 
 	coreconfig "voicerewrite/internal/core/config"
-	"voicerewrite/internal/core/serviceprobe"
 )
 
 func uxUpdatedConfig(old Config, values [6]string) (Config, error) {
@@ -27,17 +25,4 @@ func uxUpdatedConfig(old Config, values [6]string) (Config, error) {
 	cfg.TextModel = endpoints.TextModel
 	cfg.LLMAPIKey = llmKey
 	return cfg, nil
-}
-
-// Windows surfaces the shared Core probe result in native Win32 settings.
-func uxProbe(ctx context.Context, kind, base string) string {
-	return uxProbeWithKey(ctx, kind, base, "")
-}
-
-func uxProbeWithKey(ctx context.Context, kind, base, apiKey string) string {
-	return uxProbeModel(ctx, kind, base, apiKey, "")
-}
-
-func uxProbeModel(ctx context.Context, kind, base, apiKey, configuredModel string) string {
-	return serviceprobe.ProbeModel(ctx, kind, base, apiKey, configuredModel)
 }

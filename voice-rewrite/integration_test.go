@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/speech"
 )
 
@@ -80,10 +81,10 @@ func TestNativeServiceProbe(t *testing.T) {
 		http.NotFound(w, r)
 	}))
 	defer srv.Close()
-	if got := uxProbe(context.Background(), "ASR", srv.URL+"/v1"); !strings.Contains(got, "HTTP 200") {
+	if got := serviceprobe.ProbeModel(context.Background(), "ASR", srv.URL+"/v1", "", ""); !strings.Contains(got, "HTTP 200") {
 		t.Fatal(got)
 	}
-	if got := uxProbe(context.Background(), "LLM", srv.URL+"/v1"); !strings.Contains(got, "HTTP 200") {
+	if got := serviceprobe.ProbeModel(context.Background(), "LLM", srv.URL+"/v1", "", ""); !strings.Contains(got, "HTTP 200") {
 		t.Fatal(got)
 	}
 }

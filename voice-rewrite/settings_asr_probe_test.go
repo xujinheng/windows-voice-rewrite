@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"voicerewrite/internal/core/serviceprobe"
 )
 
 func TestActualASRProbeUsesAudioTranscription(t *testing.T) {
@@ -53,7 +55,7 @@ func TestActualASRProbeUsesAudioTranscription(t *testing.T) {
 				w.WriteHeader(tc.status)
 			}))
 			defer server.Close()
-			got := uxProbeModel(context.Background(), "ASR", server.URL+"/v1", "testkey", "whisper-1")
+			got := serviceprobe.ProbeModel(context.Background(), "ASR", server.URL+"/v1", "testkey", "whisper-1")
 			if !strings.Contains(got, tc.want) {
 				t.Fatalf("status=%d: %s", tc.status, got)
 			}

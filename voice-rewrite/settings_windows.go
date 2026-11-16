@@ -135,10 +135,6 @@ type uxControl struct {
 	id         uintptr
 }
 
-func uxLayoutRect(c uxControl, clientWidth int32) (x, y, w, h int32) {
-	return settingsform.Layout(settingsform.Spec{X: c.x, Y: c.y, W: c.w, H: c.h, Stretch: c.stretch, Right: c.right}, clientWidth)
-}
-
 // 96-DPI logical coordinate scrolling avoids inaccessible buttons on small
 // work areas and 125%–200% display scaling.
 const uxContentWidth, uxContentHeight int32 = settingsform.DesignWidth, settingsform.DesignHeight
@@ -189,7 +185,7 @@ func (p *uxSettings) layout() {
 	}
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*p.scale + 0.5)) }
 	for _, ctrl := range p.controls {
-		x, y, w, h := uxLayoutRect(ctrl, contentW)
+		x, y, w, h := settingsform.Layout(settingsform.Spec{X: ctrl.x, Y: ctrl.y, W: ctrl.w, H: ctrl.h, Stretch: ctrl.stretch, Right: ctrl.right}, contentW)
 		x -= p.scrollX
 		// Keep the primary footer actions horizontally accessible even when
 		// the form itself needs horizontal scrolling at high DPI.
@@ -738,7 +734,7 @@ func (p *uxSettings) check(kind, base, key, model string) {
 	uxSetText(p.probeStatus[idx], serviceprobe.StatusRunning)
 	h := p.window
 	go func() {
-		result := uxProbeModel(context.Background(), kind, base, key, model)
+		result := serviceprobe.ProbeModel(context.Background(), kind, base, key, model)
 		p.probeMu.Lock()
 		if serial == p.probeSerial[idx] {
 			p.probeResult[idx] = result

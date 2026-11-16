@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"voicerewrite/internal/core/serviceprobe"
 )
 
 func TestClientOnlyConfigHasNoServerManagement(t *testing.T) {
@@ -45,15 +47,15 @@ func TestClientOnlyAPIProbeAuthAndNonstandardModels(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
-	if got := uxProbeWithKey(context.Background(), "ASR", srv.URL+"/v1", "token123"); !strings.Contains(got, "204") {
+	if got := serviceprobe.ProbeModel(context.Background(), "ASR", srv.URL+"/v1", "token123", ""); !strings.Contains(got, "204") {
 		t.Fatalf("got %q", got)
 	}
-	if got := uxProbeWithKey(context.Background(), "ASR", srv.URL+"/v1", ""); !strings.Contains(got, "API Key") {
+	if got := serviceprobe.ProbeModel(context.Background(), "ASR", srv.URL+"/v1", "", ""); !strings.Contains(got, "API Key") {
 		t.Fatalf("got %q", got)
 	}
 	fallback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }))
 	defer fallback.Close()
-	if got := uxProbe(context.Background(), "ASR", fallback.URL+"/v1"); !strings.Contains(got, "请实际试用") {
+	if got := serviceprobe.ProbeModel(context.Background(), "ASR", fallback.URL+"/v1", "", ""); !strings.Contains(got, "请实际试用") {
 		t.Fatalf("got %q", got)
 	}
 }
