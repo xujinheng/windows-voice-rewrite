@@ -43,10 +43,6 @@ func ClickDismisses(x, y int32, window, editor HitRect, buttons []HitRect) bool 
 // Rect is a control frame in the same pixels as the card client area.
 type Rect struct{ X, Y, W, H int32 }
 
-func (r Rect) Hit() HitRect {
-	return HitRect{Left: r.X, Top: r.Y, Right: r.X + r.W, Bottom: r.Y + r.H}
-}
-
 func scaled(v int32, scale float64) int32 {
 	if scale <= 0 {
 		scale = 1

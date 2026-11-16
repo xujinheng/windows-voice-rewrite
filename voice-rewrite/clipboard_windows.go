@@ -234,19 +234,12 @@ func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 	sel.Text = text
 	return sel, nil
 }
-func replaceSelection(hwnd uintptr, sel selectedText, replacement string, cfg Config) error {
-	return replaceSelectionWithVerification(hwnd, sel, replacement, cfg, false)
-}
 
 // Unknown editor types (Chrome/Edge/WeChat/VS Code and more) cannot be
 // classified reliably via Win32 HWND. First verify the selected text and
 // foreground window; then paste and check whether the same original selection
 // remains. If it does, the surface likely refused the paste, so show a preview.
 // This remains a heuristic: it cannot prove an application's content changed.
-func replaceSelectionWithVerification(hwnd uintptr, sel selectedText, replacement string, cfg Config, verifyBrowser bool) error {
-	return replaceSelectionWithGuard(hwnd, sel, replacement, cfg, verifyBrowser, nil)
-}
-
 func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement string, cfg Config, verifyBrowser bool, valid func() bool) error {
 	if valid != nil && !valid() {
 		return errors.New("任务已过期，禁止覆盖原文")

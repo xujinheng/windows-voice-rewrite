@@ -218,7 +218,6 @@ func currentCursorPoint() trayPoint {
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&p)))
 	return p
 }
-func colorRGB(r, g, b uint32) uintptr { return uintptr(r | (g << 8) | (b << 16)) }
 
 func (p *answerPopup) setNote(s string) {
 	if p == nil || p.note == 0 {

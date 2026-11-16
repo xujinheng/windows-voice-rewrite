@@ -490,9 +490,6 @@ func handyScaleForMonitor(mon uintptr) float64 {
 	return float64(dpiX) / 96
 }
 
-func handyScreenPosition(w, h int) (int32, int32) {
-	return handyScreenPositionForMonitor(uxMonitorForPoint(currentCursorPoint()), w, h)
-}
 func handyScreenPositionForMonitor(mon uintptr, w, h int) (int32, int32) {
 	work, ok := uxWorkAreaForMonitor(mon)
 	if !ok {
