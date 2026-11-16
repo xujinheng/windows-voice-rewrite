@@ -1001,7 +1001,8 @@ final class WorkspaceModel: ObservableObject {
                     self.applyTask(dictationInsertFollowUp(
                         succeeded: false,
                         status: insertionStatus(error, rewrite: false, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation),
-                        manualTitle: ResultCopy.dictationCopyManually,
+                        manualTitle: (error as? InteractionFailure) == .writeNotConfirmed
+                            ? ResultCopy.dictationWriteUnconfirmed : ResultCopy.dictationCopyManually,
                         text: text))
                 }
             }
