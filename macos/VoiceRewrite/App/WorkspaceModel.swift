@@ -467,19 +467,21 @@ final class WorkspaceModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self, self.updateCheck.accepts(token) else { return }
                 self.isCheckingUpdate = false
+                let follow: UpdateFollowUp
                 switch reply {
                 case .success(let response):
-                    if response.ok {
-                        self.updateStatus = response.result?["summary"]?.string ?? updateMissingSummary()
-                        if response.result?["newer"]?.boolValue == true {
-                            self.updatePage = response.result?["page"]?.string
-                        }
-                    } else {
-                        self.updateStatus = response.error?.userText ?? updateFailed()
-                    }
+                    follow = updateFollowUp(
+                        ok: response.ok,
+                        summary: response.result?["summary"]?.string,
+                        newer: response.result?["newer"]?.boolValue == true,
+                        page: response.result?["page"]?.string,
+                        errorText: response.error?.userText,
+                        transport: nil)
                 case .failure(let failure):
-                    self.updateStatus = updateFailedDetail(failure.localizedDescription)
+                    follow = updateFollowUp(ok: false, summary: nil, newer: false, page: nil, errorText: nil, transport: failure.localizedDescription)
                 }
+                self.updateStatus = follow.status
+                self.updatePage = follow.page
                 DiagnosticLog.note(self.updateStatus)
             }
         }
@@ -512,18 +514,9 @@ final class WorkspaceModel: ObservableObject {
         }
         let token = probeGeneration.latest
         for operation in operations {
-            let name: String
-            let bridgeOperation: String
-            switch operation {
-            case .transcribe:
-                name = "ASR"
-                bridgeOperation = "probe_asr"
-            case .selectedTask:
-                name = "LLM"
-                bridgeOperation = "probe_llm"
-            case .spokenSelectedTask:
-                continue
-            }
+            guard let request = probeRequest(operation) else { continue }
+            let name = request.name
+            let bridgeOperation = request.operation
             setProbeStatus(serviceProbeRunning(name: name, running: ServiceProbeCopy.running), for: operation)
             do {
                 let config = try requestConfig(for: operation)

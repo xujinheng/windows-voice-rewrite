@@ -1,5 +1,29 @@
 import Foundation
 
+public struct UpdateFollowUp: Equatable, Sendable {
+    public var status: String
+    public var page: String?
+    public init(status: String, page: String?) {
+        self.status = status
+        self.page = page
+    }
+}
+
+/// An update reply chooses the status line and whether a release page is offered.
+/// A missing summary is replaced. An empty summary stays empty. A transport failure wins.
+public func updateFollowUp(ok: Bool, summary: String?, newer: Bool, page: String?, errorText: String?, transport: String?) -> UpdateFollowUp {
+    if let transport {
+        return UpdateFollowUp(status: updateFailedDetail(transport), page: nil)
+    }
+    if !ok {
+        return UpdateFollowUp(status: errorText ?? updateFailed(), page: nil)
+    }
+    if newer {
+        return UpdateFollowUp(status: summary ?? updateMissingSummary(), page: page)
+    }
+    return UpdateFollowUp(status: summary ?? updateMissingSummary(), page: nil)
+}
+
 public struct TaskHistory: Equatable, Sendable {
     public var title: String
     public var value: String

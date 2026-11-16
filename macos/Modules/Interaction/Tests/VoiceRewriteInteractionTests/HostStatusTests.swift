@@ -208,6 +208,27 @@ final class HostStatusTests: XCTestCase {
         XCTAssertFalse(dictation.cancelTask)
     }
 
+    func testUpdateFollowUpOffersAPageOnlyForANewerRelease() {
+        let newer = updateFollowUp(ok: true, summary: "有新版本", newer: true, page: "https://example", errorText: "失败", transport: nil)
+        XCTAssertEqual(newer.status, "有新版本")
+        XCTAssertEqual(newer.page, "https://example")
+
+        let current = updateFollowUp(ok: true, summary: "", newer: false, page: "https://example", errorText: nil, transport: nil)
+        XCTAssertEqual(current.status, "")
+        XCTAssertNil(current.page)
+
+        let missing = updateFollowUp(ok: true, summary: nil, newer: false, page: nil, errorText: nil, transport: nil)
+        XCTAssertEqual(missing.status, updateMissingSummary())
+
+        let rejected = updateFollowUp(ok: false, summary: "有新版本", newer: true, page: "https://example", errorText: nil, transport: nil)
+        XCTAssertEqual(rejected.status, updateFailed())
+        XCTAssertNil(rejected.page)
+
+        let dropped = updateFollowUp(ok: true, summary: "有新版本", newer: true, page: "https://example", errorText: "失败", transport: "断开")
+        XCTAssertEqual(dropped.status, updateFailedDetail("断开"))
+        XCTAssertNil(dropped.page)
+    }
+
     func testInsertionStatusKeepsPasswordAndClipboardSentences() {
         XCTAssertEqual(
             insertionStatus(InteractionFailure.secureField, rewrite: true, passwordRewrite: "改写", passwordDictation: "听写"),

@@ -13,6 +13,12 @@ final class KeychainCredentialsTests: XCTestCase {
         XCTAssertEqual(CredentialError.from(status: -7), .osStatus(-7))
     }
 
+    func testProbeRequestKeepsTheServiceNames() {
+        XCTAssertEqual(probeRequest(.transcribe), ProbeRequest(name: "ASR", operation: "probe_asr"))
+        XCTAssertEqual(probeRequest(.selectedTask), ProbeRequest(name: "LLM", operation: "probe_llm"))
+        XCTAssertNil(probeRequest(.spokenSelectedTask))
+    }
+
     func testHelperConfigIsScopedAndNeverPersisted() throws {
         struct Fixtures: CredentialReading {
             func read(_ account: CredentialAccount) throws -> String {

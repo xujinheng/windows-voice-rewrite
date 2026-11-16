@@ -501,7 +501,7 @@ func (p *meetingHUD) savePreferences() {
 	maximized, _, _ := user32.NewProc("IsZoomed").Call(p.window)
 	prefs, _ := meetingcore.LoadPreferences(meetingPreferencesPath())
 	prefs.FontSize, prefs.CaptionsOnly, prefs.Panes = p.fontSize, p.captionsOnly, p.paneWeights
-	if minimized == 0 && maximized == 0 {
+	if meetingcore.RememberBounds(minimized != 0, maximized != 0) {
 		prefs.X, prefs.Y, prefs.Width, prefs.Height = bounds.Left, bounds.Top, bounds.Right-bounds.Left, bounds.Bottom-bounds.Top
 	}
 	if err := meetingcore.SavePreferences(meetingPreferencesPath(), prefs); err != nil && p.app != nil {
@@ -658,11 +658,12 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			}
 			return 0
 		case WM_CLOSE:
-			if p.owner == 0 {
+			switch meetingcore.ChooseClose(p.owner != 0) {
+			case meetingcore.CloseOwner:
+				procPostMessage.Call(p.owner, WM_MEETING_STOP, 0, 0)
+			default:
 				closeMeetingHUD()
 				postMeetingQuit.Call(0)
-			} else {
-				procPostMessage.Call(p.owner, WM_MEETING_STOP, 0, 0)
 			}
 			return 0
 		case WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC:
