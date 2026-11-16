@@ -85,32 +85,33 @@ func KnownMeetingASRMode(mode string) bool {
 // Normalize applies the persisted configuration's defaults and validation.
 // It does not inspect or transform secrets.
 func Normalize(cfg Config) (Config, error) {
+	defaults := Defaults()
 	if !KnownMeetingASRMode(cfg.MeetingASRMode) {
 		return cfg, errors.New("meeting_asr_mode 必须是 llama-prefix 或 multipart")
 	}
 	if cfg.ASRModel == "" {
-		cfg.ASRModel = "whisper-1"
+		cfg.ASRModel = defaults.ASRModel
 	}
 	if cfg.HotkeyRecord == "" {
-		cfg.HotkeyRecord = "Mouse5"
+		cfg.HotkeyRecord = defaults.HotkeyRecord
 	}
 	if cfg.DictationHotkey == "" {
-		cfg.DictationHotkey = "Mouse4"
+		cfg.DictationHotkey = defaults.DictationHotkey
 	}
 	if cfg.RecordMode == "" {
-		cfg.RecordMode = "hold"
+		cfg.RecordMode = defaults.RecordMode
 	}
 	if cfg.RecordMode != "toggle" && cfg.RecordMode != "hold" {
 		return cfg, fmt.Errorf("invalid record_mode %q: use toggle or hold", cfg.RecordMode)
 	}
 	if cfg.HotkeyExit == "" {
-		cfg.HotkeyExit = "Ctrl+Alt+F10"
+		cfg.HotkeyExit = defaults.HotkeyExit
 	}
 	if cfg.AudioDeviceID < -1 || cfg.AudioDeviceID > 255 {
 		return cfg, fmt.Errorf("录音设备编号无效：%d", cfg.AudioDeviceID)
 	}
 	if cfg.MaxResponseTokens < 128 || cfg.MaxResponseTokens > 4096 {
-		cfg.MaxResponseTokens = 1200
+		cfg.MaxResponseTokens = defaults.MaxResponseTokens
 	}
 	if cfg.MaxRecordSeconds < RecordSecondsMin || cfg.MaxRecordSeconds > RecordSecondsMax {
 		cfg.MaxRecordSeconds = DefaultRecordSeconds
@@ -188,11 +189,12 @@ func CanonicalEndpoints(asrURL, asrModel, llmURL, textModel string) (Endpoints, 
 	if err := ValidateBaseURL(llmURL); err != nil {
 		return Endpoints{}, errors.New("请输入有效的 http:// 或 https:// 服务地址")
 	}
+	defaults := Defaults()
 	if asrModel == "" {
-		asrModel = "whisper-1"
+		asrModel = defaults.ASRModel
 	}
 	if textModel == "" {
-		textModel = "auto"
+		textModel = defaults.TextModel
 	}
 	return Endpoints{ASRBaseURL: asrURL, ASRModel: asrModel, LLMBaseURL: llmURL, TextModel: textModel}, nil
 }

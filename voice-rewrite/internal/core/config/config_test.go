@@ -45,17 +45,18 @@ func TestNormalizeConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ASRModel != "whisper-1" || got.HotkeyRecord != "Mouse5" || got.DictationHotkey != "Mouse4" || got.RecordMode != "hold" || got.HotkeyExit != "Ctrl+Alt+F10" {
+	want := Defaults()
+	if got.ASRModel != want.ASRModel || got.HotkeyRecord != want.HotkeyRecord || got.DictationHotkey != want.DictationHotkey || got.RecordMode != want.RecordMode || got.HotkeyExit != want.HotkeyExit {
 		t.Fatalf("missing defaults: %+v", got)
 	}
-	if got.MaxResponseTokens != 1200 || got.MaxRecordSeconds != DefaultRecordSeconds || got.MaxSelectedRunes != DefaultMaxSelectedRunes || got.SelectionCopyAttempts != 3 || got.SelectionCopyTimeoutMS != 1800 {
+	if got.MaxResponseTokens != want.MaxResponseTokens || got.MaxRecordSeconds != DefaultRecordSeconds || got.MaxSelectedRunes != DefaultMaxSelectedRunes || got.SelectionCopyAttempts != 3 || got.SelectionCopyTimeoutMS != 1800 {
 		t.Fatalf("invalid bounds not clamped: %+v", got)
 	}
 	if got.ASRAPIKey != "opaque" || cfg.ASRAPIKey != "opaque" {
 		t.Fatal("normalization must not handle secrets")
 	}
 	endpoints, err := CanonicalEndpoints(" http://127.0.0.1:8081/v1/ ", " qwen3-asr ", "http://127.0.0.1:1234/v1", "")
-	if err != nil || endpoints.ASRBaseURL != "http://127.0.0.1:8081/v1" || endpoints.ASRModel != "qwen3-asr" || endpoints.TextModel != "auto" {
+	if err != nil || endpoints.ASRBaseURL != "http://127.0.0.1:8081/v1" || endpoints.ASRModel != "qwen3-asr" || endpoints.TextModel != Defaults().TextModel {
 		t.Fatalf("endpoints %+v %v", endpoints, err)
 	}
 	if _, err := CanonicalEndpoints("http://localhost/v1?key=1", "m", "http://127.0.0.1:1234/v1", "auto"); err == nil {
