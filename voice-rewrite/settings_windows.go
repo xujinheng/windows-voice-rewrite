@@ -330,15 +330,11 @@ func (p *uxSettings) acceptShortcutKey(vk, mods uint32) {
 	winL, _, _ := procGetAsyncKeyState.Call(0x5B)
 	winR, _, _ := procGetAsyncKeyState.Call(0x5C)
 	candidate, err := shortcut.CaptureKey(vk, mods, winL&0x8000 != 0 || winR&0x8000 != 0)
-	if errors.Is(err, shortcut.ErrSkipCapture) {
+	if text, ok := shortcut.CaptureFailure(err); ok {
+		uxSetText(p.hint, text)
 		return
 	}
 	if err != nil {
-		text := err.Error()
-		if text != shortcut.WinCaptureMessage {
-			text = shortcut.CaptureFailedPrefix + text
-		}
-		uxSetText(p.hint, text)
 		return
 	}
 	p.acceptShortcut(candidate)
@@ -357,8 +353,8 @@ func (p *uxSettings) acceptShortcut(candidate string) {
 		target = p.shortcut
 		normalized, err = shortcut.ValidateDictation(candidate, uxWinText(p.rewriteShortcut), p.app.cfg.HotkeyExit)
 	}
-	if err != nil {
-		uxSetText(p.hint, shortcut.CaptureFailedPrefix+err.Error())
+	if text, ok := shortcut.CaptureFailure(err); ok {
+		uxSetText(p.hint, text)
 		return
 	}
 	uxSetText(target, normalized)
@@ -376,20 +372,20 @@ func uxSettingsKeyMessage(msg winMSG) bool {
 			return false
 		}
 	}
-	if p.capturingShortcut != 0 && (msg.Message == WM_KEYDOWN || msg.Message == 0x0104) {
-		if msg.WParam == VK_ESCAPE {
-			p.stopShortcutCapture()
-			uxSetText(p.hint, shortcut.CaptureCanceledMessage)
-		} else {
-			p.acceptShortcutKey(uint32(msg.WParam), uxCurrentShortcutModifiers())
-		}
+	switch shortcut.SettingsKeyAction(p.capturingShortcut != 0, msg.Message, uint32(msg.WParam)) {
+	case shortcut.SettingsKeyCancel:
+		p.stopShortcutCapture()
+		uxSetText(p.hint, shortcut.CaptureCanceledMessage)
 		return true
-	}
-	if msg.Message != WM_KEYDOWN || msg.WParam != VK_ESCAPE {
+	case shortcut.SettingsKeyAccept:
+		p.acceptShortcutKey(uint32(msg.WParam), uxCurrentShortcutModifiers())
+		return true
+	case shortcut.SettingsKeyClose:
+		procDestroyWindow.Call(p.window)
+		return true
+	default:
 		return false
 	}
-	procDestroyWindow.Call(p.window)
-	return true
 }
 
 func (p *uxSettings) refreshTheme() {

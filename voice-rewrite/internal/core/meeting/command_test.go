@@ -27,6 +27,9 @@ func TestApplyCommandTogglesViewFlags(t *testing.T) {
 	if _, effect = ApplyCommand(next, CommandCopyReply, 0); effect != EffectCopy {
 		t.Fatal(effect)
 	}
+	if !NeedsMeetingOwner(ButtonRequestReplies) || !NeedsMeetingOwner(ButtonToggleCapture) || !NeedsMeetingOwner(ButtonOpenProfile) || NeedsMeetingOwner(ButtonPause) || NeedsMeetingOwner(ButtonAcceptReplies) {
+		t.Fatal("owner buttons")
+	}
 	if _, effect = ApplyCommand(next, CommandNone, 0); effect != EffectNone {
 		t.Fatal(effect)
 	}

@@ -71,6 +71,16 @@ const (
 	EffectCloseProfile
 )
 
+// NeedsMeetingOwner reports a button that stays disabled until a live meeting owns the window.
+func NeedsMeetingOwner(id int) bool {
+	switch id {
+	case ButtonRequestReplies, ButtonToggleCapture, ButtonOpenProfile:
+		return true
+	default:
+		return false
+	}
+}
+
 // ApplyCommand returns the view flags after a button and the host effect.
 // Captions save the layout. Expanding an expression only lays the window out again.
 func ApplyCommand(flags HUDFlags, action Command, replyIndex int) (HUDFlags, Effect) {

@@ -164,6 +164,9 @@ func TestSplitterHitUsesTheOpenBand(t *testing.T) {
 	if MinClientWidth != 600 || MinClientHeight != 720 || LogicalDrag(110, 100, 2) != 5 || LogicalDrag(101, 100, 2) != 0 || LogicalDrag(90, 100, 1) != -10 {
 		t.Fatal("meeting drag")
 	}
+	if LabelFont() != (FontFace{14, 600}) {
+		t.Fatal("label font")
+	}
 	body, english, chinese := ReadingFonts(16)
 	if body != (FontFace{16, 400}) || english != (FontFace{17, 450}) || chinese != (FontFace{22, 600}) {
 		t.Fatal("reading fonts")

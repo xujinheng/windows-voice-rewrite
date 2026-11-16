@@ -116,10 +116,12 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	activeMeetingHUD = p
 	p.background, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.background))
 	p.surface, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.surface))
-	p.labelFont = meetingUIFont(p.px(14), 600)
-	p.bodyFont = meetingUIFont(p.px(p.fontSize), 400)
-	p.englishFont = popupFont(-p.px(p.fontSize+1), 450)
-	p.chineseFont = meetingUIFont(p.px(p.fontSize+6), 600)
+	label := meetingcore.LabelFont()
+	body, english, chinese := meetingcore.ReadingFonts(p.fontSize)
+	p.labelFont = meetingUIFont(p.px(label.Size), label.Weight)
+	p.bodyFont = meetingUIFont(p.px(body.Size), body.Weight)
+	p.englishFont = popupFont(-p.px(english.Size), english.Weight)
+	p.chineseFont = meetingUIFont(p.px(chinese.Size), chinese.Weight)
 	applyWindowPalette(hwnd, p.palette)
 	child := func(class, text string, style uintptr, id uintptr, body bool) uintptr {
 		if err != nil {
@@ -160,7 +162,7 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	p.labels[1] = child("STATIC", meetingcore.ReplyLabel, 0, 0, false)
 	p.responses = child("EDIT", "", editStyle, 0, true)
 	p.instruction = child("EDIT", "", WS_BORDER|0x00010000|0x0080, 0, true)
-	procSendMessage.Call(p.instruction, 0x00C5, 600, 0) // EM_LIMITTEXT
+	procSendMessage.Call(p.instruction, 0x00C5, uintptr(meetingcore.RefineFieldLimit), 0) // EM_LIMITTEXT
 	cue, _ := syscall.UTF16PtrFromString(meetingcore.RefineCue)
 	procSendMessage.Call(p.instruction, 0x1501, 1, uintptr(unsafe.Pointer(cue))) // EM_SETCUEBANNER
 	runtime.KeepAlive(cue)
@@ -405,8 +407,10 @@ func updateMeetingHUD(view meetingView) {
 	p.setText(p.buttons[7], meetingcore.ButtonFace(meetingcore.ButtonToggleCapture, buttons), false)
 	p.setText(p.buttons[1], meetingcore.ButtonFace(meetingcore.ButtonCaptions, buttons), false)
 	p.setText(p.buttons[15], meetingcore.ButtonFace(meetingcore.ButtonExpression, buttons), false)
-	for _, i := range []int{6, 7, 8} {
-		meetingEnableWindow.Call(p.buttons[i], meetingBool(p.owner != 0))
+	for id := meetingcore.ButtonPause; id <= meetingcore.ButtonExpression; id++ {
+		if meetingcore.NeedsMeetingOwner(id) {
+			meetingEnableWindow.Call(p.buttons[id-meetingcore.ButtonPause], meetingBool(p.owner != 0))
+		}
 	}
 	meetingEnableWindow.Call(p.buttons[12], meetingBool(meetingcore.AcceptEnabled(p.owner != 0, view.reply.PendingAvailable, p.paused)))
 	p.setText(p.buttons[12], meetingcore.ButtonFace(meetingcore.ButtonAcceptReplies, buttons), false)

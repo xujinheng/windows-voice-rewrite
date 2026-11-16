@@ -12,8 +12,9 @@ const (
 	MaxBackgroundRunes = 4000
 	MaxTermsRunes      = 2000
 	// MaxRefineInstructionRunes is the accepted length after trim.
-	// The Windows field stops typing at 600; this function still allows 2000.
+	// RefineFieldLimit is the Windows edit control's typing stop. It stays lower.
 	MaxRefineInstructionRunes = 2000
+	RefineFieldLimit          = 600
 )
 
 // AcceptProfile rejects over-long meeting notes, then trims what will be stored.

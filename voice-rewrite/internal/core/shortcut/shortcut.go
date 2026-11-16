@@ -252,6 +252,43 @@ func ValidateRewrite(candidate, dictation, exit string) (string, error) {
 
 // AssignPair trims the two settings fields, validates rewrite, then dictation.
 // A validation error leaves the stored shortcuts unchanged.
+// CaptureFailure is the settings hint for a capture error.
+// A modifier that should be ignored returns ok=false. The Windows-key sentence has no prefix.
+func CaptureFailure(err error) (string, bool) {
+	if err == nil || errors.Is(err, ErrSkipCapture) {
+		return "", false
+	}
+	if err.Error() == WinCaptureMessage {
+		return WinCaptureMessage, true
+	}
+	return CaptureFailedPrefix + err.Error(), true
+}
+
+// SettingsKey is what the settings window does with one key message.
+type SettingsKey int
+
+const (
+	SettingsKeyIgnore SettingsKey = iota
+	SettingsKeyCancel
+	SettingsKeyAccept
+	SettingsKeyClose
+)
+
+// SettingsKeyAction distinguishes capture from closing the window.
+// Escape during capture cancels. Escape otherwise closes. Any other capture key is stored.
+func SettingsKeyAction(capturing bool, message, vk uint32) SettingsKey {
+	if capturing && (message == 0x0100 || message == 0x0104) {
+		if vk == 0x1B {
+			return SettingsKeyCancel
+		}
+		return SettingsKeyAccept
+	}
+	if message == 0x0100 && vk == 0x1B {
+		return SettingsKeyClose
+	}
+	return SettingsKeyIgnore
+}
+
 func AssignPair(record, dictation, exit, nextRecord, nextDictation string) (string, string, bool, error) {
 	nextRecord = strings.TrimSpace(nextRecord)
 	nextDictation = strings.TrimSpace(nextDictation)

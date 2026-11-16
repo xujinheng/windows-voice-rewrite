@@ -40,6 +40,9 @@ func TestAcceptRefineUsesThreeChoicesAndTwoThousandRunes(t *testing.T) {
 	if _, ok = AcceptRefine(1, strings.Repeat("调", MaxRefineInstructionRunes)); !ok {
 		t.Fatal("2000-rune instruction rejected")
 	}
+	if RefineFieldLimit != 600 || RefineFieldLimit >= MaxRefineInstructionRunes {
+		t.Fatal("field limit")
+	}
 	if _, ok = AcceptRefine(1, strings.Repeat("调", MaxRefineInstructionRunes+1)); ok {
 		t.Fatal("2001-rune instruction accepted")
 	}

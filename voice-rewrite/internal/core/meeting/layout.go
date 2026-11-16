@@ -110,6 +110,8 @@ func NextFontSize(current, delta int32) int32 {
 
 type FontFace struct{ Size, Weight int32 }
 
+func LabelFont() FontFace { return FontFace{14, 600} }
+
 // ReadingFonts is the body, English, and Chinese face for one meeting text size.
 // English is one point larger. Chinese is six points larger and heavier.
 func ReadingFonts(size int32) (body, english, chinese FontFace) {
