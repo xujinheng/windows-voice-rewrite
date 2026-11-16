@@ -22,6 +22,13 @@ public enum InteractionFailure: Error, Equatable, Sendable {
     case systemError(Int32)
 }
 
+/// A focused editor may lack text-change AX notifications, but an observed
+/// app focus plus a readable complete value permits final snapshot validation.
+/// Unreadable controls must keep notification monitoring or fall back to copy.
+public func canMonitorSelection(focusNotifications: Bool, textNotifications: Bool, fullValue: String?) -> Bool {
+    focusNotifications && (textNotifications || fullValue != nil)
+}
+
 public struct TextRange: Equatable, Sendable {
     public let location: Int
     public let length: Int
