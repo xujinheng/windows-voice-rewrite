@@ -45,10 +45,16 @@ private final class FakeUptime: @unchecked Sendable {
 
 final class SelectionGuardTests: XCTestCase {
     func testBrowserAddressBarMonitorFallbackNeedsFocusAndFullValue() {
-        XCTAssertTrue(canMonitorSelection(focusNotifications: true, textNotifications: true, fullValue: nil))
-        XCTAssertTrue(canMonitorSelection(focusNotifications: true, textNotifications: false, fullValue: "https://example.test"))
-        XCTAssertFalse(canMonitorSelection(focusNotifications: true, textNotifications: false, fullValue: nil))
-        XCTAssertFalse(canMonitorSelection(focusNotifications: false, textNotifications: true, fullValue: "https://example.test"))
+        XCTAssertTrue(canMonitorSelection(focusNotifications: true, textNotifications: true,
+                                         unsupportedTextNotifications: false, fullValue: nil))
+        XCTAssertTrue(canMonitorSelection(focusNotifications: true, textNotifications: false,
+                                         unsupportedTextNotifications: true, fullValue: "https://example.test"))
+        XCTAssertFalse(canMonitorSelection(focusNotifications: true, textNotifications: false,
+                                          unsupportedTextNotifications: true, fullValue: nil))
+        XCTAssertFalse(canMonitorSelection(focusNotifications: true, textNotifications: false,
+                                          unsupportedTextNotifications: false, fullValue: "https://example.test"))
+        XCTAssertFalse(canMonitorSelection(focusNotifications: false, textNotifications: true,
+                                          unsupportedTextNotifications: true, fullValue: "https://example.test"))
     }
 
     func testGenerationInvalidatesOldTask() async throws {
