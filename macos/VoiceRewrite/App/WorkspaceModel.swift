@@ -390,7 +390,7 @@ final class WorkspaceModel: ObservableObject {
             sideMouse = driver
             driver.setVoicePaused(voicePaused)
             if isFreshStart {
-                sideMouseStatus = voicePaused ? VoicePauseCopy.paused : "监听已启动；等待 Mouse4/Mouse5 事件"
+                sideMouseStatus = voicePaused ? VoicePauseCopy.paused : "监听已启动；等待已绑定的鼠标侧键事件"
             }
         } catch {
             driver.shutdown()
@@ -423,7 +423,8 @@ final class WorkspaceModel: ObservableObject {
             ignoreNextSideHold = false
             return
         }
-        sideMouseStatus = action == .dictation ? "Mouse4 长按已触发" : "Mouse5 长按已触发"
+        let mappedButton = (activeShortcutPlan?.sideButtons ?? SideMouseBindings()).button(for: action)
+        sideMouseStatus = mappedButton.map { "Mouse\($0 + 1) 长按已触发" } ?? "已通过配置的快捷键触发"
         switch action {
         case .dictation: toggleRecording(from: targetPID)
         case .rewrite: toggleVoiceSelectedText(from: targetPID)
@@ -697,7 +698,7 @@ final class WorkspaceModel: ObservableObject {
                     interactionStatus = Self.captureErrorMessage(error)
                 }
             } else {
-                interactionStatus = "未指定外部文本框；本次录音仅显示识别结果。请在目标软件中按 Mouse4 开始听写"
+                interactionStatus = "未指定外部文本框；本次录音仅显示识别结果。请在目标软件中按配置的听写快捷键开始听写"
             }
             guard resultGeneration.accepts(token) else { return }
             do {
