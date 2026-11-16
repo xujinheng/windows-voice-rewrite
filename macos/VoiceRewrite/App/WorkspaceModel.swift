@@ -20,7 +20,7 @@ final class WorkspaceModel: ObservableObject {
     @Published var taskInstruction = ""
     @Published private(set) var connection: Connection = .disconnected
     @Published private(set) var recordingStatus = recordingIdle()
-    @Published private(set) var serviceStatus = "尚未连接"
+    @Published private(set) var serviceStatus = helperNotYetConnected()
     @Published private(set) var asrProbeStatus = ServiceProbeCopy.idle
     @Published private(set) var llmProbeStatus = ServiceProbeCopy.idle
     @Published private(set) var isCheckingServices = false
@@ -37,7 +37,7 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var sessionHistory: [SessionHistoryEntry] = []
     @Published private(set) var restoredHistoryText: String?
     @Published private(set) var voicePaused = false
-    @Published private(set) var updateStatus = "尚未检查更新"
+    @Published private(set) var updateStatus = updateNotChecked()
     @Published private(set) var updatePage: String?
     @Published private(set) var isCheckingUpdate = false
     private var historyStore = SessionHistory()
@@ -91,28 +91,28 @@ final class WorkspaceModel: ObservableObject {
         bridge?.stop()
         bridge = nil
         connection = .connecting
-        serviceStatus = "正在启动应用内 Go Helper"
+        serviceStatus = helperStarting()
         guard let executable = Bundle.main.executableURL?.deletingLastPathComponent()
             .appendingPathComponent("voicebridge") else {
-            connection = .failed("无法定位 App Bundle")
+            connection = .failed(helperBundleMissing())
             return
         }
         let client = BridgeClient(executableURL: executable) { [weak self] failure in
             Task { @MainActor [weak self] in
                 guard let self, self.helloGeneration.accepts(token) else { return }
                 self.connection = .failed(failure.localizedDescription)
-                self.serviceStatus = "Go Helper 已断开"
+                self.serviceStatus = helperDisconnected()
                 self.cancelProbes()
-                self.asrProbeStatus = "未连接"
-                self.llmProbeStatus = "未连接"
+                self.asrProbeStatus = helperProbeDisconnected()
+                self.llmProbeStatus = helperProbeDisconnected()
                 self.invalidatePending()
             }
         }
         bridge = client
         do { try client.start() }
         catch {
-            connection = .failed("Go Helper 启动失败")
-            serviceStatus = "不可用"
+            connection = .failed(helperStartFailed())
+            serviceStatus = helperUnavailable()
             return
         }
         client.send(operation: "hello") { [weak self] response in
@@ -122,18 +122,18 @@ final class WorkspaceModel: ObservableObject {
                 case .success(let reply):
                     guard reply.ok, reply.result?["name"]?.string == "VoiceRewrite",
                           reply.result?["protocol"]?.int == 1 else {
-                        self.connection = .failed("无效的 Helper 协议响应")
-                        self.serviceStatus = "握手失败"
+                        self.connection = .failed(helperProtocolRejected())
+                        self.serviceStatus = helperHandshakeFailedStatus()
                         return
                     }
                     self.connection = .connected("VoiceRewrite / JSONL v1")
-                    self.serviceStatus = "Go Helper 已连接"
-                    DiagnosticLog.note("Go Helper 已连接")
+                    self.serviceStatus = helperConnected()
+                    DiagnosticLog.note(helperConnected())
                     self.checkServices()
                     self.refreshShortcutsFromCore()
                 case .failure:
-                    self.connection = .failed("Go Helper 握手失败")
-                    self.serviceStatus = "不可用"
+                    self.connection = .failed(helperHandshakeFailed())
+                    self.serviceStatus = helperUnavailable()
                 }
             }
         }
@@ -455,14 +455,14 @@ final class WorkspaceModel: ObservableObject {
     // No user microphone input or selected text is sent by these operations.
     func checkForUpdate() {
         guard let bridge, case .connected = connection else {
-            updateStatus = "请先连接 Go Helper"
+            updateStatus = helperRequired()
             updatePage = nil
             return
         }
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
         let token = updateCheck.begin()
         isCheckingUpdate = true
-        updateStatus = "正在检查更新"
+        updateStatus = updateChecking()
         updatePage = nil
         bridge.send(operation: "check_update", fields: ["current_version": .string(version)]) { [weak self] reply in
             Task { @MainActor [weak self] in
@@ -471,15 +471,15 @@ final class WorkspaceModel: ObservableObject {
                 switch reply {
                 case .success(let response):
                     if response.ok {
-                        self.updateStatus = response.result?["summary"]?.string ?? "检查更新没有返回说明"
+                        self.updateStatus = response.result?["summary"]?.string ?? updateMissingSummary()
                         if response.result?["newer"]?.boolValue == true {
                             self.updatePage = response.result?["page"]?.string
                         }
                     } else {
-                        self.updateStatus = response.error?.userText ?? "检查更新失败"
+                        self.updateStatus = response.error?.userText ?? updateFailed()
                     }
                 case .failure(let failure):
-                    self.updateStatus = "检查更新失败：\(failure.localizedDescription)"
+                    self.updateStatus = updateFailedDetail(failure.localizedDescription)
                 }
                 DiagnosticLog.note(self.updateStatus)
             }
@@ -507,7 +507,7 @@ final class WorkspaceModel: ObservableObject {
         cancelProbes()
         guard case .connected = connection, let bridge else {
             for operation in operations {
-                setProbeStatus("Go Helper 未连接", for: operation)
+                setProbeStatus(helperNotConnectedProbe(), for: operation)
             }
             return
         }
@@ -721,8 +721,8 @@ final class WorkspaceModel: ObservableObject {
                 guard resultGeneration.accepts(token) else { return }
                 if let voiceSelection {
                     cancelProbes()
-                    asrProbeStatus = "ASR：正在识别语音修改指令…"
-                    llmProbeStatus = "LLM：等待语音指令识别"
+                    asrProbeStatus = probeRewriteListeningASR()
+                    llmProbeStatus = probeRewriteWaitingLLM()
                     let config = try requestConfig(for: .spokenSelectedTask)
                     guard let bridge else { throw BridgeFailure.notRunning }
                     let id = bridge.send(operation: "selected_voice_task", fields: [
@@ -742,7 +742,7 @@ final class WorkspaceModel: ObservableObject {
                     return
                 }
                 cancelProbes()
-                asrProbeStatus = "ASR：正在转写真实录音…"
+                asrProbeStatus = probeTranscribing()
                 let config = try requestConfig(for: .transcribe)
                 guard let bridge else { throw BridgeFailure.notRunning }
                 let id = bridge.send(operation: "transcribe", fields: [
@@ -758,19 +758,19 @@ final class WorkspaceModel: ObservableObject {
                             switch transcriptReply(ok: response.ok, text: response.result?["text"]?.string) {
                             case .failed:
                                 self.recordingStatus = FailureCopy.status(prefix: "ASR 请求失败：", message: response.error?.userText ?? "invalid_reply")
-                                self.asrProbeStatus = "ASR：实际转写失败"
+                                self.asrProbeStatus = probeTranscribeFailed()
                                 self.showIndicator(phase: .error, mode: "听写", pending: false)
                                 return
                             case .empty:
                                 self.recordingStatus = ResultCopy.dictationEmpty
-                                self.asrProbeStatus = "ASR：实际转写失败"
+                                self.asrProbeStatus = probeTranscribeFailed()
                                 self.showIndicator(phase: .error, mode: "听写", pending: false)
                                 return
                             case .ready(let text):
                                 self.transcription = text
                                 self.rememberHistory(title: ResultCopy.dictationHistory, value: text)
                                 self.recordingStatus = dictationRecognized()
-                                self.asrProbeStatus = "ASR：真实录音识别成功"
+                                self.asrProbeStatus = probeTranscribeSucceeded()
                                 if let insertion {
                                     self.showIndicator(phase: .applying, mode: "听写", pending: false)
                                     Task { @MainActor [weak self] in
@@ -793,7 +793,7 @@ final class WorkspaceModel: ObservableObject {
                             }
                         case .failure(let failure):
                             self.recordingStatus = dictationRecognizeFailed(failure.localizedDescription)
-                            self.asrProbeStatus = "ASR：实际转写失败"
+                            self.asrProbeStatus = probeTranscribeFailed()
                             self.showIndicator(phase: .error, mode: "听写", pending: false)
                         }
                     }
@@ -803,7 +803,7 @@ final class WorkspaceModel: ObservableObject {
                 guard resultGeneration.accepts(token) else { return }
                 isProcessing = false
                 recordingStatus = dictationCannotRecognize(error.localizedDescription)
-                asrProbeStatus = "ASR：实际转写未完成"
+                asrProbeStatus = probeTranscribeIncomplete()
                 showIndicator(phase: .error, mode: indicatorSnapshot.mode, pending: false)
                 if let voiceSelection {
                     await interaction.cancelTask(generation: voiceSelection.generation)
@@ -848,12 +848,12 @@ final class WorkspaceModel: ObservableObject {
                     await interaction.cancelTask(generation: generation)
                     isProcessing = false
                     interactionStatus = message
-                    llmProbeStatus = "LLM：实际任务未完成"
+                    llmProbeStatus = probeTaskIncomplete()
                     showIndicator(phase: .error, mode: "改写", pending: false)
                     return
                 }
                 cancelProbes()
-                llmProbeStatus = "LLM：正在处理选区…"
+                llmProbeStatus = probeRewritingSelection()
                 showIndicator(phase: .rewriting, mode: "改写", pending: false)
                 let config = try requestConfig(for: .selectedTask)
                 guard let bridge else { throw BridgeFailure.notRunning }
@@ -873,7 +873,7 @@ final class WorkspaceModel: ObservableObject {
                 guard resultGeneration.accepts(token) else { return }
                 isProcessing = false
                 interactionStatus = rewriteTaskNotStarted(error.localizedDescription)
-                llmProbeStatus = "LLM：实际任务未完成"
+                llmProbeStatus = probeTaskIncomplete()
                 showIndicator(phase: .error, mode: "改写", pending: false)
             }
         }
@@ -905,9 +905,9 @@ final class WorkspaceModel: ObservableObject {
                 interactionStatus = FailureCopy.status(prefix: "模型处理失败：", message: response.error?.userText ?? "invalid_reply")
                 if spoken {
                     recordingStatus = rewriteVoiceIncomplete()
-                    asrProbeStatus = "ASR / LLM：语音选区任务失败"
+                    asrProbeStatus = probeVoiceTaskFailed()
                 }
-                llmProbeStatus = "LLM：实际任务失败"
+                llmProbeStatus = probeTaskFailed()
                 showIndicator(phase: .error, mode: "改写", pending: false)
                 Task { await interaction.cancelTask(generation: generation) }
                 return
@@ -920,13 +920,13 @@ final class WorkspaceModel: ObservableObject {
                 if spoken, let instruction = result?["instruction"]?.string {
                     transcription = instruction
                     rememberHistory(title: ResultCopy.dictationHistory, value: instruction)
-                    asrProbeStatus = "ASR：语音指令识别成功"
+                    asrProbeStatus = probeVoiceInstructionReady()
                     recordingStatus = rewriteVoiceHandled()
                 }
                 processedText = text
                 let intent = result?["intent"]?.string ?? ""
                 rememberHistory(title: ResultCopy.historyTitle(intent: intent), value: text)
-                llmProbeStatus = "LLM：实际文本任务成功"
+                llmProbeStatus = probeTaskSucceeded()
                 let cardTitle = ResultCopy.cardTitle(intent: intent)
                 guard case .write = decision else {
                     ResultCardPanel.shared.present(title: cardTitle, text: text)
@@ -952,7 +952,7 @@ final class WorkspaceModel: ObservableObject {
             }
         case .failure(let failure):
             interactionStatus = rewriteTaskFailed(failure.localizedDescription)
-            llmProbeStatus = "LLM：实际文本任务失败或已取消"
+            llmProbeStatus = probeTaskCanceled()
             if spoken { recordingStatus = rewriteVoiceFailed() }
             showIndicator(phase: .error, mode: "改写", pending: false)
             Task { await interaction.cancelTask(generation: generation) }

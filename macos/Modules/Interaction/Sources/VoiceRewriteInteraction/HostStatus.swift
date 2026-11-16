@@ -196,6 +196,68 @@ public func rewriteCanceled() -> String { "已取消" }
 
 public func rewriteCanceledDetail() -> String { "已取消当前操作" }
 
+public func helperNotYetConnected() -> String { "尚未连接" }
+
+public func helperStarting() -> String { "正在启动应用内 Go Helper" }
+
+public func helperBundleMissing() -> String { "无法定位 App Bundle" }
+
+public func helperDisconnected() -> String { "Go Helper 已断开" }
+
+public func helperProbeDisconnected() -> String { "未连接" }
+
+public func helperStartFailed() -> String { "Go Helper 启动失败" }
+
+public func helperUnavailable() -> String { "不可用" }
+
+public func helperProtocolRejected() -> String { "无效的 Helper 协议响应" }
+
+public func helperHandshakeFailedStatus() -> String { "握手失败" }
+
+public func helperHandshakeFailed() -> String { "Go Helper 握手失败" }
+
+public func helperConnected() -> String { "Go Helper 已连接" }
+
+public func helperRequired() -> String { "请先连接 Go Helper" }
+
+public func helperNotConnectedProbe() -> String { "Go Helper 未连接" }
+
+public func updateNotChecked() -> String { "尚未检查更新" }
+
+public func updateChecking() -> String { "正在检查更新" }
+
+public func updateMissingSummary() -> String { "检查更新没有返回说明" }
+
+public func updateFailed() -> String { "检查更新失败" }
+
+public func updateFailedDetail(_ detail: String) -> String { "检查更新失败：\(detail)" }
+
+public func probeRewriteListeningASR() -> String { "ASR：正在识别语音修改指令…" }
+
+public func probeRewriteWaitingLLM() -> String { "LLM：等待语音指令识别" }
+
+public func probeTranscribing() -> String { "ASR：正在转写真实录音…" }
+
+public func probeTranscribeFailed() -> String { "ASR：实际转写失败" }
+
+public func probeTranscribeSucceeded() -> String { "ASR：真实录音识别成功" }
+
+public func probeTranscribeIncomplete() -> String { "ASR：实际转写未完成" }
+
+public func probeTaskIncomplete() -> String { "LLM：实际任务未完成" }
+
+public func probeRewritingSelection() -> String { "LLM：正在处理选区…" }
+
+public func probeVoiceTaskFailed() -> String { "ASR / LLM：语音选区任务失败" }
+
+public func probeTaskFailed() -> String { "LLM：实际任务失败" }
+
+public func probeVoiceInstructionReady() -> String { "ASR：语音指令识别成功" }
+
+public func probeTaskSucceeded() -> String { "LLM：实际文本任务成功" }
+
+public func probeTaskCanceled() -> String { "LLM：实际文本任务失败或已取消" }
+
 public func serviceProbeRunning(name: String, running: String) -> String {
     return name + "：" + running
 }

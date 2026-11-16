@@ -32,6 +32,15 @@ final class HostStatusTests: XCTestCase {
         XCTAssertEqual(rewriteTaskFailed("取消"), "文本任务失败或已取消：取消")
         XCTAssertEqual(rewritePreviewOnly(), "仅预览结果；未获模型路由修改授权")
         XCTAssertEqual(dictationRecognizeFailed("timeout"), "识别失败：timeout")
+        XCTAssertNotEqual(helperProbeDisconnected(), helperNotConnectedProbe())
+        XCTAssertNotEqual(helperHandshakeFailed(), helperHandshakeFailedStatus())
+        XCTAssertNotEqual(probeTranscribeFailed(), probeTranscribeIncomplete())
+        XCTAssertNotEqual(probeTaskFailed(), probeTaskIncomplete())
+        XCTAssertNotEqual(probeTaskFailed(), probeTaskCanceled())
+        XCTAssertEqual(probeRewriteListeningASR(), "ASR：正在识别语音修改指令…")
+        XCTAssertNotEqual(updateNotChecked(), updateChecking())
+        XCTAssertEqual(updateChecking(), "正在检查更新")
+        XCTAssertNotEqual(updateChecking(), "检查更新…")
     }
 
     func testShortcutInstallReusesTheSameKeyboard() {
