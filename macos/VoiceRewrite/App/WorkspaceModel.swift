@@ -94,25 +94,19 @@ final class WorkspaceModel: ObservableObject {
         serviceStatus = helperStarting()
         guard let executable = Bundle.main.executableURL?.deletingLastPathComponent()
             .appendingPathComponent("voicebridge") else {
-            connection = .failed(helperBundleMissing())
+            applyHelperConnection(.bundleMissing)
             return
         }
         let client = BridgeClient(executableURL: executable) { [weak self] failure in
             Task { @MainActor [weak self] in
                 guard let self, self.helloGeneration.accepts(token) else { return }
-                self.connection = .failed(failure.localizedDescription)
-                self.serviceStatus = helperDisconnected()
-                self.cancelProbes()
-                self.asrProbeStatus = helperProbeDisconnected()
-                self.llmProbeStatus = helperProbeDisconnected()
-                self.invalidatePending()
+                self.applyHelperConnection(.disconnected(failure.localizedDescription))
             }
         }
         bridge = client
         do { try client.start() }
         catch {
-            connection = .failed(helperStartFailed())
-            serviceStatus = helperUnavailable()
+            applyHelperConnection(.startFailed)
             return
         }
         client.send(operation: "hello") { [weak self] response in
@@ -121,18 +115,12 @@ final class WorkspaceModel: ObservableObject {
                 switch response {
                 case .success(let reply):
                     guard helperHelloAccepted(ok: reply.ok, name: reply.result?["name"]?.string, version: reply.result?["protocol"]?.int) else {
-                        self.connection = .failed(helperProtocolRejected())
-                        self.serviceStatus = helperHandshakeFailedStatus()
+                        self.applyHelperConnection(.protocolRejected)
                         return
                     }
-                    self.connection = .connected(helperConnectedLabel())
-                    self.serviceStatus = helperConnected()
-                    DiagnosticLog.note(helperConnected())
-                    self.checkServices()
-                    self.refreshShortcutsFromCore()
+                    self.applyHelperConnection(.connected)
                 case .failure:
-                    self.connection = .failed(helperHandshakeFailed())
-                    self.serviceStatus = helperUnavailable()
+                    self.applyHelperConnection(.handshakeFailed)
                 }
             }
         }
@@ -860,6 +848,37 @@ final class WorkspaceModel: ObservableObject {
             cardTitle: ResultCopy.cardTitle(intent: intent),
             spokenHistoryTitle: ResultCopy.dictationHistory)
         applyTask(follow, generation: generation, token: token, replacement: (snapshot, generation))
+    }
+
+    private func applyHelperConnection(_ event: HelperConnection) {
+        let effect = helperConnectionEffect(event)
+        if let label = effect.connectedLabel {
+            connection = .connected(label)
+        } else if let detail = effect.failedDetail {
+            connection = .failed(detail)
+        }
+        if let status = effect.serviceStatus {
+            serviceStatus = status
+        }
+        if effect.cancelProbes {
+            cancelProbes()
+        }
+        if let probe = effect.probeStatus {
+            asrProbeStatus = probe
+            llmProbeStatus = probe
+        }
+        if effect.invalidatePending {
+            invalidatePending()
+        }
+        if effect.logServiceStatus {
+            DiagnosticLog.note(serviceStatus)
+        }
+        if effect.checkServices {
+            checkServices()
+        }
+        if effect.refreshShortcuts {
+            refreshShortcutsFromCore()
+        }
     }
 
     private func replyFailure(_ reply: Result<BridgeReply, BridgeFailure>) -> String? {

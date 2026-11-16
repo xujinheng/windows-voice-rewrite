@@ -208,6 +208,44 @@ final class HostStatusTests: XCTestCase {
         XCTAssertFalse(dictation.cancelTask)
     }
 
+    func testHelperConnectionKeepsTheHandshakeSentencesApart() {
+        let missing = helperConnectionEffect(.bundleMissing)
+        XCTAssertEqual(missing.failedDetail, helperBundleMissing())
+        XCTAssertNil(missing.serviceStatus)
+        XCTAssertFalse(missing.cancelProbes)
+
+        let started = helperConnectionEffect(.startFailed)
+        XCTAssertEqual(started.failedDetail, helperStartFailed())
+        XCTAssertEqual(started.serviceStatus, helperUnavailable())
+        XCTAssertNil(started.probeStatus)
+
+        let dropped = helperConnectionEffect(.disconnected("管道关闭"))
+        XCTAssertEqual(dropped.failedDetail, "管道关闭")
+        XCTAssertEqual(dropped.serviceStatus, helperDisconnected())
+        XCTAssertEqual(dropped.probeStatus, helperProbeDisconnected())
+        XCTAssertNotEqual(dropped.probeStatus, helperNotConnectedProbe())
+        XCTAssertTrue(dropped.cancelProbes)
+        XCTAssertTrue(dropped.invalidatePending)
+
+        let rejected = helperConnectionEffect(.protocolRejected)
+        XCTAssertEqual(rejected.failedDetail, helperProtocolRejected())
+        XCTAssertEqual(rejected.serviceStatus, helperHandshakeFailedStatus())
+        XCTAssertNotEqual(rejected.serviceStatus, helperHandshakeFailed())
+
+        let connected = helperConnectionEffect(.connected)
+        XCTAssertEqual(connected.connectedLabel, helperConnectedLabel())
+        XCTAssertEqual(connected.serviceStatus, helperConnected())
+        XCTAssertTrue(connected.checkServices)
+        XCTAssertTrue(connected.refreshShortcuts)
+        XCTAssertTrue(connected.logServiceStatus)
+        XCTAssertNil(connected.failedDetail)
+
+        let failed = helperConnectionEffect(.handshakeFailed)
+        XCTAssertEqual(failed.failedDetail, helperHandshakeFailed())
+        XCTAssertEqual(failed.serviceStatus, helperUnavailable())
+        XCTAssertFalse(failed.checkServices)
+    }
+
     func testUpdateFollowUpOffersAPageOnlyForANewerRelease() {
         let newer = updateFollowUp(ok: true, summary: "有新版本", newer: true, page: "https://example", errorText: "失败", transport: nil)
         XCTAssertEqual(newer.status, "有新版本")
