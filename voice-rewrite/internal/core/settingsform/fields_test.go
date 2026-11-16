@@ -41,6 +41,25 @@ func TestPaintedFramesFollowThePage(t *testing.T) {
 	}
 }
 
+func TestSettingsChromeBoxesStayPut(t *testing.T) {
+	if ProbeStatusBox() != (Rect{352, 324, 435, 48}) || ProbeButtonBox() != (Rect{696, 130, 92, 30}) {
+		t.Fatal("probe boxes moved")
+	}
+	if WindowsInputNote() != (Rect{226, 345, 565, 44}) || SettingsHint() != (Rect{223, 457, 560, 22}) {
+		t.Fatal("note or hint moved")
+	}
+	if FooterButton(AnchorSave) != (Rect{220, 418, 124, 34}) || FooterButton(AnchorAdvanced) != (Rect{358, 418, 112, 34}) || FooterButton(AnchorClose) != (Rect{710, 418, 94, 34}) {
+		t.Fatal("footer moved")
+	}
+	if NavButton(0) != (Rect{12, 110, 170, 35}) || NavButton(2) != (Rect{12, 192, 170, 35}) {
+		t.Fatal("nav moved")
+	}
+	frame := FieldFrame(1)
+	if CaptureButton(1) != (Rect{593, frame.Y, 194, 34}) || MicrophoneList(1) != (Rect{frame.X + 5, frame.Y + 4, frame.W - 10, 190}) {
+		t.Fatal("input row moved")
+	}
+}
+
 func TestShortcutFieldMatchesMainFieldBaseline(t *testing.T) {
 	frame, edit := ShortcutFrame(), ShortcutEdit()
 	normal := FieldEdit(0)

@@ -60,6 +60,12 @@ func ExpressionDetail(status, source string) string {
 	}
 }
 
+// TranscriptAtBottom reports whether an edit control is within two lines of its end.
+func TranscriptAtBottom(maxPos, pos, page int32) bool {
+	remaining := maxPos - pos - max(int32(0), page-1)
+	return remaining <= 2
+}
+
 func TranscriptStep(currentID, previousID uint64, historyCount, previousHistory int, live bool, last, now time.Time) (newTurn, paint bool) {
 	newTurn = currentID != previousID || historyCount > previousHistory
 	paint = TextDue(last, now, newTurn || !live)

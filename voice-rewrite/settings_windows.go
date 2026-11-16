@@ -785,20 +785,21 @@ func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t stri
 		}
 		p.captureButtons[1] = button
 	case "microphone":
-		frame := settingsform.FieldFrame(row)
+		list := settingsform.MicrophoneList(row)
 		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
-		p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, frame.X+5, frame.Y+4, frame.W-10, 190, uxMicrophoneInput, false)
+		p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, list.X, list.Y, list.W, list.H, uxMicrophoneInput, false)
 		p.populateMicrophones(app.cfg.AudioDeviceID)
 		resultStyleNativeEdit(p.microphone, p.palette.dark)
 	case "input_note_windows":
-		info := makeOne("STATIC", control.Label, stat, 226, 345, 565, 44, 0, false)
+		note := settingsform.WindowsInputNote()
+		info := makeOne("STATIC", control.Label, stat, note.X, note.Y, note.W, note.H, 0, false)
 		setFont(info, p.mutedFont)
 	case "save":
-		makeOne("BUTTON", control.Label, btn, 220, 418, 124, 34, contract.SaveButton, false)
+		placeFooterButton(makeOne, btn, control.Label, settingsform.AnchorSave, contract.SaveButton)
 	case "advanced":
-		makeOne("BUTTON", control.Label, btn, 358, 418, 112, 34, contract.AdvancedButton, false)
+		placeFooterButton(makeOne, btn, control.Label, settingsform.AnchorAdvanced, contract.AdvancedButton)
 	case "close":
-		makeOne("BUTTON", control.Label, btn, 710, 418, 94, 34, contract.CloseButton, false)
+		placeFooterButton(makeOne, btn, control.Label, settingsform.AnchorClose, contract.CloseButton)
 	default:
 		return fmt.Errorf("设置页缺少控件布局: %s", control.ID)
 	}
@@ -830,12 +831,19 @@ func placeProbeStatus(p *uxSettings, makeOne func(cls, t string, style uintptr, 
 	if !ok || slot < 0 || slot >= len(p.probeStatus) {
 		return fmt.Errorf("设置页缺少连接检测: %s", fieldID)
 	}
-	p.probeStatus[slot] = makeOne("STATIC", serviceprobe.StatusIdle, stat, 352, 324, 435, 48, 0, false)
+	box := settingsform.ProbeStatusBox()
+	p.probeStatus[slot] = makeOne("STATIC", serviceprobe.StatusIdle, stat, box.X, box.Y, box.W, box.H, 0, false)
 	return nil
 }
 
 func placeProbeButton(makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, btn uintptr, control contract.Control, id uintptr) {
-	makeOne("BUTTON", control.Label, btn, 696, 130, 92, 30, id, false)
+	box := settingsform.ProbeButtonBox()
+	makeOne("BUTTON", control.Label, btn, box.X, box.Y, box.W, box.H, id, false)
+}
+
+func placeFooterButton(makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, btn uintptr, label string, anchor settingsform.Anchor, id uintptr) {
+	box := settingsform.FooterButton(anchor)
+	makeOne("BUTTON", label, btn, box.X, box.Y, box.W, box.H, id, false)
 }
 
 func placeShortcutEdit(makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, stat, edit uintptr, control contract.Control, row int, value string, id uintptr) uintptr {
@@ -851,8 +859,8 @@ func placeCaptureButton(makeOne func(cls, t string, style uintptr, x, y, w, hh i
 	if !ok {
 		return 0, fmt.Errorf("设置页缺少控件布局: %s", shortcutID)
 	}
-	frame := settingsform.FieldFrame(row)
-	return makeOne("BUTTON", control.Label, btn, 593, frame.Y, 194, 34, id, false), nil
+	box := settingsform.CaptureButton(row)
+	return makeOne("BUTTON", control.Label, btn, box.X, box.Y, box.W, box.H, id, false), nil
 }
 
 func stackedSettingsRow(id string) (int, bool) {
@@ -946,14 +954,16 @@ func showNativeSettings(app *appState) error {
 		return fmt.Errorf("设置导航与页面数量不一致")
 	}
 	for i, page := range pages {
-		p.navButtons[i] = makeOne("BUTTON", page.Title, btn, 12, int32(110+i*41), 170, 35, contract.NavSpeech+uintptr(i), false)
+		nav := settingsform.NavButton(i)
+		p.navButtons[i] = makeOne("BUTTON", page.Title, btn, nav.X, nav.Y, nav.W, nav.H, contract.NavSpeech+uintptr(i), false)
 	}
 	head := makeOne("STATIC", "设置", uxWSChild, 0, 0, 1, 1, 0, false)
 	setFont(head, p.titleFont)
 	if err := layoutSettingsFields(p, app, makeOne, stat, edit, btn); err != nil {
 		return err
 	}
-	p.hint = makeOne("STATIC", "", stat, 223, 457, 560, 22, 0, false)
+	hint := settingsform.SettingsHint()
+	p.hint = makeOne("STATIC", "", stat, hint.X, hint.Y, hint.W, hint.H, 0, false)
 	setFont(p.hint, p.mutedFont)
 	setFont(p.probeStatus[0], p.mutedFont)
 	setFont(p.probeStatus[1], p.mutedFont)

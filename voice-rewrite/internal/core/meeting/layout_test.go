@@ -157,6 +157,18 @@ func TestTranscriptAndExpressionSteps(t *testing.T) {
 	}
 }
 
+func TestSplitterHitUsesTheOpenBand(t *testing.T) {
+	var y [5]int32
+	var shown [5]bool
+	y[1], shown[1] = 100, true
+	if SplitterHit(96, y, shown, 4, true) != -1 || SplitterHit(96, y, shown, 4, false) != 1 || SplitterHit(104, y, shown, 4, false) != -1 || SplitterHit(80, y, shown, 4, false) != -1 {
+		t.Fatal("splitter band")
+	}
+	if TranscriptAtBottom(10, 0, 1) || !TranscriptAtBottom(10, 8, 1) || !TranscriptAtBottom(4, 0, 3) {
+		t.Fatal("transcript bottom")
+	}
+}
+
 func TestStreamingTextPaintsOnItsInterval(t *testing.T) {
 	start := time.Unix(0, 0)
 	if TextRefresh != 280*time.Millisecond || !TextDue(start, start.Add(TextRefresh), false) || TextDue(start, start.Add(TextRefresh-time.Millisecond), false) || !TextDue(start, start, true) {

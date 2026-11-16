@@ -259,15 +259,7 @@ func (p *meetingHUD) layout() {
 // Divider hit regions are the unobstructed eight-pixel bands between
 // independent EDIT controls. Capture keeps the drag active outside the band.
 func (p *meetingHUD) splitterAt(y int32) int {
-	if p.profileOpen {
-		return -1
-	}
-	for index, visible := range p.splitterVisible {
-		if visible && y >= p.splitterY[index]-p.px(4) && y < p.splitterY[index]+p.px(4) {
-			return index
-		}
-	}
-	return -1
+	return meetingcore.SplitterHit(y, p.splitterY, p.splitterVisible, p.px(4), p.profileOpen)
 }
 
 func (p *meetingHUD) dragSplitterTo(y int32) {
@@ -340,8 +332,7 @@ func (p *meetingHUD) transcriptAtBottom(control uintptr) bool {
 	if ok == 0 {
 		return false
 	}
-	remaining := info.Max - info.Pos - max(0, int32(info.Page)-1)
-	return remaining <= 2
+	return meetingcore.TranscriptAtBottom(info.Max, info.Pos, int32(info.Page))
 }
 
 func (p *meetingHUD) scrollToLatest() {

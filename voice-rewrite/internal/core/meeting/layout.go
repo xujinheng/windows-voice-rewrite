@@ -216,6 +216,20 @@ func VisiblePanes(captionsOnly, expanded bool) [PaneCount]bool {
 
 // A divider always resizes its two neighboring visible surfaces; the reply
 // surface is skipped when expanded English temporarily hides the reply tools.
+// SplitterHit is the divider under a client Y, or -1 when the pointer misses every band.
+// band is half the hit thickness. The top edge is included and the bottom edge is not.
+func SplitterHit(y int32, splitterY [5]int32, visible [5]bool, band int32, profileOpen bool) int {
+	if profileOpen {
+		return -1
+	}
+	for index, shown := range visible {
+		if shown && y >= splitterY[index]-band && y < splitterY[index]+band {
+			return index
+		}
+	}
+	return -1
+}
+
 func DividerPair(index int, captionsOnly, expanded bool) (int, int, bool) {
 	switch index {
 	case 0:
