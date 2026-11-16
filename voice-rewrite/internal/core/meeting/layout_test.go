@@ -91,6 +91,31 @@ func TestProfileLayoutKeepsTheStackedRows(t *testing.T) {
 	}
 }
 
+func TestReadingLayoutMatchesTheHudRows(t *testing.T) {
+	full := LayoutReading(1000, 900, 1, DefaultPaneWeights, false, false)
+	if full.Status != (Box{16, 8, 968, 40}) || len(full.Toolbar) != 6 || full.Toolbar[0] != (Box{16, 54, 96, 32}) {
+		t.Fatalf("status %+v toolbar %+v", full.Status, full.Toolbar)
+	}
+	if full.Speaker != (Box{16, 94, 704, 24}) || full.Live != (Box{720, 94, 264, 24}) || full.Chinese.Y != 121 {
+		t.Fatalf("speaker %+v live %+v chinese %+v", full.Speaker, full.Live, full.Chinese)
+	}
+	if !full.Reply || !full.Expression || !full.SplitterOn[0] || !full.SplitterOn[3] || !full.SplitterOn[4] {
+		t.Fatal("full reading")
+	}
+	captions := LayoutReading(1000, 900, 1, DefaultPaneWeights, true, false)
+	if captions.Reply || captions.Expression || captions.SplitterOn[2] {
+		t.Fatal("captions only")
+	}
+	expanded := LayoutReading(1000, 900, 1, DefaultPaneWeights, false, true)
+	if expanded.Reply || !expanded.Expression || !expanded.SplitterOn[2] || expanded.SplitterOn[3] || !expanded.SplitterOn[4] {
+		t.Fatal("expanded english")
+	}
+	scaled := LayoutReading(1000, 900, 2, DefaultPaneWeights, false, false)
+	if scaled.Status.X != 32 || scaled.Status.Y != 16 || scaled.Status.H != 80 || scaled.Chinese.Y != 242 || scaled.Toolbar[0].W != 192 {
+		t.Fatalf("scaled %+v chinese %d toolbar %d", scaled.Status, scaled.Chinese.Y, scaled.Toolbar[0].W)
+	}
+}
+
 func TestMeetingChromeAndToolbarsStayPut(t *testing.T) {
 	if NextFontSize(16, 2) != 18 || NextFontSize(27, 2) != 28 || NextFontSize(13, -2) != 12 {
 		t.Fatal("font size")

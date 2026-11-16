@@ -116,6 +116,98 @@ func ReplyToolbar() ([]int, []int32) {
 	return []int{9, 10, 11}, []int32{112, 112, 112}
 }
 
+// ReadingLayout is the meeting HUD after the profile page is hidden.
+// scale matches the host pixel round, int32(v*scale+0.5), applied to each edge alone.
+type ReadingLayout struct {
+	PaneHeights                                                     [PaneCount]int32
+	Status, Speaker, Live                                           Box
+	Toolbar                                                         []Box
+	Chinese, English                                                Box
+	HistoryLabel, HistoryButton, History                            Box
+	Reply                                                           bool
+	ReplyLabel, Request, Accept, CopyReply                          Box
+	ReplyButtons                                                    []Box
+	Responses, Instruction, Refine                                  Box
+	Expression                                                      bool
+	ExpressionLabel, Expand, CopyExpression, ExpressionBody, Source Box
+	SplitterY                                                       [5]int32
+	SplitterOn                                                      [5]bool
+}
+
+func LayoutReading(clientW, clientH int32, scale float64, weights PaneWeights, captionsOnly, expanded bool) ReadingLayout {
+	px := func(v int32) int32 { return int32(float64(v)*scale + 0.5) }
+	var lay ReadingLayout
+	margin, gap, label, button := px(16), px(8), px(24), px(32)
+	width := max(px(200), clientW-2*margin)
+	y := px(8)
+	lay.Status = Box{margin, y, width, px(40)}
+	y += px(40) + px(6)
+	_, widths := TopToolbar()
+	x := margin
+	for _, item := range widths {
+		lay.Toolbar = append(lay.Toolbar, Box{x, y, px(item), button})
+		x += px(item) + gap
+	}
+	y += button + gap
+	lay.Speaker = Box{margin, y, width - px(264), label}
+	lay.Live = Box{margin + width - px(264), y, px(264), label}
+	y += label + px(3)
+	footer := clientH - margin
+	space := int32(float64(footer-y)/scale) - ChromeOverhead(captionsOnly, expanded)
+	lay.PaneHeights = PaneHeights(space, weights, captionsOnly, expanded)
+	mark := func(index int) {
+		lay.SplitterY[index] = y + px(4)
+		lay.SplitterOn[index] = true
+		y += px(8)
+	}
+	lay.Chinese = Box{margin, y, width, px(lay.PaneHeights[PaneChinese])}
+	y += lay.Chinese.H
+	mark(0)
+	lay.English = Box{margin, y, width, px(lay.PaneHeights[PaneEnglish])}
+	y += lay.English.H
+	mark(1)
+	lay.HistoryLabel = Box{margin, y, width - px(114), label}
+	lay.HistoryButton = Box{margin + width - px(110), y - px(3), px(110), button}
+	y += label + gap
+	lay.History = Box{margin, y, width, px(lay.PaneHeights[PaneHistory])}
+	y += lay.History.H
+	if captionsOnly {
+		return lay
+	}
+	mark(2)
+	lay.Expression = true
+	if !expanded {
+		lay.Reply = true
+		lay.ReplyLabel = Box{margin, y, width - px(316), button}
+		lay.Request = Box{margin + width - px(310), y, px(92), button}
+		lay.Accept = Box{margin + width - px(210), y, px(108), button}
+		lay.CopyReply = Box{margin + width - px(94), y, px(94), button}
+		y += button + gap
+		x = margin
+		_, widths = ReplyToolbar()
+		for _, item := range widths {
+			lay.ReplyButtons = append(lay.ReplyButtons, Box{x, y, px(item), button})
+			x += px(item) + gap
+		}
+		y += button + gap
+		lay.Responses = Box{margin, y, width, px(lay.PaneHeights[PaneReply])}
+		y += lay.Responses.H + gap
+		lay.Instruction = Box{margin, y, width - px(112) - gap, button}
+		lay.Refine = Box{margin + width - px(112), y, px(112), button}
+		y += button
+		mark(3)
+	}
+	lay.ExpressionLabel = Box{margin, y, width - px(240), label}
+	lay.Expand = Box{margin + width - px(226), y - px(4), px(110), button}
+	lay.CopyExpression = Box{margin + width - px(112), y - px(4), px(112), button}
+	y += label
+	lay.ExpressionBody = Box{margin, y, width, px(lay.PaneHeights[PaneExpression])}
+	y += lay.ExpressionBody.H
+	mark(4)
+	lay.Source = Box{margin, y, width, px(lay.PaneHeights[PaneSource])}
+	return lay
+}
+
 func VisiblePanes(captionsOnly, expanded bool) [PaneCount]bool {
 	return [PaneCount]bool{
 		true, true, true, !captionsOnly && !expanded, !captionsOnly, !captionsOnly,

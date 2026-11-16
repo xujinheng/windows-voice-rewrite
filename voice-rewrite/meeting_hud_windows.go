@@ -194,8 +194,7 @@ func (p *meetingHUD) move(control uintptr, x, y, w, h int32) {
 func (p *meetingHUD) layout() {
 	var bounds rect32
 	procGetClientRect.Call(p.window, uintptr(unsafe.Pointer(&bounds)))
-	margin, gap, label, button := p.px(16), p.px(8), p.px(24), p.px(32)
-	width := max(p.px(200), bounds.Right-2*margin)
+	width := max(p.px(200), bounds.Right-2*p.px(16))
 	for _, control := range p.mainControls {
 		procShowWindow.Call(control, meetingShow(!p.profileOpen))
 	}
@@ -210,42 +209,22 @@ func (p *meetingHUD) layout() {
 
 	// Status and secondary controls occupy two compact rows. Reading always
 	// starts at the same Y coordinate, regardless of reply suggestions.
-	y := p.px(8)
-	p.move(p.status, margin, y, width, p.px(40))
-	y += p.px(40) + p.px(6)
-	x := margin
-	indexes, widths := meetingcore.TopToolbar()
+	lay := meetingcore.LayoutReading(bounds.Right, bounds.Bottom, p.scale, p.paneWeights, p.captionsOnly, p.expressionExpanded)
+	p.paneHeights = lay.PaneHeights
+	p.splitterY, p.splitterVisible = lay.SplitterY, lay.SplitterOn
+	p.move(p.status, lay.Status.X, lay.Status.Y, lay.Status.W, lay.Status.H)
+	indexes, _ := meetingcore.TopToolbar()
 	for i, index := range indexes {
-		p.move(p.buttons[index], x, y, p.px(widths[i]), button)
-		x += p.px(widths[i]) + gap
+		box := lay.Toolbar[i]
+		p.move(p.buttons[index], box.X, box.Y, box.W, box.H)
 	}
-	y += button + gap
-	p.move(p.labels[0], margin, y, width-p.px(264), label)
-	p.move(p.live, margin+width-p.px(264), y, p.px(264), label)
-	y += label + p.px(3)
-
-	// Six content surfaces share the remaining height. Divider gaps are
-	// mouse-draggable and the proportions survive window resizing.
-	footer := bounds.Bottom - margin
-	space := int32(float64(footer-y)/p.scale) - meetingcore.ChromeOverhead(p.captionsOnly, p.expressionExpanded)
-	p.paneHeights = meetingcore.PaneHeights(space, p.paneWeights, p.captionsOnly, p.expressionExpanded)
-	divider := func(index int) {
-		p.splitterY[index] = y + p.px(4)
-		p.splitterVisible[index] = true
-		y += p.px(8)
-	}
-	p.move(p.currentChinese, margin, y, width, p.px(p.paneHeights[meetingcore.PaneChinese]))
-	y += p.px(p.paneHeights[meetingcore.PaneChinese])
-	divider(0)
-	p.move(p.currentEnglish, margin, y, width, p.px(p.paneHeights[meetingcore.PaneEnglish]))
-	y += p.px(p.paneHeights[meetingcore.PaneEnglish])
-	divider(1)
-	p.move(p.labels[3], margin, y, width-p.px(114), label)
-	p.move(p.buttons[14], margin+width-p.px(110), y-p.px(3), p.px(110), button)
-	y += label + gap
-	p.move(p.captions, margin, y, width, p.px(p.paneHeights[meetingcore.PaneHistory]))
-	y += p.px(p.paneHeights[meetingcore.PaneHistory])
-
+	p.move(p.labels[0], lay.Speaker.X, lay.Speaker.Y, lay.Speaker.W, lay.Speaker.H)
+	p.move(p.live, lay.Live.X, lay.Live.Y, lay.Live.W, lay.Live.H)
+	p.move(p.currentChinese, lay.Chinese.X, lay.Chinese.Y, lay.Chinese.W, lay.Chinese.H)
+	p.move(p.currentEnglish, lay.English.X, lay.English.Y, lay.English.W, lay.English.H)
+	p.move(p.labels[3], lay.HistoryLabel.X, lay.HistoryLabel.Y, lay.HistoryLabel.W, lay.HistoryLabel.H)
+	p.move(p.buttons[14], lay.HistoryButton.X, lay.HistoryButton.Y, lay.HistoryButton.W, lay.HistoryButton.H)
+	p.move(p.captions, lay.History.X, lay.History.Y, lay.History.W, lay.History.H)
 	shown := meetingcore.VisiblePanes(p.captionsOnly, p.expressionExpanded)
 	for _, control := range []uintptr{p.labels[1], p.responses, p.instruction, p.buttons[4], p.buttons[6], p.buttons[9], p.buttons[10], p.buttons[11], p.buttons[12], p.buttons[13]} {
 		procShowWindow.Call(control, meetingShow(shown[meetingcore.PaneReply]))
@@ -253,41 +232,27 @@ func (p *meetingHUD) layout() {
 	for _, control := range []uintptr{p.labels[2], p.expression, p.expressionSource, p.buttons[5], p.buttons[15]} {
 		procShowWindow.Call(control, meetingShow(shown[meetingcore.PaneExpression]))
 	}
-	if p.captionsOnly {
-		meetingInvalidateRect.Call(p.window, 0, 1)
-		return
-	}
-
-	divider(2)
-	if !p.expressionExpanded {
-		p.move(p.labels[1], margin, y, width-p.px(316), button)
-		p.move(p.buttons[6], margin+width-p.px(310), y, p.px(92), button)
-		p.move(p.buttons[12], margin+width-p.px(210), y, p.px(108), button)
-		p.move(p.buttons[4], margin+width-p.px(94), y, p.px(94), button)
-		y += button + gap
-		x = margin
-		indexes, widths = meetingcore.ReplyToolbar()
+	if lay.Reply {
+		p.move(p.labels[1], lay.ReplyLabel.X, lay.ReplyLabel.Y, lay.ReplyLabel.W, lay.ReplyLabel.H)
+		p.move(p.buttons[6], lay.Request.X, lay.Request.Y, lay.Request.W, lay.Request.H)
+		p.move(p.buttons[12], lay.Accept.X, lay.Accept.Y, lay.Accept.W, lay.Accept.H)
+		p.move(p.buttons[4], lay.CopyReply.X, lay.CopyReply.Y, lay.CopyReply.W, lay.CopyReply.H)
+		indexes, _ = meetingcore.ReplyToolbar()
 		for i, index := range indexes {
-			p.move(p.buttons[index], x, y, p.px(widths[i]), button)
-			x += p.px(widths[i]) + gap
+			box := lay.ReplyButtons[i]
+			p.move(p.buttons[index], box.X, box.Y, box.W, box.H)
 		}
-		y += button + gap
-		p.move(p.responses, margin, y, width, p.px(p.paneHeights[meetingcore.PaneReply]))
-		y += p.px(p.paneHeights[meetingcore.PaneReply]) + gap
-		p.move(p.instruction, margin, y, width-p.px(112)-gap, button)
-		p.move(p.buttons[13], margin+width-p.px(112), y, p.px(112), button)
-		y += button
-		divider(3)
+		p.move(p.responses, lay.Responses.X, lay.Responses.Y, lay.Responses.W, lay.Responses.H)
+		p.move(p.instruction, lay.Instruction.X, lay.Instruction.Y, lay.Instruction.W, lay.Instruction.H)
+		p.move(p.buttons[13], lay.Refine.X, lay.Refine.Y, lay.Refine.W, lay.Refine.H)
 	}
-
-	p.move(p.labels[2], margin, y, width-p.px(240), label)
-	p.move(p.buttons[15], margin+width-p.px(226), y-p.px(4), p.px(110), button)
-	p.move(p.buttons[5], margin+width-p.px(112), y-p.px(4), p.px(112), button)
-	y += label
-	p.move(p.expression, margin, y, width, p.px(p.paneHeights[meetingcore.PaneExpression]))
-	y += p.px(p.paneHeights[meetingcore.PaneExpression])
-	divider(4)
-	p.move(p.expressionSource, margin, y, width, p.px(p.paneHeights[meetingcore.PaneSource]))
+	if lay.Expression {
+		p.move(p.labels[2], lay.ExpressionLabel.X, lay.ExpressionLabel.Y, lay.ExpressionLabel.W, lay.ExpressionLabel.H)
+		p.move(p.buttons[15], lay.Expand.X, lay.Expand.Y, lay.Expand.W, lay.Expand.H)
+		p.move(p.buttons[5], lay.CopyExpression.X, lay.CopyExpression.Y, lay.CopyExpression.W, lay.CopyExpression.H)
+		p.move(p.expression, lay.ExpressionBody.X, lay.ExpressionBody.Y, lay.ExpressionBody.W, lay.ExpressionBody.H)
+		p.move(p.expressionSource, lay.Source.X, lay.Source.Y, lay.Source.W, lay.Source.H)
+	}
 	meetingInvalidateRect.Call(p.window, 0, 1)
 }
 
