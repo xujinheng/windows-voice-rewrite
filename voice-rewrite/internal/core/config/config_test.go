@@ -129,4 +129,13 @@ func TestMeetingASRModesKeepSettingsOrder(t *testing.T) {
 	if Defaults().MeetingASRMode != MeetingASRLlamaPrefix || !KnownMeetingASRMode(MeetingASRMultipart) || KnownMeetingASRMode("stream") {
 		t.Fatal("mode set")
 	}
+	if MeetingASRModeAt(1) != MeetingASRLlamaPrefix || MeetingASRModeAt(99) != MeetingASRMultipart || MeetingASRModeAt(-1) != MeetingASRMultipart {
+		t.Fatal("mode at index")
+	}
+	if MeetingASRModeIndex(MeetingASRLlamaPrefix) != 1 || MeetingASRModeIndex("stream") != 0 {
+		t.Fatal("mode index")
+	}
+	if MeetingASRModeTitle(MeetingASRMultipart) != "分段音频识别" || !strings.HasPrefix(MeetingASRModeNote(), MeetingASRLlamaPrefix) {
+		t.Fatal("mode label")
+	}
 }

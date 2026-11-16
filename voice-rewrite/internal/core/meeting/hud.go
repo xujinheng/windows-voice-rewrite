@@ -6,11 +6,15 @@ import (
 )
 
 const (
-	SpeakerLabel = "当前发言 · 中文优先"
-	HistoryTitle = "之前的对话"
-	ReplyLabel   = "回复建议"
-	WaitingHint  = "等待发言"
-	RefineCue    = "改写要求，例如：更简短、先说明风险"
+	SpeakerLabel      = "当前发言 · 中文优先"
+	HistoryTitle      = "之前的对话"
+	ReplyLabel        = "回复建议"
+	WaitingHint       = "等待发言"
+	RefineCue         = "改写要求，例如：更简短、先说明风险"
+	ProfileTitle      = "会议资料 · 保存后立即用于本次会议和下次启动"
+	ProfileBackground = "背景：角色、项目、目标、已知限制"
+	ProfileTerms      = "术语：人名、缩写、产品名和中英对照（每行一条）"
+	ProfileMode       = "会议识别方式"
 )
 
 // ButtonView is the meeting state that changes a button's label.
@@ -75,6 +79,10 @@ func ButtonFace(id int, view ButtonView) string {
 			return "收起英文"
 		}
 		return "放大英文"
+	case ButtonSaveProfile:
+		return "保存并应用"
+	case ButtonCloseProfile:
+		return "取消"
 	default:
 		return ""
 	}

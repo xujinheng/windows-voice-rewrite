@@ -13,8 +13,8 @@ func TestButtonFaceKeepsIdleTitles(t *testing.T) {
 			t.Fatalf("button %d face %q", i, got)
 		}
 	}
-	if ButtonFace(ButtonSaveProfile, idle) != "" {
-		t.Fatal("profile buttons keep their own window text")
+	if ButtonFace(ButtonSaveProfile, idle) != "保存并应用" || ButtonFace(ButtonCloseProfile, idle) != "取消" {
+		t.Fatal("profile buttons")
 	}
 	on := ButtonView{Paused: true, CapturePaused: true, CaptionsOnly: true, ExpressionExpanded: true, Pending: true, SelectedReply: 1}
 	if ButtonFace(ButtonPause, on) != "恢复画面" || ButtonFace(ButtonToggleCapture, on) != "恢复采集" {

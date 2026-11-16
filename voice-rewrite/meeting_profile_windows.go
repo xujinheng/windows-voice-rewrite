@@ -31,30 +31,26 @@ func (p *meetingHUD) openProfile() {
 			p.profileControls = append(p.profileControls, control)
 			return control
 		}
-		child("STATIC", "会议资料 · 保存后立即用于本次会议和下次启动", 0, 0, false)
-		child("STATIC", "背景：角色、项目、目标、已知限制", 0, 0, false)
+		child("STATIC", meetingcore.ProfileTitle, 0, 0, false)
+		child("STATIC", meetingcore.ProfileBackground, 0, 0, false)
 		editStyle := uintptr(WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | WS_BORDER | 0x00010000 | 0x1000)
 		p.profileBackground = child("EDIT", "", editStyle, 7201, true)
 		procSendMessage.Call(p.profileBackground, 0x00C5, uintptr(meetingcore.MaxBackgroundRunes), 0)
-		child("STATIC", "术语：人名、缩写、产品名和中英对照（每行一条）", 0, 0, false)
+		child("STATIC", meetingcore.ProfileTerms, 0, 0, false)
 		p.profileTerms = child("EDIT", "", editStyle, 7202, true)
 		procSendMessage.Call(p.profileTerms, 0x00C5, uintptr(meetingcore.MaxTermsRunes), 0)
-		child("STATIC", "会议识别方式", 0, 0, false)
+		child("STATIC", meetingcore.ProfileMode, 0, 0, false)
 		p.profileMode = child("COMBOBOX", "", 0x00010000|WS_VSCROLL|3, 7203, false)
-		labels := map[string]string{
-			config.MeetingASRMultipart:   "分段音频识别",
-			config.MeetingASRLlamaPrefix: "累积音频 / 前缀续写",
-		}
 		for _, mode := range config.MeetingASRModes() {
-			title := mode + " · " + labels[mode]
+			title := mode + " · " + config.MeetingASRModeTitle(mode)
 			ptr, _ := syscall.UTF16PtrFromString(title)
 			procSendMessage.Call(p.profileMode, uxCBAddString, 0, uintptr(unsafe.Pointer(ptr)))
 			runtime.KeepAlive(ptr)
 		}
-		child("STATIC", config.MeetingASRLlamaPrefix+" 重复提交累积音频并延续文本前缀；不是原生编码器流式识别。需服务支持该协议。保存会取消当前处理并重新开始。", 0, 0, false)
+		child("STATIC", config.MeetingASRModeNote(), 0, 0, false)
 		p.profileStatus = child("STATIC", "", 0, 0, false)
-		child("BUTTON", "保存并应用", 0x00010000|uxBSOwnerDraw, meetingcore.ButtonSaveProfile, false)
-		child("BUTTON", "取消", 0x00010000|uxBSOwnerDraw, meetingcore.ButtonCloseProfile, false)
+		child("BUTTON", meetingcore.ButtonFace(meetingcore.ButtonSaveProfile, meetingcore.ButtonView{}), 0x00010000|uxBSOwnerDraw, meetingcore.ButtonSaveProfile, false)
+		child("BUTTON", meetingcore.ButtonFace(meetingcore.ButtonCloseProfile, meetingcore.ButtonView{}), 0x00010000|uxBSOwnerDraw, meetingcore.ButtonCloseProfile, false)
 		if err != nil {
 			for _, control := range p.profileControls {
 				if control != 0 {
@@ -73,14 +69,7 @@ func (p *meetingHUD) openProfile() {
 	session.mu.Unlock()
 	uxSetText(p.profileBackground, cfg.MeetingBackground)
 	uxSetText(p.profileTerms, cfg.MeetingTerms)
-	index := uintptr(0)
-	for i, mode := range config.MeetingASRModes() {
-		if cfg.MeetingASRMode == mode {
-			index = uintptr(i)
-			break
-		}
-	}
-	procSendMessage.Call(p.profileMode, uxCBSetCurSel, index, 0)
+	procSendMessage.Call(p.profileMode, uxCBSetCurSel, uintptr(config.MeetingASRModeIndex(cfg.MeetingASRMode)), 0)
 	uxSetText(p.profileStatus, "")
 	p.profileOpen = true
 	p.layout()
@@ -128,10 +117,7 @@ func (p *meetingHUD) saveProfile() {
 		return
 	}
 	index, _, _ := procSendMessage.Call(p.profileMode, uxCBGetCurSel, 0, 0)
-	mode := config.MeetingASRMultipart
-	if modes := config.MeetingASRModes(); index < uintptr(len(modes)) {
-		mode = modes[index]
-	}
+	mode := config.MeetingASRModeAt(int(index))
 	if err := s.setASRMode(mode); err != nil {
 		uxSetText(p.profileStatus, "资料已保存；识别方式保存失败: "+err.Error())
 		return

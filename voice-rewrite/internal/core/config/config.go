@@ -48,6 +48,38 @@ func MeetingASRModes() []string {
 	return []string{MeetingASRMultipart, MeetingASRLlamaPrefix}
 }
 
+func MeetingASRModeAt(index int) string {
+	modes := MeetingASRModes()
+	if index < 0 || index >= len(modes) {
+		return MeetingASRMultipart
+	}
+	return modes[index]
+}
+
+func MeetingASRModeIndex(mode string) int {
+	for i, item := range MeetingASRModes() {
+		if item == mode {
+			return i
+		}
+	}
+	return 0
+}
+
+func MeetingASRModeTitle(mode string) string {
+	switch mode {
+	case MeetingASRMultipart:
+		return "分段音频识别"
+	case MeetingASRLlamaPrefix:
+		return "累积音频 / 前缀续写"
+	default:
+		return ""
+	}
+}
+
+func MeetingASRModeNote() string {
+	return MeetingASRLlamaPrefix + " 重复提交累积音频并延续文本前缀；不是原生编码器流式识别。需服务支持该协议。保存会取消当前处理并重新开始。"
+}
+
 func Defaults() Config {
 	return Config{
 		MeetingASRMode:         MeetingASRLlamaPrefix,
