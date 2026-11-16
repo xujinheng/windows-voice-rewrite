@@ -522,7 +522,7 @@ final class HostStatusTests: XCTestCase {
             "听写")
         XCTAssertEqual(
             insertionStatus(InteractionFailure.writeNotConfirmed, rewrite: true, passwordRewrite: "改写", passwordDictation: "听写"),
-            "已尝试写入，但无法确认是否生效；请检查目标或复制结果")
+            "已向目标发送文字，但无法确认是否生效；请先检查输入框，避免重复粘贴")
         XCTAssertEqual(
             insertionStatus(ClipboardFailure.restoreFailed, rewrite: false, passwordRewrite: "改写", passwordDictation: "听写"),
             "安全剪贴板操作失败；写入状态可能不确定，请检查目标并复制结果")
