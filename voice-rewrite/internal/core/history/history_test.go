@@ -10,7 +10,7 @@ import (
 
 func TestSessionHistoryLabelsFollowTheLimit(t *testing.T) {
 	title := SectionTitle()
-	if !strings.Contains(title, fmt.Sprint(Limit)) || EmptySession == "" || ClearSession == "" {
+	if !strings.Contains(title, fmt.Sprint(Limit)) || EmptySession == "" || ClearSession == "" || Cleared == EmptySession || ShownError("") != NoErrorRecorded || ShownError("读配置失败") != "读配置失败" {
 		t.Fatalf("labels %q %q %q", title, EmptySession, ClearSession)
 	}
 }

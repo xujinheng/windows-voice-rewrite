@@ -680,7 +680,8 @@ func runApp() {
 		}
 		if msg.Message == WM_TRAY_UPDATE {
 			state := trayState(app.status.Load())
-			if state == trayError && activeHandyStatus != nil && !indicator.Terminal(activeHandyStatus.phase) && app.epoch.Valid(activeHandyStatus.owner) {
+			hasPill := activeHandyStatus != nil
+			if ux.TrayShowsError(state == trayError, hasPill, hasPill && indicator.Terminal(activeHandyStatus.phase), hasPill && app.epoch.Valid(activeHandyStatus.owner)) {
 				updateHandyStatus(indicator.Error)
 			}
 			// Always run Shell_NotifyIconW on the thread that owns the tray window.
@@ -688,20 +689,19 @@ func runApp() {
 				l.Printf("tray state update failed: %v", err)
 			}
 			procKillTimer.Call(0, TRAY_RESET_TIMER_ID)
-			if state == traySuccess || state == trayError {
-				procSetTimer.Call(0, TRAY_RESET_TIMER_ID, 4500, 0)
+			if ux.TrayArmsReset(state == traySuccess, state == trayError) {
+				procSetTimer.Call(0, TRAY_RESET_TIMER_ID, uintptr(ux.TrayResetAfter/time.Millisecond), 0)
 			}
 			continue
 		}
 		if msg.Message == WM_TIMER && msg.WParam == TRAY_RESET_TIMER_ID {
 			procKillTimer.Call(0, TRAY_RESET_TIMER_ID)
 			state := trayState(app.status.Load())
-			if state == traySuccess || state == trayError {
-				if app.paused.Load() {
-					app.setStatus(trayPaused)
-				} else {
-					app.setStatus(trayIdle)
-				}
+			switch ux.TrayAfterTimer(state == traySuccess, state == trayError, app.paused.Load()) {
+			case ux.TrayRestPaused:
+				app.setStatus(trayPaused)
+			case ux.TrayRestIdle:
+				app.setStatus(trayIdle)
 			}
 			continue
 		}
@@ -720,7 +720,7 @@ func runApp() {
 		}
 		if msg.Message == WM_TRAY_CHECK_UPDATE {
 			if !app.updateBusy.CompareAndSwap(false, true) {
-				winErr("正在检查更新，请稍后。")
+				winErr(update.AlreadyChecking)
 				continue
 			}
 			go func() {
@@ -738,11 +738,11 @@ func runApp() {
 			app.updateBusy.Store(false)
 			select {
 			case notice := <-app.updateReady:
-				if notice.Err != nil || !notice.Found || !notice.Newer {
+				if !notice.AsksToOpen() {
 					winErr(notice.Summary(buildID))
 				} else if askViewUpdate(notice.Latest) {
 					if err := shellOpenLocalFile(update.ReleasesPage); err != nil {
-						winErr("无法打开发布页面：" + err.Error())
+						winErr(update.PageOpenFailed + err.Error())
 					}
 				}
 			default:
@@ -761,17 +761,16 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_TRAY_TOGGLE_PAUSE {
-			if app.busy.Load() {
+			switch ux.ChoosePause(app.busy.Load(), app.paused.Load()) {
+			case ux.PauseRefused:
 				winErr(ux.PauseWhileBusy)
-				continue
-			}
-			newPaused := !app.paused.Load()
-			app.paused.Store(newPaused)
-			if newPaused {
+			case ux.PauseOn:
+				app.paused.Store(true)
 				app.closeMeeting()
 				discardPendingSide()
 				app.setStatus(trayPaused)
-			} else {
+			case ux.PauseOff:
+				app.paused.Store(false)
 				app.setStatus(trayIdle)
 			}
 			continue
@@ -789,7 +788,7 @@ func runApp() {
 			if entry, ok := app.history.Get(uint64(msg.WParam)); ok {
 				app.showAnswer(ux.HistoryRestoreTitle(entry.Title), entry.Text, currentCursorPoint(), nil, false, app.epoch.Current())
 			} else {
-				winErr("该结果已从本次会话历史中清除。")
+				winErr(history.Cleared)
 			}
 			continue
 		}
@@ -802,10 +801,7 @@ func runApp() {
 			app.lastErrorMu.Lock()
 			latest := app.lastError
 			app.lastErrorMu.Unlock()
-			if latest == "" {
-				latest = "目前没有记录到错误。"
-			}
-			winErr(latest)
+			winErr(history.ShownError(latest))
 			continue
 		}
 		if msg.Message == WM_TRAY_LOG {

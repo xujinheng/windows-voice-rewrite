@@ -11,11 +11,21 @@ import (
 )
 
 const (
-	Limit        = 10
-	MaxBytes     = 4 << 20
-	EmptySession = "当前会话还没有可恢复的语音结果。"
-	ClearSession = "清空本次会话历史"
+	Limit           = 10
+	MaxBytes        = 4 << 20
+	EmptySession    = "当前会话还没有可恢复的语音结果。"
+	ClearSession    = "清空本次会话历史"
+	Cleared         = "该结果已从本次会话历史中清除。"
+	NoErrorRecorded = "目前没有记录到错误。"
 )
+
+// ShownError is the last recorded error, or the sentence used when none exists.
+func ShownError(latest string) string {
+	if latest == "" {
+		return NoErrorRecorded
+	}
+	return latest
+}
 
 type Entry struct {
 	ID        uint64
