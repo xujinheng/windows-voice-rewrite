@@ -69,6 +69,7 @@ struct SideButtonHoldState {
     }
 
     private(set) var pressed: [Int: Press] = [:]
+    private var cancelledPending: Set<Int> = []
     private var sequence: UInt64 = 0
 
     var hasPendingPress: Bool { pressed.values.contains { !$0.active } }
@@ -76,6 +77,7 @@ struct SideButtonHoldState {
     mutating func press(_ button: Int) -> UInt64? {
         guard pressed[button] == nil, sequence < UInt64.max else { return nil }
         sequence += 1
+        cancelledPending.remove(button)
         pressed[button] = Press(token: sequence, active: false)
         return sequence
     }
@@ -94,8 +96,15 @@ struct SideButtonHoldState {
 
     mutating func reset() -> Bool {
         let hadActive = pressed.values.contains { $0.active }
+        for (button, press) in pressed where !press.active {
+            cancelledPending.insert(button)
+        }
         pressed.removeAll()
         return hadActive
+    }
+
+    mutating func takeCancelledRelease(_ button: Int) -> Bool {
+        cancelledPending.remove(button) != nil
     }
 }
 
@@ -241,11 +250,12 @@ public final class SideMouseButtonDriver {
         let button = Int(event.getIntegerValueField(.mouseEventButtonNumber))
         // A pause or binding change can cancel a pending press after its down
         // event was suppressed. Replay that click on release, even if unbound.
-        if type == .otherMouseUp, state.pressed[button] == nil,
-           let down = downEvents.removeValue(forKey: button) {
+        if type == .otherMouseUp, state.takeCancelledRelease(button) {
             targetPIDs.removeValue(forKey: button)
-            replay(down: down, up: event)
-            return nil
+            if let down = downEvents.removeValue(forKey: button) {
+                replay(down: down, up: event)
+                return nil
+            }
         }
         if voicePaused {
             return Unmanaged.passUnretained(event)
