@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"runtime/debug"
@@ -202,18 +201,18 @@ func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintp
 			app.fail(fmt.Errorf("录音处理线程发生错误：%v", reason))
 		}
 	}()
-	if !isSameForegroundWindow(expectedWindow) {
+	if err := ux.HoldEditorReady(isSameForegroundWindow(expectedWindow)); err != nil {
 		rec.Stop()
 		go func() { <-rec.result }()
-		app.fail(errors.New("编辑窗口已经变化，取消自动替换"))
+		app.fail(err)
 		return
 	}
 	sel, err := captureSelection(app.Window, app.cfg)
 	sel.Anchor = anchor
 	defer restoreSelectionClipboardIfOwned(app.Window, sel)
 	app.logger.Printf("stage=selection mode=hold ms=%d", time.Since(started).Milliseconds())
-	if err == nil && sel.TargetWindow != expectedWindow {
-		err = errors.New("选区所属窗口已变化")
+	if err == nil {
+		err = ux.HoldCapturedWindow(sel.TargetWindow == expectedWindow)
 	}
 	if err == nil {
 		err = textedit.SelectedLengthError(app.cfg.MaxSelectedRunes, sel.Text)

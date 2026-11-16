@@ -236,7 +236,7 @@ func (p *answerPopup) apply() {
 	p.applyResult = make(chan error, 1)
 	p.setNote(ux.ApplyChecking)
 	if valid, _, _ := procIsWindow.Call(sel.TargetWindow); valid == 0 {
-		p.applyResult <- errors.New("原编辑窗口已关闭")
+		p.applyResult <- ux.ApplyEditorOpen(false)
 		procPostMessage.Call(app.Window, WM_APPLY_RESULT, 0, 0)
 		app.busy.Store(false)
 		return
@@ -244,7 +244,7 @@ func (p *answerPopup) apply() {
 	procSetForegroundWindow.Call(sel.TargetWindow)
 	go func() {
 		defer app.busy.Store(false)
-		time.Sleep(90 * time.Millisecond)
+		time.Sleep(ux.ApplySettle)
 		err := replaceSelectionWithGuard(app.Window, sel, body, app.cfg, !isSafelyEditableControl(sel.TargetWindow), func() bool { return !p.canceled.Load() && app.epoch.Valid(p.generation) })
 		if err != nil {
 			app.logger.Printf("manual apply failed: %v", err)
