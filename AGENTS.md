@@ -4,11 +4,11 @@ This repository represents the **current product**, not the history of how it wa
 
 ## Cross-platform product principles
 
-- **One product, two native experiences.** Windows and macOS must provide equivalent features, configurable controls, labels, defaults, workflows, and safety guarantees.
-- **Consistent UI structure.** Keep the same pages, sections, button sets, ordering, and approximate placement across platforms.
-- **Share logic, not pixels.** Centralize business rules, UI contracts, text, state transitions, and layout constraints; keep rendering and OS integration native.
-- **Native quality without feature drift.** Use each platform's strengths to deliver polished, responsive interfaces. macOS should pursue superior visual quality without sacrificing parity.
-- **Improve and verify together.** Test shared contracts on both platforms, validate native behavior separately, and bring successful UX improvements from either platform to both.
+- **One product, two native experiences.** Windows and macOS must offer equivalent features, settings, labels, defaults, workflows, and safety guarantees, with consistent UI grouping, control order, and approximate placement.
+- **Change once, improve both.** Algorithms, business rules, configuration, UI structure, copy, layout constraints, and interaction state must have one shared source of truth; a typical change should require editing only that source, not two platform implementations.
+- **Split only at real OS boundaries.** Extract reusable behavior and UI contracts into shared modules first. Keep separate implementations only where platform APIs, input, windowing, or native rendering genuinely require them; never duplicate portable logic.
+- **Native polish, shared behavior.** Each host renders the shared contract with its own native controls and visual language. macOS should aim for superior aesthetics without reducing or rearranging functionality.
+- **Prevent drift.** Test shared contracts across platforms, test platform-specific adapters separately, and apply successful product improvements to both hosts.
 
 ## Final-state only
 
