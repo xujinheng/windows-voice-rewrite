@@ -141,7 +141,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 
 	var points string
 	cfg := s.configSnapshot()
-	err := s.runInference(ctx, meetingcore.PriorityExpress, "正在识别你的中文", func(active context.Context) error {
+	err := s.runInference(ctx, meetingcore.PriorityExpress, meetingcore.ExpressRecognizing, func(active context.Context) error {
 		var e error
 		points, e = speech.Transcribe(active, cfg, result.pcm)
 		return e

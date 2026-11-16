@@ -11,8 +11,14 @@ const (
 	// PriorTurns is how many finished utterances stay available to the next expression.
 	PriorTurns = 5
 
+	// ListeningStage is the metrics stage while audio is being heard.
 	// ListeningPrompt is the live session line. An empty status still falls back to "正在聆听".
+	ListeningStage         = "正在听"
 	ListeningPrompt        = "正在聆听 · 按住听写键说中文"
+	CaptionRecognizing     = "正在识别"
+	ExpressRecognizing     = "正在识别你的中文"
+	MeetingSaveUnavailable = "未配置会议设置保存服务"
+	UnknownMeetingASRMode  = "无效的 ASR 模式"
 	TranslationUnavailable = "翻译暂不可用 · 原文已保留"
 	DroppedWork            = "处理较慢 · 已跳过过期任务，正在跟上最新语音"
 	CaptureEnded           = "音频采集意外结束"

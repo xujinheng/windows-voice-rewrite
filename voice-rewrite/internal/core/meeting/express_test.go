@@ -46,6 +46,12 @@ func TestMeetingExpressionStopsStaySeparate(t *testing.T) {
 	if !MeetingSourceLess("a.exe", "alpha", "b.exe", "Beta") || MeetingSourceLess("a.exe", "Same", "b.exe", "same") {
 		t.Fatal("title order")
 	}
+	if ListeningStage == ListeningPrompt || CaptionRecognizing == ExpressRecognizing || CaptionRecognizing == "正在识别语音" {
+		t.Fatal("stage sentences collapsed")
+	}
+	if MeetingSaveUnavailable == "保存失败：" || UnknownMeetingASRMode == "" {
+		t.Fatal("save")
+	}
 	if ListeningPrompt == "正在聆听" {
 		t.Fatal("listening prompt collapsed")
 	}

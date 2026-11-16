@@ -82,7 +82,7 @@ func (s *meetingSession) setCapturePaused(paused bool) {
 			s.view.metrics.Stage = "已暂停"
 		} else {
 			s.view.status = "正在连接音频…"
-			s.view.metrics.Stage = "正在听"
+			s.view.metrics.Stage = meetingcore.ListeningStage
 		}
 	})
 }
@@ -90,7 +90,7 @@ func (s *meetingSession) saveMeetingConfig(change func(*Config)) error {
 	cfg := s.configSnapshot()
 	change(&cfg)
 	if s.saveConfiguration == nil {
-		return errors.New("未配置会议设置保存服务")
+		return errors.New(meetingcore.MeetingSaveUnavailable)
 	}
 	if err := s.saveConfiguration(cfg); err != nil {
 		return err
@@ -117,7 +117,7 @@ func (s *meetingSession) updateProfile(background, terms string) error {
 }
 func (s *meetingSession) setASRMode(mode string) error {
 	if !coreconfig.KnownMeetingASRMode(mode) {
-		return errors.New("无效的 ASR 模式")
+		return errors.New(meetingcore.UnknownMeetingASRMode)
 	}
 	return s.saveMeetingConfig(func(c *Config) { c.MeetingASRMode = mode })
 }
@@ -127,7 +127,7 @@ func (s *meetingSession) runInference(ctx context.Context, priority int, stage s
 			if running {
 				s.view.metrics.Stage = stage
 			} else if !s.view.capturePaused {
-				s.view.metrics.Stage = "正在听"
+				s.view.metrics.Stage = meetingcore.ListeningStage
 			}
 			s.view.metrics.Pending = s.scheduler.Pending()
 		})
@@ -282,7 +282,7 @@ func (s *meetingSession) start(source audio.FrameSource) {
 				priority = meetingcore.PriorityASR
 			}
 			var latest string
-			err := s.runInference(ctx, priority, "正在识别", func(active context.Context) error {
+			err := s.runInference(ctx, priority, meetingcore.CaptionRecognizing, func(active context.Context) error {
 				var e error
 				latest, e = state.Transcribe(active, cfg, turn.PCM, emit)
 				return e
