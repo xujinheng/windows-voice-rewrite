@@ -2,6 +2,22 @@ package contract
 
 import "testing"
 
+func TestProbeSlotsFollowCatalogOrder(t *testing.T) {
+	asr, ok := ProbeSlot("asr_base_url")
+	model, mok := ProbeSlot("asr_model")
+	key, kok := ProbeSlot("asr_api_key")
+	llm, lok := ProbeSlot("llm_api_key")
+	if !ok || !mok || !kok || !lok || asr != 0 || model != 0 || key != 0 || llm != 1 {
+		t.Fatalf("slots %d %d %d %d", asr, model, key, llm)
+	}
+	if _, ok := ProbeSlot("rewrite_shortcut"); ok {
+		t.Fatal("shortcut marked a connection field")
+	}
+	if _, ok := ProbeSlot("missing"); ok {
+		t.Fatal("unknown field")
+	}
+}
+
 func TestSettingsCommandsKeepButtonOrder(t *testing.T) {
 	if NavAI != NavSpeech+1 || NavInput != NavSpeech+2 {
 		t.Fatalf("nav ids %d %d %d", NavSpeech, NavAI, NavInput)

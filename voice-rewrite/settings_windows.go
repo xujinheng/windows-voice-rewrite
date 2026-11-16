@@ -111,6 +111,7 @@ type uxSettings struct {
 	editBrush                               uintptr
 	palette                                 uiPalette
 	cardStatics                             map[uintptr]bool
+	probeEdits                              map[uintptr]int
 	probeMu                                 sync.Mutex
 	probeResult                             [2]string
 	probeStatus                             [2]uintptr
@@ -626,16 +627,11 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				refreshNativeWindow(hwnd)
 			}
 			if (wParam>>16)&0xffff == 0x0300 { // EN_CHANGE
-				for idx, controls := range [2][3]uintptr{{p.inputs[0], p.inputs[1], p.inputs[2]}, {p.inputs[3], p.inputs[4], p.inputs[5]}} {
-					for _, edit := range controls {
-						if lParam == edit {
-							p.probeMu.Lock()
-							p.probeSerial[idx]++ // reject in-flight stale response
-							p.probeMu.Unlock()
-							uxSetText(p.probeStatus[idx], serviceprobe.StatusStale)
-							break
-						}
-					}
+				if idx, ok := p.probeEdits[lParam]; ok {
+					p.probeMu.Lock()
+					p.probeSerial[idx]++ // reject in-flight stale response
+					p.probeMu.Unlock()
+					uxSetText(p.probeStatus[idx], serviceprobe.StatusStale)
 				}
 			}
 			switch action, page := contract.Command(int(wParam & 0xffff)); action {
@@ -811,58 +807,47 @@ func layoutSettingsFields(p *uxSettings, app *appState, makeOne func(cls, t stri
 
 func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, stat, edit, btn uintptr, control contract.Control, row int) error {
 	label := settingsform.FieldLabel(row)
-	field := settingsform.FieldEdit(row)
 	switch control.ID {
 	case "asr_base_url":
-		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
-		p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, field.X, field.Y, field.W, field.H, uxASRURLInput, false)
+		placeLabeledEdit(p, makeOne, stat, edit, control, row, 0, app.cfg.ASRBaseURL, uxASRURLInput, false)
 	case "asr_model":
-		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
-		p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, field.X, field.Y, field.W, field.H, uxASRModelInput, false)
+		placeLabeledEdit(p, makeOne, stat, edit, control, row, 1, app.cfg.ASRModel, uxASRModelInput, false)
 	case "asr_api_key":
-		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
-		p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, field.X, field.Y, field.W, field.H, uxASRKeyInput, false)
+		placeLabeledEdit(p, makeOne, stat, edit, control, row, 2, app.cfg.ASRAPIKey, uxASRKeyInput, true)
 	case "probe_asr_status":
-		p.probeStatus[0] = makeOne("STATIC", serviceprobe.StatusIdle, stat, 352, 324, 435, 48, 0, false)
+		if err := placeProbeStatus(p, makeOne, stat, "asr_base_url"); err != nil {
+			return err
+		}
 	case "probe_asr":
-		makeOne("BUTTON", control.Label, btn, 696, 130, 92, 30, uxProbeASRButton, false)
+		placeProbeButton(makeOne, btn, control, uxProbeASRButton)
 	case "llm_base_url":
-		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
-		p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, field.X, field.Y, field.W, field.H, uxLLMURLInput, false)
+		placeLabeledEdit(p, makeOne, stat, edit, control, row, 3, app.cfg.LLMBaseURL, uxLLMURLInput, false)
 	case "text_model":
-		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
-		p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, field.X, field.Y, field.W, field.H, uxLLMModelInput, false)
+		placeLabeledEdit(p, makeOne, stat, edit, control, row, 4, app.cfg.TextModel, uxLLMModelInput, false)
 	case "llm_api_key":
-		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
-		p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, field.X, field.Y, field.W, field.H, uxLLMKeyInput, false)
+		placeLabeledEdit(p, makeOne, stat, edit, control, row, 5, app.cfg.LLMAPIKey, uxLLMKeyInput, true)
 	case "probe_llm_status":
-		p.probeStatus[1] = makeOne("STATIC", serviceprobe.StatusIdle, stat, 352, 324, 435, 48, 0, false)
+		if err := placeProbeStatus(p, makeOne, stat, "llm_base_url"); err != nil {
+			return err
+		}
 	case "probe_llm":
-		makeOne("BUTTON", control.Label, btn, 696, 130, 92, 30, uxProbeLLMButton, false)
+		placeProbeButton(makeOne, btn, control, uxProbeLLMButton)
 	case "rewrite_shortcut":
-		shortcut := settingsform.ShortcutEdit()
-		shortcut.Y += settingsform.RowStep * int32(row)
-		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
-		p.rewriteShortcut = makeOne("EDIT", app.cfg.HotkeyRecord, edit|0x0800, shortcut.X, shortcut.Y, shortcut.W, shortcut.H, uxRewriteInput, false)
+		p.rewriteShortcut = placeShortcutEdit(makeOne, stat, edit, control, row, app.cfg.HotkeyRecord, uxRewriteInput)
 	case "capture_rewrite":
-		row, ok := stackedSettingsRow("rewrite_shortcut")
-		if !ok {
-			return fmt.Errorf("设置页缺少控件布局: rewrite_shortcut")
+		button, err := placeCaptureButton(makeOne, btn, control, "rewrite_shortcut", uxCaptureRewrite)
+		if err != nil {
+			return err
 		}
-		frame := settingsform.FieldFrame(row)
-		p.captureButtons[0] = makeOne("BUTTON", control.Label, btn, 593, frame.Y, 194, 34, uxCaptureRewrite, false)
+		p.captureButtons[0] = button
 	case "dictation_shortcut":
-		shortcut := settingsform.ShortcutEdit()
-		shortcut.Y += settingsform.RowStep * int32(row)
-		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
-		p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit|0x0800, shortcut.X, shortcut.Y, shortcut.W, shortcut.H, uxShortcutInput, false)
+		p.shortcut = placeShortcutEdit(makeOne, stat, edit, control, row, app.cfg.DictationHotkey, uxShortcutInput)
 	case "capture_dictation":
-		row, ok := stackedSettingsRow("dictation_shortcut")
-		if !ok {
-			return fmt.Errorf("设置页缺少控件布局: dictation_shortcut")
+		button, err := placeCaptureButton(makeOne, btn, control, "dictation_shortcut", uxCaptureDictation)
+		if err != nil {
+			return err
 		}
-		frame := settingsform.FieldFrame(row)
-		p.captureButtons[1] = makeOne("BUTTON", control.Label, btn, 593, frame.Y, 194, 34, uxCaptureDictation, false)
+		p.captureButtons[1] = button
 	case "microphone":
 		frame := settingsform.FieldFrame(row)
 		makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
@@ -882,6 +867,51 @@ func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t stri
 		return fmt.Errorf("设置页缺少控件布局: %s", control.ID)
 	}
 	return nil
+}
+
+func placeLabeledEdit(p *uxSettings, makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, stat, edit uintptr, control contract.Control, row, index int, value string, id uintptr, secret bool) {
+	label := settingsform.FieldLabel(row)
+	field := settingsform.FieldEdit(row)
+	style := edit
+	if secret {
+		style |= uxESPassword
+	}
+	makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
+	hwnd := makeOne("EDIT", value, style, field.X, field.Y, field.W, field.H, id, false)
+	p.inputs[index] = hwnd
+	if slot, ok := contract.ProbeSlot(control.ID); ok && slot >= 0 && slot < len(p.probeStatus) {
+		p.probeEdits[hwnd] = slot
+	}
+}
+
+func placeProbeStatus(p *uxSettings, makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, stat uintptr, fieldID string) error {
+	slot, ok := contract.ProbeSlot(fieldID)
+	if !ok || slot < 0 || slot >= len(p.probeStatus) {
+		return fmt.Errorf("设置页缺少连接检测: %s", fieldID)
+	}
+	p.probeStatus[slot] = makeOne("STATIC", serviceprobe.StatusIdle, stat, 352, 324, 435, 48, 0, false)
+	return nil
+}
+
+func placeProbeButton(makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, btn uintptr, control contract.Control, id uintptr) {
+	makeOne("BUTTON", control.Label, btn, 696, 130, 92, 30, id, false)
+}
+
+func placeShortcutEdit(makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, stat, edit uintptr, control contract.Control, row int, value string, id uintptr) uintptr {
+	label := settingsform.FieldLabel(row)
+	shortcut := settingsform.ShortcutEdit()
+	shortcut.Y += settingsform.RowStep * int32(row)
+	makeOne("STATIC", control.Label, stat, label.X, label.Y, label.W, label.H, 0, false)
+	return makeOne("EDIT", value, edit|0x0800, shortcut.X, shortcut.Y, shortcut.W, shortcut.H, id, false)
+}
+
+func placeCaptureButton(makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, btn uintptr, control contract.Control, shortcutID string, id uintptr) (uintptr, error) {
+	row, ok := stackedSettingsRow(shortcutID)
+	if !ok {
+		return 0, fmt.Errorf("设置页缺少控件布局: %s", shortcutID)
+	}
+	frame := settingsform.FieldFrame(row)
+	return makeOne("BUTTON", control.Label, btn, 593, frame.Y, 194, 34, id, false), nil
 }
 
 func stackedSettingsRow(id string) (int, bool) {
@@ -923,7 +953,7 @@ func showNativeSettings(app *appState) error {
 	if h == 0 {
 		return fmt.Errorf("创建设置窗口失败: %w", createErr)
 	}
-	p := &uxSettings{window: h, app: app, scale: scale, focusRow: -1, cardStatics: make(map[uintptr]bool), palette: resultCardPalette()}
+	p := &uxSettings{window: h, app: app, scale: scale, focusRow: -1, cardStatics: make(map[uintptr]bool), probeEdits: make(map[uintptr]int), palette: resultCardPalette()}
 	uxActiveSettings = p
 	p.background, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.background))
 	p.cardBrush, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.surface))

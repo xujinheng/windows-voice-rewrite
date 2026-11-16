@@ -28,6 +28,36 @@ const (
 	ActionProbeLLM
 )
 
+// ProbeSlot is the connection check cleared when this field changes.
+// Slots follow the first appearance of each stale-probe name in the catalog.
+func ProbeSlot(id string) (int, bool) {
+	control, ok := Find(id)
+	if !ok || control.StaleProbe == "" {
+		return 0, false
+	}
+	seen := []string{}
+	for _, item := range Controls() {
+		if item.StaleProbe == "" {
+			continue
+		}
+		slot := -1
+		for i, name := range seen {
+			if name == item.StaleProbe {
+				slot = i
+				break
+			}
+		}
+		if slot < 0 {
+			seen = append(seen, item.StaleProbe)
+			slot = len(seen) - 1
+		}
+		if item.ID == id {
+			return slot, true
+		}
+	}
+	return 0, false
+}
+
 // Command is the settings action for a Windows control id.
 // Page actions also return the zero-based page index.
 func Command(id int) (Action, int) {
