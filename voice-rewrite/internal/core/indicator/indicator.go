@@ -198,7 +198,7 @@ func Label(phase Phase, mode string) string {
 	case Error:
 		return "操作未完成 · 查看日志"
 	case Fallback:
-		return "已复制 · 请手动粘贴"
+		return "结果已保留 · 可复制"
 	default:
 		return ""
 	}
