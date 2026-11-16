@@ -60,8 +60,8 @@ final class SideMouseStateTests: XCTestCase {
         let pendingToken = state.press(3)!
         XCTAssertFalse(state.reset())
         XCTAssertFalse(state.activate(3, token: pendingToken))
-        XCTAssertTrue(state.takeCancelledRelease(3))
-        XCTAssertFalse(state.takeCancelledRelease(3))
+        XCTAssertEqual(state.takeCancelledRelease(3), .short)
+        XCTAssertEqual(state.takeCancelledRelease(3), .ignored)
         XCTAssertEqual(state.release(3), .ignored)
     }
 
@@ -70,8 +70,20 @@ final class SideMouseStateTests: XCTestCase {
         let heldToken = state.press(4)!
         XCTAssertTrue(state.activate(4, token: heldToken))
         XCTAssertTrue(state.reset())
-        XCTAssertFalse(state.takeCancelledRelease(4))
+        XCTAssertEqual(state.takeCancelledRelease(4), .held)
+        XCTAssertEqual(state.takeCancelledRelease(4), .ignored)
         XCTAssertEqual(state.release(4), .ignored)
+    }
+
+    func testCancelledPressMustFinishBeforeNewDownIsAccepted() {
+        var state = SideButtonHoldState()
+        let first = state.press(3)!
+        XCTAssertFalse(state.reset())
+        XCTAssertNil(state.press(3))
+        XCTAssertFalse(state.activate(3, token: first))
+        XCTAssertEqual(state.takeCancelledRelease(3), .short)
+        XCTAssertNotNil(state.press(3))
+        XCTAssertEqual(state.release(3), .short)
     }
 
     func testDifferentButtonsHaveIndependentTokens() {
