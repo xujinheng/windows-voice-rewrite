@@ -103,15 +103,15 @@ func TestMeetingWindowsE2E(t *testing.T) {
 	}
 
 	// Real button routing, visibility, and in-place status transitions.
-	procSendMessage.Call(p.window, 0x0111, 7101, 0) // WM_COMMAND: 专注字幕
+	procSendMessage.Call(p.window, 0x0111, meetingcore.ButtonCaptions, 0)
 	if !p.captionsOnly {
 		t.Fatal("native captions-only button did not toggle the view")
 	}
-	procSendMessage.Call(p.window, 0x0111, 7101, 0)
+	procSendMessage.Call(p.window, 0x0111, meetingcore.ButtonCaptions, 0)
 	if p.captionsOnly {
 		t.Fatal("native complete-view button did not restore tools")
 	}
-	procSendMessage.Call(p.window, 0x0111, 7103, 0) // A+
+	procSendMessage.Call(p.window, 0x0111, meetingcore.ButtonLargerText, 0)
 	if p.fontSize != 18 {
 		t.Fatalf("native font-size action not applied: %d", p.fontSize)
 	}
@@ -184,7 +184,7 @@ func TestMeetingWindowsE2E(t *testing.T) {
 	if p.splitterVisible[3] || !p.splitterVisible[2] || !p.splitterVisible[4] {
 		t.Fatal("expanded English must expose only the active pane dividers")
 	}
-	procSendMessage.Call(p.window, 0x0111, 7101, 0) // return to captions-only layout
+	procSendMessage.Call(p.window, 0x0111, meetingcore.ButtonCaptions, 0) // return to captions-only layout
 	if !p.captionsOnly || !p.splitterVisible[0] || !p.splitterVisible[1] || p.splitterVisible[2] {
 		t.Fatal("captions-only view did not keep the Chinese/English/history dividers")
 	}

@@ -48,20 +48,10 @@ const (
 	uxBSOwnerDraw             = 0x000B
 	uxEMSetMargins            = 0x00D3
 	uxWMProbeDone             = 0x8000 + 104
-	uxSaveButton              = contract.SaveButton
-	uxCloseButton             = contract.CloseButton
-	uxAdvancedButton          = contract.AdvancedButton
-	uxProbeASRButton          = contract.ProbeASRButton
-	uxProbeLLMButton          = contract.ProbeLLMButton
 	uxShortcutInput           = 9106
 	uxRewriteInput            = 9108
-	uxCaptureRewrite          = contract.CaptureRewrite
-	uxCaptureDictation        = contract.CaptureDictation
 	WM_SETTINGS_CAPTURE_MOUSE = 0x8000 + 105
 	uxMicrophoneInput         = 9107
-	uxNavSpeech               = contract.NavSpeech
-	uxNavAI                   = contract.NavAI
-	uxNavInput                = contract.NavInput
 	uxASRURLInput             = 9130
 	uxASRModelInput           = 9131
 	uxASRKeyInput             = 9132
@@ -191,22 +181,22 @@ func (p *uxSettings) layout() {
 		// Keep the primary footer actions horizontally accessible even when
 		// the form itself needs horizontal scrolling at high DPI.
 		switch ctrl.id {
-		case uxSaveButton:
+		case contract.SaveButton:
 			x = 220
 			if viewW < 650 {
 				x = 12
 			}
-		case uxAdvancedButton:
+		case contract.AdvancedButton:
 			x = 358
 			if viewW < 650 {
 				x = 149
 			}
-		case uxCloseButton:
+		case contract.CloseButton:
 			x = viewW - w - 18
 			if viewW < 650 {
 				x = 276
 			}
-		case uxNavSpeech, uxNavAI, uxNavInput:
+		case contract.NavSpeech, contract.NavAI, contract.NavInput:
 			x = ctrl.x
 		}
 		if ctrl.hwnd == p.hint {
@@ -218,7 +208,7 @@ func (p *uxSettings) layout() {
 				w = viewW - x - 12
 			}
 		}
-		if ctrl.id == uxNavSpeech || ctrl.id == uxNavAI || ctrl.id == uxNavInput {
+		if ctrl.id == contract.NavSpeech || ctrl.id == contract.NavAI || ctrl.id == contract.NavInput {
 			procMoveWindow.Call(ctrl.hwnd, sc(x), sc(y), sc(w), sc(h), 1)
 		} else {
 			procMoveWindow.Call(ctrl.hwnd, sc(x), sc(y-p.scrollY), sc(w), sc(h), 1)
@@ -395,7 +385,7 @@ func (p *uxSettings) acceptShortcut(candidate string) {
 	var normalized string
 	var err error
 	var target uintptr
-	if p.capturingShortcut == uxCaptureRewrite {
+	if p.capturingShortcut == contract.CaptureRewrite {
 		target = p.rewriteShortcut
 		normalized, err = shortcut.ValidateRewrite(candidate, uxWinText(p.shortcut), p.app.cfg.HotkeyExit)
 	} else {
@@ -562,8 +552,8 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMDrawItem:
 		if p != nil && p.window == hwnd && lParam != 0 {
 			item := (*drawItemStruct)(unsafe.Pointer(lParam))
-			if item.CtlID >= uxNavSpeech && item.CtlID <= uxNavInput {
-				if p.drawSidebarItem(item, int(item.CtlID-uxNavSpeech)) {
+			if item.CtlID >= contract.NavSpeech && item.CtlID <= contract.NavInput {
+				if p.drawSidebarItem(item, int(item.CtlID-contract.NavSpeech)) {
 					return 1
 				}
 			}
@@ -797,7 +787,7 @@ func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t stri
 			return err
 		}
 	case "probe_asr":
-		placeProbeButton(makeOne, btn, control, uxProbeASRButton)
+		placeProbeButton(makeOne, btn, control, contract.ProbeASRButton)
 	case "llm_base_url":
 		placeLabeledEdit(p, makeOne, stat, edit, control, row, 3, app.cfg.LLMBaseURL, uxLLMURLInput, false)
 	case "text_model":
@@ -809,11 +799,11 @@ func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t stri
 			return err
 		}
 	case "probe_llm":
-		placeProbeButton(makeOne, btn, control, uxProbeLLMButton)
+		placeProbeButton(makeOne, btn, control, contract.ProbeLLMButton)
 	case "rewrite_shortcut":
 		p.rewriteShortcut = placeShortcutEdit(makeOne, stat, edit, control, row, app.cfg.HotkeyRecord, uxRewriteInput)
 	case "capture_rewrite":
-		button, err := placeCaptureButton(makeOne, btn, control, "rewrite_shortcut", uxCaptureRewrite)
+		button, err := placeCaptureButton(makeOne, btn, control, "rewrite_shortcut", contract.CaptureRewrite)
 		if err != nil {
 			return err
 		}
@@ -821,7 +811,7 @@ func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t stri
 	case "dictation_shortcut":
 		p.shortcut = placeShortcutEdit(makeOne, stat, edit, control, row, app.cfg.DictationHotkey, uxShortcutInput)
 	case "capture_dictation":
-		button, err := placeCaptureButton(makeOne, btn, control, "dictation_shortcut", uxCaptureDictation)
+		button, err := placeCaptureButton(makeOne, btn, control, "dictation_shortcut", contract.CaptureDictation)
 		if err != nil {
 			return err
 		}
@@ -836,11 +826,11 @@ func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t stri
 		info := makeOne("STATIC", control.Label, stat, 226, 345, 565, 44, 0, false)
 		setFont(info, p.mutedFont)
 	case "save":
-		makeOne("BUTTON", control.Label, btn, 220, 418, 124, 34, uxSaveButton, false)
+		makeOne("BUTTON", control.Label, btn, 220, 418, 124, 34, contract.SaveButton, false)
 	case "advanced":
-		makeOne("BUTTON", control.Label, btn, 358, 418, 112, 34, uxAdvancedButton, false)
+		makeOne("BUTTON", control.Label, btn, 358, 418, 112, 34, contract.AdvancedButton, false)
 	case "close":
-		makeOne("BUTTON", control.Label, btn, 710, 418, 94, 34, uxCloseButton, false)
+		makeOne("BUTTON", control.Label, btn, 710, 418, 94, 34, contract.CloseButton, false)
 	default:
 		return fmt.Errorf("设置页缺少控件布局: %s", control.ID)
 	}
@@ -983,7 +973,7 @@ func showNativeSettings(app *appState) error {
 		return fmt.Errorf("设置导航与页面数量不一致")
 	}
 	for i, page := range pages {
-		p.navButtons[i] = makeOne("BUTTON", page.Title, btn, 12, int32(110+i*41), 170, 35, uxNavSpeech+uintptr(i), false)
+		p.navButtons[i] = makeOne("BUTTON", page.Title, btn, 12, int32(110+i*41), 170, 35, contract.NavSpeech+uintptr(i), false)
 	}
 	head := makeOne("STATIC", "设置", uxWSChild, 0, 0, 1, 1, 0, false)
 	setFont(head, p.titleFont)

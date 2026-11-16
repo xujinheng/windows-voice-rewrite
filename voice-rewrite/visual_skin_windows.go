@@ -5,6 +5,8 @@ package main
 import (
 	"runtime"
 	"unsafe"
+
+	"voicerewrite/internal/contract"
 )
 
 // Paint a native GDI card with a single fill, outline and radius.
@@ -44,7 +46,7 @@ func uiDrawActionButton(item *drawItemStruct, palette uiPalette, font uintptr, l
 	// the parent color is painted before the rounded fill. This also fixes
 	// bright squares around controls in dark-mode Direct2D result windows.
 	back := palette.background
-	if item.CtlID == uxProbeASRButton || item.CtlID == uxProbeLLMButton {
+	if item.CtlID == contract.ProbeASRButton || item.CtlID == contract.ProbeLLMButton {
 		back = palette.surface
 	}
 	background, _, _ := procCreateSolidBrush.Call(palette.color(back))
