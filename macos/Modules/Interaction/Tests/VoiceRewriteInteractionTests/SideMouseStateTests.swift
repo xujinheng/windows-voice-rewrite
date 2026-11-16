@@ -10,6 +10,11 @@ final class SideMouseStateTests: XCTestCase {
         XCTAssertTrue(mapping.isValid)
         XCTAssertNil(mapping.action(for: 4))
         XCTAssertEqual(mapping.action(for: 3), .rewrite)
+        XCTAssertEqual(mapping.button(for: .rewrite), 3)
+        XCTAssertNil(mapping.button(for: .dictation))
+        let swapped = SideMouseBindings(dictationButton: 4, rewriteButton: 3)
+        XCTAssertEqual(swapped.button(for: .dictation), 4)
+        XCTAssertEqual(swapped.button(for: .rewrite), 3)
     }
 
     func testMacAuxiliaryButtonNumbers() {
