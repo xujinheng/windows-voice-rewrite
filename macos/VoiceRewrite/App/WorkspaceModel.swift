@@ -20,6 +20,7 @@ final class WorkspaceModel: ObservableObject {
     @Published var taskInstruction = ""
     @Published private(set) var connection: Connection = .disconnected
     @Published private(set) var recordingStatus = recordingIdle()
+    @Published private(set) var microphonePermission: MicrophonePermissionStatus = .notDetermined
     @Published private(set) var serviceStatus = helperNotYetConnected()
     @Published private(set) var asrProbeStatus = ServiceProbeCopy.idle
     @Published private(set) var llmProbeStatus = ServiceProbeCopy.idle
@@ -76,7 +77,17 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    func refreshMicrophonePermission() {
+        microphonePermission = microphone.permissionStatus
+    }
+
+    func openMicrophonePrivacySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     func launch() {
+        refreshMicrophonePermission()
         DiagnosticLog.note("应用已启动")
         if case .disconnected = connection { connect() }
         if hotKeys == nil { registerHotKeys() }
@@ -629,6 +640,7 @@ final class WorkspaceModel: ObservableObject {
         showIndicator(phase: .selection, mode: "改写", pending: false)
         Task { @MainActor [weak self] in
             guard let self else { return }
+            defer { self.refreshMicrophonePermission() }
             var generation: UInt64?
             do {
                 let next = try await interaction.beginTask(targetProcessID: pid)
@@ -683,6 +695,7 @@ final class WorkspaceModel: ObservableObject {
         recordingStatus = dictationRequestingMicrophone()
         Task { @MainActor [weak self] in
             guard let self else { return }
+            defer { self.refreshMicrophonePermission() }
             var captured = false
             var failure: String?
             var snapshot: SelectionSnapshot?
