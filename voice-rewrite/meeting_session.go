@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync"
 	"time"
 
@@ -78,10 +77,10 @@ func (s *meetingSession) setCapturePaused(paused bool) {
 		s.view.capturePaused = paused
 		s.resetViewLocked()
 		if paused {
-			s.view.status = "采集已暂停 · 不发送音频"
-			s.view.metrics.Stage = "已暂停"
+			s.view.status = meetingcore.CapturePausedStatus
+			s.view.metrics.Stage = meetingcore.CapturePausedStage
 		} else {
-			s.view.status = "正在连接音频…"
+			s.view.status = meetingcore.CaptureConnecting
 			s.view.metrics.Stage = meetingcore.ListeningStage
 		}
 	})
@@ -141,13 +140,7 @@ func (s *meetingSession) updateCaption(epoch, id uint64, source, chinese string)
 }
 func (s *meetingSession) complete(ctx context.Context, priority int, query meetingcore.Query, emit func(meetingLine)) error {
 	cfg := s.configSnapshot()
-	stage := "正在翻译"
-	if query.Mode == "replies" {
-		stage = "正在准备建议"
-	}
-	if priority == meetingcore.PriorityExpress {
-		stage = "正在整理你的表达"
-	}
+	stage := meetingcore.InferenceStage(query.Mode, priority == meetingcore.PriorityExpress)
 	return s.runInference(ctx, priority, stage, func(active context.Context) error {
 		s.modelMu.Lock()
 		if s.model == "" {
@@ -173,13 +166,13 @@ func (s *meetingSession) queueReplies(job meetingcore.CaptionTask) {
 		s.mu.Unlock()
 		return
 	}
-	ctx, cancel, ok := s.runtime.ReplyContext(job.Epoch, 30*time.Second)
+	ctx, cancel, ok := s.runtime.ReplyContext(job.Epoch, meetingcore.ReplyTimeout)
 	if !ok {
 		s.mu.Unlock()
 		return
 	}
 	serial := s.view.reply.Next()
-	s.view.status = "正在准备回复建议…"
+	s.view.status = meetingcore.RepliesPreparing
 	s.dirty = true
 	s.mu.Unlock()
 	go func() {
@@ -202,7 +195,7 @@ func (s *meetingSession) queueReplies(job meetingcore.CaptionTask) {
 				if s.view.reply.Current(serial) {
 					s.view.reply.DiscardPartial()
 					if ctx.Err() == nil {
-						s.view.status = "建议生成失败 · 保留当前回复"
+						s.view.status = meetingcore.RepliesFailed
 					}
 				}
 			})
@@ -214,21 +207,16 @@ func (s *meetingSession) acceptPendingReplies() {
 }
 func (s *meetingSession) requestReplies() {
 	s.mu.Lock()
-	if s.view.capturePaused {
+	last, hasCaption := meetingcore.LatestCompletedCaption(s.view.captions)
+	if status, start := meetingcore.ReplyRequest(s.view.capturePaused, hasCaption); !start {
+		if status != "" {
+			s.view.status = status
+			s.dirty = true
+		}
 		s.mu.Unlock()
 		return
 	}
-	last, ok := meetingcore.LatestCompletedCaption(s.view.captions)
-	if !ok {
-		s.view.status = "请等当前发言结束后再生成建议"
-		s.dirty = true
-		s.mu.Unlock()
-		return
-	}
-	prior := append([]string(nil), s.prior...)
-	if len(prior) > 0 && strings.TrimSpace(prior[len(prior)-1]) == strings.TrimSpace(last.Source) {
-		prior = prior[:len(prior)-1]
-	}
+	prior := meetingcore.ReplyPrior(s.prior, last.Source)
 	work, epoch, _ := s.runtime.Snapshot()
 	job := meetingcore.CaptionTask{Latest: last.Source, ID: last.ID, Epoch: epoch, Context: work, Prior: prior, Ended: time.Now()}
 	s.mu.Unlock()
@@ -241,12 +229,12 @@ func (s *meetingSession) refineReply(index int, instruction string) {
 	}
 	s.mu.Lock()
 	selected := s.view.reply.Displayed.Lines[index].English
-	if selected == "" || s.view.capturePaused {
+	if !meetingcore.RefineMayRun(selected, s.view.capturePaused) {
 		s.mu.Unlock()
 		return
 	}
-	ctx, cancel, epoch, serial := s.runtime.NewExpression(30 * time.Second)
-	s.view.expressionStatus = "正在微调所选回复…"
+	ctx, cancel, epoch, serial := s.runtime.NewExpression(meetingcore.ReplyTimeout)
+	s.view.expressionStatus = meetingcore.RefineRunning
 	s.dirty = true
 	s.mu.Unlock()
 	go func() {
@@ -256,7 +244,7 @@ func (s *meetingSession) refineReply(index int, instruction string) {
 		})
 		if err != nil && ctx.Err() == nil {
 			s.applyExpression(epoch, serial, func() {
-				s.view.expressionStatus = "微调失败，请重试"
+				s.view.expressionStatus = meetingcore.RefineFailed
 				if !s.view.expression.complete {
 					s.view.expression = meetingLine{}
 				}
