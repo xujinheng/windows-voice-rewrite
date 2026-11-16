@@ -18,6 +18,15 @@ import (
 	"voicerewrite/internal/core/speech"
 )
 
+const (
+	// StatusIdle is the settings line before a connection check.
+	StatusIdle = "尚未检测连接"
+	// StatusRunning is the settings line while a check is in flight.
+	StatusRunning = "正在检测服务…"
+	// StatusStale is the settings line after the address or model changes.
+	StatusStale = "连接配置已修改 · 请重新检测"
+)
+
 func validURL(value string) bool { return coreconfig.ValidateBaseURL(value) == nil }
 
 // A service health response and a compatible model are two separate facts.

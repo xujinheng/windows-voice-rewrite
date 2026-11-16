@@ -10,6 +10,12 @@ import (
 	"testing"
 )
 
+func TestProbeStatusLines(t *testing.T) {
+	if StatusIdle != "尚未检测连接" || StatusRunning != "正在检测服务…" || StatusStale != "连接配置已修改 · 请重新检测" {
+		t.Fatal("probe status")
+	}
+}
+
 func TestProbeModelMatchesWindowsStatusAndBearerHandling(t *testing.T) {
 	for _, tc := range []struct {
 		status int

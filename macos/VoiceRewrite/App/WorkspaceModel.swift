@@ -5,6 +5,12 @@ import Microphone
 import VoiceRewriteInteraction
 import VoiceRewriteStorage
 
+enum ServiceProbeCopy {
+    static let idle = "尚未检测连接"
+    static let running = "正在检测服务…"
+    static let stale = "连接配置已修改 · 请重新检测"
+}
+
 @MainActor
 final class WorkspaceModel: ObservableObject {
     enum Connection: Equatable {
@@ -21,8 +27,8 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var connection: Connection = .disconnected
     @Published private(set) var recordingStatus = "未录音"
     @Published private(set) var serviceStatus = "尚未连接"
-    @Published private(set) var asrProbeStatus = "尚未检测"
-    @Published private(set) var llmProbeStatus = "尚未检测"
+    @Published private(set) var asrProbeStatus = ServiceProbeCopy.idle
+    @Published private(set) var llmProbeStatus = ServiceProbeCopy.idle
     @Published private(set) var isCheckingServices = false
     @Published private(set) var interactionStatus = "全局快捷键尚未注册"
     @Published private(set) var sideMouseStatus = "尚未检查鼠标侧键监听"
@@ -88,8 +94,8 @@ final class WorkspaceModel: ObservableObject {
     func connect() {
         let token = helloGeneration.begin()
         cancelProbes()
-        asrProbeStatus = "尚未检测"
-        llmProbeStatus = "尚未检测"
+        asrProbeStatus = ServiceProbeCopy.idle
+        llmProbeStatus = ServiceProbeCopy.idle
         bridge?.stop()
         bridge = nil
         connection = .connecting
@@ -370,6 +376,11 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    func markConnectionProbeStale(_ operation: HelperOperation) {
+        cancelProbes()
+        setProbeStatus(ServiceProbeCopy.stale, for: operation)
+    }
+
     private func cancelProbes() {
         _ = probeGeneration.begin()
         for id in activeProbeIDs.values { bridge?.cancel(id: id) }
@@ -451,7 +462,7 @@ final class WorkspaceModel: ObservableObject {
             case .spokenSelectedTask:
                 continue
             }
-            setProbeStatus("\(name)：正在检测服务…", for: operation)
+            setProbeStatus("\(name)：" + ServiceProbeCopy.running, for: operation)
             do {
                 let config = try requestConfig(for: operation)
                 let id = bridge.send(operation: bridgeOperation, fields: ["config": config]) {

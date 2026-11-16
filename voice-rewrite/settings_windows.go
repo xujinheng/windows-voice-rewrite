@@ -13,6 +13,7 @@ import (
 	"unsafe"
 
 	"voicerewrite/internal/core/desktop"
+	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/settingsform"
 	"voicerewrite/internal/core/shortcut"
 )
@@ -655,7 +656,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 							p.probeMu.Lock()
 							p.probeSerial[idx]++ // reject in-flight stale response
 							p.probeMu.Unlock()
-							uxSetText(p.probeStatus[idx], "连接配置已修改 · 请重新检测")
+							uxSetText(p.probeStatus[idx], serviceprobe.StatusStale)
 							break
 						}
 					}
@@ -754,7 +755,7 @@ func (p *uxSettings) check(kind, base, key, model string) {
 	p.probeSerial[idx]++
 	serial := p.probeSerial[idx]
 	p.probeMu.Unlock()
-	uxSetText(p.probeStatus[idx], "正在检测服务…")
+	uxSetText(p.probeStatus[idx], serviceprobe.StatusRunning)
 	h := p.window
 	go func() {
 		result := uxProbeModel(context.Background(), kind, base, key, model)
@@ -899,7 +900,7 @@ func showNativeSettings(app *appState) error {
 	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, secondEdit.X, secondEdit.Y, secondEdit.W, secondEdit.H, uxASRModelInput, false)
 	makeOne("STATIC", "API Key", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
 	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, thirdEdit.X, thirdEdit.Y, thirdEdit.W, thirdEdit.H, uxASRKeyInput, false)
-	p.probeStatus[0] = makeOne("STATIC", "尚未检测连接", stat, 352, 324, 435, 48, 0, false)
+	p.probeStatus[0] = makeOne("STATIC", serviceprobe.StatusIdle, stat, 352, 324, 435, 48, 0, false)
 	makeOne("BUTTON", "测试连接", btn, 696, 130, 92, 30, uxProbeASRButton, false)
 	for _, c := range p.controls[start:] {
 		p.pages[0] = append(p.pages[0], c.hwnd)
@@ -911,7 +912,7 @@ func showNativeSettings(app *appState) error {
 	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, secondEdit.X, secondEdit.Y, secondEdit.W, secondEdit.H, uxLLMModelInput, false)
 	makeOne("STATIC", "API Key", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
 	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, thirdEdit.X, thirdEdit.Y, thirdEdit.W, thirdEdit.H, uxLLMKeyInput, false)
-	p.probeStatus[1] = makeOne("STATIC", "尚未检测连接", stat, 352, 324, 435, 48, 0, false)
+	p.probeStatus[1] = makeOne("STATIC", serviceprobe.StatusIdle, stat, 352, 324, 435, 48, 0, false)
 	makeOne("BUTTON", "测试连接", btn, 696, 130, 92, 30, uxProbeLLMButton, false)
 	for _, c := range p.controls[start:] {
 		p.pages[1] = append(p.pages[1], c.hwnd)

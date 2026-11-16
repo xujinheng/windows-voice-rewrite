@@ -1,4 +1,5 @@
 import SwiftUI
+import VoiceRewriteStorage
 
 struct SettingsView: View {
     @ObservedObject var model: WorkspaceModel
@@ -46,6 +47,12 @@ struct SettingsView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
+        .onChange(of: model.settings.asrBaseURL) { _, _ in model.markConnectionProbeStale(.transcribe) }
+        .onChange(of: model.settings.asrModel) { _, _ in model.markConnectionProbeStale(.transcribe) }
+        .onChange(of: model.asrKeyInput) { _, _ in model.markConnectionProbeStale(.transcribe) }
+        .onChange(of: model.settings.llmBaseURL) { _, _ in model.markConnectionProbeStale(.selectedTask) }
+        .onChange(of: model.settings.textModel) { _, _ in model.markConnectionProbeStale(.selectedTask) }
+        .onChange(of: model.llmKeyInput) { _, _ in model.markConnectionProbeStale(.selectedTask) }
         .formStyle(.grouped)
     }
 }

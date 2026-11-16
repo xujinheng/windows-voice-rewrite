@@ -23,7 +23,7 @@ VoiceRewrite has native Windows (Go/Win32) and macOS (SwiftUI/AppKit with a bund
 | `internal/core/config` | Application settings schema and defaults, JSON parsing/serialization, normalization, API base-URL validation and credential-field transformation callbacks. Base URLs are trimmed http(s) addresses without userinfo, query, or fragment. Recording length is kept from 1 to 180 seconds and otherwise returned to 60. No filesystem access or OS encryption implementation. |
 | `internal/core/provider` | Safe HTTP clients, redirect blocking, bounded responses, model discovery, HTTP errors and reasoning-tag removal. |
 | `internal/core/speech` | WAV/multipart ASR requests, transcript processing, chunking and request cancellation. |
-| `internal/core/serviceprobe` | Shared ASR silent-WAV upload and LLM model-list connection probing for both desktop hosts. |
+| `internal/core/serviceprobe` | Shared ASR silent-WAV upload and LLM model-list connection probing for both desktop hosts, including the idle, running, and stale settings lines. |
 | `internal/core/textedit` | Selected-text length/cancellation validation, spoken-command ASR-to-edit orchestration, intent classification and parsing, explicit-command write authorization, routing, plain-text rewrite and shared model completion transport. |
 | `internal/core/meeting` | Stream segmentation, adaptive ASR previews, session epochs/pause/resume/cancellation (`SessionRuntime`), bounded final/preview queues and revision-fenced caption translation (`Pipeline`), captions, replies, inference priorities, history and layout policies. |
 
