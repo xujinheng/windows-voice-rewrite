@@ -3,7 +3,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"runtime"
 	"strings"
@@ -553,8 +552,8 @@ func showAnswerPopup(msg popupMessage) error {
 	restoreDPI := handyAwareWindowThread()
 	defer restoreDPI()
 	closeActiveAnswer()
-	if strings.TrimSpace(msg.body) == "" {
-		return errors.New("AI 未返回可显示的文字")
+	if err := corepopup.ResultShown(msg.body); err != nil {
+		return err
 	}
 	// Never truncate a model response: users must be able to review and copy
 	// the full answer, including large translations and generated documents.
@@ -614,7 +613,7 @@ func showAnswerPopup(msg popupMessage) error {
 	}
 	popup.note = note
 	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | uxWSTabStop | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
-	editorText := strings.ReplaceAll(strings.ReplaceAll(msg.body, "\r\n", "\n"), "\n", "\r\n")
+	editorText := corepopup.EditorText(msg.body)
 	editorFrame := corepopup.Editor(cw, ch, scale)
 	editor, err := makeChild("EDIT", "", bodyStyle, editorFrame.X, editorFrame.Y, editorFrame.W, editorFrame.H, hwnd, 0)
 	if err != nil {
@@ -629,7 +628,7 @@ func showAnswerPopup(msg popupMessage) error {
 	uxSetText(editor, editorText)
 	if size, _, _ := procGetWindowTextLength.Call(editor); size == 0 {
 		closeActiveAnswer()
-		return errors.New("结果正文未写入文本控件")
+		return corepopup.ResultWritten(0)
 	}
 	// The header Close action stays outside the draggable caption hit area.
 	closeFrame := corepopup.CloseButton(cw, scale)
