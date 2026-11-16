@@ -241,19 +241,13 @@ func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 // remains. If it does, the surface likely refused the paste, so show a preview.
 // This remains a heuristic: it cannot prove an application's content changed.
 func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement string, cfg Config, verifyBrowser bool, valid func() bool) error {
-	if valid != nil && !valid() {
-		return errors.New("任务已过期，禁止覆盖原文")
-	}
-	if !waitKeysReleased(3 * time.Second) {
-		return errors.New("请松开 Ctrl/Alt 等快捷键后再试")
-	}
-	fg, _, _ := procGetForegroundWindow.Call()
-	windowValid, _, _ := procIsWindow.Call(sel.TargetWindow)
-	if windowValid == 0 || fg != sel.TargetWindow {
-		return errors.New("编辑窗口已经切换；结果保留在预览卡片，可手动复制")
-	}
-	if nativePasswordFieldFocused(sel.TargetWindow) {
-		return errors.New(ux.PasswordRewrite)
+	taskValid := func() bool { return valid == nil || valid() }
+	if err := ux.ReplaceInsertReady(taskValid, func() bool { return waitKeysReleased(3 * time.Second) }, func() bool {
+		fg, _, _ := procGetForegroundWindow.Call()
+		windowValid, _, _ := procIsWindow.Call(sel.TargetWindow)
+		return windowValid != 0 && fg == sel.TargetWindow
+	}, func() bool { return nativePasswordFieldFocused(sel.TargetWindow) }); err != nil {
+		return err
 	}
 
 	backup := sel.ClipboardBackup
@@ -264,7 +258,7 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 			return err
 		}
 	} else if !backup.ownsCurrent() {
-		return errors.New("执行期间剪贴板被其他程序更改，为避免覆盖用户数据已取消自动写入")
+		return errors.New(ux.ReplaceClipboardChanged)
 	}
 	defer backup.restoreIfOwned(hwnd)
 
@@ -276,26 +270,26 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 	if afterCopy != beforeCopy {
 		backup.markOwned(afterCopy)
 	}
-	if err != nil || actual != sel.Text {
-		return errors.New("原选区已变化或无法读取；结果保留在预览卡片，不自动覆盖")
+	if err = ux.ReplaceSelectionStillThere(err, actual, sel.Text); err != nil {
+		return err
 	}
-	if (valid != nil && !valid()) || !isSameForegroundWindow(sel.TargetWindow) {
-		return errors.New("粘贴前目标窗口发生变化，已取消自动写入")
+	if err = ux.ReplaceBeforePasteOK(taskValid() && isSameForegroundWindow(sel.TargetWindow)); err != nil {
+		return err
 	}
 	if err := setClipboardText(hwnd, replacement); err != nil {
 		return err
 	}
 	backup.markOwned(clipboardSeq())
-	if (valid != nil && !valid()) || !isSameForegroundWindow(sel.TargetWindow) {
-		return errors.New("目标窗口变化或任务已取消，已停止粘贴")
+	if err = ux.ReplacePasteStillOK(taskValid() && isSameForegroundWindow(sel.TargetWindow)); err != nil {
+		return err
 	}
 	if err := sendCombo('V'); err != nil {
 		return err
 	}
 	time.Sleep(270 * time.Millisecond)
 	if verifyBrowser {
-		if !isSameForegroundWindow(sel.TargetWindow) {
-			return errors.New("粘贴后窗口变化，无法验证结果；可使用预览卡片")
+		if err = ux.ReplaceVerifyWindowOK(isSameForegroundWindow(sel.TargetWindow)); err != nil {
+			return err
 		}
 		beforeProbe := clipboardSeq()
 		stillSelected, verifyErr := clipboardCopy(hwnd, 470*time.Millisecond)
@@ -308,12 +302,12 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 				backup.abandon()
 			}
 		}
-		if verifyErr == nil && stillSelected == sel.Text {
-			return errors.New("原文字仍被选中，目标应用可能拒绝粘贴；结果可从预览卡片复制")
+		if err = ux.ReplacePasteKeptSelection(verifyErr, stillSelected, sel.Text); err != nil {
+			return err
 		}
 	}
 	if err := backup.restoreIfOwned(hwnd); err != nil {
-		return fmt.Errorf("已尝试粘贴，但剪贴板恢复失败: %w", err)
+		return ux.ReplaceClipboardRestored(err)
 	}
 	return nil // Windows accepted Ctrl+V; target editor insertion remains best-effort.
 }
