@@ -125,7 +125,7 @@ final class WorkspaceModel: ObservableObject {
                         self.serviceStatus = helperHandshakeFailedStatus()
                         return
                     }
-                    self.connection = .connected("VoiceRewrite / JSONL v1")
+                    self.connection = .connected(helperConnectedLabel())
                     self.serviceStatus = helperConnected()
                     DiagnosticLog.note(helperConnected())
                     self.checkServices()

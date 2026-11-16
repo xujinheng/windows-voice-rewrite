@@ -59,6 +59,16 @@ func ExpressTranscript(err error, text string) (label, detail, points string, st
 	return "", "", points, false
 }
 
+// MeetingSourceLess lists Zoom ahead of other apps, then sorts titles case-insensitively.
+func MeetingSourceLess(aName, aTitle, bName, bTitle string) bool {
+	aZoom := strings.EqualFold(aName, "Zoom.exe")
+	bZoom := strings.EqualFold(bName, "Zoom.exe")
+	if aZoom != bZoom {
+		return aZoom
+	}
+	return strings.ToLower(aTitle) < strings.ToLower(bTitle)
+}
+
 // RememberPrior keeps the newest finished utterances.
 func RememberPrior(prior []string, latest string) []string {
 	prior = append(prior, latest)

@@ -40,6 +40,12 @@ func TestMeetingExpressionStopsStaySeparate(t *testing.T) {
 	if len(got) != 5 || got[0] != "2" || got[4] != "6" {
 		t.Fatal(got)
 	}
+	if !MeetingSourceLess("Zoom.exe", "b", "chrome.exe", "a") || !MeetingSourceLess("zoom.EXE", "z", "Notepad.exe", "a") {
+		t.Fatal("zoom first")
+	}
+	if !MeetingSourceLess("a.exe", "alpha", "b.exe", "Beta") || MeetingSourceLess("a.exe", "Same", "b.exe", "same") {
+		t.Fatal("title order")
+	}
 	if ListeningPrompt == "正在聆听" {
 		t.Fatal("listening prompt collapsed")
 	}

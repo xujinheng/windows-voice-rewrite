@@ -137,6 +137,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertFalse(MacSettings.credentialTooLong(String(repeating: " ", count: 4001)))
         XCTAssertFalse(MacSettings.replacesStoredCredential(""))
         XCTAssertTrue(MacSettings.replacesStoredCredential(" "))
+        XCTAssertEqual(helperConnectedLabel(), "VoiceRewrite / JSONL v1")
         XCTAssertTrue(helperHelloAccepted(ok: true, name: ContractLimits.helperName, version: ContractLimits.protocolVersion))
         XCTAssertFalse(helperHelloAccepted(ok: true, name: "other", version: ContractLimits.protocolVersion))
         XCTAssertFalse(helperHelloAccepted(ok: false, name: ContractLimits.helperName, version: ContractLimits.protocolVersion))

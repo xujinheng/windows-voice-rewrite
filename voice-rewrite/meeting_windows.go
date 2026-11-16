@@ -57,11 +57,7 @@ func runningMeetingSources() []meetingSource {
 	state := meetingEnumeration{current: current, seen: seen, sources: &sources}
 	meetingEnumWindows.Call(meetingEnumCallback, uintptr(unsafe.Pointer(&state)))
 	sort.SliceStable(sources, func(i, j int) bool {
-		a, b := sources[i], sources[j]
-		if strings.EqualFold(a.name, "Zoom.exe") != strings.EqualFold(b.name, "Zoom.exe") {
-			return strings.EqualFold(a.name, "Zoom.exe")
-		}
-		return strings.ToLower(a.title) < strings.ToLower(b.title)
+		return meetingcore.MeetingSourceLess(sources[i].name, sources[i].title, sources[j].name, sources[j].title)
 	})
 	return sources
 }
