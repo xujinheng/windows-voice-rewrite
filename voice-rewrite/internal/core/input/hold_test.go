@@ -5,6 +5,28 @@ import (
 	"time"
 )
 
+func TestToggleCleanupKeepsClipboardAndStatusApart(t *testing.T) {
+	keys := CleanupToggle(ToggleKeysHeld)
+	if keys.RestoreClipboard || keys.StopRecorder || !keys.ClearBusy || !keys.Report {
+		t.Fatal("keys")
+	}
+	failed := CleanupToggle(ToggleSelectionFailed)
+	if !failed.RestoreClipboard || failed.StopRecorder || !failed.ClearBusy || !failed.Report {
+		t.Fatal("selection")
+	}
+	stale := CleanupToggle(ToggleGenerationStale)
+	if !stale.RestoreClipboard || !stale.StopRecorder || !stale.ClearBusy || stale.Report {
+		t.Fatal("stale")
+	}
+	missed := CleanupToggle(ToggleNotifyMissed)
+	if missed.RestoreClipboard || !missed.StopRecorder || !missed.ClearBusy || !missed.Report {
+		t.Fatal("notify")
+	}
+	if CleanupToggle(ToggleFault(9)) != (ToggleCleanup{}) {
+		t.Fatal("unknown")
+	}
+}
+
 func TestHoldEventAppliesOnlyToTheActiveSession(t *testing.T) {
 	if !HoldEventApplies(true, true, true) || HoldEventApplies(false, true, true) || HoldEventApplies(true, false, true) || HoldEventApplies(true, true, false) {
 		t.Fatal("hold event")

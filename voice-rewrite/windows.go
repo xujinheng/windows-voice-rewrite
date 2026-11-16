@@ -263,6 +263,23 @@ func singleInstanceGuard() (func(), error) {
 	return func() { procCloseHandle.Call(handle) }, nil
 }
 
+func finishTogglePrepare(app *appState, hwnd uintptr, sel selectedText, rec *audioRecorder, fault input.ToggleFault, err error) {
+	cleanup := input.CleanupToggle(fault)
+	if cleanup.RestoreClipboard {
+		restoreSelectionClipboardIfOwned(hwnd, sel)
+	}
+	if cleanup.StopRecorder && rec != nil {
+		rec.Stop()
+		go func() { <-rec.result }()
+	}
+	if cleanup.Report && err != nil {
+		app.fail(err)
+	}
+	if cleanup.ClearBusy {
+		app.busy.Store(false)
+	}
+}
+
 func runApp() {
 	if len(os.Args) == 2 && os.Args[1] == "--meeting-demo" {
 		runMeetingDemo()
@@ -926,8 +943,7 @@ func runApp() {
 			app.setStatus(trayTranscribing)
 			go func() {
 				if !waitKeysReleased(2500 * time.Millisecond) {
-					app.fail(errors.New(ux.DictationReleaseKeys))
-					app.busy.Store(false)
+					finishTogglePrepare(app, hwnd, selectedText{}, nil, input.ToggleKeysHeld, errors.New(ux.DictationReleaseKeys))
 					return
 				}
 				begin := time.Now()
@@ -937,31 +953,21 @@ func runApp() {
 					err = textedit.SelectedLengthError(cfg.MaxSelectedRunes, sel.Text)
 				}
 				if err != nil {
-					restoreSelectionClipboardIfOwned(hwnd, sel)
-					app.fail(err)
-					app.busy.Store(false)
+					finishTogglePrepare(app, hwnd, sel, nil, input.ToggleSelectionFailed, err)
 					return
 				}
 				rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
 				if err != nil {
-					restoreSelectionClipboardIfOwned(hwnd, sel)
-					app.fail(err)
-					app.busy.Store(false)
+					finishTogglePrepare(app, hwnd, sel, nil, input.ToggleSelectionFailed, err)
 					return
 				}
 				if !app.epoch.Valid(generation) {
-					restoreSelectionClipboardIfOwned(hwnd, sel)
-					rec.Stop()
-					go func() { <-rec.result }()
-					app.busy.Store(false)
+					finishTogglePrepare(app, hwnd, sel, rec, input.ToggleGenerationStale, nil)
 					return
 				}
 				toggleResult <- togglePrepareResult{rec: rec, sel: sel, generation: generation}
 				if ok, _, _ := procPostMessage.Call(hwnd, WM_TOGGLE_READY, 0, 0); ok == 0 {
-					rec.Stop()
-					go func() { <-rec.result }()
-					app.fail(errors.New(input.ToggleUINotifyFailed))
-					app.busy.Store(false)
+					finishTogglePrepare(app, hwnd, sel, rec, input.ToggleNotifyMissed, errors.New(input.ToggleUINotifyFailed))
 				}
 			}()
 		}

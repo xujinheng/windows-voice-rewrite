@@ -153,6 +153,46 @@ func (s *Hold) Release() (wasHeld, active bool) {
 	return true, active
 }
 
+// ToggleFault is one failed toggle-selection prepare.
+// The ready message on the UI thread drops a stale recorder without this cleanup.
+type ToggleFault int
+
+const (
+	// ToggleKeysHeld means the shortcut was still down. No clipboard was captured.
+	ToggleKeysHeld ToggleFault = iota
+	// ToggleSelectionFailed is a capture error, a selection that is too long, or a microphone that did not start.
+	ToggleSelectionFailed
+	// ToggleGenerationStale means the generation expired after the microphone started.
+	ToggleGenerationStale
+	// ToggleNotifyMissed means the UI thread did not accept the ready message.
+	ToggleNotifyMissed
+)
+
+// ToggleCleanup is applied by the prepare goroutine.
+// A stale generation restores the clipboard and does not show a status sentence.
+// A missed notification stops the recorder and does not restore the clipboard.
+type ToggleCleanup struct {
+	RestoreClipboard bool
+	StopRecorder     bool
+	ClearBusy        bool
+	Report           bool
+}
+
+func CleanupToggle(fault ToggleFault) ToggleCleanup {
+	switch fault {
+	case ToggleKeysHeld:
+		return ToggleCleanup{ClearBusy: true, Report: true}
+	case ToggleSelectionFailed:
+		return ToggleCleanup{RestoreClipboard: true, ClearBusy: true, Report: true}
+	case ToggleGenerationStale:
+		return ToggleCleanup{RestoreClipboard: true, StopRecorder: true, ClearBusy: true}
+	case ToggleNotifyMissed:
+		return ToggleCleanup{StopRecorder: true, ClearBusy: true, Report: true}
+	default:
+		return ToggleCleanup{}
+	}
+}
+
 // ReleaseDebounced reports a key release only after two consecutive polls see
 // it up, so a one-sample gap does not cut off dictation.
 func ReleaseDebounced(keyDown bool, upPolls *int) bool {
