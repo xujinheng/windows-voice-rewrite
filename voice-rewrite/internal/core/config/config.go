@@ -76,10 +76,15 @@ func Marshal(cfg Config) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
+// KnownMeetingASRMode is the persisted meeting recognizer choice.
+func KnownMeetingASRMode(mode string) bool {
+	return mode == "llama-prefix" || mode == "multipart"
+}
+
 // Normalize applies the persisted configuration's defaults and validation.
 // It does not inspect or transform secrets.
 func Normalize(cfg Config) (Config, error) {
-	if cfg.MeetingASRMode != "llama-prefix" && cfg.MeetingASRMode != "multipart" {
+	if !KnownMeetingASRMode(cfg.MeetingASRMode) {
 		return cfg, errors.New("meeting_asr_mode 必须是 llama-prefix 或 multipart")
 	}
 	if cfg.ASRModel == "" {

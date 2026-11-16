@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"syscall"
 	"unsafe"
+
+	meetingcore "voicerewrite/internal/core/meeting"
 )
 
 func (p *meetingHUD) openProfile() {
@@ -32,10 +34,10 @@ func (p *meetingHUD) openProfile() {
 		child("STATIC", "背景：角色、项目、目标、已知限制", 0, 0, false)
 		editStyle := uintptr(WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | WS_BORDER | 0x00010000 | 0x1000)
 		p.profileBackground = child("EDIT", "", editStyle, 7201, true)
-		procSendMessage.Call(p.profileBackground, 0x00C5, 4000, 0)
+		procSendMessage.Call(p.profileBackground, 0x00C5, uintptr(meetingcore.MaxBackgroundRunes), 0)
 		child("STATIC", "术语：人名、缩写、产品名和中英对照（每行一条）", 0, 0, false)
 		p.profileTerms = child("EDIT", "", editStyle, 7202, true)
-		procSendMessage.Call(p.profileTerms, 0x00C5, 2000, 0)
+		procSendMessage.Call(p.profileTerms, 0x00C5, uintptr(meetingcore.MaxTermsRunes), 0)
 		child("STATIC", "会议识别方式", 0, 0, false)
 		p.profileMode = child("COMBOBOX", "", 0x00010000|WS_VSCROLL|3, 7203, false)
 		for _, title := range []string{"multipart · 分段音频识别", "llama-prefix · 累积音频 / 前缀续写"} {

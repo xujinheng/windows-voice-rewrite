@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"voicerewrite/internal/core/audio"
+	coreconfig "voicerewrite/internal/core/config"
 	meetingcore "voicerewrite/internal/core/meeting"
 	"voicerewrite/internal/core/provider"
 )
@@ -105,16 +106,17 @@ func (s *meetingSession) saveMeetingConfig(change func(*Config)) error {
 	return nil
 }
 func (s *meetingSession) updateProfile(background, terms string) error {
-	if len([]rune(background)) > 4000 || len([]rune(terms)) > 2000 {
-		return errors.New("背景最多 4000 字，术语最多 2000 字")
+	background, terms, err := meetingcore.AcceptProfile(background, terms)
+	if err != nil {
+		return err
 	}
 	return s.saveMeetingConfig(func(c *Config) {
-		c.MeetingBackground = strings.TrimSpace(background)
-		c.MeetingTerms = strings.TrimSpace(terms)
+		c.MeetingBackground = background
+		c.MeetingTerms = terms
 	})
 }
 func (s *meetingSession) setASRMode(mode string) error {
-	if mode != "llama-prefix" && mode != "multipart" {
+	if !coreconfig.KnownMeetingASRMode(mode) {
 		return errors.New("无效的 ASR 模式")
 	}
 	return s.saveMeetingConfig(func(c *Config) { c.MeetingASRMode = mode })
@@ -233,8 +235,8 @@ func (s *meetingSession) requestReplies() {
 	s.queueReplies(job)
 }
 func (s *meetingSession) refineReply(index int, instruction string) {
-	instruction = strings.TrimSpace(instruction)
-	if index < 0 || index > 2 || instruction == "" || len([]rune(instruction)) > 2000 {
+	instruction, ok := meetingcore.AcceptRefine(index, instruction)
+	if !ok {
 		return
 	}
 	s.mu.Lock()
