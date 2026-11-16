@@ -498,7 +498,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMColorStatic:
 		if p != nil && p.window == hwnd && p.background != 0 {
 			color := p.palette.text
-			if lParam == p.hint || lParam == p.probeStatus[0] || lParam == p.probeStatus[1] {
+			if settingsform.MutedControl(lParam, p.hint, p.probeStatus[0], p.probeStatus[1]) {
 				color = p.palette.muted
 			}
 			uxSetTextColor.Call(wParam, p.palette.color(color))
@@ -922,9 +922,9 @@ func showNativeSettings(app *appState) error {
 	}
 	hint := settingsform.SettingsHint()
 	p.hint = makeOne("STATIC", "", stat, hint.X, hint.Y, hint.W, hint.H, 0, false)
-	setFont(p.hint, p.mutedFont)
-	setFont(p.probeStatus[0], p.mutedFont)
-	setFont(p.probeStatus[1], p.mutedFont)
+	for _, hwnd := range settingsform.MutedControls(p.hint, p.probeStatus[0], p.probeStatus[1]) {
+		setFont(hwnd, p.mutedFont)
+	}
 	p.switchPage(0)
 	p.layout()
 	// Windows 11 DWM-rounded frame and non-activating status pill are separate.
