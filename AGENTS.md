@@ -2,6 +2,14 @@
 
 This repository represents the **current product**, not the history of how it was developed.
 
+## Cross-platform product principles
+
+- **One product, two native experiences.** Windows and macOS must offer equivalent features, settings, labels, defaults, workflows, and safety guarantees, with consistent UI grouping, control order, and approximate placement.
+- **Change once, improve both.** Algorithms, business rules, configuration, UI structure, copy, layout constraints, and interaction state must have one shared source of truth; a typical change should require editing only that source, not two platform implementations.
+- **Split only at real OS boundaries.** Extract reusable behavior and UI contracts into shared modules first. Keep separate implementations only where platform APIs, input, windowing, or native rendering genuinely require them; never duplicate portable logic.
+- **Native polish, shared behavior.** Each host renders the shared contract with its own native controls and visual language. macOS should aim for superior aesthetics without reducing or rearranging functionality.
+- **Prevent drift.** Test shared contracts across platforms, test platform-specific adapters separately, and apply successful product improvements to both hosts.
+
 ## Final-state only
 
 - Implement the requested end state directly. Do not leave transitional implementations, parallel versions, temporary adapters, compatibility shims, deprecated paths, fallback code for previous implementations, or scaffolding for abandoned approaches.
