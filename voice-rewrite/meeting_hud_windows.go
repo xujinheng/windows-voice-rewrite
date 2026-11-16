@@ -335,7 +335,7 @@ func meetingBool(value bool) uintptr {
 }
 
 func (p *meetingHUD) resizeText(delta int32) {
-	size := max(12, min(28, p.fontSize+delta))
+	size := meetingcore.NextFontSize(p.fontSize, delta)
 	if size == p.fontSize {
 		return
 	}

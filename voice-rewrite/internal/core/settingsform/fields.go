@@ -28,6 +28,27 @@ func FieldLabel(row int) Rect {
 	return Rect{224, frame.Y + 5, 119, 24}
 }
 
+// PaintedFrames is the rounded outline behind each stacked settings field.
+// The input page paints two shortcut frames. The other pages paint three text fields.
+func PaintedFrames(page string) []Rect {
+	rows := 3
+	shortcut := page == "input"
+	if shortcut {
+		rows = 2
+	}
+	frames := make([]Rect, rows)
+	for i := range frames {
+		if shortcut {
+			frame := ShortcutFrame()
+			frame.Y += int32(i) * RowStep
+			frames[i] = frame
+			continue
+		}
+		frames[i] = FieldFrame(i)
+	}
+	return frames
+}
+
 func ShortcutFrame() Rect {
 	frame := FieldFrame(0)
 	frame.W = 226

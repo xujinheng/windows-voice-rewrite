@@ -53,16 +53,7 @@ func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32, focusRow
 	// Shared geometry puts the real EDIT fully inside the painted rounded
 	// field, including its left edge. Fields are now 34px tall, with a compact
 	// 54px row pitch; native text has its own 24px vertically centered HWND.
-	rows := 3
-	if page == 2 {
-		rows = 2
-	}
-	for i := 0; i < rows; i++ {
-		frame := settingsform.FieldFrame(i)
-		if page == 2 {
-			frame = settingsform.ShortcutFrame()
-			frame.Y += int32(i) * settingsform.RowStep
-		}
+	for i, frame := range settingsform.PaintedFrames(shown.ID) {
 		x := float32(frame.X - scrollX)
 		y := float32(frame.Y - scrollY)
 		outline := 6
@@ -90,16 +81,8 @@ func (p *uxSettings) drawSettingsFallback(hdc uintptr) {
 	procFillRect.Call(hdc, uintptr(unsafe.Pointer(&side)), p.cardBrush)
 	line := rect32{sc(193), 0, sc(194), rc.Bottom}
 	procFillRect.Call(hdc, uintptr(unsafe.Pointer(&line)), p.editBrush)
-	rows := 3
-	if p.page == 2 {
-		rows = 2
-	}
-	for i := 0; i < rows; i++ {
-		frame := settingsform.FieldFrame(i)
-		if p.page == 2 {
-			frame = settingsform.ShortcutFrame()
-			frame.Y += int32(i) * settingsform.RowStep
-		}
+	page := settingsPage(p.page)
+	for i, frame := range settingsform.PaintedFrames(page.ID) {
 		outline := p.palette.color(p.palette.border)
 		if p.focusRow == i {
 			outline = p.palette.color(p.palette.primary)
@@ -110,12 +93,12 @@ func (p *uxSettings) drawSettingsFallback(hdc uintptr) {
 	procSetBkMode.Call(hdc, TRANSPARENT)
 	procSetTextColor.Call(hdc, p.palette.color(p.palette.text))
 	head, _, _ := procSelectObject.Call(hdc, p.titleFont)
-	title := uxPtr(settingsPage(p.page).Title)
+	title := uxPtr(page.Title)
 	bounds := rect32{sc(220), sc(34), rc.Right - sc(15), sc(80)}
 	procDrawText.Call(hdc, uintptr(unsafe.Pointer(title)), ^uintptr(0), uintptr(unsafe.Pointer(&bounds)), 0)
 	procSelectObject.Call(hdc, head)
 	procSetTextColor.Call(hdc, p.palette.color(p.palette.muted))
-	sub := uxPtr(settingsPage(p.page).Subtitle)
+	sub := uxPtr(page.Subtitle)
 	bounds = rect32{sc(222), sc(80), rc.Right - sc(15), sc(110)}
 	procDrawText.Call(hdc, uintptr(unsafe.Pointer(sub)), ^uintptr(0), uintptr(unsafe.Pointer(&bounds)), 0)
 }

@@ -50,6 +50,10 @@ func KeepFinishedEnglish(complete bool, english string) bool {
 	return complete && strings.TrimSpace(english) != ""
 }
 
+func NextFontSize(current, delta int32) int32 {
+	return max(12, min(28, current+delta))
+}
+
 func ChromeOverhead(captionsOnly, expanded bool) int32 {
 	if captionsOnly {
 		return 2*8 + 24 + 8

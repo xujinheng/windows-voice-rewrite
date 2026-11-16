@@ -78,6 +78,9 @@ func TestMeetingDraggableDividersAreIndependentAndConstrained(t *testing.T) {
 }
 
 func TestMeetingChromeAndToolbarsStayPut(t *testing.T) {
+	if NextFontSize(16, 2) != 18 || NextFontSize(27, 2) != 28 || NextFontSize(13, -2) != 12 {
+		t.Fatal("font size")
+	}
 	if ChromeOverhead(false, false) != 216 || ChromeOverhead(true, false) != 48 || ChromeOverhead(false, true) != 88 {
 		t.Fatalf("%d %d %d", ChromeOverhead(false, false), ChromeOverhead(true, false), ChromeOverhead(false, true))
 	}

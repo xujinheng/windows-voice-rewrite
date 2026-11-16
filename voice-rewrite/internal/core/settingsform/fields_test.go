@@ -28,6 +28,19 @@ func TestFieldGeometryKeepsWholeFocusBorderVisible(t *testing.T) {
 	}
 }
 
+func TestPaintedFramesFollowThePage(t *testing.T) {
+	speech := PaintedFrames("speech")
+	if len(speech) != 3 || speech[0] != FieldFrame(0) || speech[2] != FieldFrame(2) {
+		t.Fatalf("speech %+v", speech)
+	}
+	input := PaintedFrames("input")
+	second := ShortcutFrame()
+	second.Y += RowStep
+	if len(input) != 2 || input[0] != ShortcutFrame() || input[1] != second {
+		t.Fatalf("input %+v", input)
+	}
+}
+
 func TestShortcutFieldMatchesMainFieldBaseline(t *testing.T) {
 	frame, edit := ShortcutFrame(), ShortcutEdit()
 	normal := FieldEdit(0)
