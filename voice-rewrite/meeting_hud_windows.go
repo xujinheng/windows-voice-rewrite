@@ -521,8 +521,16 @@ func (p *meetingHUD) renderReply() {
 		p.setText(p.responses, text, true)
 		p.lastReply = time.Now()
 	}
-	meetingEnableWindow.Call(p.buttons[4], meetingBool(reply.Complete && reply.English != ""))
-	meetingEnableWindow.Call(p.buttons[13], meetingBool(p.owner != 0 && reply.Complete && reply.English != "" && !p.paused))
+	canCopy := meetingcore.ReplyCopyEnabled(reply.Complete, reply.English)
+	meetingEnableWindow.Call(p.buttons[4], meetingBool(canCopy))
+	meetingEnableWindow.Call(p.buttons[13], meetingBool(p.owner != 0 && canCopy && !p.paused))
+}
+
+func (p *meetingHUD) session() *meetingSession {
+	if p == nil || p.app == nil {
+		return nil
+	}
+	return p.app.meeting
 }
 
 func (p *meetingHUD) savePreferences() {
@@ -641,25 +649,20 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			case meetingcore.CommandLargerText:
 				p.resizeText(2)
 			case meetingcore.CommandCopyReply, meetingcore.CommandCopyExpression:
-				value := p.displayedReplies[p.selectedReply].English
-				if !p.displayedReplies[p.selectedReply].Complete {
-					value = ""
-				}
-				if action == meetingcore.CommandCopyExpression {
-					value = p.copyExpression
-				}
+				reply := p.displayedReplies[p.selectedReply]
+				value := meetingcore.CopyText(action, reply.English, reply.Complete, p.copyExpression)
 				if value != "" {
 					if err := setClipboardText(hwnd, value); err != nil {
 						winErr("复制失败: " + err.Error())
 					}
 				}
 			case meetingcore.CommandRequestReplies:
-				if p.app != nil && p.app.meeting != nil {
-					p.app.meeting.requestReplies()
+				if session := p.session(); session != nil {
+					session.requestReplies()
 				}
 			case meetingcore.CommandToggleCapture:
-				if p.app != nil && p.app.meeting != nil {
-					p.app.meeting.setCapturePaused(!p.latest.capturePaused)
+				if session := p.session(); session != nil {
+					session.setCapturePaused(!p.latest.capturePaused)
 					p.app.refreshMeeting()
 				}
 			case meetingcore.CommandOpenProfile:
@@ -675,14 +678,15 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				p.layout()
 				updateMeetingHUD(p.latest)
 			case meetingcore.CommandAcceptReplies:
-				if p.app != nil && p.app.meeting != nil && !p.paused {
-					p.app.meeting.acceptPendingReplies()
+				if session := p.session(); session != nil && !p.paused {
+					session.acceptPendingReplies()
 					p.app.refreshMeeting()
 				}
 			case meetingcore.CommandRefine:
+				reply := p.displayedReplies[p.selectedReply]
 				instruction := strings.TrimSpace(uxWinText(p.instruction))
-				if instruction != "" && p.displayedReplies[p.selectedReply].Complete && p.app != nil && p.app.meeting != nil && !p.paused {
-					p.app.meeting.refineReply(p.selectedReply, instruction)
+				if session := p.session(); session != nil && meetingcore.RefineEnabled(reply.Complete, instruction, p.paused) {
+					session.refineReply(p.selectedReply, instruction)
 				}
 			case meetingcore.CommandSaveProfile:
 				p.saveProfile()

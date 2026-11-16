@@ -51,4 +51,13 @@ func TestMeetingButtonsStayContiguous(t *testing.T) {
 	if !ButtonPrimary(ButtonSaveProfile, false, false) || ButtonPrimary(ButtonCloseProfile, true, true) {
 		t.Fatal("save profile stays primary")
 	}
+	if CopyText(CommandCopyReply, "en", false, "expr") != "" || CopyText(CommandCopyReply, "en", true, "expr") != "en" {
+		t.Fatal("reply copy")
+	}
+	if CopyText(CommandCopyExpression, "en", true, "expr") != "expr" {
+		t.Fatal("expression copy")
+	}
+	if !ReplyCopyEnabled(true, "en") || ReplyCopyEnabled(true, "") || !RefineEnabled(true, "短一点", false) || RefineEnabled(true, "短一点", true) || RefineEnabled(false, "短一点", false) {
+		t.Fatal("copy and refine gates")
+	}
 }

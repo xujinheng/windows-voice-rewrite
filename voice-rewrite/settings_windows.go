@@ -314,7 +314,7 @@ func (p *uxSettings) beginShortcutCapture(id uintptr) {
 			refreshNativeWindow(button)
 		}
 	}
-	uxSetText(p.hint, "正在监听按键… 按下键盘组合键、F1–F24 或 Mouse4/Mouse5；Esc 取消")
+	uxSetText(p.hint, shortcut.CaptureListeningMessage)
 }
 func uxCurrentShortcutModifiers() uint32 {
 	var mods uint32
@@ -635,7 +635,7 @@ func (p *uxSettings) save() error {
 		return err
 	}
 	if p.capturingShortcut != 0 {
-		return errors.New("请先完成按键录入，或按 Esc 取消")
+		return errors.New(shortcut.CapturePendingMessage)
 	}
 	newRewrite := strings.TrimSpace(uxWinText(p.rewriteShortcut))
 	newDictation := strings.TrimSpace(uxWinText(p.shortcut))
@@ -659,11 +659,7 @@ func (p *uxSettings) save() error {
 		return err
 	}
 	p.app.cfg = cfg
-	if changedShortcut || changedAudioDevice {
-		uxSetText(p.hint, "设置已保存。快捷键和录音设备将在重启 VoiceRewrite 后生效。")
-	} else {
-		uxSetText(p.hint, "✓ 已保存，API 地址和模型立即生效")
-	}
+	uxSetText(p.hint, ux.WindowsSaveNotice(changedShortcut || changedAudioDevice))
 	p.app.logger.Print("settings updated: connection configuration saved (endpoint/key values redacted)")
 	return nil
 }

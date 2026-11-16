@@ -84,6 +84,26 @@ func CommandFor(id int) (Command, int) {
 	}
 }
 
+// CopyText is the clipboard payload for a meeting copy button.
+// An unfinished reply copies nothing. Expression copy uses the last finished line.
+func CopyText(action Command, replyEnglish string, replyComplete bool, expression string) string {
+	if action == CommandCopyExpression {
+		return expression
+	}
+	if !replyComplete {
+		return ""
+	}
+	return replyEnglish
+}
+
+func ReplyCopyEnabled(complete bool, english string) bool {
+	return complete && english != ""
+}
+
+func RefineEnabled(complete bool, instruction string, paused bool) bool {
+	return complete && instruction != "" && !paused
+}
+
 // ButtonPrimary reports whether the owner-draw button uses the primary style.
 // Accept and expand follow the live meeting state. Save profile is always primary.
 func ButtonPrimary(id int, pending, expressionExpanded bool) bool {

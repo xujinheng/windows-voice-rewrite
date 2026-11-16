@@ -27,6 +27,11 @@ const (
 	ApplyUnsafe = "无法安全替换，请使用复制结果"
 	// SaveWhileBusy is the settings message when a voice task is still running.
 	SaveWhileBusy = "请先完成当前录音／改写，再保存"
+	// WindowsSaveRestart is shown after a shortcut or recording device change.
+	// macOS applies shortcuts immediately and keeps its own sentence.
+	WindowsSaveRestart = "设置已保存。快捷键和录音设备将在重启 VoiceRewrite 后生效。"
+	// WindowsSaveImmediate is shown when only endpoints or models changed.
+	WindowsSaveImmediate = "✓ 已保存，API 地址和模型立即生效"
 	// Tray and pause sentences. Hosts paint icons and own the menu window.
 	VoiceRecording    = "正在录音 · 按键松开后提交"
 	VoiceTranscribing = "正在识别语音"
@@ -82,4 +87,11 @@ func HistoryTitle(intent string) string {
 // HistoryRestoreTitle is the card heading when the user reopens a session result.
 func HistoryRestoreTitle(storedTitle string) string {
 	return strings.TrimSpace(storedTitle) + " · 历史结果"
+}
+
+func WindowsSaveNotice(restart bool) string {
+	if restart {
+		return WindowsSaveRestart
+	}
+	return WindowsSaveImmediate
 }

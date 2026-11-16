@@ -40,6 +40,8 @@ const (
 	ShiftRepeatMessage      = "Shift 重复"
 	WinCaptureMessage       = "Windows 系统键组合不可录入，请使用 Ctrl/Alt/Shift"
 	CaptureCanceledMessage  = "已取消快捷键录入"
+	CapturePendingMessage   = "请先完成按键录入，或按 Esc 取消"
+	CaptureListeningMessage = "正在监听按键… 按下键盘组合键、F1–F24 或 Mouse4/Mouse5；Esc 取消"
 	CaptureFailedPrefix     = "无法录入："
 	PauseReleaseMessage     = "Pause/Break 没有可靠的松开事件"
 	DictationInvalidMessage = "听写快捷键无效，请重新录入（支持功能键和 Ctrl/Alt 组合键）"
