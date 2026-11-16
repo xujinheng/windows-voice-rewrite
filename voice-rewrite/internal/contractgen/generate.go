@@ -334,6 +334,7 @@ func emitCopy(core string) (string, error) {
 		{"DictationHistoryTitle", "dictationHistory"},
 		{"DictationNotInserted", "dictationNotInserted"},
 		{"DictationCopyManually", "dictationCopyManually"},
+		{"DictationWriteUnconfirmed", "dictationWriteUnconfirmed"},
 		{"CopyAction", "copyAction"},
 		{"ApplyAction", "applyAction"},
 		{"CloseGlyph", "closeGlyph"},
