@@ -127,21 +127,24 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func saveSettings() {
-        if isRecording || isStarting || isProcessing {
+        let plan = acceptedShortcutPlan()
+        switch settingsSaveRefusal(
+            busy: isRecording || isStarting || isProcessing,
+            credentialTooLong: MacSettings.credentialTooLong(asrKeyInput) || MacSettings.credentialTooLong(llmKeyInput),
+            planValid: plan != nil) {
+        case .busy:
             settingsStatus = SettingsCopy.saveWhileBusy
             return
-        }
-        if MacSettings.credentialTooLong(asrKeyInput) || MacSettings.credentialTooLong(llmKeyInput) {
+        case .credential:
             settingsStatus = ContractLimits.credentialTooLong
             return
-        }
-        guard let dictation = ShortcutBinding(canonical: settings.dictationShortcut),
-              let rewrite = ShortcutBinding(canonical: settings.rewriteShortcut),
-              let textEdit = ShortcutBinding(canonical: settings.textEditShortcut),
-              MacShortcutPlan(dictation: dictation, rewrite: rewrite, textEdit: textEdit) != nil else {
+        case .shortcut:
             settingsStatus = shortcutSaveRejected()
             return
+        case .ready:
+            break
         }
+        guard let (dictation, rewrite, textEdit) = plan else { return }
         _ = shortcutGeneration.begin()
         defer {
             asrKeyInput = ""
@@ -168,6 +171,16 @@ final class WorkspaceModel: ObservableObject {
         } catch {
             settingsStatus = settingsSaveFailed(error.localizedDescription)
         }
+    }
+
+    private func acceptedShortcutPlan() -> (ShortcutBinding, ShortcutBinding, ShortcutBinding)? {
+        guard let dictation = ShortcutBinding(canonical: settings.dictationShortcut),
+              let rewrite = ShortcutBinding(canonical: settings.rewriteShortcut),
+              let textEdit = ShortcutBinding(canonical: settings.textEditShortcut),
+              MacShortcutPlan(dictation: dictation, rewrite: rewrite, textEdit: textEdit) != nil else {
+            return nil
+        }
+        return (dictation, rewrite, textEdit)
     }
 
     private func saveCredential(_ value: String, account: CredentialAccount) throws {

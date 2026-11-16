@@ -337,6 +337,13 @@ final class HostStatusTests: XCTestCase {
         XCTAssertTrue(failed.showError)
     }
 
+    func testSettingsSaveRefusalKeepsBusyAheadOfTheCredential() {
+        XCTAssertEqual(settingsSaveRefusal(busy: true, credentialTooLong: true, planValid: false), .busy)
+        XCTAssertEqual(settingsSaveRefusal(busy: false, credentialTooLong: true, planValid: false), .credential)
+        XCTAssertEqual(settingsSaveRefusal(busy: false, credentialTooLong: false, planValid: false), .shortcut)
+        XCTAssertEqual(settingsSaveRefusal(busy: false, credentialTooLong: false, planValid: true), .ready)
+    }
+
     func testVoicePauseAndFreshSideMouseUseDifferentSentences() {
         let busy = voicePauseTurn(busy: true, currentlyPaused: false, busyStatus: "忙", pausedStatus: "停", idleStatus: "待")
         XCTAssertFalse(busy.toggle)
