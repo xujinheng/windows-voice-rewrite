@@ -331,6 +331,7 @@ func emitCopy(core string) (string, error) {
 		{"PasswordRewrite", "passwordRewrite"},
 		{"DictationEmpty", "dictationEmpty"},
 		{"NoSpeech", "noSpeech"},
+		{"ViewDiagnosticLog", "viewDiagnosticLog"},
 	} {
 		text, ok := values[item.goName]
 		if !ok {
@@ -630,7 +631,23 @@ func emitHistory(path string) (string, error) {
 	b.WriteString("    let id: UInt64\n    let title: String\n    let text: String\n    let createdAt: Date\n}\n\n")
 	b.WriteString("struct SessionHistory {\n")
 	b.WriteString("    static let limit = " + limit + "\n")
-	b.WriteString("    static let maxBytes = " + maxBytes + "\n\n")
+	b.WriteString("    static let maxBytes = " + maxBytes + "\n")
+	labels := stringConsts(file)
+	for _, item := range []struct{ goName, swift string }{
+		{"EmptySession", "emptySession"},
+		{"ClearSession", "clearSession"},
+	} {
+		text, ok := labels[item.goName]
+		if !ok {
+			return "", fmt.Errorf("history label %s", item.goName)
+		}
+		b.WriteString("    static let " + item.swift + " = " + strconv.Quote(text) + "\n")
+	}
+	title, err := sessionTitle(file)
+	if err != nil {
+		return "", err
+	}
+	b.WriteString("    static var sectionTitle: String { " + title + " }\n\n")
 	b.WriteString("    private(set) var entries: [SessionHistoryEntry] = []\n    private var nextID: UInt64 = 0\n\n")
 	b.WriteString("    mutating func remember(title: String, value: String) {\n")
 	b.WriteString("        let text = value\n")
@@ -663,6 +680,35 @@ func emitHistory(path string) (string, error) {
 	b.WriteString("        return \"\\(index + 1). \\(kind(title: title)) · \\(clock.string(from: createdAt))\"\n")
 	b.WriteString("    }\n}\n")
 	return b.String(), nil
+}
+
+func sessionTitle(file *ast.File) (string, error) {
+	fn := findFunc(file, "SectionTitle")
+	if fn == nil {
+		return "", fmt.Errorf("section title")
+	}
+	var format string
+	ast.Inspect(fn, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) != 2 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Sprintf" {
+			return true
+		}
+		text, ok := stringLit(call.Args[0])
+		id, ok2 := call.Args[1].(*ast.Ident)
+		if ok && ok2 && id.Name == "Limit" {
+			format = text
+		}
+		return true
+	})
+	parts := strings.Split(format, "%d")
+	if len(parts) != 2 || strings.Count(format, "%") != 1 {
+		return "", fmt.Errorf("section title format %q", format)
+	}
+	return "\"" + parts[0] + "\\(limit)" + parts[1] + "\"", nil
 }
 
 func findFunc(file *ast.File, name string) *ast.FuncDecl {

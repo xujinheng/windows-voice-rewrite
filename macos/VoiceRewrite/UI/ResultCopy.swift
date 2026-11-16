@@ -12,6 +12,7 @@ enum ResultCopy {
     static let passwordRewrite = "已拒绝在密码输入框中自动改写"
     static let dictationEmpty = "听写结果为空"
     static let noSpeech = "ASR 没有识别到语音，请检查麦克风输入设备"
+    static let viewDiagnosticLog = "查看诊断日志"
 
     static func cardTitle(intent: String) -> String {
         switch intent {

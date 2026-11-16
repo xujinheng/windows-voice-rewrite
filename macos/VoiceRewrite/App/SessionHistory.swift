@@ -11,6 +11,9 @@ struct SessionHistoryEntry: Identifiable, Equatable {
 struct SessionHistory {
     static let limit = 10
     static let maxBytes = 4 << 20
+    static let emptySession = "当前会话还没有可恢复的语音结果。"
+    static let clearSession = "清空本次会话历史"
+    static var sectionTitle: String { "最近 \(limit) 次结果（仅当前会话）" }
 
     private(set) var entries: [SessionHistoryEntry] = []
     private var nextID: UInt64 = 0

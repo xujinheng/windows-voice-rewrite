@@ -8,6 +8,13 @@ import (
 	"time"
 )
 
+func TestSessionHistoryLabelsFollowTheLimit(t *testing.T) {
+	title := SectionTitle()
+	if !strings.Contains(title, fmt.Sprint(Limit)) || EmptySession == "" || ClearSession == "" {
+		t.Fatalf("labels %q %q %q", title, EmptySession, ClearSession)
+	}
+}
+
 func TestHistoryBoundedNewestFirstAndPrivate(t *testing.T) {
 	var h Store
 	for i := 0; i < 14; i++ {

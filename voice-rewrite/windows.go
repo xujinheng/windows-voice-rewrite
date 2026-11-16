@@ -803,7 +803,7 @@ func runApp() {
 		if msg.Message == WM_TRAY_LAST_RESULT {
 			recent := app.history.Snapshot()
 			if len(recent) == 0 {
-				winErr("当前会话还没有可恢复的语音结果。")
+				winErr(history.EmptySession)
 			} else {
 				app.showAnswer(ux.HistoryRestoreTitle(recent[0].Title), recent[0].Text, currentCursorPoint(), nil, false, app.epoch.Current())
 			}

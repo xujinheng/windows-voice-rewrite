@@ -11,8 +11,10 @@ import (
 )
 
 const (
-	Limit    = 10
-	MaxBytes = 4 << 20
+	Limit        = 10
+	MaxBytes     = 4 << 20
+	EmptySession = "当前会话还没有可恢复的语音结果。"
+	ClearSession = "清空本次会话历史"
 )
 
 type Entry struct {
@@ -93,4 +95,9 @@ func Kind(title string) string {
 
 func MenuLine(index int, entry Entry) string {
 	return fmt.Sprintf("%d. %s · %s", index+1, Kind(entry.Title), entry.CreatedAt.Format("15:04"))
+}
+
+// SectionTitle is the session-history heading. The count is Limit.
+func SectionTitle() string {
+	return fmt.Sprintf("最近 %d 次结果（仅当前会话）", Limit)
 }

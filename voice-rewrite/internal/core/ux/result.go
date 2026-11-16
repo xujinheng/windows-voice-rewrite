@@ -32,6 +32,7 @@ const (
 	PauseVoice        = "暂停语音操作（保留鼠标侧键原功能）"
 	ResumeVoice       = "恢复语音操作"
 	PauseWhileBusy    = "当前任务仍在处理；结束后可暂停语音操作。"
+	ViewDiagnosticLog = "查看诊断日志"
 	// DictationTooShort is shown when a dictation buffer is under 0.1s.
 	DictationTooShort = "语音太短，无法转写"
 	// RewriteTooShort is shown when a spoken rewrite buffer is under 0.1s.

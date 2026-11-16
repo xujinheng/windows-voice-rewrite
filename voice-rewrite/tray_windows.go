@@ -308,7 +308,7 @@ func (t *trayIndicator) contextMenu(meetingActive bool) (uintptr, error) {
 	}
 	pauseLabel, _ := syscall.UTF16PtrFromString(pauseText)
 	configLabel, _ := syscall.UTF16PtrFromString("设置与连接检测…")
-	logLabel, _ := syscall.UTF16PtrFromString("查看诊断日志")
+	logLabel, _ := syscall.UTF16PtrFromString(ux.ViewDiagnosticLog)
 	errorLabel, _ := syscall.UTF16PtrFromString("最近一次错误与解决方法")
 	resultLabel, _ := syscall.UTF16PtrFromString("恢复最近一次语音结果")
 	closeLabel, _ := syscall.UTF16PtrFromString("关闭 AI 结果窗口")
@@ -362,13 +362,13 @@ func (t *trayIndicator) contextMenu(meetingActive bool) (uintptr, error) {
 				procAppendMenu.Call(submenu, MF_STRING, uintptr(1000+i), uintptr(unsafe.Pointer(label)))
 				runtime.KeepAlive(label)
 			}
-			historyLabel, _ := syscall.UTF16PtrFromString("最近 10 次结果（仅当前会话）")
+			historyLabel, _ := syscall.UTF16PtrFromString(history.SectionTitle())
 			if ok, _, _ := procAppendMenu.Call(m, MF_POPUP, submenu, uintptr(unsafe.Pointer(historyLabel))); ok == 0 {
 				procDestroyMenu.Call(submenu)
 			}
 			runtime.KeepAlive(historyLabel)
 		}
-		clearLabel, _ := syscall.UTF16PtrFromString("清空本次会话历史")
+		clearLabel, _ := syscall.UTF16PtrFromString(history.ClearSession)
 		procAppendMenu.Call(m, MF_STRING, 9, uintptr(unsafe.Pointer(clearLabel)))
 		runtime.KeepAlive(clearLabel)
 	}
