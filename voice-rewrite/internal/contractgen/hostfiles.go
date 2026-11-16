@@ -311,6 +311,15 @@ func emitLimits(moduleRoot string) (string, error) {
 		}
 		b.WriteString("    public static let " + item.swift + " = " + value + "\n")
 	}
+	limitsFile, err := parseFile(filepath.Join(moduleRoot, "internal", "core", "jsonl", "limits.go"))
+	if err != nil {
+		return "", err
+	}
+	hello, ok := stringConsts(limitsFile)["HelloName"]
+	if !ok || hello == "" {
+		return "", fmt.Errorf("missing HelloName")
+	}
+	b.WriteString("    public static let helperName = " + strconv.Quote(hello) + "\n")
 	b.WriteString("}\n\nextension MacSettings {\n")
 	b.WriteString("    public static func acceptsBaseURL(_ value: String) -> Bool {\n")
 	b.WriteString("        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)\n")

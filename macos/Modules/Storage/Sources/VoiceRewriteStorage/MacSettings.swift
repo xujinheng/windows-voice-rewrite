@@ -51,6 +51,11 @@ public struct MacSettings: Codable, Equatable, Sendable {
         value.trimmingCharacters(in: .whitespacesAndNewlines).utf8.count > maxCredentialBytes
     }
 
+    /// An empty field keeps the Keychain value. Spaces are a typed value and replace it.
+    public static func replacesStoredCredential(_ value: String) -> Bool {
+        !value.isEmpty
+    }
+
     /// Applies the core recording-length and base-URL rules before the values
     /// are stored or sent to the helper.
     public mutating func canonicalize() throws {

@@ -22,6 +22,7 @@ public enum ContractLimits {
     public static let maxSeenRequestIDs = 65536
     public static let logMaxBytes = 4 << 20
     public static let logBackups = 3
+    public static let helperName = "VoiceRewrite"
 }
 
 extension MacSettings {

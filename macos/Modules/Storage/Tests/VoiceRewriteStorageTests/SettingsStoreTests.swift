@@ -135,6 +135,12 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertFalse(MacSettings.credentialTooLong(String(repeating: "k", count: 4000)))
         XCTAssertTrue(MacSettings.credentialTooLong(String(repeating: "k", count: 4001)))
         XCTAssertFalse(MacSettings.credentialTooLong(String(repeating: " ", count: 4001)))
+        XCTAssertFalse(MacSettings.replacesStoredCredential(""))
+        XCTAssertTrue(MacSettings.replacesStoredCredential(" "))
+        XCTAssertTrue(helperHelloAccepted(ok: true, name: ContractLimits.helperName, version: ContractLimits.protocolVersion))
+        XCTAssertFalse(helperHelloAccepted(ok: true, name: "other", version: ContractLimits.protocolVersion))
+        XCTAssertFalse(helperHelloAccepted(ok: false, name: ContractLimits.helperName, version: ContractLimits.protocolVersion))
+        XCTAssertFalse(helperHelloAccepted(ok: true, name: ContractLimits.helperName, version: ContractLimits.protocolVersion + 1))
         XCTAssertTrue(MacSettings.acceptsBaseURL("http://example.test/v1?"))
         XCTAssertFalse(MacSettings.acceptsBaseURL("file:///tmp/x"))
     }

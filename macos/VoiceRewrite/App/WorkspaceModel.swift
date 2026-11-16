@@ -70,9 +70,9 @@ final class WorkspaceModel: ObservableObject {
             let s = try SettingsStore()
             settings = try s.load()
             store = s
-            settingsStatus = "已加载本地配置（密钥仅保存在 Keychain）"
+            settingsStatus = settingsLoaded()
         } catch {
-            settingsStatus = "读取配置失败；请在设置中保存新的有效配置"
+            settingsStatus = settingsLoadFailed()
         }
     }
 
@@ -120,8 +120,7 @@ final class WorkspaceModel: ObservableObject {
                 guard let self, self.helloGeneration.accepts(token) else { return }
                 switch response {
                 case .success(let reply):
-                    guard reply.ok, reply.result?["name"]?.string == "VoiceRewrite",
-                          reply.result?["protocol"]?.int == 1 else {
+                    guard helperHelloAccepted(ok: reply.ok, name: reply.result?["name"]?.string, version: reply.result?["protocol"]?.int) else {
                         self.connection = .failed(helperProtocolRejected())
                         self.serviceStatus = helperHandshakeFailedStatus()
                         return
@@ -173,18 +172,18 @@ final class WorkspaceModel: ObservableObject {
             }
             try saveCredential(asrKeyInput, account: .asr)
             try saveCredential(llmKeyInput, account: .llm)
-            settingsStatus = "设置已保存，密钥不写入配置文件"
-            DiagnosticLog.note("设置已保存")
+            settingsStatus = settingsSaved()
+            DiagnosticLog.note(settingsSavedLog())
             cancelProbes()
             checkServices()
             refreshShortcutsFromCore()
         } catch {
-            settingsStatus = "无法安全保存设置：\(error.localizedDescription)"
+            settingsStatus = settingsSaveFailed(error.localizedDescription)
         }
     }
 
     private func saveCredential(_ value: String, account: CredentialAccount) throws {
-        guard !value.isEmpty else { return }
+        guard MacSettings.replacesStoredCredential(value) else { return }
         do {
             try credentials.add(value, for: account)
         } catch CredentialError.duplicate {
@@ -195,8 +194,8 @@ final class WorkspaceModel: ObservableObject {
     func requestAccessibility() {
         accessibilityAuthorized = InteractionSession.accessibilityPermissionGranted(prompt: true)
         interactionStatus = accessibilityAuthorized
-            ? "辅助功能已授权"
-            : "请在系统设置的辅助功能权限中授权 VoiceRewrite"
+            ? accessibilityGranted()
+            : accessibilityNeeded()
         refreshSideMouse()
     }
 

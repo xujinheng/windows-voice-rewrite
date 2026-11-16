@@ -207,7 +207,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		s.mu.Unlock()
 		switch req.Op {
 		case "hello":
-			s.send(success(req.ID, map[string]any{"name": "VoiceRewrite", "protocol": jsonl.Version}))
+			s.send(success(req.ID, map[string]any{"name": jsonl.HelloName, "protocol": jsonl.Version}))
 		case "parse_shortcut":
 			s.send(parseShortcut(req))
 		case "cancel":

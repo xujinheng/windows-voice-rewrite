@@ -6,4 +6,5 @@ const (
 	MaxRequestBytes = 8 << 20
 	MaxIDBytes      = 128
 	MaxSeenIDs      = 65536
+	HelloName       = "VoiceRewrite"
 )

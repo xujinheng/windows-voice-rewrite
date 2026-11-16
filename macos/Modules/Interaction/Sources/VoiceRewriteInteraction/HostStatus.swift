@@ -196,6 +196,20 @@ public func rewriteCanceled() -> String { "已取消" }
 
 public func rewriteCanceledDetail() -> String { "已取消当前操作" }
 
+public func settingsLoaded() -> String { "已加载本地配置（密钥仅保存在 Keychain）" }
+
+public func settingsLoadFailed() -> String { "读取配置失败；请在设置中保存新的有效配置" }
+
+public func settingsSaved() -> String { "设置已保存，密钥不写入配置文件" }
+
+public func settingsSavedLog() -> String { "设置已保存" }
+
+public func settingsSaveFailed(_ detail: String) -> String { "无法安全保存设置：\(detail)" }
+
+public func accessibilityGranted() -> String { "辅助功能已授权" }
+
+public func accessibilityNeeded() -> String { "请在系统设置的辅助功能权限中授权 VoiceRewrite" }
+
 public func helperNotYetConnected() -> String { "尚未连接" }
 
 public func helperStarting() -> String { "正在启动应用内 Go Helper" }
