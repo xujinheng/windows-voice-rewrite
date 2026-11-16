@@ -188,8 +188,10 @@ private final class FakeHotKeyDriver: HotKeyDriver {
     var registered = Set<HotKeyToken>()
     var released: [HotKeyToken] = []
     var failure: HotKeyFailure?
+    var rejectKeyCode: UInt32?
     func register(_ shortcut: HotKeyShortcut) throws -> HotKeyToken {
         if let failure { throw failure }
+        if shortcut.keyCode == rejectKeyCode { throw HotKeyFailure.systemConflict(-9878) }
         let token = HotKeyToken(id: next)
         next += 1
         registered.insert(token)
@@ -219,6 +221,39 @@ final class HotKeyTests: XCTestCase {
             XCTAssertEqual($0 as? HotKeyFailure, .systemConflict(-9878))
         }
         XCTAssertTrue(driver.registered.isEmpty)
+        }
+    }
+
+    func testFailedReplacementKeepsOldKeysAndRollsBackPartialAdditions() async throws {
+        try await MainActor.run {
+            let driver = FakeHotKeyDriver(), registry = HotKeyRegistry(driver: driver)
+            let oldOne = HotKeyShortcut(keyCode: 2, modifiers: [.command])
+            let oldTwo = HotKeyShortcut(keyCode: 3, modifiers: [.option])
+            let added = HotKeyShortcut(keyCode: 4, modifiers: [.control])
+            let rejected = HotKeyShortcut(keyCode: 5, modifiers: [.shift, .control])
+            try registry.register(oldOne)
+            try registry.register(oldTwo)
+            driver.rejectKeyCode = rejected.keyCode
+            XCTAssertThrowsError(try registry.replace(with: [oldOne, added, rejected])) {
+                XCTAssertEqual($0 as? HotKeyFailure, .systemConflict(-9878))
+            }
+            XCTAssertEqual(registry.registeredCount, 2)
+            XCTAssertEqual(driver.registered.count, 2)
+            XCTAssertEqual(driver.released.count, 1)
+
+            driver.rejectKeyCode = nil
+            try registry.replace(with: [oldTwo, oldOne])
+            XCTAssertEqual(driver.next, 4)
+            XCTAssertEqual(driver.released.count, 1)
+
+            try registry.replace(with: [oldTwo, added])
+            XCTAssertEqual(registry.registeredCount, 2)
+            XCTAssertEqual(driver.registered.count, 2)
+            XCTAssertEqual(driver.released.count, 2)
+            XCTAssertThrowsError(try registry.replace(with: [oldTwo, oldTwo])) {
+                XCTAssertEqual($0 as? HotKeyFailure, .duplicate)
+            }
+            XCTAssertEqual(registry.registeredCount, 2)
         }
     }
 
