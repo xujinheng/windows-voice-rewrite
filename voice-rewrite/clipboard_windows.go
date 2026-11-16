@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
-	"strings"
 	"time"
 	"unicode/utf16"
 	"unsafe"
@@ -135,17 +134,14 @@ func clipboardCopy(hwnd uintptr, timeout time.Duration) (string, error) {
 		if clipboardSeq() != old {
 			changed = true
 			s, ok, e := getClipboardText(hwnd)
-			if e == nil && ok && strings.TrimSpace(s) != "" {
+			if clipboard.SelectionReadable(e, ok, s) {
 				return s, nil
 			}
 		}
-		time.Sleep(35 * time.Millisecond)
+		time.Sleep(clipboard.CopyPoll)
 	}
-	if !changed {
-		// Do not use the clipboard's previous content as a supposed selection.
-		return "", errors.New("Ctrl+C 已发送，但剪贴板没有更新（目标编辑器可能未处理快捷键或复制响应较慢）")
-	}
-	return "", errors.New("剪贴板已更新，但没有可读取的选中文字（请确认已选中文字，且目标窗口允许复制）")
+	// Do not use the clipboard's previous content as a supposed selection.
+	return "", clipboard.CopyPollMissed(changed)
 }
 func isSameForegroundWindow(target uintptr) bool {
 	if target == 0 {
@@ -183,39 +179,39 @@ func waitCopyModifiersReleased(timeout time.Duration) bool {
 }
 
 func copySelectionWithRetry(hwnd, target uintptr, cfg Config) (string, error) {
-	time.Sleep(35 * time.Millisecond) // Let mouse key-up and selection settle.
-	if !waitCopyModifiersReleased(900 * time.Millisecond) {
-		return "", errors.New("Ctrl/Alt/Shift 仍被按住，已停止模拟复制；请松开修饰键后再试")
+	time.Sleep(clipboard.CopySettle) // Let mouse key-up and selection settle.
+	if err := clipboard.CopyModifiersReady(waitCopyModifiersReleased(clipboard.CopyModifierWait)); err != nil {
+		return "", err
 	}
 	var lastErr error
 	for i := 0; i < cfg.SelectionCopyAttempts; i++ {
-		if !isSameForegroundWindow(target) {
-			return "", errors.New("编辑窗口已切换，已停止自动复制，避免读取其他窗口的文字")
+		if err := clipboard.CopyWindowReady(isSameForegroundWindow(target), false); err != nil {
+			return "", err
 		}
 		// Two-attempt default: retry an ignored Ctrl+C sooner, reserving
 		// the remaining budget for a slow clipboard response. No extra
 		// delay on successful copies and no longer overall timeout.
 		timeout := clipboard.AttemptTimeout(time.Duration(cfg.SelectionCopyTimeoutMS)*time.Millisecond, i, cfg.SelectionCopyAttempts)
 		text, err := clipboardCopy(hwnd, timeout)
-		if !isSameForegroundWindow(target) {
-			return "", errors.New("复制期间编辑窗口发生切换，已停止自动复制")
+		if windowErr := clipboard.CopyWindowReady(isSameForegroundWindow(target), true); windowErr != nil {
+			return "", windowErr
 		}
-		if err == nil && strings.TrimSpace(text) != "" {
+		if clipboard.SelectionReadable(err, true, text) {
 			return text, nil
 		}
 		lastErr = err
 		if i+1 < cfg.SelectionCopyAttempts {
-			time.Sleep(time.Duration(100*(i+1)) * time.Millisecond)
+			time.Sleep(clipboard.CopyRetryPause(i))
 		}
 	}
-	return "", fmt.Errorf("复制选中文字失败（已尝试 %d 次）：%w", cfg.SelectionCopyAttempts, lastErr)
+	return "", clipboard.CopyAttemptsFailed(cfg.SelectionCopyAttempts, lastErr)
 }
 
 func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 	var sel selectedText
 	sel.TargetWindow, _, _ = procGetForegroundWindow.Call()
-	if sel.TargetWindow == 0 {
-		return sel, errors.New("找不到当前编辑窗口")
+	if err := clipboard.CaptureHasWindow(sel.TargetWindow != 0); err != nil {
+		return sel, err
 	}
 	if nativePasswordFieldFocused(sel.TargetWindow) {
 		return sel, errors.New(ux.PasswordSelection)

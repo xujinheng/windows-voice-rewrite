@@ -1,9 +1,42 @@
 package clipboard
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
+
+func TestCopyStopsBeforeReadingAnotherWindow(t *testing.T) {
+	if err := CopyModifiersReady(false); err == nil || err.Error() != CopyModifiersHeld {
+		t.Fatal(err)
+	}
+	if err := CopyModifiersReady(true); err != nil {
+		t.Fatal(err)
+	}
+	before := CopyWindowReady(false, false)
+	during := CopyWindowReady(false, true)
+	if before == nil || during == nil || before.Error() == during.Error() || before.Error() != CopyWindowBefore || during.Error() != CopyWindowDuring {
+		t.Fatalf("before=%v during=%v", before, during)
+	}
+	if CopyWindowReady(true, true) != nil {
+		t.Fatal("same window")
+	}
+	if SelectionReadable(nil, true, "  a ") != true || SelectionReadable(nil, true, "  ") || SelectionReadable(nil, false, "a") {
+		t.Fatal("readable")
+	}
+	if CopyPollMissed(false).Error() == CopyPollMissed(true).Error() {
+		t.Fatal("poll sentences collapsed")
+	}
+	if CopyRetryPause(0) != 100*time.Millisecond || CopyRetryPause(1) != 200*time.Millisecond {
+		t.Fatal(CopyRetryPause(0), CopyRetryPause(1))
+	}
+	if err := CopyAttemptsFailed(2, errors.New("slow")); err == nil || err.Error() != "复制选中文字失败（已尝试 2 次）：slow" {
+		t.Fatal(err)
+	}
+	if err := CaptureHasWindow(false); err == nil || err.Error() != CaptureNoWindow {
+		t.Fatal(err)
+	}
+}
 
 func TestMayRestore(t *testing.T) {
 	cases := []struct {
