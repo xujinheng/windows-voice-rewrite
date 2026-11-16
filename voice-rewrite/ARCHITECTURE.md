@@ -24,7 +24,7 @@ VoiceRewrite has native Windows (Go/Win32) and macOS (SwiftUI/AppKit with a bund
 | `internal/core/provider` | Safe HTTP clients, redirect blocking, bounded responses, model discovery, HTTP errors and reasoning-tag removal. |
 | `internal/core/speech` | WAV/multipart ASR requests, transcript processing, chunking and request cancellation. |
 | `internal/core/serviceprobe` | Shared ASR silent-WAV upload and LLM model-list connection probing for both desktop hosts, including the idle, running, and stale settings lines. |
-| `internal/core/textedit` | Selected-text length/cancellation validation, spoken-command ASR-to-edit orchestration, intent classification and parsing, explicit-command write authorization, routing, plain-text rewrite and shared model completion transport. |
+| `internal/core/textedit` | Selected-text length/cancellation validation, spoken-command ASR-to-edit orchestration, intent classification and parsing, explicit-command write authorization, routing, plain-text rewrite and shared model completion transport. Both hosts refuse a selection over the rune limit with the same sentence before recording or sending it. |
 | `internal/core/meeting` | Stream segmentation, adaptive ASR previews, session epochs/pause/resume/cancellation (`SessionRuntime`), bounded final/preview queues and revision-fenced caption translation (`Pipeline`), captions, replies, inference priorities, history and layout policies. Profile notes are limited to 4000 background runes and 2000 term runes before trimming. A reply refinement accepts one of the three suggestions and at most 2000 runes. |
 
 Core packages are built and tested without Win32, WASAPI, COM or native GUI

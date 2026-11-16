@@ -383,3 +383,16 @@ final class TextWriteVerificationTests: XCTestCase {
         XCTAssertFalse(TextWriteVerification.confirms(actual: "\u{00E9}", expected: "e\u{0301}"))
     }
 }
+
+final class SelectionLimitTests: XCTestCase {
+    func testLengthUsesUnicodeScalarsAndTheSharedSentence() {
+        XCTAssertNil(SelectionLimit.tooLongMessage(limit: 3, selected: "abc"))
+        XCTAssertEqual(SelectionLimit.tooLongMessage(limit: 3, selected: "中文测试"), "选中文字超过 3 字限制")
+        XCTAssertNil(SelectionLimit.tooLongMessage(limit: 0, selected: String(repeating: "a", count: 12000)))
+        XCTAssertEqual(
+            SelectionLimit.tooLongMessage(limit: 0, selected: String(repeating: "a", count: 12001)),
+            "选中文字超过 12000 字限制")
+        XCTAssertNil(SelectionLimit.tooLongMessage(selected: ""))
+        XCTAssertEqual(SelectionLimit.tooLongMessage(limit: 1, selected: "e\u{0301}"), "选中文字超过 1 字限制")
+    }
+}

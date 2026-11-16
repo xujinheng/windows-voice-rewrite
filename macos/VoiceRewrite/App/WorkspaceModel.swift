@@ -645,19 +645,26 @@ final class WorkspaceModel: ObservableObject {
                     isStarting = false
                     return
                 }
-                try await microphone.start()
-                guard resultGeneration.accepts(token) else {
-                    microphone.cancel()
+                if let message = SelectionLimit.tooLongMessage(selected: snapshot.originalSelectedText) {
                     await interaction.cancelTask(generation: next)
-                    isStarting = false
-                    return
+                    interactionStatus = message
+                    recordingStatus = "未录音"
+                    showIndicator(phase: .error, mode: "改写", pending: false)
+                } else {
+                    try await microphone.start()
+                    guard resultGeneration.accepts(token) else {
+                        microphone.cancel()
+                        await interaction.cancelTask(generation: next)
+                        isStarting = false
+                        return
+                    }
+                    activeVoiceSelection = (snapshot, next)
+                    isVoiceSelectionRecording = true
+                    isRecording = true
+                    showIndicator(phase: .recording, mode: "改写", pending: false)
+                    recordingStatus = "语音修改选区录音中；松开当前绑定侧键或再次按配置的快捷键结束"
+                    interactionStatus = "已锁定选区；录音后校验焦点与选区是否仍有效"
                 }
-                activeVoiceSelection = (snapshot, next)
-                isVoiceSelectionRecording = true
-                isRecording = true
-                showIndicator(phase: .recording, mode: "改写", pending: false)
-                recordingStatus = "语音修改选区录音中；松开当前绑定侧键或再次按配置的快捷键结束"
-                interactionStatus = "已锁定选区；录音后校验焦点与选区是否仍有效"
             } catch {
                 microphone.cancel()
                 if let generation { await interaction.cancelTask(generation: generation) }
@@ -849,6 +856,14 @@ final class WorkspaceModel: ObservableObject {
                     generation: generation, intent: .replaceSelection)
                 guard resultGeneration.accepts(token) else {
                     await interaction.cancelTask(generation: generation)
+                    return
+                }
+                if let message = SelectionLimit.tooLongMessage(selected: snapshot.originalSelectedText) {
+                    await interaction.cancelTask(generation: generation)
+                    isProcessing = false
+                    interactionStatus = message
+                    llmProbeStatus = "LLM：实际任务未完成"
+                    showIndicator(phase: .error, mode: "改写", pending: false)
                     return
                 }
                 cancelProbes()
