@@ -255,6 +255,12 @@ func AcceptEnabled(owner, pending, paused bool) bool {
 	return owner && pending && !paused
 }
 
+// AcceptClick is the click, not the button.
+// The button also requires an owner and a pending reply. A paused meeting does not accept.
+func AcceptClick(paused bool) bool {
+	return !paused
+}
+
 func RefineEnabled(complete bool, instruction string, paused bool) bool {
 	return complete && instruction != "" && !paused
 }

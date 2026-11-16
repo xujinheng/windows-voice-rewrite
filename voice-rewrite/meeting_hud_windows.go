@@ -634,7 +634,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				p.layout()
 				updateMeetingHUD(p.latest)
 			case meetingcore.EffectAccept:
-				if session := p.session(); session != nil && !p.paused {
+				if session := p.session(); session != nil && meetingcore.AcceptClick(p.paused) {
 					session.acceptPendingReplies()
 					p.app.refreshMeeting()
 				}

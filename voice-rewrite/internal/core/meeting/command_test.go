@@ -25,6 +25,15 @@ func TestPostedMeetingKeepsDemoAvailableWhilePaused(t *testing.T) {
 	}
 }
 
+func TestAcceptClickStaysNarrowerThanTheButton(t *testing.T) {
+	if AcceptClick(true) || !AcceptClick(false) {
+		t.Fatal("click")
+	}
+	if AcceptEnabled(false, true, false) || AcceptEnabled(true, false, false) || !AcceptEnabled(true, true, false) || AcceptEnabled(true, true, true) {
+		t.Fatal("button")
+	}
+}
+
 func TestApplyCommandTogglesViewFlags(t *testing.T) {
 	flags := HUDFlags{SelectedReply: 1, ProfileOpen: true}
 	next, effect := ApplyCommand(flags, CommandTogglePause, 0)
