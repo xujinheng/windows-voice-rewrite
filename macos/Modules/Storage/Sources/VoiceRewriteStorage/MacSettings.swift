@@ -76,11 +76,6 @@ public struct MacSettings: Codable, Equatable, Sendable {
         }
     }
 
-    public func validateForPersistence() throws {
-        var copy = self
-        try copy.canonicalize()
-    }
-
     private func trimEndpoint(_ value: String) -> String {
         var text = value.trimmingCharacters(in: .whitespacesAndNewlines)
         while text.hasSuffix("/") { text.removeLast() }
