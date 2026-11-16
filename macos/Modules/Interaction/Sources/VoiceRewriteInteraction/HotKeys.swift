@@ -67,7 +67,7 @@ public final class HotKeyRegistry {
 
     public var registeredCount: Int { registrations.count }
 
-    private static let functionKeyCodes: Set<UInt32> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111]
+    private static let functionKeyCodes: Set<UInt32> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]
 
     deinit {
         // The driver must remain owned by the registry; OS hotkeys are never left registered.

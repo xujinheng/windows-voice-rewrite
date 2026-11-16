@@ -85,6 +85,8 @@ final class WorkspaceModel: ObservableObject {
     private var recordShortcut = HotKeyShortcut(keyCode: 15, modifiers: [.control, .option])
     private var editShortcut = HotKeyShortcut(keyCode: 17, modifiers: [.control, .option])
     private var spokenEditShortcut = HotKeyShortcut(keyCode: 14, modifiers: [.control, .option])
+    private var activeShortcutPlan: MacShortcutPlan?
+    private var shortcutGeneration = ResultGeneration()
 
     init() {
         do {
@@ -165,6 +167,13 @@ final class WorkspaceModel: ObservableObject {
             settingsStatus = SettingsCopy.saveWhileBusy
             return
         }
+        guard let dictation = ShortcutBinding(canonical: settings.dictationShortcut),
+              let rewrite = ShortcutBinding(canonical: settings.rewriteShortcut),
+              let textEdit = ShortcutBinding(canonical: settings.textEditShortcut),
+              MacShortcutPlan(dictation: dictation, rewrite: rewrite, textEdit: textEdit) != nil else {
+            settingsStatus = "快捷键冲突或不受 macOS 支持；设置未保存"
+            return
+        }
         cancelProbes()
         defer {
             asrKeyInput = ""
@@ -213,16 +222,21 @@ final class WorkspaceModel: ObservableObject {
 
     private func refreshShortcutsFromCore() {
         guard let bridge, case .connected = connection else { return }
-        parseShortcut(settings.dictationShortcut) { [weak self] dictation in
-            guard let self, let dictation else { return }
-            self.parseShortcut(self.settings.rewriteShortcut) { [weak self] rewrite in
-                guard let self, let rewrite else { return }
-                self.parseShortcut(self.settings.textEditShortcut) { [weak self] textEdit in
-                    guard let self, let textEdit else { return }
-                    self.settings.dictationShortcut = dictation.normalized
-                    self.settings.rewriteShortcut = rewrite.normalized
-                    self.settings.textEditShortcut = textEdit.normalized
-                    self.register(dictation: dictation, rewrite: rewrite, textEdit: textEdit)
+        let token = shortcutGeneration.begin()
+        let values = (dictation: settings.dictationShortcut,
+                      rewrite: settings.rewriteShortcut,
+                      textEdit: settings.textEditShortcut)
+        parseShortcut(values.dictation) { [weak self] dictation in
+            guard let self, self.shortcutGeneration.accepts(token), let dictation else { return }
+            self.parseShortcut(values.rewrite) { [weak self] rewrite in
+                guard let self, self.shortcutGeneration.accepts(token), let rewrite else { return }
+                self.parseShortcut(values.textEdit) { [weak self] textEdit in
+                    guard let self, self.shortcutGeneration.accepts(token), let textEdit else { return }
+                    if self.register(dictation: dictation, rewrite: rewrite, textEdit: textEdit) {
+                        self.settings.dictationShortcut = dictation.normalized
+                        self.settings.rewriteShortcut = rewrite.normalized
+                        self.settings.textEditShortcut = textEdit.normalized
+                    }
                 }
             }
         }
@@ -250,47 +264,68 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func register(dictation: ShortcutBinding, rewrite: ShortcutBinding, textEdit: ShortcutBinding) {
+    /// The old registry is restored if macOS rejects a replacement shortcut.
+    /// A complete plan is validated before touching any global registration.
+    @discardableResult
+    private func register(dictation: ShortcutBinding, rewrite: ShortcutBinding,
+                          textEdit: ShortcutBinding) -> Bool {
+        guard let next = MacShortcutPlan(dictation: dictation, rewrite: rewrite, textEdit: textEdit) else {
+            interactionStatus = "快捷键冲突或不受 macOS 支持；原快捷键保持有效"
+            return false
+        }
+        let label = "\(MacShortcut.display(dictation.normalized)) 听写；\(MacShortcut.display(textEdit.normalized)) 文本指令；\(MacShortcut.display(rewrite.normalized)) 语音修改选区"
+        if let current = activeShortcutPlan, next.sameKeyboard(as: current) {
+            activeShortcutPlan = next
+            sideMouse?.setBindings(next.sideButtons)
+            interactionStatus = label
+            return true
+        }
+        let previous = activeShortcutPlan
         hotKeys?.shutdown()
         hotKeyDriver?.shutdown()
+        hotKeys = nil
+        hotKeyDriver = nil
+        activeShortcutPlan = nil
+        do {
+            let (driver, registry) = try createHotKeyRegistry(plan: next)
+            hotKeyDriver = driver
+            hotKeys = registry
+            activeShortcutPlan = next
+            sideMouse?.setBindings(next.sideButtons)
+            interactionStatus = label
+            return true
+        } catch {
+            if let previous,
+               let restored = try? createHotKeyRegistry(plan: previous) {
+                hotKeyDriver = restored.0
+                hotKeys = restored.1
+                activeShortcutPlan = previous
+            }
+            interactionStatus = "快捷键注册失败：\(error.localizedDescription)；已尝试恢复先前的快捷键"
+            return false
+        }
+    }
+
+    private func createHotKeyRegistry(plan: MacShortcutPlan) throws -> (CarbonHotKeyDriver, HotKeyRegistry) {
         let driver = CarbonHotKeyDriver { [weak self] shortcut, pid in
-            guard let self else { return }
-            if shortcut == self.recordShortcut {
+            guard let self, let bound = self.activeShortcutPlan else { return }
+            if shortcut == bound.dictation {
                 self.toggleRecording(from: pid)
-            } else if shortcut == self.editShortcut {
+            } else if shortcut == bound.textEdit {
                 self.processSelectedText(from: pid)
-            } else if shortcut == self.spokenEditShortcut {
+            } else if shortcut == bound.rewrite {
                 self.toggleVoiceSelectedText(from: pid)
             }
         }
         let registry = HotKeyRegistry(driver: driver)
         do {
-            if let shortcut = self.hotKey(dictation) {
-                recordShortcut = shortcut
-                try registry.register(shortcut)
-            }
-            if let shortcut = self.hotKey(rewrite) {
-                spokenEditShortcut = shortcut
-                try registry.register(shortcut)
-            }
-            if let shortcut = self.hotKey(textEdit) {
-                editShortcut = shortcut
-                try registry.register(shortcut)
-            }
-            hotKeyDriver = driver
-            hotKeys = registry
-            interactionStatus = "\(MacShortcut.display(dictation.normalized)) 听写；\(MacShortcut.display(textEdit.normalized)) 文本指令；\(MacShortcut.display(rewrite.normalized)) 语音修改选区"
+            for shortcut in plan.keyboard { try registry.register(shortcut) }
         } catch {
             registry.shutdown()
-            hotKeyDriver = nil
-            hotKeys = nil
-            interactionStatus = "全局快捷键注册失败：\(error.localizedDescription)"
+            driver.shutdown()
+            throw error
         }
-    }
-
-    private func hotKey(_ binding: ShortcutBinding) -> HotKeyShortcut? {
-        guard !binding.mouse else { return nil }
-        return MacShortcut.hotKey(key: binding.key, ctrl: binding.ctrl, alt: binding.alt, shift: binding.shift)
+        return (driver, registry)
     }
 
     func refreshSideMouse() {
@@ -303,6 +338,7 @@ final class WorkspaceModel: ObservableObject {
         }
         let isFreshStart = sideMouse == nil
         let driver = sideMouse ?? SideMouseButtonDriver(
+            bindings: activeShortcutPlan?.sideButtons ?? SideMouseBindings(),
             onPress: { [weak self] action in
                 self?.previewIndicator(action)
             },
@@ -319,7 +355,7 @@ final class WorkspaceModel: ObservableObject {
                 self?.cancelCurrent()
             },
             onObservedButton: { [weak self] button in
-                if let action = SideMouseAction(rawValue: button) {
+                if let action = self?.activeShortcutPlan?.sideButtons.action(for: button) ?? SideMouseBindings().action(for: button) {
                     self?.sideMouseStatus = action == .dictation
                         ? "已收到 Mouse4 按下；继续按住以开始听写"
                         : "已收到 Mouse5 按下；继续按住以开始改写"
@@ -329,6 +365,7 @@ final class WorkspaceModel: ObservableObject {
             }
         )
         do {
+            driver.setBindings(activeShortcutPlan?.sideButtons ?? SideMouseBindings())
             try driver.start()
             sideMouse = driver
             driver.setVoicePaused(voicePaused)
@@ -1017,6 +1054,7 @@ final class WorkspaceModel: ObservableObject {
 
     func shutdown() {
         _ = helloGeneration.begin()
+        _ = shortcutGeneration.begin()
         cancelProbes()
         cancelCurrent()
         sideMouse?.shutdown()
@@ -1026,6 +1064,7 @@ final class WorkspaceModel: ObservableObject {
         hotKeyDriver?.shutdown()
         hotKeys = nil
         hotKeyDriver = nil
+        activeShortcutPlan = nil
         bridge?.stop()
         bridge = nil
         connection = .disconnected

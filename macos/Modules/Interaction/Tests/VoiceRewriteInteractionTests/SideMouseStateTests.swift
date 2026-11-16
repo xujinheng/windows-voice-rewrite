@@ -2,6 +2,16 @@ import XCTest
 @testable import VoiceRewriteInteraction
 
 final class SideMouseStateTests: XCTestCase {
+    func testSideMouseBindingsRejectConflictsAndPreserveUnboundButtons() {
+        XCTAssertTrue(SideMouseBindings().isValid)
+        XCTAssertFalse(SideMouseBindings(dictationButton: 4, rewriteButton: 4).isValid)
+        XCTAssertFalse(SideMouseBindings(dictationButton: 5, rewriteButton: nil).isValid)
+        let mapping = SideMouseBindings(dictationButton: nil, rewriteButton: 3)
+        XCTAssertTrue(mapping.isValid)
+        XCTAssertNil(mapping.action(for: 4))
+        XCTAssertEqual(mapping.action(for: 3), .rewrite)
+    }
+
     func testMacAuxiliaryButtonNumbers() {
         XCTAssertEqual(SideMouseAction(rawValue: 3), .dictation)
         XCTAssertEqual(SideMouseAction(rawValue: 4), .rewrite)

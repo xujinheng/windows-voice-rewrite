@@ -9,6 +9,32 @@ public enum SideMouseAction: Int, Sendable {
     case rewrite = 4     // Mouse5: the second auxiliary button.
 }
 
+/// Only explicitly bound auxiliary buttons are intercepted. Nil leaves a button
+/// available to the mouse driver; the standard keyboard-shortcut configuration
+/// retains Mouse4 dictation and Mouse5 rewrite by default.
+public struct SideMouseBindings: Equatable, Sendable {
+    public let dictationButton: Int?
+    public let rewriteButton: Int?
+
+    public init(dictationButton: Int? = 3, rewriteButton: Int? = 4) {
+        self.dictationButton = dictationButton
+        self.rewriteButton = rewriteButton
+    }
+
+    public var isValid: Bool {
+        let allowed: Set<Int> = [3, 4]
+        guard dictationButton.map({ allowed.contains($0) }) ?? true,
+              rewriteButton.map({ allowed.contains($0) }) ?? true else { return false }
+        return dictationButton == nil || rewriteButton == nil || dictationButton != rewriteButton
+    }
+
+    public func action(for button: Int) -> SideMouseAction? {
+        if dictationButton == button { return .dictation }
+        if rewriteButton == button { return .rewrite }
+        return nil
+    }
+}
+
 public enum SideMouseFailure: Error, LocalizedError {
     case accessibilityDenied
     case eventTapUnavailable
@@ -93,6 +119,18 @@ public final class SideMouseButtonDriver {
     private var downEvents: [Int: CGEvent] = [:]
     private var targetPIDs: [Int: Int32] = [:]
     private var voicePaused = false
+    private var bindings: SideMouseBindings
+
+    public func setBindings(_ next: SideMouseBindings) {
+        guard next.isValid, bindings != next else { return }
+        let pending = state.hasPendingPress
+        let active = state.reset()
+        downEvents.removeAll()
+        targetPIDs.removeAll()
+        bindings = next
+        if active { onCancel() }
+        else if pending { onPreviewDismissed() }
+    }
 
     public func setVoicePaused(_ paused: Bool) {
         voicePaused = paused
@@ -107,6 +145,7 @@ public final class SideMouseButtonDriver {
 
     public init(
         threshold: TimeInterval = 0.28,
+        bindings: SideMouseBindings = SideMouseBindings(),
         onPress: @escaping @MainActor (SideMouseAction) -> Void = { _ in },
         onPreviewDismissed: @escaping @MainActor () -> Void = {},
         onHold: @escaping @MainActor (SideMouseAction, Int32?) -> Void,
@@ -115,6 +154,7 @@ public final class SideMouseButtonDriver {
         onObservedButton: @escaping @MainActor (Int) -> Void = { _ in }
     ) {
         self.threshold = threshold
+        self.bindings = bindings
         self.onPress = onPress
         self.onPreviewDismissed = onPreviewDismissed
         self.onHold = onHold
@@ -178,8 +218,10 @@ public final class SideMouseButtonDriver {
             let active = state.reset()
             downEvents.removeAll()
             targetPIDs.removeAll()
-            if active { onCancel() }
-            else if pending { onPreviewDismissed() }
+            DispatchQueue.main.async { [weak self] in
+                if active { self?.onCancel() }
+                else if pending { self?.onPreviewDismissed() }
+            }
             if type == .tapDisabledByTimeout, let tap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
@@ -193,15 +235,22 @@ public final class SideMouseButtonDriver {
         }
         let button = Int(event.getIntegerValueField(.mouseEventButtonNumber))
         if type == .otherMouseDown && button >= 3 {
-            onObservedButton(button)
+            DispatchQueue.main.async { [weak self] in self?.onObservedButton(button) }
         }
-        guard let action = SideMouseAction(rawValue: button) else {
+        guard let action = bindings.action(for: button) else {
             return Unmanaged.passUnretained(event)
         }
         switch type {
         case .otherMouseDown:
             guard let token = state.press(button) else { return nil }
-            onPress(action)
+            // A CGEventTap must return quickly. SwiftUI/AppKit panels are shown
+            // after the callback, only if the same short-press is still pending.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.voicePaused,
+                      let press = self.state.pressed[button],
+                      press.token == token, !press.active else { return }
+                self.onPress(action)
+            }
             downEvents[button] = event.copy()
             targetPIDs[button] = NSWorkspace.shared.frontmostApplication?.processIdentifier
             DispatchQueue.main.asyncAfter(deadline: .now() + threshold) { [weak self] in
@@ -216,10 +265,10 @@ public final class SideMouseButtonDriver {
             targetPIDs.removeValue(forKey: button)
             switch release {
             case .short:
-                onPreviewDismissed()
+                DispatchQueue.main.async { [weak self] in self?.onPreviewDismissed() }
                 if let down { replay(down: down, up: event) }
             case .held:
-                onRelease(action)
+                DispatchQueue.main.async { [weak self] in self?.onRelease(action) }
             case .ignored:
                 return Unmanaged.passUnretained(event)
             }

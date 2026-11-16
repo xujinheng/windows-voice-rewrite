@@ -86,7 +86,7 @@ struct MainView: View {
                         TextField("输入改写/翻译指令，再切到其他应用选中文字", text: $model.taskInstruction)
                         Text("Mouse4：按住说话，松开听写；Mouse5：选中文字，按住说出修改要求，松开处理。短按侧键保留正常导航。")
                             .font(.footnote).foregroundStyle(.secondary)
-                        Text("键盘备用：Ctrl+Option+R 听写、Ctrl+Option+E 语音改写、Ctrl+Option+T 文字指令。")
+                        Text("键盘默认：Ctrl+Option+R 听写、Ctrl+Option+E 语音改写、Ctrl+Option+T 文字指令；可在设置中更改。")
                             .font(.footnote).foregroundStyle(.secondary)
                         Text("语音选区模式需要先在目标应用选中文字；录音中不得改变目标、焦点或选区，否则只保留预览。")
                             .font(.footnote).foregroundStyle(.secondary)

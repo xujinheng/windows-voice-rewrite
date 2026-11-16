@@ -36,7 +36,7 @@ struct SettingsView: View {
                 TextField("听写", text: $model.settings.dictationShortcut)
                 TextField("语音修改选区", text: $model.settings.rewriteShortcut)
                 TextField("文字指令", text: $model.settings.textEditShortcut)
-                Text("与 Windows 使用同一套写法，例如 Ctrl+Alt+R 或 F8。Alt 在 macOS 上是 Option。Mouse4 和 Mouse5 仍由侧键处理。")
+                Text("与 Windows 使用同一套写法，例如 Ctrl+Alt+R、F8 或 Mouse4。Alt 在 macOS 上是 Option。未配置鼠标绑定时，Mouse4 默认听写、Mouse5 默认改写；显式配置鼠标键时仅拦截已分配的侧键。F21–F24 在 macOS 上不可用，三个功能不能绑定同一个按键。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section("安全保存") {
