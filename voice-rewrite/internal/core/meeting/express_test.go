@@ -46,6 +46,15 @@ func TestMeetingExpressionStopsStaySeparate(t *testing.T) {
 	if !MeetingSourceLess("a.exe", "alpha", "b.exe", "Beta") || MeetingSourceLess("a.exe", "Same", "b.exe", "same") {
 		t.Fatal("title order")
 	}
+	if clear, status := CancelPresentation(false, ExpressTranslating); !clear || status != WorkCanceled {
+		t.Fatalf("partial %t %q", clear, status)
+	}
+	if clear, status := CancelPresentation(true, ExpressTranslating); clear || status != WorkCanceled || WorkCanceled == RefineFailed {
+		t.Fatalf("finished %t %q", clear, status)
+	}
+	if clear, status := CancelPresentation(false, ""); !clear || status != "" {
+		t.Fatalf("quiet %t %q", clear, status)
+	}
 	if ListeningStage == ListeningPrompt || CaptionRecognizing == ExpressRecognizing || CaptionRecognizing == "正在识别语音" {
 		t.Fatal("stage sentences collapsed")
 	}

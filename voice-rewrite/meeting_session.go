@@ -54,13 +54,12 @@ func (s *meetingSession) configSnapshot() Config { s.mu.Lock(); defer s.mu.Unloc
 // invalidates its epoch. Presentation never survives a canceled partial task.
 func (s *meetingSession) resetViewLocked() {
 	s.view.reply.ResetWork()
-	if !s.view.expression.complete {
+	clear, status := meetingcore.CancelPresentation(s.view.expression.complete, s.view.expressionStatus)
+	if clear {
 		s.view.expression = meetingLine{}
 	}
+	s.view.expressionStatus = status
 	s.view.captions = meetingcore.KeepCompletedCaptions(s.view.captions)
-	if s.view.expressionStatus != "" {
-		s.view.expressionStatus = "处理已取消"
-	}
 	s.view.level = 0
 	s.view.metrics.Pending = 0
 }

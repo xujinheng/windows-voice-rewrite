@@ -92,6 +92,15 @@ func ButtonFace(id int, view ButtonView) string {
 	}
 }
 
+// ReadingPaint uses the primary ink for the live caption and the surface for every reading control.
+// The live caption stays on the surface even when the caller does not repeat that.
+func ReadingPaint(live, reading bool) (primaryText, surface bool) {
+	if live {
+		return true, true
+	}
+	return false, reading
+}
+
 func LiveCaption(hint string) string {
 	return "● " + hint
 }

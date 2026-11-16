@@ -5,6 +5,21 @@ import (
 	"testing"
 )
 
+func TestReadingPaintKeepsTheLiveCaptionOnTheSurface(t *testing.T) {
+	primary, surface := ReadingPaint(true, false)
+	if !primary || !surface {
+		t.Fatal("live")
+	}
+	primary, surface = ReadingPaint(false, true)
+	if primary || !surface {
+		t.Fatal("reading")
+	}
+	primary, surface = ReadingPaint(false, false)
+	if primary || surface {
+		t.Fatal("chrome")
+	}
+}
+
 func TestButtonFaceKeepsIdleTitles(t *testing.T) {
 	want := []string{"冻结画面", "专注字幕", "A−", "A+", "复制回复", "复制英文", "生成建议", "暂停采集", "会议资料", "1 直接回应", "2 澄清一下", "3 争取时间", "无新建议", "改写回复", "回到最新", "放大英文"}
 	idle := ButtonView{SelectedReply: -1}

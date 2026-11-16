@@ -31,7 +31,17 @@ const (
 	ExpressEmpty           = "语音识别结果为空"
 	ExpressEmptyDetail     = "请调整麦克风音量后重试"
 	ExpressGenerateFailed  = "英文生成失败"
+	WorkCanceled           = "处理已取消"
 )
+
+// CancelPresentation drops an unfinished expression and replaces a visible status.
+// A finished expression stays. An empty status stays empty.
+func CancelPresentation(expressionComplete bool, status string) (clearExpression bool, nextStatus string) {
+	if status != "" {
+		status = WorkCanceled
+	}
+	return !expressionComplete, status
+}
 
 // ExpressionLabel names the in-progress expression. Compose is the only special mode.
 func ExpressionLabel(mode string) string {
