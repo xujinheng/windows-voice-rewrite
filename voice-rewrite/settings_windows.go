@@ -719,9 +719,13 @@ func (p *uxSettings) check(kind, base, key, model string) {
 	if p == nil || p.window == 0 {
 		return
 	}
-	idx := 0
+	field := "asr_base_url"
 	if kind == "LLM" {
-		idx = 1
+		field = "llm_base_url"
+	}
+	idx, ok := contract.ProbeSlot(field)
+	if !ok || idx < 0 || idx >= len(p.probeStatus) {
+		return
 	}
 	p.probeMu.Lock()
 	p.probeSerial[idx]++
@@ -751,32 +755,6 @@ func uxCreateControl(parent uintptr, class, text string, style uintptr, x, y, w,
 		setFont(handle, font)
 	}
 	return handle
-}
-
-// Center a settings window inside the monitor work area; the recording
-// pill remains bottom-centered, but a full settings window should not be.
-func uxCenteredWindow(w, h int32) (int32, int32) {
-	pt := currentCursorPoint()
-	packed := uint64(uint32(pt.X)) | uint64(uint32(pt.Y))<<32
-	mon, _, _ := procMonitorFromPointHandy.Call(uintptr(packed), MONITOR_DEFAULTTONEAREST)
-	if mon != 0 {
-		info := handyMonitorInfo{Size: uint32(unsafe.Sizeof(handyMonitorInfo{}))}
-		if ok, _, _ := procGetMonitorInfoHandy.Call(mon, uintptr(unsafe.Pointer(&info))); ok != 0 {
-			area := info.Work
-			x := area.Left + (area.Right-area.Left-w)/2
-			y := area.Top + (area.Bottom-area.Top-h)/2
-			if x < area.Left {
-				x = area.Left
-			}
-			if y < area.Top {
-				y = area.Top
-			}
-			return x, y
-		}
-	}
-	width, _, _ := procGetSystemMetrics.Call(0)
-	height, _, _ := procGetSystemMetrics.Call(1)
-	return (int32(width) - w) / 2, (int32(height) - h) / 2
 }
 
 func uxWorkAreaAtCursor() desktop.WorkArea { return uxWorkAreaForPoint(currentCursorPoint()) }
@@ -947,7 +925,8 @@ func showNativeSettings(app *appState) error {
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*scale + 0.5)) }
 	work := uxWorkAreaAtCursor()
 	winW, winH := desktop.Fit(int32(sc(860)), int32(sc(530)), work, 12)
-	x, y := uxCenteredWindow(winW, winH)
+	// The recording pill stays near the bottom of the work area. Settings opens in the middle.
+	x, y := desktop.Center(winW, winH, work)
 	h, _, createErr := procCreateWindow.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),
 		uxWSCaption|uxWSSysMenu|uxWSMinimizeBox|uxWSThickFrame|WS_VSCROLL|0x00100000, uintptr(x), uintptr(y), uintptr(winW), uintptr(winH), 0, 0, module, 0)
 	if h == 0 {

@@ -465,7 +465,7 @@ func handyAwareWindowThread() func() {
 	return func() { procSetThreadDpiContextHandy.Call(old) }
 }
 func handyMonitorScale() float64 {
-	return handyScaleForMonitor(uxMonitorForPoint(currentCursorPoint()))
+	return uxMonitorScaleForPoint(currentCursorPoint())
 }
 func handyScaleForMonitor(mon uintptr) float64 {
 	// Deterministic DPI variants apply to explicit screenshots only.
@@ -494,18 +494,14 @@ func handyScreenPosition(w, h int) (int32, int32) {
 	return handyScreenPositionForMonitor(uxMonitorForPoint(currentCursorPoint()), w, h)
 }
 func handyScreenPositionForMonitor(mon uintptr, w, h int) (int32, int32) {
-	if mon != 0 {
-		info := handyMonitorInfo{Size: uint32(unsafe.Sizeof(handyMonitorInfo{}))}
-		if ok, _, _ := procGetMonitorInfoHandy.Call(mon, uintptr(unsafe.Pointer(&info))); ok != 0 {
-			work := desktop.WorkArea{Left: info.Work.Left, Top: info.Work.Top, Right: info.Work.Right, Bottom: info.Work.Bottom}
-			x := work.Left + (work.Right-work.Left-int32(w))/2
-			y := work.Bottom - int32(h) - 5
-			return desktop.Clamp(x, y, int32(w), int32(h), work)
-		}
+	work, ok := uxWorkAreaForMonitor(mon)
+	if !ok {
+		work = uxPrimaryScreen()
+		return (work.Right - int32(w)) / 2, work.Bottom - int32(h) - 5
 	}
-	x, _, _ := procGetSystemMetrics.Call(0)
-	y, _, _ := procGetSystemMetrics.Call(1)
-	return (int32(x) - int32(w)) / 2, int32(y) - int32(h) - 5
+	x := work.Left + (work.Right-work.Left-int32(w))/2
+	y := work.Bottom - int32(h) - 5
+	return desktop.Clamp(x, y, int32(w), int32(h), work)
 }
 func showHandyStatus(rec *audioRecorder, mode string, phase indicator.Phase, owner uint64) {
 	createHandyStatus(rec, mode, phase, owner, false)

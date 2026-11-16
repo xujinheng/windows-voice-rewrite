@@ -14,6 +14,17 @@ func TestPopupPlacementNegativeMonitor(t *testing.T) {
 	}
 }
 
+func TestCenterStaysOnNegativeMonitor(t *testing.T) {
+	x, y := Center(800, 600, WorkArea{-1920, -120, 0, 960})
+	if x != -1360 || y != 120 {
+		t.Fatalf("center %d,%d", x, y)
+	}
+	x, y = Center(3000, 2000, WorkArea{-1920, -120, 0, 960})
+	if x != -1920 || y != -120 {
+		t.Fatalf("oversize %d,%d", x, y)
+	}
+}
+
 func TestFitSizeSmallWorkArea(t *testing.T) {
 	work := WorkArea{0, 0, 1024, 728}
 	for _, s := range []struct{ w, h, ew, eh int32 }{{714, 720, 714, 704}, {1428, 1440, 1000, 704}, {1071, 1080, 1000, 704}} {
