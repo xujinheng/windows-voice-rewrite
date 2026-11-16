@@ -302,7 +302,7 @@ func (p *meetingHUD) resizeText(delta int32) {
 	body := meetingUIFont(p.px(bodyFace.Size), bodyFace.Weight)
 	english := popupFont(-p.px(englishFace.Size), englishFace.Weight)
 	chinese := meetingUIFont(p.px(chineseFace.Size), chineseFace.Weight)
-	if body == 0 || english == 0 || chinese == 0 {
+	if !meetingcore.ReplaceReadingFonts(body, english, chinese) {
 		for _, font := range []uintptr{body, english, chinese} {
 			if font != 0 {
 				procDeleteObject.Call(font)
@@ -312,14 +312,24 @@ func (p *meetingHUD) resizeText(delta int32) {
 	}
 	old := []uintptr{p.bodyFont, p.englishFont, p.chineseFont}
 	p.bodyFont, p.englishFont, p.chineseFont, p.fontSize = body, english, chinese, size
-	for _, control := range []uintptr{p.captions, p.responses, p.instruction, p.profileBackground, p.profileTerms} {
-		if control != 0 {
-			setFont(control, body)
+	assign := func(control uintptr, text meetingcore.MeetingText) {
+		font := body
+		switch meetingcore.MeetingTextFace(text) {
+		case meetingcore.FaceEnglish:
+			font = english
+		case meetingcore.FaceChinese:
+			font = chinese
 		}
+		setFont(control, font)
 	}
-	setFont(p.currentEnglish, english)
-	setFont(p.currentChinese, chinese)
-	setFont(p.expression, english)
+	assign(p.captions, meetingcore.MeetingCaptions)
+	assign(p.responses, meetingcore.MeetingResponses)
+	assign(p.instruction, meetingcore.MeetingInstruction)
+	assign(p.profileBackground, meetingcore.MeetingProfileBackground)
+	assign(p.profileTerms, meetingcore.MeetingProfileTerms)
+	assign(p.currentEnglish, meetingcore.MeetingEnglish)
+	assign(p.currentChinese, meetingcore.MeetingChinese)
+	assign(p.expression, meetingcore.MeetingExpression)
 	for _, font := range old {
 		procDeleteObject.Call(font)
 	}

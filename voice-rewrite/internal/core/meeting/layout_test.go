@@ -167,6 +167,12 @@ func TestSplitterHitUsesTheOpenBand(t *testing.T) {
 	if LabelFont() != (FontFace{14, 600}) {
 		t.Fatal("label font")
 	}
+	if MeetingTextFace(MeetingExpression) != FaceEnglish || MeetingTextFace(MeetingEnglish) != FaceEnglish || MeetingTextFace(MeetingChinese) != FaceChinese || MeetingTextFace(MeetingCaptions) != FaceBody || MeetingTextFace(MeetingProfileTerms) != FaceBody {
+		t.Fatal("text face")
+	}
+	if ReplaceReadingFonts(1, 1, 0) || ReplaceReadingFonts(0, 1, 1) || ReplaceReadingFonts(1, 0, 1) || !ReplaceReadingFonts(1, 2, 3) {
+		t.Fatal("replace fonts")
+	}
 	body, english, chinese := ReadingFonts(16)
 	if body != (FontFace{16, 400}) || english != (FontFace{17, 450}) || chinese != (FontFace{22, 600}) {
 		t.Fatal("reading fonts")

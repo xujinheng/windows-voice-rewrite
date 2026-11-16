@@ -112,6 +112,48 @@ type FontFace struct{ Size, Weight int32 }
 
 func LabelFont() FontFace { return FontFace{14, 600} }
 
+// MeetingText is one meeting reading control.
+type MeetingText int
+
+const (
+	MeetingCaptions MeetingText = iota
+	MeetingResponses
+	MeetingInstruction
+	MeetingProfileBackground
+	MeetingProfileTerms
+	MeetingEnglish
+	MeetingChinese
+	MeetingExpression
+)
+
+// ReadingFace is which of the three meeting fonts a control uses.
+type ReadingFace int
+
+const (
+	FaceBody ReadingFace = iota
+	FaceEnglish
+	FaceChinese
+)
+
+// MeetingTextFace keeps the expression on the English face.
+// The Chinese line is the only control on the Chinese face.
+func MeetingTextFace(text MeetingText) ReadingFace {
+	switch text {
+	case MeetingEnglish, MeetingExpression:
+		return FaceEnglish
+	case MeetingChinese:
+		return FaceChinese
+	default:
+		return FaceBody
+	}
+}
+
+// ReplaceReadingFonts reports that all three new fonts exist.
+// A missing font discards every new font and leaves the previous size in place.
+func ReplaceReadingFonts(body, english, chinese uintptr) bool {
+	return body != 0 && english != 0 && chinese != 0
+}
+
 // ReadingFonts is the body, English, and Chinese face for one meeting text size.
 // English is one point larger. Chinese is six points larger and heavier.
 func ReadingFonts(size int32) (body, english, chinese FontFace) {
