@@ -33,6 +33,13 @@ public struct SideMouseBindings: Equatable, Sendable {
         if rewriteButton == button { return .rewrite }
         return nil
     }
+
+    public func button(for action: SideMouseAction) -> Int? {
+        switch action {
+        case .dictation: return dictationButton
+        case .rewrite: return rewriteButton
+        }
+    }
 }
 
 public enum SideMouseFailure: Error, LocalizedError {
