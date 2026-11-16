@@ -572,23 +572,30 @@ func runApp() {
 	}
 
 	confirmSide := func(button uint16) {
-		if pendingSide == nil || pendingSide.button != button {
-			return
+		hasPending := pendingSide != nil
+		same := hasPending && pendingSide.button == button
+		var ready, failed bool
+		var held *sideCapture
+		if same {
+			held = pendingSide
+			ready = input.ConfirmSideReady(app.paused.Load(), app.busy.Load(), active != nil, held.targetWindow != 0 && isSameForegroundWindow(held.targetWindow))
+			failed = held.err != nil
 		}
-		p := pendingSide
-		if !input.ConfirmSideReady(app.paused.Load(), app.busy.Load(), active != nil, p.targetWindow != 0 && isSameForegroundWindow(p.targetWindow)) {
+		switch input.SideConfirm(hasPending, same, ready, failed) {
+		case input.SideConfirmIgnore:
+			return
+		case input.SideConfirmDiscard:
 			discardPendingSide()
-			return
-		}
-		pendingSide = nil
-		if p.err != nil {
+		case input.SideConfirmReport:
+			pendingSide = nil
 			if activeHandyStatus != nil && activeHandyStatus.pending {
 				closeHandyStatus()
 			}
-			app.fail(p.err)
-			return
+			app.fail(held.err)
+		default:
+			pendingSide = nil
+			activateHold(held.recorder, input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation", button, held.targetWindow)
 		}
-		activateHold(p.recorder, input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation", button, p.targetWindow)
 	}
 
 	for {

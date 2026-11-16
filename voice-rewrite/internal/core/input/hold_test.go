@@ -43,6 +43,15 @@ func TestVoiceStartKeepsSideAndKeyboardWindowsApart(t *testing.T) {
 	if ConfirmSideReady(false, false, false, false) || !ConfirmSideReady(false, false, false, true) {
 		t.Fatal("confirm")
 	}
+	if SideConfirm(false, true, true, true) != SideConfirmIgnore || SideConfirm(true, false, true, true) != SideConfirmIgnore {
+		t.Fatal("ignore other button")
+	}
+	if SideConfirm(true, true, false, true) != SideConfirmDiscard {
+		t.Fatal("discard before the microphone error")
+	}
+	if SideConfirm(true, true, true, true) != SideConfirmReport || SideConfirm(true, true, true, false) != SideConfirmActivate {
+		t.Fatal("ready hold")
+	}
 	if HoldModeLabel(true, true) != "会议直译" || HoldModeLabel(false, true) != "会议意图" || HoldModeLabel(true, false) != "听写" || HoldModeLabel(false, false) != "改写" {
 		t.Fatal("mode")
 	}
