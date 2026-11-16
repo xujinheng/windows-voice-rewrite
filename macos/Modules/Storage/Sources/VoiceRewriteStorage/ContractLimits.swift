@@ -1,4 +1,4 @@
-// Source: voice-rewrite/internal/core/config and voice-rewrite/internal/core/shortcut
+// Source: voice-rewrite/internal/core/config, shortcut, jsonl, and logfile
 import Foundation
 
 public enum ContractLimits {
@@ -15,6 +15,12 @@ public enum ContractLimits {
     public static let macDictationShortcut = "Ctrl+Alt+R"
     public static let macRewriteShortcut = "Ctrl+Alt+E"
     public static let macTextEditShortcut = "Ctrl+Alt+T"
+    public static let protocolVersion = 1
+    public static let maxRequestBytes = 8 << 20
+    public static let maxRequestIDBytes = 128
+    public static let maxSeenRequestIDs = 65536
+    public static let logMaxBytes = 4 << 20
+    public static let logBackups = 3
 }
 
 extension MacSettings {

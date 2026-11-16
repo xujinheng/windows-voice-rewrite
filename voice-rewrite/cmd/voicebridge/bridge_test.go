@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"voicerewrite/internal/core/jsonl"
 	"voicerewrite/internal/core/ux"
 )
 
@@ -387,7 +388,7 @@ func TestBridgePCMAndFrameLimits(t *testing.T) {
 			t.Fatalf("invalid PCM accepted: %#v", reply)
 		}
 	}
-	h.raw(strings.Repeat("x", maxRequestBytes) + "\n")
+	h.raw(strings.Repeat("x", jsonl.MaxRequestBytes) + "\n")
 	if reply := h.receive(); reply.OK || reply.Error == nil || reply.Error.Code != "request_too_large" {
 		t.Fatalf("oversized request not rejected: %#v", reply)
 	}

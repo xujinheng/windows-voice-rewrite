@@ -1,10 +1,11 @@
 import AppKit
 import Foundation
+import VoiceRewriteStorage
 
-/// Bounded diagnostic log. Same 4 MiB active file and three backups as Windows.
+/// Bounded diagnostic log. Size and backup count come from the shared log policy.
 enum DiagnosticLog {
-    static let maxBytes: Int64 = 4 << 20
-    static let backups = 3
+    static let maxBytes = Int64(ContractLimits.logMaxBytes)
+    static let backups = ContractLimits.logBackups
 
     static var fileURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first

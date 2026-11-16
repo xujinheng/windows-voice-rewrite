@@ -251,7 +251,7 @@ func emitLimits(moduleRoot string) (string, error) {
 		return "", fmt.Errorf("no url schemes")
 	}
 	var b strings.Builder
-	b.WriteString(sourceNote("voice-rewrite/internal/core/config and voice-rewrite/internal/core/shortcut"))
+	b.WriteString(sourceNote("voice-rewrite/internal/core/config, shortcut, jsonl, and logfile"))
 	b.WriteString("import Foundation\n\npublic enum ContractLimits {\n")
 	for _, item := range want {
 		value, ok := values[item.goName]
@@ -292,6 +292,20 @@ func emitLimits(moduleRoot string) (string, error) {
 		}
 		b.WriteString("    public static let " + item.swift + " = " + strconv.Quote(value) + "\n")
 	}
+	for _, item := range []struct{ path, goName, swift string }{
+		{"jsonl/limits.go", "Version", "protocolVersion"},
+		{"jsonl/limits.go", "MaxRequestBytes", "maxRequestBytes"},
+		{"jsonl/limits.go", "MaxIDBytes", "maxRequestIDBytes"},
+		{"jsonl/limits.go", "MaxSeenIDs", "maxSeenRequestIDs"},
+		{"logfile/rotate.go", "MaxBytes", "logMaxBytes"},
+		{"logfile/rotate.go", "Backups", "logBackups"},
+	} {
+		value, err := constValue(filepath.Join(moduleRoot, "internal", "core", item.path), item.goName)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString("    public static let " + item.swift + " = " + value + "\n")
+	}
 	b.WriteString("}\n\nextension MacSettings {\n")
 	b.WriteString("    public static func acceptsBaseURL(_ value: String) -> Bool {\n")
 	b.WriteString("        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)\n")
@@ -315,6 +329,19 @@ func emitLimits(moduleRoot string) (string, error) {
 	}
 	b.WriteString(",\n              url.url != nil else {\n            return false\n        }\n        return true\n    }\n}\n")
 	return b.String(), nil
+}
+
+func constValue(path, name string) (string, error) {
+	file, err := parseFile(path)
+	if err != nil {
+		return "", err
+	}
+	for _, spec := range constSpecs(file) {
+		if spec.name == name {
+			return spec.value, nil
+		}
+	}
+	return "", fmt.Errorf("missing %s in %s", name, path)
 }
 
 func defaultStrings(file *ast.File) (map[string]string, error) {

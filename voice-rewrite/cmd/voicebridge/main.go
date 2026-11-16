@@ -18,6 +18,7 @@ import (
 
 	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
+	"voicerewrite/internal/core/jsonl"
 	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/shortcut"
 	"voicerewrite/internal/core/speech"
@@ -27,12 +28,9 @@ import (
 )
 
 const (
-	protocolVersion     = 1
-	maxRequestBytes     = 8 << 20
 	maxPCMBytes         = audio.PCMBytesPerSecond * coreconfig.RecordSecondsMax
 	maxSelectedBytes    = 1 << 20
 	maxInstructionBytes = 32 << 10
-	maxSeenIDs          = 65536
 )
 
 var errFrameTooLarge = errors.New("frame exceeds limit")
@@ -94,11 +92,11 @@ type bridgeServer struct {
 }
 
 func failure(id, code, message string) response {
-	return response{Version: protocolVersion, ID: id, Error: &bridgeError{Code: code, Message: message}}
+	return response{Version: jsonl.Version, ID: id, Error: &bridgeError{Code: code, Message: message}}
 }
 
 func success(id string, value any) response {
-	return response{Version: protocolVersion, ID: id, OK: true, Result: value}
+	return response{Version: jsonl.Version, ID: id, OK: true, Result: value}
 }
 
 // readFrame bounds memory even if a client sends a line without a terminator.
@@ -109,7 +107,7 @@ func readFrame(r *bufio.Reader) ([]byte, error) {
 	for {
 		chunk, err := r.ReadSlice('\n')
 		if !oversized {
-			if len(frame)+len(chunk) > maxRequestBytes {
+			if len(frame)+len(chunk) > jsonl.MaxRequestBytes {
 				frame = nil
 				oversized = true
 			} else {
@@ -179,12 +177,12 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		s.send(failure("", "invalid_json", "invalid request JSON"))
 		return
 	}
-	if req.Version != protocolVersion {
+	if req.Version != jsonl.Version {
 		s.send(failure(req.ID, "protocol_version", "unsupported protocol version"))
 		return
 	}
-	if req.ID == "" || len(req.ID) > 128 {
-		s.send(failure(req.ID, "invalid_id", "request ID must be 1..128 bytes"))
+	if req.ID == "" || len(req.ID) > jsonl.MaxIDBytes {
+		s.send(failure(req.ID, "invalid_id", fmt.Sprintf("request ID must be 1..%d bytes", jsonl.MaxIDBytes)))
 		return
 	}
 
@@ -194,7 +192,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		s.send(failure(req.ID, "duplicate_id", "request ID already used"))
 		return
 	}
-	if len(s.seen) >= maxSeenIDs {
+	if len(s.seen) >= jsonl.MaxSeenIDs {
 		s.mu.Unlock()
 		s.send(failure(req.ID, "id_limit", "helper request limit reached; restart helper"))
 		return
@@ -205,7 +203,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		s.mu.Unlock()
 		switch req.Op {
 		case "hello":
-			s.send(success(req.ID, map[string]any{"name": "VoiceRewrite", "protocol": protocolVersion}))
+			s.send(success(req.ID, map[string]any{"name": "VoiceRewrite", "protocol": jsonl.Version}))
 		case "parse_shortcut":
 			s.send(parseShortcut(req))
 		case "cancel":
@@ -449,7 +447,7 @@ func serveWithOptions(input io.Reader, output io.Writer, options bridgeOptions) 
 		frame, err := readFrame(reader)
 		switch {
 		case errors.Is(err, errFrameTooLarge):
-			s.send(failure("", "request_too_large", "request exceeds 8 MiB"))
+			s.send(failure("", "request_too_large", fmt.Sprintf("request exceeds %d MiB", jsonl.MaxRequestBytes>>20)))
 		case errors.Is(err, io.EOF):
 			goto done
 		case err != nil:

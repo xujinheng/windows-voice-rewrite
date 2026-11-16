@@ -1,4 +1,5 @@
 import Foundation
+import VoiceRewriteStorage
 
 /// JSONL v1 shared with voice-rewrite/cmd/voicebridge. The host does not implement ASR or LLM logic.
 enum JSONValue: Codable, Equatable {
@@ -55,7 +56,7 @@ struct BridgeRequest {
     var fields: [String: JSONValue] = [:]
 
     func line() throws -> Data {
-        guard !id.isEmpty, id.utf8.count <= 128, !operation.isEmpty,
+        guard !id.isEmpty, id.utf8.count <= ContractLimits.maxRequestIDBytes, !operation.isEmpty,
               fields.keys.allSatisfy({ !["v", "id", "op"].contains($0) }) else {
             throw BridgeFailure.invalidRequest
         }
@@ -89,7 +90,7 @@ struct BridgeReply: Decodable, Equatable {
     let error: BridgeErrorMessage?
 
     func validate() throws {
-        guard v == 1, !id.isEmpty, id.utf8.count <= 128,
+        guard v == ContractLimits.protocolVersion, !id.isEmpty, id.utf8.count <= ContractLimits.maxRequestIDBytes,
               ok ? (result != nil && error == nil) : (error != nil && result == nil) else {
             throw BridgeFailure.invalidReply
         }
@@ -117,7 +118,7 @@ enum BridgeFailure: Error, Equatable, LocalizedError {
         case .notRunning: return "Helper 未运行"
         case .invalidRequest: return "无效的桥接请求"
         case .duplicateID: return "请求 ID 重复"
-        case .frameTooLarge: return "JSONL 帧超过 8 MiB"
+        case .frameTooLarge: return "JSONL 帧超过 \(ContractLimits.maxRequestBytes >> 20) MiB"
         case .invalidReply: return "Helper 返回无效的 JSONL 响应"
         case .truncatedReply: return "Helper 在 JSONL 帧完成前退出"
         case .writeFailed: return "向 Helper 写入失败"
@@ -130,7 +131,7 @@ enum BridgeFailure: Error, Equatable, LocalizedError {
 
 /// Incremental byte framing: handles split UTF-8, several replies per read and bounded memory.
 struct JSONLFramer {
-    static let maximumFrameBytes = 8 * 1024 * 1024
+    static let maximumFrameBytes = ContractLimits.maxRequestBytes
     private var partial = Data()
     var hasPartialFrame: Bool { !partial.isEmpty }
 
