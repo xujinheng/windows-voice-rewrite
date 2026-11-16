@@ -140,13 +140,8 @@ func (p *uxSettings) layout() {
 	if viewH < 1 {
 		viewH = 1
 	}
-	maxX, maxY := uxContentWidth-viewW, uxContentHeight-viewH
-	if maxX < 0 {
-		maxX = 0
-	}
-	if maxY < 0 {
-		maxY = 0
-	}
+	maxX := settingsform.ScrollLimit(uxContentWidth, viewW)
+	maxY := settingsform.ScrollLimit(uxContentHeight, viewH)
 	p.scrollX = settingsform.ClampScroll(p.scrollX, maxX)
 	p.scrollY = settingsform.ClampScroll(p.scrollY, maxY)
 	for _, spec := range []struct {
@@ -239,10 +234,7 @@ func (p *uxSettings) scroll(axis, request uintptr) {
 		content = uxContentWidth
 		pos = &p.scrollX
 	}
-	max := content - view
-	if max < 0 {
-		max = 0
-	}
+	max := settingsform.ScrollLimit(content, view)
 	code := uint16(request)
 	if code == 4 || code == 5 {
 		info := uxScrollInfo{Size: uint32(unsafe.Sizeof(uxScrollInfo{})), Mask: uxSIFTrackPos}

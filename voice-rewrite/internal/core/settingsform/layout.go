@@ -130,6 +130,14 @@ func FocusRow(inputIndex int, rewrite, dictation bool) int {
 	return inputIndex % 3
 }
 
+// ScrollLimit is how far the settings form can scroll for this view size.
+func ScrollLimit(content, view int32) int32 {
+	if view >= content {
+		return 0
+	}
+	return content - view
+}
+
 // ClampScroll keeps a scroll offset inside the range the settings window can show.
 func ClampScroll(n, limit int32) int32 {
 	if n < 0 {

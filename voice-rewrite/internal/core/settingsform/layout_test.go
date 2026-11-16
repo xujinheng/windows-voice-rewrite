@@ -78,4 +78,7 @@ func TestClampScroll(t *testing.T) {
 	if ClampScroll(-4, 10) != 0 || ClampScroll(3, 10) != 3 || ClampScroll(40, 10) != 10 || ClampScroll(2, -1) != 0 {
 		t.Fatal("scroll clamp")
 	}
+	if ScrollLimit(900, 1000) != 0 || ScrollLimit(900, 400) != 500 || ScrollLimit(900, 0) != 900 {
+		t.Fatal("scroll limit")
+	}
 }

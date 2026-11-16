@@ -478,9 +478,10 @@ func (p *meetingHUD) renderReply() {
 		p.setText(p.buttons[9+i], meetingcore.ButtonFace(meetingcore.ButtonReplyFirst+i, meetingcore.ButtonView{SelectedReply: p.selectedReply}), false)
 	}
 	text := meetingcore.ReplyBody(reply.English, reply.Chinese, p.displayedTip, reply.Complete)
-	if meetingcore.TextDue(p.lastReply, time.Now(), reply.Complete) {
+	now := time.Now()
+	if meetingcore.TextDue(p.lastReply, now, reply.Complete) {
 		p.setText(p.responses, text, true)
-		p.lastReply = time.Now()
+		p.lastReply = now
 	}
 	canCopy := meetingcore.ReplyCopyEnabled(reply.Complete, reply.English)
 	meetingEnableWindow.Call(p.buttons[4], meetingBool(canCopy))
