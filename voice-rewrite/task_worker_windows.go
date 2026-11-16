@@ -109,11 +109,8 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	if !app.epoch.Valid(generation) {
 		return
 	}
-	if r.err != nil || audio.BelowMinCapture(r.pcm) {
-		if r.err == nil {
-			r.err = errors.New(ux.DictationTooShort)
-		}
-		app.fail(r.err)
+	if err := ux.DictationCaptureProblem(r.err, audio.BelowMinCapture(r.pcm)); err != nil {
+		app.fail(err)
 		app.postHandyPhase(indicator.Error, generation)
 		return
 	}
@@ -137,23 +134,26 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	if !isSameForegroundWindow(expectedWindow) {
 		// A result card preserves the transcript without requiring the user to
 		// guess what happened to their clipboard after a focus change.
+		follow := ux.DictationUnfocused()
 		app.rememberResult(ux.DictationHistoryTitle, text)
-		app.showAnswer(ux.DictationNotInserted, text, currentCursorPoint(), nil, false, generation)
-		app.postHandyPhase(indicator.Fallback, generation)
+		app.showAnswer(follow.Title, text, currentCursorPoint(), nil, false, generation)
+		app.postHandyPhase(follow.Phase, generation)
 		return
 	}
 	start = time.Now()
-	if err = insertDictationText(app.Window, expectedWindow, text, func() bool { return app.epoch.Valid(generation) }); err != nil {
+	err = insertDictationText(app.Window, expectedWindow, text, func() bool { return app.epoch.Valid(generation) })
+	follow := ux.DictationInserted(err)
+	if follow.ShowCard {
 		app.fail(err)
 		app.rememberResult(ux.DictationHistoryTitle, text)
-		app.showAnswer(ux.DictationCopyManually, text, currentCursorPoint(), nil, false, generation)
-		app.postHandyPhase(indicator.Fallback, generation)
+		app.showAnswer(follow.Title, text, currentCursorPoint(), nil, false, generation)
+		app.postHandyPhase(follow.Phase, generation)
 		return
 	}
 	app.rememberResult(ux.DictationHistoryTitle, text)
 	app.logger.Printf("stage=paste flow=dictation ms=%d chars=%d status=unverified", time.Since(start).Milliseconds(), utf8.RuneCountInString(text))
 	app.setStatus(traySuccess)
-	app.postHandyPhase(indicator.Success, generation)
+	app.postHandyPhase(follow.Phase, generation)
 }
 
 // Dictation preserves multi-format clipboard contents. If a format cannot be
@@ -263,12 +263,8 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	if !app.epoch.Valid(generation) {
 		return
 	}
-	if r.err != nil {
-		app.fail(r.err)
-		return
-	}
-	if audio.BelowMinCapture(r.pcm) {
-		app.fail(errors.New(ux.RewriteTooShort))
+	if err := ux.RewriteCaptureProblem(r.err, audio.BelowMinCapture(r.pcm)); err != nil {
+		app.fail(err)
 		return
 	}
 	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/audio.PCMBytesPerSecond)
@@ -299,18 +295,21 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	allowApply := action == textedit.Replace || action == textedit.TryReplace
 	app.rememberResult(ux.HistoryTitle(answer.Intent), answer.Result)
 	if allowApply {
-		app.postHandyPhase(indicator.Applying, generation)
+		app.postHandyPhase(ux.RewriteApplying().Phase, generation)
 		startedPaste := time.Now()
 		// All unknown controls receive the same pre/post paste checks as a browser.
 		e = replaceSelectionWithGuard(app.Window, sel, answer.Result, app.cfg, action == textedit.TryReplace, func() bool { return app.epoch.Valid(generation) })
 		app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
-		if e == nil {
-			app.setStatus(traySuccess)
-			app.postHandyPhase(indicator.Success, generation)
-			// Completion is indicated by the non-blocking status bar; no sound.
-			app.logger.Printf("paste_status=unverified intent=%s result_chars=%d (SendInput accepted, editor insertion not provable)", answer.Intent, utf8.RuneCountInString(answer.Result))
-			return
-		}
+	}
+	follow := ux.RewritePasted(allowApply, e)
+	if !follow.ShowCard {
+		app.setStatus(traySuccess)
+		app.postHandyPhase(follow.Phase, generation)
+		// Completion is indicated by the non-blocking status bar; no sound.
+		app.logger.Printf("paste_status=unverified intent=%s result_chars=%d (SendInput accepted, editor insertion not provable)", answer.Intent, utf8.RuneCountInString(answer.Result))
+		return
+	}
+	if allowApply && e != nil {
 		app.logger.Printf("auto replacement failed; preview instead: %v", e)
 	}
 	title := ux.ResultCardTitle(answer.Intent)
