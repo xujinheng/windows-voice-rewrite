@@ -40,11 +40,19 @@ public func insertionStatus(_ error: Error, rewrite: Bool, passwordRewrite: Stri
     if let failure = error as? InteractionFailure {
         switch failure {
         case .writeNotConfirmed:
-            return "已尝试写入，但无法确认是否生效；请检查目标或复制结果"
+            return "已向目标发送文字，但无法确认是否生效；请先检查输入框，避免重复粘贴"
         case .unsupportedNativeWrite:
             return "目标不支持可验证写入；结果已保留，可手动复制"
+        case .applicationChanged, .focusChanged:
+            return "录音期间目标应用或输入框焦点发生变化；未插入，结果可复制"
+        case .selectionChanged:
+            return "录音期间光标、选区或输入内容发生变化；未插入，结果可复制"
+        case .timedOut:
+            return "录音或识别时间超过目标锁定期限；未插入，结果可复制"
+        case .accessibilityPermissionDenied:
+            return "缺少辅助功能权限；请重新授权当前 VoiceRewrite.app"
         default:
-            return "目标、焦点或选区验证失败；未发起写入，结果可复制"
+            return "目标或选区验证失败；未发起写入，结果可复制"
         }
     }
     if error is ClipboardFailure {
