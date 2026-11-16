@@ -225,7 +225,7 @@ final class WorkspaceModel: ObservableObject {
                 self.parseShortcut(values.textEdit) { [weak self] textEdit in
                     guard let self else { return }
                     guard shortcutRefresh(tokenValid: self.shortcutGeneration.accepts(token), parsed: textEdit != nil, remaining: 0) == .register, let textEdit else { return }
-                    if shortcutRefreshStores(self.register(dictation: dictation, rewrite: rewrite, textEdit: textEdit)) {
+                    if shortcutRefreshStores(registered: self.register(dictation: dictation, rewrite: rewrite, textEdit: textEdit)) {
                         self.settings.dictationShortcut = dictation.normalized
                         self.settings.rewriteShortcut = rewrite.normalized
                         self.settings.textEditShortcut = textEdit.normalized

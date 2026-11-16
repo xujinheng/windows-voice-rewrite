@@ -367,8 +367,8 @@ final class HostStatusTests: XCTestCase {
         XCTAssertEqual(shortcutRefresh(tokenValid: true, parsed: true, remaining: 2), .parseNext)
         XCTAssertEqual(shortcutRefresh(tokenValid: true, parsed: true, remaining: 1), .parseNext)
         XCTAssertEqual(shortcutRefresh(tokenValid: true, parsed: true, remaining: 0), .register)
-        XCTAssertFalse(shortcutRefreshStores(false))
-        XCTAssertTrue(shortcutRefreshStores(true))
+        XCTAssertFalse(shortcutRefreshStores(registered: false))
+        XCTAssertTrue(shortcutRefreshStores(registered: true))
     }
 
     func testSettingsSaveRefusalKeepsBusyAheadOfTheCredential() {
