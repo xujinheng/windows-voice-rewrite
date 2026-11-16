@@ -25,8 +25,10 @@ const (
 )
 
 type Page struct {
-	ID    string
-	Title string
+	ID       string
+	Title    string
+	Subtitle string
+	Section  string
 }
 
 type Control struct {
@@ -44,9 +46,9 @@ type Control struct {
 
 func Pages() []Page {
 	return []Page{
-		{ID: "speech", Title: "语音识别"},
-		{ID: "writing", Title: "AI 写作"},
-		{ID: "input", Title: "快捷键与设备"},
+		{ID: "speech", Title: "语音识别", Subtitle: "连接语音识别服务，将录音转换为文字。", Section: "连接配置"},
+		{ID: "writing", Title: "AI 写作", Subtitle: "配置用于改写、翻译与问答的文本模型。", Section: "模型配置"},
+		{ID: "input", Title: "快捷键与设备", Subtitle: "录入语音指令、听写快捷键，并选择麦克风。", Section: "输入偏好"},
 	}
 }
 

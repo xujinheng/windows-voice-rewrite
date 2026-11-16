@@ -5,19 +5,20 @@ package main
 import (
 	"unsafe"
 
+	"voicerewrite/internal/contract"
 	"voicerewrite/internal/core/settingsform"
 )
 
 // These are deliberately *not* raised cards. A quiet left navigation rail,
 // understated dividers and one focused settings pane follow Raycast/Linear's
 // navigational hierarchy, while the application's identity stays original.
-var settingsHeadings = [3]string{"语音识别", "AI 写作", "快捷键与设备"}
-var settingsSubtitles = [3]string{
-	"连接语音识别服务，将录音转换为文字。",
-	"配置用于改写、翻译与问答的文本模型。",
-	"录入语音指令、听写快捷键，并选择麦克风。",
+func settingsPage(index int) contract.Page {
+	pages := contract.Pages()
+	if index < 0 || index >= len(pages) {
+		return pages[0]
+	}
+	return pages[index]
 }
-var settingsSectionNames = [3]string{"连接配置", "模型配置", "输入偏好"}
 
 func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32, focusRow int) bool {
 	if d == nil {
@@ -44,13 +45,11 @@ func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32, focusRow
 	d.fill(20, 246, 154, 1, 6)
 	// No decorative footer copy: navigation is the only purpose of the rail.
 	// Main pane. No brand banner, stacked white cards or redundant headings.
-	if page < 0 || page >= len(settingsHeadings) {
-		page = 0
-	}
-	d.text(settingsHeadings[page], 220, 35, w-245, 39, 2, 4)
-	d.text(settingsSubtitles[page], 222, 79, w-244, 23, 0, 5)
+	shown := settingsPage(page)
+	d.text(shown.Title, 220, 35, w-245, 39, 2, 4)
+	d.text(shown.Subtitle, 222, 79, w-244, 23, 0, 5)
 	d.fill(219, 121, w-239, 1, 6)
-	d.text(settingsSectionNames[page], 224, 132, 235, 26, 3, 4)
+	d.text(shown.Section, 224, 132, 235, 26, 3, 4)
 	// Shared geometry puts the real EDIT fully inside the painted rounded
 	// field, including its left edge. Fields are now 34px tall, with a compact
 	// 54px row pitch; native text has its own 24px vertically centered HWND.
@@ -111,12 +110,12 @@ func (p *uxSettings) drawSettingsFallback(hdc uintptr) {
 	procSetBkMode.Call(hdc, TRANSPARENT)
 	procSetTextColor.Call(hdc, p.palette.color(p.palette.text))
 	head, _, _ := procSelectObject.Call(hdc, p.titleFont)
-	title := uxPtr(settingsHeadings[p.page])
+	title := uxPtr(settingsPage(p.page).Title)
 	bounds := rect32{sc(220), sc(34), rc.Right - sc(15), sc(80)}
 	procDrawText.Call(hdc, uintptr(unsafe.Pointer(title)), ^uintptr(0), uintptr(unsafe.Pointer(&bounds)), 0)
 	procSelectObject.Call(hdc, head)
 	procSetTextColor.Call(hdc, p.palette.color(p.palette.muted))
-	sub := uxPtr(settingsSubtitles[p.page])
+	sub := uxPtr(settingsPage(p.page).Subtitle)
 	bounds = rect32{sc(222), sc(80), rc.Right - sc(15), sc(110)}
 	procDrawText.Call(hdc, uintptr(unsafe.Pointer(sub)), ^uintptr(0), uintptr(unsafe.Pointer(&bounds)), 0)
 }
@@ -124,7 +123,7 @@ func (p *uxSettings) drawSettingsFallback(hdc uintptr) {
 // Owner-drawn native sidebar BUTTON: focusable, keyboard-activatable, no
 // browser renderer. Only the selected item receives a tinted background.
 func (p *uxSettings) drawSidebarItem(item *drawItemStruct, index int) bool {
-	if p == nil || item == nil || index < 0 || index >= len(settingsHeadings) {
+	if p == nil || item == nil || index < 0 || index >= len(contract.Pages()) {
 		return false
 	}
 	r := item.Rect
@@ -159,7 +158,7 @@ func (p *uxSettings) drawSidebarItem(item *drawItemStruct, index int) bool {
 		old, _, _ := procSelectObject.Call(item.Hdc, p.font)
 		defer procSelectObject.Call(item.Hdc, old)
 	}
-	label := uxPtr(settingsHeadings[index])
+	label := uxPtr(contract.Pages()[index].Title)
 	r.Left += 18
 	procDrawText.Call(item.Hdc, uintptr(unsafe.Pointer(label)), ^uintptr(0), uintptr(unsafe.Pointer(&r)), DT_VCENTER|DT_SINGLELINE)
 	if item.ItemState&0x0010 != 0 {

@@ -13,6 +13,9 @@ func TestSettingsCatalogKeepsSharedPagesAndOrder(t *testing.T) {
 	if len(pages) != 3 || pages[0].ID != "speech" || pages[1].ID != "writing" || pages[2].ID != "input" {
 		t.Fatalf("pages: %+v", pages)
 	}
+	if pages[0].Title != "语音识别" || pages[1].Section != "模型配置" || pages[2].Subtitle == "" {
+		t.Fatalf("page copy: %+v", pages)
+	}
 	speech := ids(Stacked("speech", Windows))
 	if join(speech) != "asr_base_url asr_model asr_api_key" {
 		t.Fatalf("speech rows: %v", speech)
