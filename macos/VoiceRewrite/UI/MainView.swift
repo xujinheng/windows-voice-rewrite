@@ -84,7 +84,7 @@ struct MainView: View {
                 GroupBox("选区改写") {
                     VStack(alignment: .leading, spacing: 8) {
                         TextField("输入改写/翻译指令，再切到其他应用选中文字", text: $model.taskInstruction)
-                        Text("Mouse4：按住说话，松开听写；Mouse5：选中文字，按住说出修改要求，松开处理。短按侧键保留正常导航。")
+                        Text("侧键默认：Mouse4 听写、Mouse5 选区改写；在设置中调整后按新绑定执行。短按侧键保留正常导航。")
                             .font(.footnote).foregroundStyle(.secondary)
                         Text("键盘默认：Ctrl+Option+R 听写、Ctrl+Option+E 语音改写、Ctrl+Option+T 文字指令；可在设置中更改。")
                             .font(.footnote).foregroundStyle(.secondary)

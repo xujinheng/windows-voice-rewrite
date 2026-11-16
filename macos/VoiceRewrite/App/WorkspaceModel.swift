@@ -354,8 +354,8 @@ final class WorkspaceModel: ObservableObject {
             onObservedButton: { [weak self] button in
                 if let action = self?.activeShortcutPlan?.sideButtons.action(for: button) ?? SideMouseBindings().action(for: button) {
                     self?.sideMouseStatus = action == .dictation
-                        ? "已收到 Mouse4 按下；继续按住以开始听写"
-                        : "已收到 Mouse5 按下；继续按住以开始改写"
+                        ? "已收到 Mouse\(button + 1) 按下；继续按住以开始听写"
+                        : "已收到 Mouse\(button + 1) 按下；继续按住以开始改写"
                 } else {
                     self?.sideMouseStatus = "检测到辅助鼠标按钮 \(button)；当前绑定按钮 3/4"
                 }
@@ -638,7 +638,7 @@ final class WorkspaceModel: ObservableObject {
                 isVoiceSelectionRecording = true
                 isRecording = true
                 showIndicator(phase: .recording, mode: "改写", pending: false)
-                recordingStatus = "语音修改选区录音中；松开 Mouse5 或再次按 Ctrl+Option+E 结束"
+                recordingStatus = "语音修改选区录音中；松开当前绑定侧键或再次按配置的快捷键结束"
                 interactionStatus = "已锁定选区；录音后校验焦点与选区是否仍有效"
             } catch {
                 microphone.cancel()
@@ -682,7 +682,7 @@ final class WorkspaceModel: ObservableObject {
                 guard resultGeneration.accepts(token) else { microphone.cancel(); return }
                 isRecording = true
                 showIndicator(phase: .recording, mode: "听写", pending: false)
-                recordingStatus = "录音中；松开 Mouse4 或再次按 Ctrl+Option+R 停止"
+                recordingStatus = "录音中；松开当前绑定侧键或再次按配置的快捷键停止"
             } catch {
                 recordingStatus = "无法启动麦克风：\(error.localizedDescription)"
                 showIndicator(phase: .error, mode: "听写", pending: false)
