@@ -308,14 +308,16 @@ func (p *uxSettings) acceptShortcutKey(vk, mods uint32) {
 	winL, _, _ := procGetAsyncKeyState.Call(0x5B)
 	winR, _, _ := procGetAsyncKeyState.Call(0x5C)
 	candidate, err := shortcut.CaptureKey(vk, mods, winL&0x8000 != 0 || winR&0x8000 != 0)
-	if text, ok := shortcut.CaptureFailure(err); ok {
+	switch shortcut.AfterCaptureKey(err) {
+	case shortcut.ShortcutCaptureHint:
+		text, _ := shortcut.CaptureFailure(err)
 		uxSetText(p.hint, text)
 		return
-	}
-	if err != nil {
+	case shortcut.ShortcutCaptureIgnore:
 		return
+	default:
+		p.acceptShortcut(candidate)
 	}
-	p.acceptShortcut(candidate)
 }
 func (p *uxSettings) acceptShortcut(candidate string) {
 	if p == nil || p.capturingShortcut == 0 {
@@ -331,7 +333,8 @@ func (p *uxSettings) acceptShortcut(candidate string) {
 		target = p.shortcut
 		normalized, err = shortcut.ValidateDictation(candidate, uxWinText(p.rewriteShortcut), p.app.cfg.HotkeyExit)
 	}
-	if text, ok := shortcut.CaptureFailure(err); ok {
+	if shortcut.AfterCaptureField(err) == shortcut.ShortcutCaptureHint {
+		text, _ := shortcut.CaptureFailure(err)
 		uxSetText(p.hint, text)
 		return
 	}

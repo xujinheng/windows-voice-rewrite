@@ -252,6 +252,41 @@ func ValidateRewrite(candidate, dictation, exit string) (string, error) {
 
 // AssignPair trims the two settings fields, validates rewrite, then dictation.
 // A validation error leaves the stored shortcuts unchanged.
+// ShortcutCaptureStep is what the settings window does after a capture attempt.
+type ShortcutCaptureStep int
+
+const (
+	ShortcutCaptureHint ShortcutCaptureStep = iota
+	ShortcutCaptureIgnore
+	ShortcutCaptureAccept
+	ShortcutCaptureStore
+)
+
+// AfterCaptureKey is the physical-key result.
+// A known failure shows the hint and keeps capturing.
+// A skipped modifier stays silent and keeps capturing.
+// A candidate continues into field validation.
+func AfterCaptureKey(err error) ShortcutCaptureStep {
+	if _, ok := CaptureFailure(err); ok {
+		return ShortcutCaptureHint
+	}
+	if err != nil {
+		return ShortcutCaptureIgnore
+	}
+	return ShortcutCaptureAccept
+}
+
+// AfterCaptureField is the field-validation result.
+// A known failure shows the hint and keeps capturing.
+// Success stores the shortcut and stops capture.
+// A non-hint error still stores, unlike the physical-key step.
+func AfterCaptureField(err error) ShortcutCaptureStep {
+	if _, ok := CaptureFailure(err); ok {
+		return ShortcutCaptureHint
+	}
+	return ShortcutCaptureStore
+}
+
 // CaptureFailure is the settings hint for a capture error.
 // A modifier that should be ignored returns ok=false. The Windows-key sentence has no prefix.
 func CaptureFailure(err error) (string, bool) {

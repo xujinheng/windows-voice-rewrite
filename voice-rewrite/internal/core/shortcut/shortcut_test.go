@@ -58,6 +58,12 @@ func TestDictationAndRewriteShortcutCollisions(t *testing.T) {
 	if text, ok := CaptureFailure(errors.New("其它")); !ok || text != CaptureFailedPrefix+"其它" {
 		t.Fatal(text)
 	}
+	if AfterCaptureKey(nil) != ShortcutCaptureAccept || AfterCaptureKey(ErrSkipCapture) != ShortcutCaptureIgnore || AfterCaptureKey(errors.New(WinCaptureMessage)) != ShortcutCaptureHint || AfterCaptureKey(errors.New("其它")) != ShortcutCaptureHint {
+		t.Fatal("capture key")
+	}
+	if AfterCaptureField(nil) != ShortcutCaptureStore || AfterCaptureField(ErrSkipCapture) != ShortcutCaptureStore || AfterCaptureField(errors.New("其它")) != ShortcutCaptureHint {
+		t.Fatal("capture field")
+	}
 	if SettingsKeyAction(true, 0x0100, 0x1B) != SettingsKeyCancel || SettingsKeyAction(true, 0x0104, 0x41) != SettingsKeyAccept || SettingsKeyAction(false, 0x0100, 0x1B) != SettingsKeyClose || SettingsKeyAction(false, 0x0104, 0x1B) != SettingsKeyIgnore {
 		t.Fatal("settings key")
 	}
