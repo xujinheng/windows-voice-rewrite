@@ -270,8 +270,7 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    /// The old registry is restored if macOS rejects a replacement shortcut.
-    /// A complete plan is validated before touching any global registration.
+    /// Keep working global shortcuts registered until every new key succeeds.
     @discardableResult
     private func register(dictation: ShortcutBinding, rewrite: ShortcutBinding,
                           textEdit: ShortcutBinding) -> Bool {
@@ -280,50 +279,41 @@ final class WorkspaceModel: ObservableObject {
             return false
         }
         let label = "\(MacShortcut.display(dictation.normalized)) 听写；\(MacShortcut.display(textEdit.normalized)) 文本指令；\(MacShortcut.display(rewrite.normalized)) 语音修改选区"
-        if let current = activeShortcutPlan, next.sameKeyboard(as: current) {
-            activeShortcutPlan = next
-            sideMouse?.setBindings(next.sideButtons)
-            interactionStatus = label
-            return true
-        }
-        let previous = activeShortcutPlan
-        hotKeys?.shutdown()
-        hotKeyDriver?.shutdown()
-        hotKeys = nil
-        hotKeyDriver = nil
-        activeShortcutPlan = nil
         do {
-            let (driver, registry) = try createHotKeyRegistry(plan: next)
-            hotKeyDriver = driver
-            hotKeys = registry
+            if let registry = hotKeys {
+                try registry.replace(with: next.keyboard)
+            } else {
+                let (driver, registry) = try createHotKeyRegistry(plan: next)
+                hotKeyDriver = driver
+                hotKeys = registry
+            }
             activeShortcutPlan = next
             sideMouse?.setBindings(next.sideButtons)
             interactionStatus = label
             return true
         } catch {
-            restoreShortcutPlan(previous)
-            interactionStatus = "快捷键注册失败：\(error.localizedDescription)；已尝试恢复先前的快捷键"
+            interactionStatus = "快捷键注册失败：\(error.localizedDescription)；原快捷键保持有效"
             return false
         }
     }
 
     private func restoreShortcutPlan(_ previous: MacShortcutPlan?) {
-        if let previous, let current = activeShortcutPlan, current.sameKeyboard(as: previous) {
-            activeShortcutPlan = previous
-            sideMouse?.setBindings(previous.sideButtons)
+        guard let registry = hotKeys else {
+            if let previous, let restored = try? createHotKeyRegistry(plan: previous) {
+                hotKeyDriver = restored.0
+                hotKeys = restored.1
+                activeShortcutPlan = previous
+                sideMouse?.setBindings(previous.sideButtons)
+            }
             return
         }
-        hotKeys?.shutdown()
-        hotKeyDriver?.shutdown()
-        hotKeys = nil
-        hotKeyDriver = nil
-        activeShortcutPlan = nil
-        if let previous, let restored = try? createHotKeyRegistry(plan: previous) {
-            hotKeyDriver = restored.0
-            hotKeys = restored.1
+        do {
+            try registry.replace(with: previous?.keyboard ?? [])
             activeShortcutPlan = previous
+            sideMouse?.setBindings(previous?.sideButtons ?? SideMouseBindings())
+        } catch {
+            interactionStatus = "无法恢复原快捷键：\(error.localizedDescription)"
         }
-        sideMouse?.setBindings(activeShortcutPlan?.sideButtons ?? SideMouseBindings())
     }
 
     private func createHotKeyRegistry(plan: MacShortcutPlan) throws -> (CarbonHotKeyDriver, HotKeyRegistry) {
