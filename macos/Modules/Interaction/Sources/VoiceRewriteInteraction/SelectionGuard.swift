@@ -56,10 +56,14 @@ public struct SelectionObservation: Sendable {
     public let isSecure: Bool
     /// Incremented by the native monitoring backend on AX focus/selection/value changes or app activation.
     public let revision: UInt64
+    /// Complete AX text value, when exposed by the control. Required if the
+    /// control does not support selection/value change notifications.
+    public let fullValue: String?
 
     public init(processID: Int32, identity: any FocusIdentity,
                 identityDescription: String, selectedText: String, range: TextRange,
-                isEditable: Bool, isSecure: Bool, revision: UInt64) {
+                isEditable: Bool, isSecure: Bool, revision: UInt64,
+                fullValue: String? = nil) {
         self.processID = processID
         self.identity = identity
         self.identityDescription = identityDescription
@@ -68,6 +72,7 @@ public struct SelectionObservation: Sendable {
         self.isEditable = isEditable
         self.isSecure = isSecure
         self.revision = revision
+        self.fullValue = fullValue
     }
 }
 
@@ -226,7 +231,8 @@ public actor InteractionSession {
         }
         guard snapshot.evidence.revision == current.revision,
               snapshot.range == current.range,
-              snapshot.originalSelectedText == current.selectedText else {
+              snapshot.originalSelectedText == current.selectedText,
+              snapshot.evidence.fullValue == nil || snapshot.evidence.fullValue == current.fullValue else {
             throw InteractionFailure.selectionChanged
         }
         // No suspension point before native revalidation and either AX or guarded paste.
