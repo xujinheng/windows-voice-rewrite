@@ -63,6 +63,11 @@ const (
 	FinishMeeting
 )
 
+// HoldEventApplies reports that a posted release or timeout still belongs to the active hold.
+func HoldEventApplies(holdMode, recording, sameSession bool) bool {
+	return holdMode && recording && sameSession
+}
+
 func FinishRecording(holdMode, dictation, meeting bool) RecordingFinish {
 	if !holdMode {
 		return FinishToggle

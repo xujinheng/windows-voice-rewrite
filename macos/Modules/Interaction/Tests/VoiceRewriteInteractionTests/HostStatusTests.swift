@@ -208,6 +208,13 @@ final class HostStatusTests: XCTestCase {
         XCTAssertFalse(dictation.cancelTask)
     }
 
+    func testShortcutParseFailurePrefersTheTransportError() {
+        XCTAssertEqual(shortcutParseFailure(transport: "断开", userText: "格式不对"), "断开")
+        XCTAssertEqual(shortcutParseFailure(transport: nil, userText: "格式不对"), "格式不对")
+        XCTAssertEqual(shortcutParseFailure(transport: nil, userText: ""), "")
+        XCTAssertEqual(shortcutParseFailure(transport: nil, userText: nil), "无法解析")
+    }
+
     func testHelperConnectionKeepsTheHandshakeSentencesApart() {
         let missing = helperConnectionEffect(.bundleMissing)
         XCTAssertEqual(missing.failedDetail, helperBundleMissing())

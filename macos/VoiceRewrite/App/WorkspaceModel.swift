@@ -231,10 +231,10 @@ final class WorkspaceModel: ObservableObject {
                 case .success(let response) where response.ok:
                     done(ShortcutBinding(response.result))
                 case .success(let response):
-                    self.interactionStatus = FailureCopy.status(prefix: "快捷键无效：", message: response.error?.userText ?? "无法解析")
+                    self.interactionStatus = FailureCopy.status(prefix: "快捷键无效：", message: shortcutParseFailure(transport: nil, userText: response.error?.userText))
                     done(nil)
                 case .failure(let failure):
-                    self.interactionStatus = FailureCopy.status(prefix: "快捷键无效：", message: failure.localizedDescription)
+                    self.interactionStatus = FailureCopy.status(prefix: "快捷键无效：", message: shortcutParseFailure(transport: failure.localizedDescription, userText: nil))
                     done(nil)
                 }
             }

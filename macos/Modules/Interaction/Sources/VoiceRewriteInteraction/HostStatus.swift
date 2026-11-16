@@ -114,6 +114,16 @@ public func shortcutPlanLabel(dictation: String, textEdit: String, rewrite: Stri
     "\(dictation) 听写；\(textEdit) 文本指令；\(rewrite) 语音修改选区"
 }
 
+public func shortcutParseFailure(transport: String?, userText: String?) -> String {
+    if let transport {
+        return transport
+    }
+    if let userText {
+        return userText
+    }
+    return "无法解析"
+}
+
 public func shortcutPlanRejected() -> String {
     "快捷键冲突或不受 macOS 支持；原快捷键保持有效"
 }

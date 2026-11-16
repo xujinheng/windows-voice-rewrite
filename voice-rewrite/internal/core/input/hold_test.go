@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+func TestHoldEventAppliesOnlyToTheActiveSession(t *testing.T) {
+	if !HoldEventApplies(true, true, true) || HoldEventApplies(false, true, true) || HoldEventApplies(true, false, true) || HoldEventApplies(true, true, false) {
+		t.Fatal("hold event")
+	}
+}
+
 func TestVoiceStartKeepsSideAndKeyboardWindowsApart(t *testing.T) {
 	if !VoiceStartBlocked(false, false, false, false, true) || VoiceStartBlocked(false, false, false, false, false) {
 		t.Fatal("blocked")

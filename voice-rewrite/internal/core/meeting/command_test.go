@@ -2,6 +2,18 @@ package meeting
 
 import "testing"
 
+func TestPostedMeetingKeepsDemoAvailableWhilePaused(t *testing.T) {
+	if PostedMeetingEffect(PostedStart, true, false, false) != PostedIgnore || PostedMeetingEffect(PostedStart, false, false, false) != PostedBegin {
+		t.Fatal("start")
+	}
+	if PostedMeetingEffect(PostedSuggest, false, false, false) != PostedIgnore || PostedMeetingEffect(PostedSuggest, false, true, true) != PostedIgnore || PostedMeetingEffect(PostedSuggest, false, true, false) != PostedReplies {
+		t.Fatal("suggest")
+	}
+	if PostedMeetingEffect(PostedDemo, true, false, false) != PostedBeginDemo || PostedMeetingEffect(PostedStop, false, false, false) != PostedStopMeeting || PostedMeetingEffect(PostedRefresh, true, true, true) != PostedRefreshMeeting {
+		t.Fatal("demo")
+	}
+}
+
 func TestApplyCommandTogglesViewFlags(t *testing.T) {
 	flags := HUDFlags{SelectedReply: 1, ProfileOpen: true}
 	next, effect := ApplyCommand(flags, CommandTogglePause, 0)

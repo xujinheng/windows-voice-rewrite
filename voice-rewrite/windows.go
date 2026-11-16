@@ -576,27 +576,33 @@ func runApp() {
 			break
 		}
 		switch msg.Message {
-		case WM_MEETING_START:
-			if !app.paused.Load() {
+		case WM_MEETING_START, WM_MEETING_SUGGEST, WM_MEETING_DEMO, WM_MEETING_STOP, WM_MEETING_REFRESH:
+			message := meetingcore.PostedRefresh
+			switch msg.Message {
+			case WM_MEETING_START:
+				message = meetingcore.PostedStart
+			case WM_MEETING_SUGGEST:
+				message = meetingcore.PostedSuggest
+			case WM_MEETING_DEMO:
+				message = meetingcore.PostedDemo
+			case WM_MEETING_STOP:
+				message = meetingcore.PostedStop
+			}
+			switch meetingcore.PostedMeetingEffect(message, app.paused.Load(), app.meeting != nil, app.meeting != nil && app.meeting.demo) {
+			case meetingcore.PostedBegin:
 				app.beginMeeting(uint32(msg.WParam), false)
-			}
-			continue
-		case WM_MEETING_SUGGEST:
-			if app.meeting != nil && !app.meeting.demo {
+			case meetingcore.PostedBeginDemo:
+				app.beginMeeting(0, true)
+			case meetingcore.PostedReplies:
 				app.meeting.requestReplies()
+			case meetingcore.PostedStopMeeting:
+				app.closeMeeting()
+				if holdMeeting != nil {
+					closeHandyStatus()
+				}
+			case meetingcore.PostedRefreshMeeting:
+				app.refreshMeeting()
 			}
-			continue
-		case WM_MEETING_DEMO:
-			app.beginMeeting(0, true)
-			continue
-		case WM_MEETING_STOP:
-			app.closeMeeting()
-			if holdMeeting != nil {
-				closeHandyStatus()
-			}
-			continue
-		case WM_MEETING_REFRESH:
-			app.refreshMeeting()
 			continue
 		}
 		if msg.Message == WM_STATUS_UPDATE {
@@ -828,14 +834,14 @@ func runApp() {
 			return
 		}
 		if msg.Message == WM_HOLD_RELEASE {
-			if cfg.RecordMode == "hold" && active != nil && msg.WParam == holdSession {
+			if input.HoldEventApplies(cfg.RecordMode == "hold", active != nil, msg.WParam == holdSession) {
 				l.Print("hold key released; completing recording")
 				finish()
 			}
 			continue
 		}
 		if msg.Message == WM_HOLD_TIMEOUT {
-			if cfg.RecordMode == "hold" && active != nil && msg.WParam == holdSession {
+			if input.HoldEventApplies(cfg.RecordMode == "hold", active != nil, msg.WParam == holdSession) {
 				stopHoldWatch()
 				rec := active
 				active = nil

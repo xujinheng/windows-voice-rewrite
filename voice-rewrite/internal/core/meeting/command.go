@@ -125,6 +125,52 @@ func ApplyCommand(flags HUDFlags, action Command, replyIndex int) (HUDFlags, Eff
 	}
 }
 
+type PostedMeeting int
+
+const (
+	PostedStart PostedMeeting = iota
+	PostedSuggest
+	PostedDemo
+	PostedStop
+	PostedRefresh
+)
+
+type PostedEffect int
+
+const (
+	PostedIgnore PostedEffect = iota
+	PostedBegin
+	PostedBeginDemo
+	PostedReplies
+	PostedStopMeeting
+	PostedRefreshMeeting
+)
+
+// PostedMeetingEffect is a meeting message from the tray. A paused app ignores a real start.
+// A demo still starts. Suggestions run only for a live meeting.
+func PostedMeetingEffect(message PostedMeeting, paused, hasMeeting, demo bool) PostedEffect {
+	switch message {
+	case PostedStart:
+		if paused {
+			return PostedIgnore
+		}
+		return PostedBegin
+	case PostedSuggest:
+		if !hasMeeting || demo {
+			return PostedIgnore
+		}
+		return PostedReplies
+	case PostedDemo:
+		return PostedBeginDemo
+	case PostedStop:
+		return PostedStopMeeting
+	case PostedRefresh:
+		return PostedRefreshMeeting
+	default:
+		return PostedIgnore
+	}
+}
+
 // CommandFor maps a meeting button id to the action it performs.
 // Reply buttons also return the suggestion index, starting at zero.
 func CommandFor(id int) (Command, int) {
