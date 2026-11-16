@@ -21,6 +21,17 @@ final class HostStatusTests: XCTestCase {
         XCTAssertTrue(rewriteCaptureStatus(InteractionFailure.notEditable, password: "选区").hasPrefix("无法开始语音选区处理："))
     }
 
+    func testTranscriptAndModelRepliesKeepEmptyAndPreviewRules() {
+        XCTAssertEqual(transcriptReply(ok: false, text: "a"), .failed)
+        XCTAssertEqual(transcriptReply(ok: true, text: nil), .failed)
+        XCTAssertEqual(transcriptReply(ok: true, text: "  \n"), .empty)
+        XCTAssertEqual(transcriptReply(ok: true, text: "你好"), .ready("你好"))
+        XCTAssertEqual(modelReply(ok: false, text: "a", spoken: false, instruction: nil, mayWrite: true, previewOnly: false), .rejected)
+        XCTAssertEqual(modelReply(ok: true, text: "a", spoken: true, instruction: "", mayWrite: true, previewOnly: false), .missingSpokenInstruction)
+        XCTAssertEqual(modelReply(ok: true, text: "a", spoken: true, instruction: " ", mayWrite: false, previewOnly: true), .preview("a"))
+        XCTAssertEqual(modelReply(ok: true, text: "a", spoken: false, instruction: nil, mayWrite: true, previewOnly: false), .write("a"))
+    }
+
     func testIndicatorCancelChoosesThePreviewAndTerminalPaths() {
         XCTAssertEqual(indicatorCancel(pending: true, terminal: true), .ignoreHold)
         XCTAssertEqual(indicatorCancel(pending: false, terminal: true), .dismiss)

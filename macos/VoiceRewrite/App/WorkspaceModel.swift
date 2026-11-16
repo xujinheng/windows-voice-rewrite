@@ -748,40 +748,41 @@ final class WorkspaceModel: ObservableObject {
                         self.isProcessing = false
                         switch reply {
                         case .success(let response):
-                            guard response.ok, let text = response.result?["text"]?.string else {
+                            switch transcriptReply(ok: response.ok, text: response.result?["text"]?.string) {
+                            case .failed:
                                 self.recordingStatus = FailureCopy.status(prefix: "ASR 请求失败：", message: response.error?.userText ?? "invalid_reply")
                                 self.asrProbeStatus = "ASR：实际转写失败"
                                 self.showIndicator(phase: .error, mode: "听写", pending: false)
                                 return
-                            }
-                            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            case .empty:
                                 self.recordingStatus = ResultCopy.dictationEmpty
                                 self.asrProbeStatus = "ASR：实际转写失败"
                                 self.showIndicator(phase: .error, mode: "听写", pending: false)
                                 return
-                            }
-                            self.transcription = text
-                            self.rememberHistory(title: ResultCopy.dictationHistory, value: text)
-                            self.recordingStatus = "语音识别已完成"
-                            self.asrProbeStatus = "ASR：真实录音识别成功"
-                            if let insertion {
-                                self.showIndicator(phase: .applying, mode: "听写", pending: false)
-                                Task { @MainActor [weak self] in
-                                    guard let self, self.resultGeneration.accepts(token) else { return }
-                                    do {
-                                        try await self.interaction.insertIfCurrent(
-                                            insertion.snapshot, text: text, generation: insertion.generation)
-                                        self.interactionStatus = "已安全插入原目标"
-                                        self.showIndicator(phase: .success, mode: "听写", pending: false)
-                                    } catch {
-                                        self.interactionStatus = insertionStatus(error, rewrite: false, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation)
-                                        ResultCardPanel.shared.present(title: ResultCopy.dictationCopyManually, text: text)
-                                        self.showIndicator(phase: .fallback, mode: "听写", pending: false)
+                            case .ready(let text):
+                                self.transcription = text
+                                self.rememberHistory(title: ResultCopy.dictationHistory, value: text)
+                                self.recordingStatus = "语音识别已完成"
+                                self.asrProbeStatus = "ASR：真实录音识别成功"
+                                if let insertion {
+                                    self.showIndicator(phase: .applying, mode: "听写", pending: false)
+                                    Task { @MainActor [weak self] in
+                                        guard let self, self.resultGeneration.accepts(token) else { return }
+                                        do {
+                                            try await self.interaction.insertIfCurrent(
+                                                insertion.snapshot, text: text, generation: insertion.generation)
+                                            self.interactionStatus = "已安全插入原目标"
+                                            self.showIndicator(phase: .success, mode: "听写", pending: false)
+                                        } catch {
+                                            self.interactionStatus = insertionStatus(error, rewrite: false, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation)
+                                            ResultCardPanel.shared.present(title: ResultCopy.dictationCopyManually, text: text)
+                                            self.showIndicator(phase: .fallback, mode: "听写", pending: false)
+                                        }
                                     }
+                                } else {
+                                    ResultCardPanel.shared.present(title: ResultCopy.dictationNotInserted, text: text)
+                                    self.showIndicator(phase: .fallback, mode: "听写", pending: false)
                                 }
-                            } else {
-                                ResultCardPanel.shared.present(title: ResultCopy.dictationNotInserted, text: text)
-                                self.showIndicator(phase: .fallback, mode: "听写", pending: false)
                             }
                         case .failure(let failure):
                             self.recordingStatus = "识别失败：\(failure.localizedDescription)"
@@ -882,7 +883,16 @@ final class WorkspaceModel: ObservableObject {
         isProcessing = false
         switch reply {
         case .success(let response):
-            guard response.ok, let text = response.result?["text"]?.string else {
+            let result = response.result
+            let decision = modelReply(
+                ok: response.ok,
+                text: result?["text"]?.string,
+                spoken: spoken,
+                instruction: result?["instruction"]?.string,
+                mayWrite: result?["may_attempt_replace"]?.boolValue == true,
+                previewOnly: result?["preview_only"]?.boolValue != false)
+            switch decision {
+            case .rejected:
                 interactionStatus = FailureCopy.status(prefix: "模型处理失败：", message: response.error?.userText ?? "invalid_reply")
                 if spoken {
                     recordingStatus = "语音修改未完成"
@@ -892,46 +902,43 @@ final class WorkspaceModel: ObservableObject {
                 showIndicator(phase: .error, mode: "改写", pending: false)
                 Task { await interaction.cancelTask(generation: generation) }
                 return
-            }
-            if spoken {
-                guard let instruction = response.result?["instruction"]?.string,
-                      !instruction.isEmpty else {
-                    interactionStatus = "语音指令响应缺失；未写入原选区"
-                    showIndicator(phase: .error, mode: "改写", pending: false)
+            case .missingSpokenInstruction:
+                interactionStatus = "语音指令响应缺失；未写入原选区"
+                showIndicator(phase: .error, mode: "改写", pending: false)
+                Task { await interaction.cancelTask(generation: generation) }
+                return
+            case .preview(let text), .write(let text):
+                if spoken, let instruction = result?["instruction"]?.string {
+                    transcription = instruction
+                    rememberHistory(title: ResultCopy.dictationHistory, value: instruction)
+                    asrProbeStatus = "ASR：语音指令识别成功"
+                    recordingStatus = "语音修改已处理"
+                }
+                processedText = text
+                let intent = result?["intent"]?.string ?? ""
+                rememberHistory(title: ResultCopy.historyTitle(intent: intent), value: text)
+                llmProbeStatus = "LLM：实际文本任务成功"
+                let cardTitle = ResultCopy.cardTitle(intent: intent)
+                guard case .write = decision else {
+                    ResultCardPanel.shared.present(title: cardTitle, text: text)
+                    interactionStatus = "仅预览结果；未获模型路由修改授权"
+                    showIndicator(phase: .answer, mode: "改写", pending: false)
                     Task { await interaction.cancelTask(generation: generation) }
                     return
                 }
-                transcription = instruction
-                rememberHistory(title: ResultCopy.dictationHistory, value: instruction)
-                asrProbeStatus = "ASR：语音指令识别成功"
-                recordingStatus = "语音修改已处理"
-            }
-            processedText = text
-            let intent = response.result?["intent"]?.string ?? ""
-            rememberHistory(title: ResultCopy.historyTitle(intent: intent), value: text)
-            llmProbeStatus = "LLM：实际文本任务成功"
-            let cardTitle = ResultCopy.cardTitle(intent: intent)
-            let mayWrite = response.result?["may_attempt_replace"]?.boolValue == true
-            let previewOnly = response.result?["preview_only"]?.boolValue != false
-            guard mayWrite && !previewOnly else {
-                ResultCardPanel.shared.present(title: cardTitle, text: text)
-                interactionStatus = "仅预览结果；未获模型路由修改授权"
-                showIndicator(phase: .answer, mode: "改写", pending: false)
-                Task { await interaction.cancelTask(generation: generation) }
-                return
-            }
-            showIndicator(phase: .applying, mode: "改写", pending: false)
-            Task { @MainActor [weak self] in
-                guard let self, self.resultGeneration.accepts(token) else { return }
-                do {
-                    try await self.interaction.replaceIfCurrent(snapshot, with: text,
-                                                               generation: generation)
-                    self.interactionStatus = "原选区验证通过并已替换"
-                    self.showIndicator(phase: .success, mode: "改写", pending: false)
-                } catch {
-                    self.interactionStatus = insertionStatus(error, rewrite: true, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation)
-                    ResultCardPanel.shared.present(title: cardTitle, text: text)
-                    self.showIndicator(phase: .fallback, mode: "改写", pending: false)
+                showIndicator(phase: .applying, mode: "改写", pending: false)
+                Task { @MainActor [weak self] in
+                    guard let self, self.resultGeneration.accepts(token) else { return }
+                    do {
+                        try await self.interaction.replaceIfCurrent(snapshot, with: text,
+                                                                   generation: generation)
+                        self.interactionStatus = "原选区验证通过并已替换"
+                        self.showIndicator(phase: .success, mode: "改写", pending: false)
+                    } catch {
+                        self.interactionStatus = insertionStatus(error, rewrite: true, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation)
+                        ResultCardPanel.shared.present(title: cardTitle, text: text)
+                        self.showIndicator(phase: .fallback, mode: "改写", pending: false)
+                    }
                 }
             }
         case .failure(let failure):
