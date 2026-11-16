@@ -21,6 +21,14 @@ final class HostStatusTests: XCTestCase {
         XCTAssertTrue(rewriteCaptureStatus(InteractionFailure.notEditable, password: "选区").hasPrefix("无法开始语音选区处理："))
     }
 
+    func testServiceProbeKeepsAMatchingMessage() {
+        XCTAssertEqual(serviceProbeRunning(name: "ASR", running: "正在检测"), "ASR：正在检测")
+        XCTAssertEqual(serviceProbeStatus(name: "ASR", ok: true, kind: "ASR", message: "可用", failure: "x"), "可用")
+        XCTAssertEqual(serviceProbeStatus(name: "ASR", ok: true, kind: "LLM", message: "可用", failure: "invalid_reply"), "ASR：检测失败（invalid_reply）")
+        XCTAssertEqual(serviceProbeStatus(name: "LLM", ok: false, kind: "LLM", message: "可用", failure: "timeout"), "LLM：检测失败（timeout）")
+        XCTAssertEqual(serviceProbeConfigStatus(name: "LLM", detail: "缺密钥"), "LLM：无法读取服务配置（缺密钥）")
+    }
+
     func testTranscriptAndModelRepliesKeepEmptyAndPreviewRules() {
         XCTAssertEqual(transcriptReply(ok: false, text: "a"), .failed)
         XCTAssertEqual(transcriptReply(ok: true, text: nil), .failed)

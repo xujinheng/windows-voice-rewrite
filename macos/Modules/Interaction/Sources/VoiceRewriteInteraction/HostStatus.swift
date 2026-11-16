@@ -53,6 +53,21 @@ public func insertionStatus(_ error: Error, rewrite: Bool, passwordRewrite: Stri
     return "原应用写入未完成；结果已保留，可手动复制"
 }
 
+public func serviceProbeRunning(name: String, running: String) -> String {
+    return name + "：" + running
+}
+
+public func serviceProbeConfigStatus(name: String, detail: String) -> String {
+    return "\(name)：无法读取服务配置（\(detail)）"
+}
+
+public func serviceProbeStatus(name: String, ok: Bool, kind: String?, message: String?, failure: String) -> String {
+    if ok, kind == name, let message {
+        return message
+    }
+    return "\(name)：检测失败（\(failure)）"
+}
+
 public enum TranscriptReply: Equatable, Sendable {
     case failed
     case empty

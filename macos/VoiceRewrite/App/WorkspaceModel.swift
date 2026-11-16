@@ -527,7 +527,7 @@ final class WorkspaceModel: ObservableObject {
             case .spokenSelectedTask:
                 continue
             }
-            setProbeStatus("\(name)：" + ServiceProbeCopy.running, for: operation)
+            setProbeStatus(serviceProbeRunning(name: name, running: ServiceProbeCopy.running), for: operation)
             do {
                 let config = try requestConfig(for: operation)
                 let id = bridge.send(operation: bridgeOperation, fields: ["config": config]) {
@@ -538,23 +538,21 @@ final class WorkspaceModel: ObservableObject {
                         self.isCheckingServices = !self.activeProbeIDs.isEmpty
                         switch response {
                         case .success(let reply):
-                            if reply.ok, reply.result?["kind"]?.string == name,
-                               let message = reply.result?["message"]?.string {
-                                self.setProbeStatus(message, for: operation)
-                            } else {
-                                self.setProbeStatus("\(name)：检测失败（\(reply.error?.code ?? "invalid_reply")）",
-                                                    for: operation)
-                            }
+                            self.setProbeStatus(serviceProbeStatus(
+                                name: name, ok: reply.ok, kind: reply.result?["kind"]?.string,
+                                message: reply.result?["message"]?.string,
+                                failure: reply.error?.code ?? "invalid_reply"), for: operation)
                         case .failure(let error):
-                            self.setProbeStatus("\(name)：检测失败（\(error.localizedDescription)）",
-                                                for: operation)
+                            self.setProbeStatus(serviceProbeStatus(
+                                name: name, ok: false, kind: nil, message: nil,
+                                failure: error.localizedDescription), for: operation)
                         }
                     }
                 }
                 activeProbeIDs[bridgeOperation] = id
                 isCheckingServices = true
             } catch {
-                setProbeStatus("\(name)：无法读取服务配置（\(error.localizedDescription)）",
+                setProbeStatus(serviceProbeConfigStatus(name: name, detail: error.localizedDescription),
                                for: operation)
             }
         }
