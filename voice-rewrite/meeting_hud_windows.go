@@ -414,7 +414,7 @@ func updateMeetingHUD(view meetingView) {
 	}
 	meetingEnableWindow.Call(p.buttons[12], meetingBool(meetingcore.AcceptEnabled(p.owner != 0, view.reply.PendingAvailable, p.paused)))
 	p.setText(p.buttons[12], meetingcore.ButtonFace(meetingcore.ButtonAcceptReplies, buttons), false)
-	if p.paused {
+	if !meetingcore.RefreshReading(p.paused) {
 		return
 	}
 	panels := meetingcore.BuildReadingPanels(view.captions)
@@ -440,9 +440,7 @@ func updateMeetingHUD(view meetingView) {
 		p.unreadHistory = meetingcore.UnreadHistory(p.unreadHistory, p.historyCount, panels.HistoryCount, p.followLatest)
 		p.historyCount = panels.HistoryCount
 	}
-	if p.followLatest {
-		p.unreadHistory = 0
-	}
+	p.unreadHistory = meetingcore.ShownUnread(p.followLatest, p.unreadHistory)
 	p.setText(p.labels[3], meetingcore.HistoryHeading(panels.HistoryCount, p.unreadHistory), false)
 	p.displayedReplies, p.displayedTip = view.reply.Displayed.Lines, view.reply.Displayed.Tip
 	p.renderReply()
@@ -465,7 +463,7 @@ func updateMeetingHUD(view meetingView) {
 	}
 	original := meetingcore.ExpressionDetail(view.expressionStatus, view.expressionSource)
 	p.setText(p.expressionSource, original, true)
-	meetingEnableWindow.Call(p.buttons[5], meetingBool(p.copyExpression != ""))
+	meetingEnableWindow.Call(p.buttons[5], meetingBool(meetingcore.ExpressionCopyEnabled(p.copyExpression)))
 }
 
 func (p *meetingHUD) renderReply() {
