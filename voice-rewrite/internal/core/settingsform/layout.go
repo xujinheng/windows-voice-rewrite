@@ -5,6 +5,8 @@ package settingsform
 const (
 	DesignWidth   int32 = 816
 	DesignHeight  int32 = 484
+	WindowWidth   int32 = 860
+	WindowHeight  int32 = 530
 	MinWidth            = 480
 	MinHeight           = 420
 	MinWorkMargin       = 12

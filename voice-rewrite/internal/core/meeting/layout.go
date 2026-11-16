@@ -94,6 +94,16 @@ func ProfileLayout(width, height int32, m ProfileMetrics) []Box {
 	return boxes
 }
 
+const (
+	MinClientWidth  int32 = 600
+	MinClientHeight int32 = 720
+)
+
+// LogicalDrag is a splitter movement in 96-DPI pixels.
+func LogicalDrag(y, origin int32, scale float64) int32 {
+	return int32(float64(y-origin) / scale)
+}
+
 func NextFontSize(current, delta int32) int32 {
 	return max(12, min(28, current+delta))
 }

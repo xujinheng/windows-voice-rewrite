@@ -885,7 +885,7 @@ func showNativeSettings(app *appState) error {
 	}
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*scale + 0.5)) }
 	work := uxWorkAreaAtCursor()
-	winW, winH := desktop.Fit(int32(sc(860)), int32(sc(530)), work, 12)
+	winW, winH := desktop.Fit(int32(sc(settingsform.WindowWidth)), int32(sc(settingsform.WindowHeight)), work, settingsform.MinWorkMargin)
 	// The recording pill stays near the bottom of the work area. Settings opens in the middle.
 	x, y := desktop.Center(winW, winH, work)
 	h, _, createErr := procCreateWindow.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),

@@ -18,6 +18,9 @@ func TestResponsiveSettingsRect(t *testing.T) {
 }
 
 func TestMinimumSettingsWindowFitsWorkArea(t *testing.T) {
+	if WindowWidth != 860 || WindowHeight != 530 {
+		t.Fatal("settings window size")
+	}
 	w, h := MinimumSize(1, 2000, 2000)
 	if w != MinWidth || h != MinHeight {
 		t.Fatalf("design minimum %d %d", w, h)

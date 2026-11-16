@@ -266,7 +266,7 @@ func (p *meetingHUD) dragSplitterTo(y int32) {
 	if p.dragDivider < 0 {
 		return
 	}
-	delta := int32(float64(y-p.dragY) / p.scale)
+	delta := meetingcore.LogicalDrag(y, p.dragY, p.scale)
 	if delta == 0 {
 		return
 	}
@@ -534,7 +534,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			var bounds rect32
 			popupGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds)))
 			work := uxWorkAreaForPoint(trayPoint{X: bounds.Left, Y: bounds.Top})
-			w, h := desktop.Fit(p.px(600), p.px(720), work, 0)
+			w, h := desktop.Fit(p.px(meetingcore.MinClientWidth), p.px(meetingcore.MinClientHeight), work, 0)
 			info.MinSize = trayPoint{X: w, Y: h}
 			return 0
 
