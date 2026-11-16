@@ -46,6 +46,12 @@ public struct MacSettings: Codable, Equatable, Sendable {
     public static let defaults = MacSettings()
     /// Same inclusive range core Normalize keeps. Values outside it become 60.
     public static let recordSeconds = 1...180
+    /// Same byte limit as core MaxCredentialBytes. A blank field still means keep the saved key.
+    public static let maxCredentialBytes = 4000
+
+    public static func credentialTooLong(_ value: String) -> Bool {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).utf8.count > maxCredentialBytes
+    }
 
     /// Applies the core recording-length and base-URL rules before the values
     /// are stored or sent to the helper.

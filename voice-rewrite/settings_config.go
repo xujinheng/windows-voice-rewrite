@@ -16,7 +16,7 @@ func uxUpdatedConfig(old Config, values [6]string) (Config, error) {
 	}
 	asrKey := strings.TrimSpace(values[2])
 	llmKey := strings.TrimSpace(values[5])
-	if len(asrKey) > 4000 || len(llmKey) > 4000 {
+	if len(asrKey) > coreconfig.MaxCredentialBytes || len(llmKey) > coreconfig.MaxCredentialBytes {
 		return old, errors.New("输入内容过长")
 	}
 	cfg := old

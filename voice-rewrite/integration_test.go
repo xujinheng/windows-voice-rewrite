@@ -61,6 +61,15 @@ func TestConfigValuesValidation(t *testing.T) {
 	if e == nil {
 		t.Fatal("must reject unsupported API URL")
 	}
+	longKey := strings.Repeat("k", 4001)
+	_, e = uxUpdatedConfig(cfg, [6]string{"http://127.0.0.1:8081/v1", "m", longKey, "http://127.0.0.1:1234/v1", "auto", "  " + longKey})
+	if e == nil || e.Error() != "输入内容过长" {
+		t.Fatalf("credential length: %v", e)
+	}
+	_, e = uxUpdatedConfig(cfg, [6]string{"http://127.0.0.1:8081/v1", "m", strings.Repeat("k", 4000), "http://127.0.0.1:1234/v1", "auto", ""})
+	if e != nil {
+		t.Fatalf("4000-byte key rejected: %v", e)
+	}
 }
 func TestNativeServiceProbe(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -164,6 +164,10 @@ final class WorkspaceModel: ObservableObject {
             settingsStatus = SettingsCopy.saveWhileBusy
             return
         }
+        if MacSettings.credentialTooLong(asrKeyInput) || MacSettings.credentialTooLong(llmKeyInput) {
+            settingsStatus = "输入内容过长"
+            return
+        }
         guard let dictation = ShortcutBinding(canonical: settings.dictationShortcut),
               let rewrite = ShortcutBinding(canonical: settings.rewriteShortcut),
               let textEdit = ShortcutBinding(canonical: settings.textEditShortcut),

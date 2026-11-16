@@ -152,8 +152,9 @@ func ValidateBaseURL(base string) error {
 }
 
 const (
-	MaxEndpointBytes = 500
-	MaxModelIDBytes  = 150
+	MaxEndpointBytes   = 500
+	MaxModelIDBytes    = 150
+	MaxCredentialBytes = 4000
 )
 
 // Endpoints is the non-secret ASR and LLM identity stored by both desktop hosts.
