@@ -27,6 +27,10 @@ final class HostStatusTests: XCTestCase {
         XCTAssertTrue(dictationNoTarget().contains("未指定外部文本框"))
         XCTAssertEqual(dictationMicrophoneFailed("denied"), "无法启动麦克风：denied")
         XCTAssertEqual(dictationInserted(), "已安全插入原目标")
+        XCTAssertNotEqual(rewriteNoTarget(), rewriteNoTargetForSelection())
+        XCTAssertEqual(rewriteReplaced(), "原选区验证通过并已替换")
+        XCTAssertEqual(rewriteTaskFailed("取消"), "文本任务失败或已取消：取消")
+        XCTAssertEqual(rewritePreviewOnly(), "仅预览结果；未获模型路由修改授权")
         XCTAssertEqual(dictationRecognizeFailed("timeout"), "识别失败：timeout")
     }
 

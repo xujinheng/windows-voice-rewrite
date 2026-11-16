@@ -158,6 +158,44 @@ public func dictationRecognizeFailed(_ detail: String) -> String { "识别失败
 
 public func dictationCannotRecognize(_ detail: String) -> String { "无法识别：\(detail)" }
 
+public func shortcutsUnregistered() -> String { "全局快捷键尚未注册" }
+
+public func rewriteNoTargetForSelection() -> String { "无有效前台目标，无法获取选区" }
+
+public func rewriteCapturingSelection() -> String { "正在安全获取原应用选区" }
+
+public func rewriteRecording() -> String { "语音修改选区录音中；松开当前绑定侧键或再次按配置的快捷键结束" }
+
+public func rewriteSelectionLocked() -> String { "已锁定选区；录音后校验焦点与选区是否仍有效" }
+
+public func rewriteVoiceTaskNotStarted() -> String { "语音选区任务未执行" }
+
+public func rewriteNoTarget() -> String { "无有效前台目标" }
+
+public func rewriteNeedInstruction() -> String { "请先在应用中填写选区处理指令" }
+
+public func rewriteCheckingSelection() -> String { "正在校验选区" }
+
+public func rewriteTaskNotStarted(_ detail: String) -> String { "选区任务未执行：\(detail)" }
+
+public func rewriteVoiceIncomplete() -> String { "语音修改未完成" }
+
+public func rewriteInstructionMissing() -> String { "语音指令响应缺失；未写入原选区" }
+
+public func rewriteVoiceHandled() -> String { "语音修改已处理" }
+
+public func rewritePreviewOnly() -> String { "仅预览结果；未获模型路由修改授权" }
+
+public func rewriteReplaced() -> String { "原选区验证通过并已替换" }
+
+public func rewriteTaskFailed(_ detail: String) -> String { "文本任务失败或已取消：\(detail)" }
+
+public func rewriteVoiceFailed() -> String { "语音选区处理失败" }
+
+public func rewriteCanceled() -> String { "已取消" }
+
+public func rewriteCanceledDetail() -> String { "已取消当前操作" }
+
 public func serviceProbeRunning(name: String, running: String) -> String {
     return name + "：" + running
 }

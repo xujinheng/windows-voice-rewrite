@@ -24,7 +24,7 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var asrProbeStatus = ServiceProbeCopy.idle
     @Published private(set) var llmProbeStatus = ServiceProbeCopy.idle
     @Published private(set) var isCheckingServices = false
-    @Published private(set) var interactionStatus = "全局快捷键尚未注册"
+    @Published private(set) var interactionStatus = shortcutsUnregistered()
     @Published private(set) var sideMouseStatus = sideMouseUnchecked()
     @Published private(set) var settingsStatus = ""
     @Published private(set) var transcription: String?
@@ -606,7 +606,7 @@ final class WorkspaceModel: ObservableObject {
             stopRecording()
             return
         case .missingTarget:
-            interactionStatus = "无有效前台目标，无法获取选区"
+            interactionStatus = rewriteNoTargetForSelection()
             return
         case .start(let target):
             pid = target
@@ -614,7 +614,7 @@ final class WorkspaceModel: ObservableObject {
         invalidatePending()
         let token = resultGeneration.begin()
         isStarting = true
-        interactionStatus = "正在安全获取原应用选区"
+        interactionStatus = rewriteCapturingSelection()
         showIndicator(phase: .selection, mode: "改写", pending: false)
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -646,8 +646,8 @@ final class WorkspaceModel: ObservableObject {
                     isVoiceSelectionRecording = true
                     isRecording = true
                     showIndicator(phase: .recording, mode: "改写", pending: false)
-                    recordingStatus = "语音修改选区录音中；松开当前绑定侧键或再次按配置的快捷键结束"
-                    interactionStatus = "已锁定选区；录音后校验焦点与选区是否仍有效"
+                    recordingStatus = rewriteRecording()
+                    interactionStatus = rewriteSelectionLocked()
                 }
             } catch {
                 microphone.cancel()
@@ -807,7 +807,7 @@ final class WorkspaceModel: ObservableObject {
                 showIndicator(phase: .error, mode: indicatorSnapshot.mode, pending: false)
                 if let voiceSelection {
                     await interaction.cancelTask(generation: voiceSelection.generation)
-                    interactionStatus = "语音选区任务未执行"
+                    interactionStatus = rewriteVoiceTaskNotStarted()
                 }
             }
         }
@@ -820,10 +820,10 @@ final class WorkspaceModel: ObservableObject {
             interactionStatus = VoicePauseCopy.paused
             return
         case .missingTarget:
-            interactionStatus = "无有效前台目标"
+            interactionStatus = rewriteNoTarget()
             return
         case .missingInstruction:
-            interactionStatus = "请先在应用中填写选区处理指令"
+            interactionStatus = rewriteNeedInstruction()
             return
         case .start(let target):
             pid = target
@@ -831,7 +831,7 @@ final class WorkspaceModel: ObservableObject {
         invalidatePending()
         let token = resultGeneration.begin()
         isProcessing = true
-        interactionStatus = "正在校验选区"
+        interactionStatus = rewriteCheckingSelection()
         showIndicator(phase: .selection, mode: "改写", pending: false)
         let instruction = taskInstruction
         Task { @MainActor [weak self] in
@@ -872,7 +872,7 @@ final class WorkspaceModel: ObservableObject {
             } catch {
                 guard resultGeneration.accepts(token) else { return }
                 isProcessing = false
-                interactionStatus = "选区任务未执行：\(error.localizedDescription)"
+                interactionStatus = rewriteTaskNotStarted(error.localizedDescription)
                 llmProbeStatus = "LLM：实际任务未完成"
                 showIndicator(phase: .error, mode: "改写", pending: false)
             }
@@ -904,7 +904,7 @@ final class WorkspaceModel: ObservableObject {
             case .rejected:
                 interactionStatus = FailureCopy.status(prefix: "模型处理失败：", message: response.error?.userText ?? "invalid_reply")
                 if spoken {
-                    recordingStatus = "语音修改未完成"
+                    recordingStatus = rewriteVoiceIncomplete()
                     asrProbeStatus = "ASR / LLM：语音选区任务失败"
                 }
                 llmProbeStatus = "LLM：实际任务失败"
@@ -912,7 +912,7 @@ final class WorkspaceModel: ObservableObject {
                 Task { await interaction.cancelTask(generation: generation) }
                 return
             case .missingSpokenInstruction:
-                interactionStatus = "语音指令响应缺失；未写入原选区"
+                interactionStatus = rewriteInstructionMissing()
                 showIndicator(phase: .error, mode: "改写", pending: false)
                 Task { await interaction.cancelTask(generation: generation) }
                 return
@@ -921,7 +921,7 @@ final class WorkspaceModel: ObservableObject {
                     transcription = instruction
                     rememberHistory(title: ResultCopy.dictationHistory, value: instruction)
                     asrProbeStatus = "ASR：语音指令识别成功"
-                    recordingStatus = "语音修改已处理"
+                    recordingStatus = rewriteVoiceHandled()
                 }
                 processedText = text
                 let intent = result?["intent"]?.string ?? ""
@@ -930,7 +930,7 @@ final class WorkspaceModel: ObservableObject {
                 let cardTitle = ResultCopy.cardTitle(intent: intent)
                 guard case .write = decision else {
                     ResultCardPanel.shared.present(title: cardTitle, text: text)
-                    interactionStatus = "仅预览结果；未获模型路由修改授权"
+                    interactionStatus = rewritePreviewOnly()
                     showIndicator(phase: .answer, mode: "改写", pending: false)
                     Task { await interaction.cancelTask(generation: generation) }
                     return
@@ -941,7 +941,7 @@ final class WorkspaceModel: ObservableObject {
                     do {
                         try await self.interaction.replaceIfCurrent(snapshot, with: text,
                                                                    generation: generation)
-                        self.interactionStatus = "原选区验证通过并已替换"
+                        self.interactionStatus = rewriteReplaced()
                         self.showIndicator(phase: .success, mode: "改写", pending: false)
                     } catch {
                         self.interactionStatus = insertionStatus(error, rewrite: true, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation)
@@ -951,9 +951,9 @@ final class WorkspaceModel: ObservableObject {
                 }
             }
         case .failure(let failure):
-            interactionStatus = "文本任务失败或已取消：\(failure.localizedDescription)"
+            interactionStatus = rewriteTaskFailed(failure.localizedDescription)
             llmProbeStatus = "LLM：实际文本任务失败或已取消"
-            if spoken { recordingStatus = "语音选区处理失败" }
+            if spoken { recordingStatus = rewriteVoiceFailed() }
             showIndicator(phase: .error, mode: "改写", pending: false)
             Task { await interaction.cancelTask(generation: generation) }
         }
@@ -984,8 +984,8 @@ final class WorkspaceModel: ObservableObject {
         isRecording = false
         isStarting = false
         isProcessing = false
-        recordingStatus = "已取消"
-        interactionStatus = "已取消当前操作"
+        recordingStatus = rewriteCanceled()
+        interactionStatus = rewriteCanceledDetail()
     }
 
     private func previewIndicator(_ action: SideMouseAction) {
