@@ -19,6 +19,8 @@ const (
 	ApplyChecking = "正在核验原选区并应用…"
 	// ApplyUnsafe is the card status when the selection cannot be replaced.
 	ApplyUnsafe = "无法安全替换，请使用复制结果"
+	// SaveWhileBusy is the settings message when a voice task is still running.
+	SaveWhileBusy = "请先完成当前录音／改写，再保存"
 )
 
 // ResultCardTitle is the floating-card heading for a selected-text result.

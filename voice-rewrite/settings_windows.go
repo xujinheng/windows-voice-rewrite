@@ -16,6 +16,7 @@ import (
 	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/settingsform"
 	"voicerewrite/internal/core/shortcut"
+	"voicerewrite/internal/core/ux"
 )
 
 // A small, native settings surface; it does not host a browser or intercept
@@ -699,7 +700,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 
 func (p *uxSettings) save() error {
 	if p.app.busy.Load() {
-		return errors.New("请先完成当前录音／改写，再保存")
+		return errors.New(ux.SaveWhileBusy)
 	}
 	var fields [6]string
 	for i, h := range p.inputs {

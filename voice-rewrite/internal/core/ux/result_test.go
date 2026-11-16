@@ -27,4 +27,7 @@ func TestResultCardTitles(t *testing.T) {
 	if CopySucceeded != "已复制结果到剪贴板" || CopyFailed != "复制失败，请尝试选中正文复制" {
 		t.Fatal("copy status")
 	}
+	if SaveWhileBusy != "请先完成当前录音／改写，再保存" {
+		t.Fatal("save while busy")
+	}
 }

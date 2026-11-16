@@ -11,6 +11,10 @@ enum ServiceProbeCopy {
     static let stale = "连接配置已修改 · 请重新检测"
 }
 
+enum SettingsCopy {
+    static let saveWhileBusy = "请先完成当前录音／改写，再保存"
+}
+
 @MainActor
 final class WorkspaceModel: ObservableObject {
     enum Connection: Equatable {
@@ -148,6 +152,10 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func saveSettings() {
+        if isRecording || isStarting || isProcessing {
+            settingsStatus = SettingsCopy.saveWhileBusy
+            return
+        }
         cancelProbes()
         defer {
             asrKeyInput = ""
