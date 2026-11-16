@@ -502,13 +502,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		if p != nil && lParam != 0 {
 			bounds := (*uxMinMaxInfo)(unsafe.Pointer(lParam))
 			work := uxWorkAreaAtCursor()
-			minW, minH := int32(480*p.scale), int32(420*p.scale)
-			if minW > work.Right-work.Left-12 {
-				minW = work.Right - work.Left - 12
-			}
-			if minH > work.Bottom-work.Top-12 {
-				minH = work.Bottom - work.Top - 12
-			}
+			minW, minH := settingsform.MinimumSize(p.scale, work.Right-work.Left, work.Bottom-work.Top)
 			bounds.MinSize = trayPoint{X: minW, Y: minH}
 		}
 		return 0

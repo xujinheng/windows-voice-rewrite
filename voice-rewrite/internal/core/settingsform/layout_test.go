@@ -17,6 +17,21 @@ func TestResponsiveSettingsRect(t *testing.T) {
 	}
 }
 
+func TestMinimumSettingsWindowFitsWorkArea(t *testing.T) {
+	w, h := MinimumSize(1, 2000, 2000)
+	if w != MinWidth || h != MinHeight {
+		t.Fatalf("design minimum %d %d", w, h)
+	}
+	w, h = MinimumSize(2, 2000, 2000)
+	if w != 960 || h != 840 {
+		t.Fatalf("scaled minimum %d %d", w, h)
+	}
+	w, h = MinimumSize(2, 100, 80)
+	if w != 88 || h != 68 {
+		t.Fatalf("work area minimum %d %d", w, h)
+	}
+}
+
 func TestClampScroll(t *testing.T) {
 	if ClampScroll(-4, 10) != 0 || ClampScroll(3, 10) != 3 || ClampScroll(40, 10) != 10 || ClampScroll(2, -1) != 0 {
 		t.Fatal("scroll clamp")

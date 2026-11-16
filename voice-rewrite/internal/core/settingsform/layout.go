@@ -3,8 +3,11 @@
 package settingsform
 
 const (
-	DesignWidth  int32 = 816
-	DesignHeight int32 = 484
+	DesignWidth   int32 = 816
+	DesignHeight  int32 = 484
+	MinWidth            = 480
+	MinHeight           = 420
+	MinWorkMargin       = 12
 )
 
 type Spec struct {
@@ -27,6 +30,20 @@ func Layout(c Spec, clientWidth int32) (x, y, w, h int32) {
 		w += delta
 	}
 	return
+}
+
+// MinimumSize is the settings window's minimum client size at the monitor scale.
+// A small work area keeps the window inside the display, leaving the same margin.
+func MinimumSize(scale float64, workWidth, workHeight int32) (int32, int32) {
+	minW := int32(MinWidth * scale)
+	minH := int32(MinHeight * scale)
+	if minW > workWidth-MinWorkMargin {
+		minW = workWidth - MinWorkMargin
+	}
+	if minH > workHeight-MinWorkMargin {
+		minH = workHeight - MinWorkMargin
+	}
+	return minW, minH
 }
 
 // ClampScroll keeps a scroll offset inside the range the settings window can show.
