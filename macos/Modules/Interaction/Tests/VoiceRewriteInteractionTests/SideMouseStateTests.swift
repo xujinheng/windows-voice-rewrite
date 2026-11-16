@@ -86,6 +86,19 @@ final class SideMouseStateTests: XCTestCase {
         XCTAssertEqual(state.release(3), .short)
     }
 
+    func testDisabledTapClearsCancelledReleaseMarkers() {
+        var state = SideButtonHoldState()
+        _ = state.press(3)
+        XCTAssertFalse(state.reset())
+        XCTAssertEqual(state.takeCancelledRelease(3), .short)
+        _ = state.press(4)
+        XCTAssertFalse(state.reset())
+        XCTAssertFalse(state.clear())
+        XCTAssertEqual(state.takeCancelledRelease(4), .ignored)
+        XCTAssertNotNil(state.press(4))
+        XCTAssertEqual(state.release(4), .short)
+    }
+
     func testDifferentButtonsHaveIndependentTokens() {
         var state = SideButtonHoldState()
         let a = state.press(3)!
