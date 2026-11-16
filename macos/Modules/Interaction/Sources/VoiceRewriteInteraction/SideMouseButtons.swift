@@ -106,6 +106,13 @@ struct SideButtonHoldState {
     mutating func takeCancelledRelease(_ button: Int) -> Release {
         cancelledReleases.removeValue(forKey: button) ?? .ignored
     }
+
+    mutating func clear() -> Bool {
+        let hadActive = pressed.values.contains { $0.active }
+        pressed.removeAll()
+        cancelledReleases.removeAll()
+        return hadActive
+    }
 }
 
 private let sideReplayMarker: Int64 = 0x5652_5342
@@ -217,7 +224,7 @@ public final class SideMouseButtonDriver {
 
     public func shutdown() {
         let pending = state.hasPendingPress
-        let active = state.reset()
+        let active = state.clear()
         downEvents.removeAll()
         targetPIDs.removeAll()
         if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
@@ -232,7 +239,7 @@ public final class SideMouseButtonDriver {
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             let pending = state.hasPendingPress
-            let active = state.reset()
+            let active = state.clear()
             downEvents.removeAll()
             targetPIDs.removeAll()
             DispatchQueue.main.async { [weak self] in
