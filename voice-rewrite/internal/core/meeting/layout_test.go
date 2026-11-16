@@ -161,6 +161,14 @@ func TestSplitterHitUsesTheOpenBand(t *testing.T) {
 	var y [5]int32
 	var shown [5]bool
 	y[1], shown[1] = 100, true
+	body, english, chinese := ReadingFonts(16)
+	if body != (FontFace{16, 400}) || english != (FontFace{17, 450}) || chinese != (FontFace{22, 600}) {
+		t.Fatal("reading fonts")
+	}
+	rails := SplitterRails(400, 100, 22, 1)
+	if rails[0] != (Box{378, 98, 44, 1}) || rails[1] != (Box{378, 102, 44, 1}) {
+		t.Fatalf("rails %+v", rails)
+	}
 	if SplitterHit(96, y, shown, 4, true) != -1 || SplitterHit(96, y, shown, 4, false) != 1 || SplitterHit(104, y, shown, 4, false) != -1 || SplitterHit(80, y, shown, 4, false) != -1 {
 		t.Fatal("splitter band")
 	}

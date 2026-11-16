@@ -98,6 +98,23 @@ func NextFontSize(current, delta int32) int32 {
 	return max(12, min(28, current+delta))
 }
 
+type FontFace struct{ Size, Weight int32 }
+
+// ReadingFonts is the body, English, and Chinese face for one meeting text size.
+// English is one point larger. Chinese is six points larger and heavier.
+func ReadingFonts(size int32) (body, english, chinese FontFace) {
+	return FontFace{size, 400}, FontFace{size + 1, 450}, FontFace{size + 6, 600}
+}
+
+// SplitterRails is the two one-pixel marks on a meeting divider.
+// The marks sit two pixels above and below the divider and are not scaled.
+func SplitterRails(centerX, y, halfWidth, thickness int32) [2]Box {
+	return [2]Box{
+		{centerX - halfWidth, y - 2, halfWidth * 2, thickness},
+		{centerX - halfWidth, y + 2, halfWidth * 2, thickness},
+	}
+}
+
 func ChromeOverhead(captionsOnly, expanded bool) int32 {
 	if captionsOnly {
 		return 2*8 + 24 + 8

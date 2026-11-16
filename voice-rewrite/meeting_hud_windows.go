@@ -296,9 +296,10 @@ func (p *meetingHUD) resizeText(delta int32) {
 	if size == p.fontSize {
 		return
 	}
-	body := meetingUIFont(p.px(size), 400)
-	english := popupFont(-p.px(size+1), 450)
-	chinese := meetingUIFont(p.px(size+6), 600)
+	bodyFace, englishFace, chineseFace := meetingcore.ReadingFonts(size)
+	body := meetingUIFont(p.px(bodyFace.Size), bodyFace.Weight)
+	english := popupFont(-p.px(englishFace.Size), englishFace.Weight)
+	chinese := meetingUIFont(p.px(chineseFace.Size), chineseFace.Weight)
 	if body == 0 || english == 0 || chinese == 0 {
 		for _, font := range []uintptr{body, english, chinese} {
 			if font != 0 {
@@ -682,8 +683,8 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 					if !shown {
 						continue
 					}
-					for offset := int32(-2); offset <= 2; offset += 4 {
-						rail := rect32{Left: bounds.Right/2 - p.px(22), Top: p.splitterY[index] + offset, Right: bounds.Right/2 + p.px(22), Bottom: p.splitterY[index] + offset + p.px(1)}
+					for _, mark := range meetingcore.SplitterRails(bounds.Right/2, p.splitterY[index], p.px(22), p.px(1)) {
+						rail := rect32{Left: mark.X, Top: mark.Y, Right: mark.X + mark.W, Bottom: mark.Y + mark.H}
 						procFillRect.Call(wParam, uintptr(unsafe.Pointer(&rail)), p.surface)
 					}
 				}
