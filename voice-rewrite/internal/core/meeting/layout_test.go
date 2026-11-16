@@ -77,6 +77,20 @@ func TestMeetingDraggableDividersAreIndependentAndConstrained(t *testing.T) {
 	}
 }
 
+func TestMeetingChromeAndToolbarsStayPut(t *testing.T) {
+	if ChromeOverhead(false, false) != 216 || ChromeOverhead(true, false) != 48 || ChromeOverhead(false, true) != 88 {
+		t.Fatalf("%d %d %d", ChromeOverhead(false, false), ChromeOverhead(true, false), ChromeOverhead(false, true))
+	}
+	indexes, widths := TopToolbar()
+	if len(indexes) != 6 || indexes[0] != 7 || widths[0] != 96 || widths[5] != 92 {
+		t.Fatal("top toolbar")
+	}
+	indexes, widths = ReplyToolbar()
+	if len(indexes) != 3 || indexes[2] != 11 || widths[0] != 112 {
+		t.Fatal("reply toolbar")
+	}
+}
+
 func TestStreamingTextPaintsOnItsInterval(t *testing.T) {
 	start := time.Unix(0, 0)
 	if TextRefresh != 280*time.Millisecond || !TextDue(start, start.Add(TextRefresh), false) || TextDue(start, start.Add(TextRefresh-time.Millisecond), false) || !TextDue(start, start, true) {

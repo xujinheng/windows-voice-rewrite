@@ -214,12 +214,10 @@ func (p *meetingHUD) layout() {
 	p.move(p.status, margin, y, width, p.px(40))
 	y += p.px(40) + p.px(6)
 	x := margin
-	for _, item := range []struct {
-		index int
-		width int32
-	}{{7, 96}, {1, 92}, {0, 90}, {2, 36}, {3, 36}, {8, 92}} {
-		p.move(p.buttons[item.index], x, y, p.px(item.width), button)
-		x += p.px(item.width) + gap
+	indexes, widths := meetingcore.TopToolbar()
+	for i, index := range indexes {
+		p.move(p.buttons[index], x, y, p.px(widths[i]), button)
+		x += p.px(widths[i]) + gap
 	}
 	y += button + gap
 	p.move(p.labels[0], margin, y, width-p.px(264), label)
@@ -229,13 +227,7 @@ func (p *meetingHUD) layout() {
 	// Six content surfaces share the remaining height. Divider gaps are
 	// mouse-draggable and the proportions survive window resizing.
 	footer := bounds.Bottom - margin
-	overhead := int32(5*8 + 24 + 8 + 120 + 24)
-	if p.captionsOnly {
-		overhead = 2*8 + 24 + 8
-	} else if p.expressionExpanded {
-		overhead = 4*8 + 24 + 8 + 24
-	}
-	space := int32(float64(footer-y)/p.scale) - overhead
+	space := int32(float64(footer-y)/p.scale) - meetingcore.ChromeOverhead(p.captionsOnly, p.expressionExpanded)
 	p.paneHeights = meetingcore.PaneHeights(space, p.paneWeights, p.captionsOnly, p.expressionExpanded)
 	divider := func(index int) {
 		p.splitterY[index] = y + p.px(4)
@@ -254,11 +246,12 @@ func (p *meetingHUD) layout() {
 	p.move(p.captions, margin, y, width, p.px(p.paneHeights[meetingcore.PaneHistory]))
 	y += p.px(p.paneHeights[meetingcore.PaneHistory])
 
+	shown := meetingcore.VisiblePanes(p.captionsOnly, p.expressionExpanded)
 	for _, control := range []uintptr{p.labels[1], p.responses, p.instruction, p.buttons[4], p.buttons[6], p.buttons[9], p.buttons[10], p.buttons[11], p.buttons[12], p.buttons[13]} {
-		procShowWindow.Call(control, meetingShow(!p.captionsOnly && !p.expressionExpanded))
+		procShowWindow.Call(control, meetingShow(shown[meetingcore.PaneReply]))
 	}
 	for _, control := range []uintptr{p.labels[2], p.expression, p.expressionSource, p.buttons[5], p.buttons[15]} {
-		procShowWindow.Call(control, meetingShow(!p.captionsOnly))
+		procShowWindow.Call(control, meetingShow(shown[meetingcore.PaneExpression]))
 	}
 	if p.captionsOnly {
 		meetingInvalidateRect.Call(p.window, 0, 1)
@@ -273,12 +266,10 @@ func (p *meetingHUD) layout() {
 		p.move(p.buttons[4], margin+width-p.px(94), y, p.px(94), button)
 		y += button + gap
 		x = margin
-		for _, item := range []struct {
-			index int
-			width int32
-		}{{9, 112}, {10, 112}, {11, 112}} {
-			p.move(p.buttons[item.index], x, y, p.px(item.width), button)
-			x += p.px(item.width) + gap
+		indexes, widths = meetingcore.ReplyToolbar()
+		for i, index := range indexes {
+			p.move(p.buttons[index], x, y, p.px(widths[i]), button)
+			x += p.px(widths[i]) + gap
 		}
 		y += button + gap
 		p.move(p.responses, margin, y, width, p.px(p.paneHeights[meetingcore.PaneReply]))

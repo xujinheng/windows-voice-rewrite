@@ -50,6 +50,24 @@ func KeepFinishedEnglish(complete bool, english string) bool {
 	return complete && strings.TrimSpace(english) != ""
 }
 
+func ChromeOverhead(captionsOnly, expanded bool) int32 {
+	if captionsOnly {
+		return 2*8 + 24 + 8
+	}
+	if expanded {
+		return 4*8 + 24 + 8 + 24
+	}
+	return 5*8 + 24 + 8 + 120 + 24
+}
+
+func TopToolbar() ([]int, []int32) {
+	return []int{7, 1, 0, 2, 3, 8}, []int32{96, 92, 90, 36, 36, 92}
+}
+
+func ReplyToolbar() ([]int, []int32) {
+	return []int{9, 10, 11}, []int32{112, 112, 112}
+}
+
 func VisiblePanes(captionsOnly, expanded bool) [PaneCount]bool {
 	return [PaneCount]bool{
 		true, true, true, !captionsOnly && !expanded, !captionsOnly, !captionsOnly,
