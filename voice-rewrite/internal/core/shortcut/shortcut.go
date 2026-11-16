@@ -38,6 +38,9 @@ const (
 	CtrlRepeatMessage       = "Ctrl 重复"
 	AltRepeatMessage        = "Alt 重复"
 	ShiftRepeatMessage      = "Shift 重复"
+	WinCaptureMessage       = "Windows 系统键组合不可录入，请使用 Ctrl/Alt/Shift"
+	CaptureCanceledMessage  = "已取消快捷键录入"
+	CaptureFailedPrefix     = "无法录入："
 	PauseReleaseMessage     = "Pause/Break 没有可靠的松开事件"
 	DictationInvalidMessage = "听写快捷键无效，请重新录入（支持功能键和 Ctrl/Alt 组合键）"
 	SameMouseMessage        = "听写和改写不能占用同一个鼠标侧键"
@@ -91,6 +94,33 @@ func keyName(vk uint32) string {
 		}
 	}
 	return ""
+}
+
+var ErrSkipCapture = errors.New("shortcut capture skipped")
+
+func modifierVK(vk uint32) bool {
+	switch vk {
+	case 0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5:
+		return true
+	default:
+		return false
+	}
+}
+
+// CaptureKey accepts one physical key while the settings window is listening.
+// Modifier keys are ignored. A held Windows key is rejected before parsing.
+func CaptureKey(vk, mods uint32, winDown bool) (string, error) {
+	if modifierVK(vk) {
+		return "", ErrSkipCapture
+	}
+	if winDown {
+		return "", errors.New(WinCaptureMessage)
+	}
+	return FromKey(vk, mods)
+}
+
+func CaptureSaved(name string) string {
+	return "已录入 " + name + "。点击「保存设置」并重启软件后生效。"
 }
 
 // FromKey formats a physical key and Ctrl/Alt/Shift into the stored shortcut.

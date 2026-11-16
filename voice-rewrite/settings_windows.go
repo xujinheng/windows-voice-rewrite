@@ -335,19 +335,18 @@ func (p *uxSettings) acceptShortcutKey(vk, mods uint32) {
 	if p == nil || p.capturingShortcut == 0 {
 		return
 	}
-	if vk == 0x10 || vk == 0x11 || vk == 0x12 || vk == 0xA0 || vk == 0xA1 ||
-		vk == 0xA2 || vk == 0xA3 || vk == 0xA4 || vk == 0xA5 {
-		return
-	}
 	winL, _, _ := procGetAsyncKeyState.Call(0x5B)
 	winR, _, _ := procGetAsyncKeyState.Call(0x5C)
-	if winL&0x8000 != 0 || winR&0x8000 != 0 {
-		uxSetText(p.hint, "Windows 系统键组合不可录入，请使用 Ctrl/Alt/Shift")
+	candidate, err := shortcut.CaptureKey(vk, mods, winL&0x8000 != 0 || winR&0x8000 != 0)
+	if errors.Is(err, shortcut.ErrSkipCapture) {
 		return
 	}
-	candidate, err := shortcut.FromKey(vk, mods)
 	if err != nil {
-		uxSetText(p.hint, "无法录入："+err.Error())
+		text := err.Error()
+		if text != shortcut.WinCaptureMessage {
+			text = shortcut.CaptureFailedPrefix + text
+		}
+		uxSetText(p.hint, text)
 		return
 	}
 	p.acceptShortcut(candidate)
@@ -367,12 +366,12 @@ func (p *uxSettings) acceptShortcut(candidate string) {
 		normalized, err = shortcut.ValidateDictation(candidate, uxWinText(p.rewriteShortcut), p.app.cfg.HotkeyExit)
 	}
 	if err != nil {
-		uxSetText(p.hint, "无法录入："+err.Error())
+		uxSetText(p.hint, shortcut.CaptureFailedPrefix+err.Error())
 		return
 	}
 	uxSetText(target, normalized)
 	p.stopShortcutCapture()
-	uxSetText(p.hint, "已录入 "+normalized+"。点击「保存设置」并重启软件后生效。")
+	uxSetText(p.hint, shortcut.CaptureSaved(normalized))
 }
 func uxSettingsKeyMessage(msg winMSG) bool {
 	p := uxActiveSettings
@@ -388,7 +387,7 @@ func uxSettingsKeyMessage(msg winMSG) bool {
 	if p.capturingShortcut != 0 && (msg.Message == WM_KEYDOWN || msg.Message == 0x0104) {
 		if msg.WParam == VK_ESCAPE {
 			p.stopShortcutCapture()
-			uxSetText(p.hint, "已取消快捷键录入")
+			uxSetText(p.hint, shortcut.CaptureCanceledMessage)
 		} else {
 			p.acceptShortcutKey(uint32(msg.WParam), uxCurrentShortcutModifiers())
 		}

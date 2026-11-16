@@ -1,6 +1,9 @@
 package shortcut
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestVoiceShortcutNormalization(t *testing.T) {
 	tests := []struct {
@@ -114,6 +117,22 @@ func TestFixedMessageMatchesParserErrors(t *testing.T) {
 	}
 	if FixedMessage("Helper 未运行") {
 		t.Fatal("transport text treated as a shortcut sentence")
+	}
+}
+
+func TestCaptureKeyIgnoresModifiersAndWindowsKey(t *testing.T) {
+	if _, err := CaptureKey(0x11, Ctrl, false); !errors.Is(err, ErrSkipCapture) {
+		t.Fatal("ctrl alone")
+	}
+	if _, err := CaptureKey('P', Ctrl, true); err == nil || err.Error() != WinCaptureMessage {
+		t.Fatalf("win %v", err)
+	}
+	got, err := CaptureKey('P', Ctrl, false)
+	if err != nil || got != "Ctrl+P" {
+		t.Fatalf("capture %q %v", got, err)
+	}
+	if CaptureSaved("Ctrl+P") != "已录入 Ctrl+P。点击「保存设置」并重启软件后生效。" {
+		t.Fatal("saved sentence")
 	}
 }
 
