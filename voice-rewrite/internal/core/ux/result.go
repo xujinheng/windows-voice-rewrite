@@ -38,6 +38,10 @@ const (
 	RewriteTooShort = "录音太短（至少约 0.1 秒）；请再试一次"
 	// SpokenCaptureInvalid is shown when spoken audio is short or not whole PCM16 samples.
 	SpokenCaptureInvalid = "录音太短（至少约 0.1 秒）或 PCM 格式无效"
+	// Password refusals. Hosts detect the secure field; these sentences stay fixed.
+	PasswordDictation = "密码输入框不接受自动听写，请使用普通输入方式"
+	PasswordSelection = "密码输入框不允许读取选中文字或发送给 AI"
+	PasswordRewrite   = "已拒绝在密码输入框中自动改写"
 )
 
 // ResultCardTitle is the floating-card heading for a selected-text result.

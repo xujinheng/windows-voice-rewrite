@@ -25,6 +25,7 @@ import (
 	meetingcore "voicerewrite/internal/core/meeting"
 	"voicerewrite/internal/core/session"
 	"voicerewrite/internal/core/shortcut"
+	"voicerewrite/internal/core/textedit"
 	"voicerewrite/internal/core/update"
 	"voicerewrite/internal/core/ux"
 )
@@ -967,8 +968,8 @@ func runApp() {
 				begin := time.Now()
 				sel, err := captureSelection(hwnd, cfg)
 				l.Printf("stage=selection mode=toggle ms=%d", time.Since(begin).Milliseconds())
-				if err == nil && utf8.RuneCountInString(sel.Text) > cfg.MaxSelectedRunes {
-					err = fmt.Errorf("选中文字超过 %d 字限制", cfg.MaxSelectedRunes)
+				if err == nil {
+					err = textedit.SelectedLengthError(cfg.MaxSelectedRunes, sel.Text)
 				}
 				if err != nil {
 					restoreSelectionClipboardIfOwned(hwnd, sel)

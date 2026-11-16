@@ -7,6 +7,9 @@ enum ResultCopy {
     static let dictationCopyManually = "听写结果 · 请手动复制"
     static let copySucceeded = "已复制结果到剪贴板"
     static let copyFailed = "复制失败，请尝试选中正文复制"
+    static let passwordDictation = "密码输入框不接受自动听写，请使用普通输入方式"
+    static let passwordSelection = "密码输入框不允许读取选中文字或发送给 AI"
+    static let passwordRewrite = "已拒绝在密码输入框中自动改写"
 
     static func cardTitle(intent: String) -> String {
         switch intent {

@@ -25,7 +25,15 @@ func validateSelectedText(ctx context.Context, cfg coreconfig.Config, selected s
 	if strings.TrimSpace(selected) == "" {
 		return errors.New("选中文字为空")
 	}
-	limit := cfg.MaxSelectedRunes
+	if err := SelectedLengthError(cfg.MaxSelectedRunes, selected); err != nil {
+		return err
+	}
+	return nil
+}
+
+// SelectedLengthError reports a selection that exceeds the configured rune limit.
+// An empty selection is allowed; callers that require text check that separately.
+func SelectedLengthError(limit int, selected string) error {
 	if limit <= 0 {
 		limit = 12000
 	}

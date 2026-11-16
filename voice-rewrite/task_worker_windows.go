@@ -169,7 +169,7 @@ func insertDictationText(hwnd, target uintptr, text string, valid func() bool) e
 		return errors.New("写入前窗口已变化，已取消听写")
 	}
 	if nativePasswordFieldFocused(target) {
-		return errors.New("密码输入框不接受自动听写，请使用普通输入方式")
+		return errors.New(ux.PasswordDictation)
 	}
 	backup, err := snapshotClipboard(hwnd)
 	if err != nil {
@@ -224,8 +224,8 @@ func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintp
 	if err == nil && sel.TargetWindow != expectedWindow {
 		err = errors.New("选区所属窗口已变化")
 	}
-	if err == nil && utf8.RuneCountInString(sel.Text) > app.cfg.MaxSelectedRunes {
-		err = fmt.Errorf("选中文字超过 %d 字限制", app.cfg.MaxSelectedRunes)
+	if err == nil {
+		err = textedit.SelectedLengthError(app.cfg.MaxSelectedRunes, sel.Text)
 	}
 	if err != nil {
 		go func() { <-rec.result }()

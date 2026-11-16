@@ -658,7 +658,7 @@ final class WorkspaceModel: ObservableObject {
                 microphone.cancel()
                 if let generation { await interaction.cancelTask(generation: generation) }
                 if resultGeneration.accepts(token) {
-                    interactionStatus = "无法开始语音选区处理：\(error.localizedDescription)"
+                    interactionStatus = Self.rewriteCaptureMessage(error)
                     recordingStatus = "未录音"
                     showIndicator(phase: .error, mode: "改写", pending: false)
                 }
@@ -781,7 +781,7 @@ final class WorkspaceModel: ObservableObject {
                                         self.interactionStatus = "已安全插入原目标"
                                         self.showIndicator(phase: .success, mode: "听写", pending: false)
                                     } catch {
-                                        self.interactionStatus = Self.insertionErrorMessage(error)
+                                        self.interactionStatus = Self.insertionErrorMessage(error, rewrite: false)
                                         ResultCardPanel.shared.present(title: ResultCopy.dictationCopyManually, text: text)
                                         self.showIndicator(phase: .fallback, mode: "听写", pending: false)
                                     }
@@ -928,7 +928,7 @@ final class WorkspaceModel: ObservableObject {
                     self.interactionStatus = "原选区验证通过并已替换"
                     self.showIndicator(phase: .success, mode: "改写", pending: false)
                 } catch {
-                    self.interactionStatus = Self.insertionErrorMessage(error)
+                    self.interactionStatus = Self.insertionErrorMessage(error, rewrite: true)
                     ResultCardPanel.shared.present(title: cardTitle, text: text)
                     self.showIndicator(phase: .fallback, mode: "改写", pending: false)
                 }
@@ -954,7 +954,7 @@ final class WorkspaceModel: ObservableObject {
         case .invalidSelection:
             return "听写需要空光标位置；如有选中文字，请先取消选择"
         case .secureField:
-            return "密码或安全输入框禁止自动输入"
+            return ResultCopy.passwordDictation
         case .monitoringUnavailable:
             return "该输入框不支持必要的焦点/选区监测；已保留安全限制"
         case .unsupportedNativeWrite:
@@ -968,7 +968,17 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private static func insertionErrorMessage(_ error: Error) -> String {
+    private static func rewriteCaptureMessage(_ error: Error) -> String {
+        if let failure = error as? InteractionFailure, failure == .secureField {
+            return ResultCopy.passwordSelection
+        }
+        return "无法开始语音选区处理：\(error.localizedDescription)"
+    }
+
+    private static func insertionErrorMessage(_ error: Error, rewrite: Bool) -> String {
+        if let failure = error as? InteractionFailure, failure == .secureField {
+            return rewrite ? ResultCopy.passwordRewrite : ResultCopy.passwordDictation
+        }
         if let failure = error as? InteractionFailure {
             switch failure {
             case .writeNotConfirmed:

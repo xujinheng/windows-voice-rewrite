@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"voicerewrite/internal/core/clipboard"
+	"voicerewrite/internal/core/ux"
 )
 
 func waitKeysReleased(max time.Duration) bool {
@@ -217,7 +218,7 @@ func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 		return sel, errors.New("找不到当前编辑窗口")
 	}
 	if nativePasswordFieldFocused(sel.TargetWindow) {
-		return sel, errors.New("密码输入框不允许读取选中文字或发送给 AI")
+		return sel, errors.New(ux.PasswordSelection)
 	}
 	backup, err := snapshotClipboard(hwnd)
 	if err != nil {
@@ -259,7 +260,7 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 		return errors.New("编辑窗口已经切换；结果保留在预览卡片，可手动复制")
 	}
 	if nativePasswordFieldFocused(sel.TargetWindow) {
-		return errors.New("已拒绝在密码输入框中自动改写")
+		return errors.New(ux.PasswordRewrite)
 	}
 
 	backup := sel.ClipboardBackup

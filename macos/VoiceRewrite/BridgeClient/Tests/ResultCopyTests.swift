@@ -16,5 +16,8 @@ final class ResultCopyTests: XCTestCase {
         XCTAssertEqual(ResultCopy.dictationCopyManually, "听写结果 · 请手动复制")
         XCTAssertEqual(ResultCopy.copySucceeded, "已复制结果到剪贴板")
         XCTAssertEqual(ResultCopy.copyFailed, "复制失败，请尝试选中正文复制")
+        XCTAssertEqual(ResultCopy.passwordDictation, "密码输入框不接受自动听写，请使用普通输入方式")
+        XCTAssertEqual(ResultCopy.passwordSelection, "密码输入框不允许读取选中文字或发送给 AI")
+        XCTAssertEqual(ResultCopy.passwordRewrite, "已拒绝在密码输入框中自动改写")
     }
 }
