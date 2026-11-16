@@ -101,6 +101,21 @@ struct MacShortcutPlan: Equatable {
     }
 }
 
+@MainActor
+enum ShortcutSaveTransaction {
+    static func run(activate: () -> Bool, persist: () throws -> Void,
+                    restore: () -> Void) throws -> Bool {
+        guard activate() else { return false }
+        do {
+            try persist()
+            return true
+        } catch {
+            restore()
+            throw error
+        }
+    }
+}
+
 enum MacShortcut {
     static func hotKey(key: String, ctrl: Bool, alt: Bool, shift: Bool) -> HotKeyShortcut? {
         guard let code = keyCodes[key] ?? keyCodes[key.uppercased()] else { return nil }
@@ -108,7 +123,7 @@ enum MacShortcut {
         if ctrl { modifiers.insert(.control) }
         if alt { modifiers.insert(.option) }
         if shift { modifiers.insert(.shift) }
-        if modifiers.isEmpty && !functionKeyCodes.contains(code) { return nil }
+        if !functionKeyCodes.contains(code) && (modifiers.isEmpty || modifiers == [.shift]) { return nil }
         return HotKeyShortcut(keyCode: code, modifiers: modifiers)
     }
 
