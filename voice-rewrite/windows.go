@@ -535,7 +535,9 @@ func runApp() {
 		}
 		win, _, _ := procGetForegroundWindow.Call()
 		if win == 0 {
-			app.fail(errors.New(input.NoTargetWindow))
+			if input.ReportMissingWindow(false) {
+				app.fail(errors.New(input.NoTargetWindow))
+			}
 			return
 		}
 		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
@@ -555,6 +557,9 @@ func runApp() {
 		}
 		win, _, _ := procGetForegroundWindow.Call()
 		if win == 0 {
+			if input.ReportMissingWindow(true) {
+				app.fail(errors.New(input.NoTargetWindow))
+			}
 			return
 		}
 		// Paint the provisional status immediately. Recording starts at

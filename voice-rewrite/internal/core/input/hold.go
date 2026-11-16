@@ -19,6 +19,12 @@ func VoiceStartBlocked(paused, busy, recording, pendingSide, extra bool) bool {
 	return paused || busy || recording || pendingSide || extra
 }
 
+// ReportMissingWindow is the keyboard hold with no foreground window.
+// A side-button arm returns without NoTargetWindow.
+func ReportMissingWindow(sideArm bool) bool {
+	return !sideArm
+}
+
 // ConfirmSideReady keeps a pending side hold only while that window is still foreground.
 func ConfirmSideReady(paused, busy, recording, targetStillForeground bool) bool {
 	return !paused && !busy && !recording && targetStillForeground

@@ -37,6 +37,9 @@ func TestVoiceStartKeepsSideAndKeyboardWindowsApart(t *testing.T) {
 	if !VoiceStartBlocked(false, false, false, false, true) || VoiceStartBlocked(false, false, false, false, false) {
 		t.Fatal("blocked")
 	}
+	if !ReportMissingWindow(false) || ReportMissingWindow(true) {
+		t.Fatal("missing window")
+	}
 	if ConfirmSideReady(false, false, false, false) || !ConfirmSideReady(false, false, false, true) {
 		t.Fatal("confirm")
 	}
