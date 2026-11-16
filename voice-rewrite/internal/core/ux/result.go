@@ -9,6 +9,8 @@ const (
 	DictationNotInserted = "听写结果 · 未自动插入"
 	// DictationCopyManually is the result card when insertion was attempted and failed.
 	DictationCopyManually = "听写结果 · 请手动复制"
+	// DictationWriteUnconfirmed is for an attempted native write whose result cannot be verified.
+	DictationWriteUnconfirmed = "听写结果 · 请确认是否已输入"
 	// CopyAction is the result-card button that puts the text on the clipboard.
 	CopyAction = "复制结果"
 	// ApplyAction is the Windows result-card button that writes the text back.
