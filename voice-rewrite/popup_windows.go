@@ -224,21 +224,32 @@ func (p *answerPopup) apply() {
 	if p == nil || p.app == nil || corepopup.ApplyIgnored(p.selection != nil, p.allowApply, p.canceled.Load(), p.app.epoch.Valid(p.generation)) {
 		return
 	}
-	if !p.app.busy.CompareAndSwap(false, true) {
+	var app *appState
+	var sel selectedText
+	var body string
+	var hwnd uintptr
+	busyTaken := p.app.busy.CompareAndSwap(false, true)
+	editorOpen := false
+	if busyTaken {
+		app = p.app
+		sel = *p.selection
+		body = p.body
+		hwnd = p.window
+		p.applyResult = make(chan error, 1)
+		p.setNote(ux.ApplyChecking)
+		valid, _, _ := procIsWindow.Call(sel.TargetWindow)
+		editorOpen = valid != 0
+	}
+	switch corepopup.ContinueApply(busyTaken, editorOpen) {
+	case corepopup.ApplyBusyNote:
 		p.setNote(ux.ApplyBusy)
 		return
-	}
-	app := p.app
-	sel := *p.selection
-	body := p.body
-	hwnd := p.window
-	p.applyResult = make(chan error, 1)
-	p.setNote(ux.ApplyChecking)
-	if valid, _, _ := procIsWindow.Call(sel.TargetWindow); valid == 0 {
+	case corepopup.ApplyEditorClosed:
 		p.applyResult <- ux.ApplyEditorOpen(false)
 		procPostMessage.Call(app.Window, WM_APPLY_RESULT, 0, 0)
 		app.busy.Store(false)
 		return
+	default:
 	}
 	procSetForegroundWindow.Call(sel.TargetWindow)
 	go func() {

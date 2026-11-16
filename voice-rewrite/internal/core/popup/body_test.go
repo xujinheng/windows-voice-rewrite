@@ -19,6 +19,12 @@ func TestEmptyCardStaysDifferentFromAModelFailure(t *testing.T) {
 	if ApplyIgnored(true, true, false, true) {
 		t.Fatal("ready")
 	}
+	if ContinueApply(false, true) != ApplyBusyNote || ContinueApply(false, false) != ApplyBusyNote {
+		t.Fatal("busy apply keeps the flag")
+	}
+	if ContinueApply(true, false) != ApplyEditorClosed || ContinueApply(true, true) != ApplyReplace {
+		t.Fatal("editor")
+	}
 	if ResultWritten(0) == nil || ResultWritten(0).Error() != UnwrittenCard || ResultWritten(3) != nil {
 		t.Fatal("written")
 	}

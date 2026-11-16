@@ -32,6 +32,30 @@ func ApplyIgnored(hasSelection, allowApply, canceled, generationValid bool) bool
 	return !hasSelection || !allowApply || canceled || !generationValid
 }
 
+// ApplyContinuation is the manual apply after ApplyIgnored returned false.
+type ApplyContinuation int
+
+const (
+	// ApplyBusyNote shows the busy sentence and leaves the flag with the task that owns it.
+	ApplyBusyNote ApplyContinuation = iota
+	// ApplyEditorClosed reports the closed editor and releases the flag taken for this apply.
+	ApplyEditorClosed
+	// ApplyReplace focuses the editor and replaces the selection.
+	ApplyReplace
+)
+
+// ContinueApply chooses that continuation.
+// A busy flag that was not taken stays with the other task even when the editor is closed.
+func ContinueApply(busyTaken, editorOpen bool) ApplyContinuation {
+	if !busyTaken {
+		return ApplyBusyNote
+	}
+	if !editorOpen {
+		return ApplyEditorClosed
+	}
+	return ApplyReplace
+}
+
 // ResultWritten refuses a control that stayed empty after the text was set.
 func ResultWritten(length int) error {
 	if length == 0 {
