@@ -116,7 +116,7 @@ func Parse(raw string) (string, uint32, uint32, bool, error) {
 				return "", 0, 0, false, errors.New("Ctrl 重复")
 			}
 			modifiers |= ctrl
-		case "alt":
+		case "alt", "option":
 			if modifiers&alt != 0 {
 				return "", 0, 0, false, errors.New("Alt 重复")
 			}

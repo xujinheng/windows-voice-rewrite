@@ -15,17 +15,22 @@ struct ShortcutBinding {
         var ctrl = false
         var alt = false
         var shift = false
+        var usedModifiers = Set<String>()
         for token in parts.dropLast() {
+            let name: String
             switch token.lowercased() {
-            case "ctrl", "control": ctrl = true
-            case "alt", "option": alt = true
-            case "shift": shift = true
+            case "ctrl", "control": name = "ctrl"; ctrl = true
+            case "alt", "option": name = "alt"; alt = true
+            case "shift": name = "shift"; shift = true
             default: return nil
             }
+            guard usedModifiers.insert(name).inserted else { return nil }
         }
+        let isMouse = last.lowercased() == "mouse4" || last.lowercased() == "mouse5"
+        guard !isMouse || usedModifiers.isEmpty else { return nil }
         normalized = canonical
         key = String(last)
-        mouse = last.lowercased() == "mouse4" || last.lowercased() == "mouse5"
+        mouse = isMouse
         self.ctrl = ctrl
         self.alt = alt
         self.shift = shift

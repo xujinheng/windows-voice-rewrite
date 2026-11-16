@@ -11,6 +11,7 @@ func TestVoiceShortcutNormalization(t *testing.T) {
 		{"f8", "F8", true}, {"F24", "F24", true},
 		{"Ctrl+p", "Ctrl+P", true}, {"ctrl+alt+shift+f8", "Ctrl+Alt+Shift+F8", true},
 		{"Alt+PageDown", "Alt+PageDown", true},
+        {"Ctrl+Option+R", "Ctrl+Alt+R", true},
 		{"f0", "", false}, {"F25", "", false}, {"A", "", false}, {"Ctrl", "", false},
 		{"Shift+A", "", false}, {"Win+P", "", false}, {"Ctrl+Ctrl+P", "", false},
 	}

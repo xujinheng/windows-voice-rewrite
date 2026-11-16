@@ -45,6 +45,8 @@ final class MacShortcutTests: XCTestCase {
         let mouse = try XCTUnwrap(ShortcutBinding(canonical: "Mouse4"))
         XCTAssertNil(MacShortcutPlan(dictation: mouse, rewrite: mouse, textEdit: t))
         XCTAssertNil(MacShortcutPlan(dictation: r, rewrite: t, textEdit: mouse))
+        XCTAssertNil(ShortcutBinding(canonical: "Ctrl+Ctrl+R"))
+        XCTAssertNil(ShortcutBinding(canonical: "Ctrl+Mouse4"))
         let unsupported = try XCTUnwrap(ShortcutBinding(canonical: "F21"))
         XCTAssertNil(MacShortcutPlan(dictation: unsupported, rewrite: t, textEdit: r))
         XCTAssertEqual(MacShortcut.hotKey(key: "F13", ctrl: false, alt: false, shift: false)?.keyCode, 105)

@@ -82,9 +82,6 @@ final class WorkspaceModel: ObservableObject {
     private var activeSideAction: SideMouseAction?
     private var pendingSideRelease: SideMouseAction?
 
-    private var recordShortcut = HotKeyShortcut(keyCode: 15, modifiers: [.control, .option])
-    private var editShortcut = HotKeyShortcut(keyCode: 17, modifiers: [.control, .option])
-    private var spokenEditShortcut = HotKeyShortcut(keyCode: 14, modifiers: [.control, .option])
     private var activeShortcutPlan: MacShortcutPlan?
     private var shortcutGeneration = ResultGeneration()
 
