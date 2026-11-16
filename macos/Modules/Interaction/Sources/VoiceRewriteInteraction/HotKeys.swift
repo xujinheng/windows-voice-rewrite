@@ -55,6 +55,25 @@ public final class HotKeyRegistry {
         registrations[shortcut] = try driver.register(shortcut)
     }
 
+    public func replace(with shortcuts: [HotKeyShortcut]) throws {
+        guard Set(shortcuts).count == shortcuts.count else { throw HotKeyFailure.duplicate }
+        let existing = Set(registrations.keys)
+        let desired = Set(shortcuts)
+        var added: [HotKeyShortcut] = []
+        do {
+            for shortcut in shortcuts where !existing.contains(shortcut) {
+                try register(shortcut)
+                added.append(shortcut)
+            }
+        } catch {
+            for shortcut in added { unregister(shortcut) }
+            throw error
+        }
+        for shortcut in existing where !desired.contains(shortcut) {
+            unregister(shortcut)
+        }
+    }
+
     public func unregister(_ shortcut: HotKeyShortcut) {
         guard let token = registrations.removeValue(forKey: shortcut) else { return }
         driver.unregister(token)
