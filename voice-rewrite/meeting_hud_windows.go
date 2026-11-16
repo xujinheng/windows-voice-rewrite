@@ -422,10 +422,11 @@ func updateMeetingHUD(view meetingView) {
 		return
 	}
 	panels := meetingcore.BuildReadingPanels(view.captions)
-	newTurn := panels.CurrentID != p.currentID || panels.HistoryCount > p.historyCount
+	now := time.Now()
+	newTurn, paintTranscript := meetingcore.TranscriptStep(panels.CurrentID, p.currentID, panels.HistoryCount, p.historyCount, panels.Live, p.lastTranscript, now)
 	p.currentID = panels.CurrentID
 	p.setText(p.live, meetingcore.LiveCaption(panels.Hint), false)
-	if meetingcore.TextDue(p.lastTranscript, time.Now(), newTurn || !panels.Live) {
+	if paintTranscript {
 		p.setText(p.currentEnglish, panels.English, true)
 		p.setText(p.currentChinese, panels.Chinese, true)
 		if newTurn {
@@ -434,7 +435,7 @@ func updateMeetingHUD(view meetingView) {
 			procSendMessage.Call(p.currentEnglish, 0x0115, 6, 0) // WM_VSCROLL / SB_TOP
 			procSendMessage.Call(p.currentChinese, 0x0115, 6, 0)
 		}
-		p.lastTranscript = time.Now()
+		p.lastTranscript = now
 	}
 	// Only completed older turns are added to the history control. If the
 	// reader scrolled away, count unseen turns instead of moving the viewport.
@@ -449,27 +450,22 @@ func updateMeetingHUD(view meetingView) {
 	p.setText(p.labels[3], meetingcore.HistoryHeading(panels.HistoryCount, p.unreadHistory), false)
 	p.displayedReplies, p.displayedTip = view.reply.Displayed.Lines, view.reply.Displayed.Tip
 	p.renderReply()
-	newEnglish := view.expression.complete && view.expression.english != "" && view.expression.english != p.copyExpression
-	captionsOnly, expanded := meetingcore.ExpressionFocus(view.expression.complete, newEnglish, p.captionsOnly, p.expressionExpanded)
+	now = time.Now()
+	copy, captionsOnly, expanded, freshEnglish, paintExpression := meetingcore.ExpressionStep(view.expression.complete, view.expression.english, p.copyExpression, p.captionsOnly, p.expressionExpanded, p.lastExpression, now)
 	if captionsOnly != p.captionsOnly || expanded != p.expressionExpanded {
 		p.captionsOnly, p.expressionExpanded = captionsOnly, expanded
 		p.layout()
 	}
 	// Show the last successful utterance while recognition or generation is
 	// underway. Transient status belongs below the result, not in its place.
-	expression := view.expression.english
-	if view.expression.complete {
-		p.copyExpression = view.expression.english
-	} else {
-		p.copyExpression = ""
-	}
+	p.copyExpression = copy
 	p.setText(p.labels[2], meetingcore.ExpressionHeading(view.expressionStatus, view.expression.complete), false)
-	if meetingcore.TextDue(p.lastExpression, time.Now(), view.expression.complete) {
-		p.setText(p.expression, meetingcore.ExpressionShown(expression), true)
-		if newEnglish {
+	if paintExpression {
+		p.setText(p.expression, meetingcore.ExpressionShown(view.expression.english), true)
+		if freshEnglish {
 			procSendMessage.Call(p.expression, 0x0115, 6, 0) // WM_VSCROLL / SB_TOP
 		}
-		p.lastExpression = time.Now()
+		p.lastExpression = now
 	}
 	original := meetingcore.ExpressionDetail(view.expressionStatus, view.expressionSource)
 	p.setText(p.expressionSource, original, true)

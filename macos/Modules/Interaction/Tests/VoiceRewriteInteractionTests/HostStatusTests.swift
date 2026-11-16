@@ -21,6 +21,12 @@ final class HostStatusTests: XCTestCase {
         XCTAssertTrue(rewriteCaptureStatus(InteractionFailure.notEditable, password: "选区").hasPrefix("无法开始语音选区处理："))
     }
 
+    func testIndicatorCancelChoosesThePreviewAndTerminalPaths() {
+        XCTAssertEqual(indicatorCancel(pending: true, terminal: true), .ignoreHold)
+        XCTAssertEqual(indicatorCancel(pending: false, terminal: true), .dismiss)
+        XCTAssertEqual(indicatorCancel(pending: false, terminal: false), .cancelWork)
+    }
+
     func testInsertionStatusKeepsPasswordAndClipboardSentences() {
         XCTAssertEqual(
             insertionStatus(InteractionFailure.secureField, rewrite: true, passwordRewrite: "改写", passwordDictation: "听写"),

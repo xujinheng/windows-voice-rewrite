@@ -133,6 +133,30 @@ func TestMeetingChromeAndToolbarsStayPut(t *testing.T) {
 	}
 }
 
+func TestTranscriptAndExpressionSteps(t *testing.T) {
+	start := time.Unix(0, 0)
+	newTurn, paint := TranscriptStep(2, 1, 1, 1, true, start, start)
+	if !newTurn || !paint {
+		t.Fatal("new turn paints immediately")
+	}
+	_, paint = TranscriptStep(2, 2, 1, 1, true, start, start.Add(time.Millisecond))
+	if paint {
+		t.Fatal("live transcript waits for the interval")
+	}
+	copy, captions, expanded, fresh, paint := ExpressionStep(true, "hello", "", true, false, start, start)
+	if copy != "hello" || captions || !expanded || !fresh || !paint {
+		t.Fatalf("fresh expression %q %v %v %v %v", copy, captions, expanded, fresh, paint)
+	}
+	copy, _, _, fresh, paint = ExpressionStep(false, "hello", "old", false, false, start, start)
+	if copy != "" || fresh || paint {
+		t.Fatalf("incomplete waits %q %v %v", copy, fresh, paint)
+	}
+	_, _, _, _, paint = ExpressionStep(false, "hello", "old", false, false, start, start.Add(TextRefresh))
+	if !paint {
+		t.Fatal("incomplete paints on the interval")
+	}
+}
+
 func TestStreamingTextPaintsOnItsInterval(t *testing.T) {
 	start := time.Unix(0, 0)
 	if TextRefresh != 280*time.Millisecond || !TextDue(start, start.Add(TextRefresh), false) || TextDue(start, start.Add(TextRefresh-time.Millisecond), false) || !TextDue(start, start, true) {

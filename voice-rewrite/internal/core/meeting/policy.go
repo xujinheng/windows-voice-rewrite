@@ -2,6 +2,7 @@ package meeting
 
 import (
 	"strings"
+	"time"
 	"unicode/utf16"
 )
 
@@ -57,6 +58,22 @@ func ExpressionDetail(status, source string) string {
 	default:
 		return "语音原话会显示在这里"
 	}
+}
+
+func TranscriptStep(currentID, previousID uint64, historyCount, previousHistory int, live bool, last, now time.Time) (newTurn, paint bool) {
+	newTurn = currentID != previousID || historyCount > previousHistory
+	paint = TextDue(last, now, newTurn || !live)
+	return newTurn, paint
+}
+
+func ExpressionStep(complete bool, english, previous string, captionsOnly, expanded bool, last, now time.Time) (copy string, captions, expand, fresh, paint bool) {
+	fresh = complete && english != "" && english != previous
+	captions, expand = ExpressionFocus(complete, fresh, captionsOnly, expanded)
+	if complete {
+		copy = english
+	}
+	paint = TextDue(last, now, complete)
+	return copy, captions, expand, fresh, paint
 }
 
 func ExpressionFocus(completed, newResult, captionsOnly, expanded bool) (bool, bool) {
