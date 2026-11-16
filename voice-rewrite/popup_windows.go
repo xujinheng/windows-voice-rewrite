@@ -221,7 +221,7 @@ func (p *answerPopup) setNote(s string) {
 	runtime.KeepAlive(label)
 }
 func (p *answerPopup) apply() {
-	if p == nil || p.app == nil || p.selection == nil || !p.allowApply || p.canceled.Load() || !p.app.epoch.Valid(p.generation) {
+	if p == nil || p.app == nil || corepopup.ApplyIgnored(p.selection != nil, p.allowApply, p.canceled.Load(), p.app.epoch.Valid(p.generation)) {
 		return
 	}
 	if !p.app.busy.CompareAndSwap(false, true) {
@@ -337,17 +337,9 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	switch uint32(msg) {
 	case resultWMNCHitTest:
 		if activeAnswer != nil && activeAnswer.window == hwnd {
-			var bounds rect32
-			if ok, _, _ := user32.NewProc("GetWindowRect").Call(hwnd, uintptr(unsafe.Pointer(&bounds))); ok != 0 {
-				x := int32(int16(uint16(lParam & 0xffff)))
-				y := int32(int16(uint16((lParam >> 16) & 0xffff)))
-				_ = x
-				_ = y
-				_ = bounds
-				// This is a dismissible utility card, not a draggable dashboard.
-				// A click on its empty header should be treated as an ordinary click.
-				return resultHTClient
-			}
+			// This is a dismissible utility card, not a draggable dashboard.
+			// A click on its empty header is an ordinary client click.
+			return resultHTClient
 		}
 	case resultWMSize:
 		if activeAnswer != nil && activeAnswer.window == hwnd && activeAnswer.renderer != nil {

@@ -481,7 +481,7 @@ func (p *meetingHUD) renderReply() {
 	}
 	canCopy := meetingcore.ReplyCopyEnabled(reply.Complete, reply.English)
 	meetingEnableWindow.Call(p.buttons[4], meetingBool(canCopy))
-	meetingEnableWindow.Call(p.buttons[13], meetingBool(p.owner != 0 && canCopy && !p.paused))
+	meetingEnableWindow.Call(p.buttons[13], meetingBool(meetingcore.RefineButtonEnabled(p.owner != 0, reply.Complete, reply.English, p.paused)))
 }
 
 func (p *meetingHUD) session() *meetingSession {

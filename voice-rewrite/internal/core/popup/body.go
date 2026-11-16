@@ -25,6 +25,13 @@ func EditorText(body string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(body, "\r\n", "\n"), "\n", "\r\n")
 }
 
+// ApplyIgnored reports that a manual apply must return before taking the busy flag.
+// A missing selection, a preview-only card, a canceled card, or a stale generation
+// does not show the busy note.
+func ApplyIgnored(hasSelection, allowApply, canceled, generationValid bool) bool {
+	return !hasSelection || !allowApply || canceled || !generationValid
+}
+
 // ResultWritten refuses a control that stayed empty after the text was set.
 func ResultWritten(length int) error {
 	if length == 0 {

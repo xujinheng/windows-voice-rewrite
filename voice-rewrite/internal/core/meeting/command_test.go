@@ -93,4 +93,7 @@ func TestMeetingButtonsStayContiguous(t *testing.T) {
 	if !ReplyCopyEnabled(true, "en") || ReplyCopyEnabled(true, "") || !AcceptEnabled(true, true, false) || AcceptEnabled(true, true, true) || AcceptEnabled(false, true, false) || !RefineEnabled(true, "短一点", false) || RefineEnabled(true, "短一点", true) || RefineEnabled(false, "短一点", false) {
 		t.Fatal("copy and refine gates")
 	}
+	if RefineButtonEnabled(true, true, "", false) || !RefineEnabled(true, "短一点", false) || !RefineButtonEnabled(true, true, "en", false) || RefineButtonEnabled(false, true, "en", false) || RefineButtonEnabled(true, true, "en", true) {
+		t.Fatal("refine button")
+	}
 }

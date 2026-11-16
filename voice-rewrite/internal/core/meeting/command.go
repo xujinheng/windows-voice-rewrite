@@ -190,6 +190,12 @@ func RefineEnabled(complete bool, instruction string, paused bool) bool {
 	return complete && instruction != "" && !paused
 }
 
+// RefineButtonEnabled is the button face, not the click. The click still
+// requires a typed instruction. The button also requires English and an owner.
+func RefineButtonEnabled(owner, complete bool, english string, paused bool) bool {
+	return owner && ReplyCopyEnabled(complete, english) && !paused
+}
+
 // ButtonPrimary reports whether the owner-draw button uses the primary style.
 // Accept and expand follow the live meeting state. Save profile is always primary.
 func ButtonPrimary(id int, pending, expressionExpanded bool) bool {
