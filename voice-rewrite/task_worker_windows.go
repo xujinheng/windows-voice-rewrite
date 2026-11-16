@@ -160,7 +160,7 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 // backed up safely, use direct Unicode input rather than changing clipboard.
 func insertDictationText(hwnd, target uintptr, text string, valid func() bool) error {
 	if strings.TrimSpace(text) == "" {
-		return errors.New("听写结果为空")
+		return errors.New(ux.DictationEmpty)
 	}
 	if !waitKeysReleased(2 * time.Second) {
 		return errors.New("请松开快捷键后重试")

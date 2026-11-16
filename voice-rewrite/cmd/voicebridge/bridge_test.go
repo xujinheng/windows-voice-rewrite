@@ -423,6 +423,21 @@ func TestBridgeClassifiedFailureUsesSharedRecovery(t *testing.T) {
 	h.close()
 }
 
+func TestBridgeEmptyTranscriptUsesSharedSentence(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"text":"   "}`))
+	}))
+	defer srv.Close()
+	h := startBridge(t, defaultOptions())
+	h.send(requestForASR("empty", configFor(srv.URL)))
+	reply := h.receive()
+	if reply.OK || reply.Error == nil || reply.Error.Code != "asr_failed" || reply.Error.Message != ux.NoSpeech {
+		t.Fatalf("empty transcript: %#v", reply)
+	}
+	h.close()
+}
+
 func TestBridgeParsesSharedShortcut(t *testing.T) {
 	h := startBridge(t, defaultOptions())
 	h.send(map[string]any{"v": 1, "id": "shortcut", "op": "parse_shortcut", "shortcut": "ctrl+alt+r"})

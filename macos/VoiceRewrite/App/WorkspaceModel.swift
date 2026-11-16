@@ -767,6 +767,12 @@ final class WorkspaceModel: ObservableObject {
                                 self.showIndicator(phase: .error, mode: "听写", pending: false)
                                 return
                             }
+                            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                self.recordingStatus = ResultCopy.dictationEmpty
+                                self.asrProbeStatus = "ASR：实际转写失败"
+                                self.showIndicator(phase: .error, mode: "听写", pending: false)
+                                return
+                            }
                             self.transcription = text
                             self.rememberHistory(title: ResultCopy.dictationHistory, value: text)
                             self.recordingStatus = "语音识别已完成"

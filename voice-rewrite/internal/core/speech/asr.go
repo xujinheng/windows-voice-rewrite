@@ -17,6 +17,7 @@ import (
 	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
+	"voicerewrite/internal/core/ux"
 )
 
 // Match OneClick's metadata delimiter, not arbitrary characters between "language"
@@ -51,15 +52,15 @@ func ParseASRResponse(data []byte, contentType string) (string, error) {
 		len(data) <= (3<<20)-1 {
 		return trimmed, nil
 	}
-	return "", errors.New("ASR 响应不是有效的 JSON {text:...} 或 text/plain")
+	return "", errors.New(ux.BadASRResponse)
 }
 
 func EncodeWAV(pcm []byte) ([]byte, error) {
 	if len(pcm) == 0 || len(pcm)%2 != 0 {
-		return nil, errors.New("录音为空或 PCM 长度无效")
+		return nil, errors.New(ux.EmptyRecording)
 	}
 	if len(pcm) > audio.PCMBytesPerSecond*coreconfig.RecordSecondsMax {
-		return nil, errors.New("录音超出时长限制")
+		return nil, errors.New(ux.RecordingTooLong)
 	}
 	b := make([]byte, 44+len(pcm))
 	copy(b[0:4], "RIFF")
@@ -158,7 +159,7 @@ func transcribeChunk(ctx context.Context, cfg coreconfig.Config, pcm []byte) (st
 	}
 	result := CleanASR(transcript)
 	if result == "" {
-		return "", errors.New("ASR 没有识别到语音，请检查麦克风输入设备")
+		return "", errors.New(ux.NoSpeech)
 	}
 	return result, nil
 }

@@ -19,5 +19,7 @@ final class ResultCopyTests: XCTestCase {
         XCTAssertEqual(ResultCopy.passwordDictation, "密码输入框不接受自动听写，请使用普通输入方式")
         XCTAssertEqual(ResultCopy.passwordSelection, "密码输入框不允许读取选中文字或发送给 AI")
         XCTAssertEqual(ResultCopy.passwordRewrite, "已拒绝在密码输入框中自动改写")
+        XCTAssertEqual(ResultCopy.dictationEmpty, "听写结果为空")
+        XCTAssertEqual(ResultCopy.noSpeech, "ASR 没有识别到语音，请检查麦克风输入设备")
     }
 }
