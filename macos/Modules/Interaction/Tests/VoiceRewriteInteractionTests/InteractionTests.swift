@@ -24,7 +24,7 @@ private final class FakeAccessibility: AccessibilityClient, @unchecked Sendable 
     func stopMonitoring() { monitorStops += 1 }
     func update(processID: Int32? = nil, focus: String? = nil, text: String? = nil,
                 range: VoiceRewriteInteraction.TextRange? = nil, editable: Bool? = nil,
-                secure: Bool? = nil, revision: UInt64? = nil) {
+                secure: Bool? = nil, revision: UInt64? = nil, fullValue: String? = nil) {
         let old = observation
         observation = SelectionObservation(
             processID: processID ?? old.processID,
@@ -34,7 +34,8 @@ private final class FakeAccessibility: AccessibilityClient, @unchecked Sendable 
             range: range ?? old.range,
             isEditable: editable ?? old.isEditable,
             isSecure: secure ?? old.isSecure,
-            revision: revision ?? old.revision)
+            revision: revision ?? old.revision,
+            fullValue: fullValue ?? old.fullValue)
     }
 }
 
@@ -147,6 +148,30 @@ final class SelectionGuardTests: XCTestCase {
         do { try await expired.replaceIfCurrent(snap, with: "BAD", generation: token); XCTFail() }
         catch { XCTAssertEqual(error as? InteractionFailure, .timedOut) }
         XCTAssertTrue(fake.writes.isEmpty)
+    }
+
+    func testBrowserAddressBarValueChangeRejectsInsertion() async throws {
+        let fake = FakeAccessibility(), session = InteractionSession(client: fake)
+        fake.update(text: "", range: VoiceRewriteInteraction.TextRange(location: 7, length: 0),
+                    fullValue: "example")
+        let gen = try await session.beginTask(targetProcessID: 123)
+        let snapshot = try await session.captureSelection(generation: gen, intent: .insertAtCaret)
+        // Address bar value changed without a selection change notification:
+        // unchanged PID, focus, selection and revision must still fail closed.
+        fake.update(fullValue: "examplE")
+        do { try await session.insertIfCurrent(snapshot, text: "spoken", generation: gen); XCTFail() }
+        catch { XCTAssertEqual(error as? InteractionFailure, .selectionChanged) }
+        XCTAssertTrue(fake.writes.isEmpty)
+    }
+
+    func testStableBrowserAddressBarValueAllowsInsertion() async throws {
+        let fake = FakeAccessibility(), session = InteractionSession(client: fake)
+        fake.update(text: "", range: VoiceRewriteInteraction.TextRange(location: 7, length: 0),
+                    fullValue: "example")
+        let gen = try await session.beginTask(targetProcessID: 123)
+        let snapshot = try await session.captureSelection(generation: gen, intent: .insertAtCaret)
+        try await session.insertIfCurrent(snapshot, text: "spoken", generation: gen)
+        XCTAssertEqual(fake.writes, ["spoken"])
     }
 
     func testInsertRequiresCaretAndIsSingleUse() async throws {
