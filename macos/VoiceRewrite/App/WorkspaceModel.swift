@@ -818,17 +818,19 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func processSelectedText(from targetPID: Int32?) {
-        guard !voicePaused else {
+        let pid: Int32
+        switch selectionTaskStart(paused: voicePaused, targetPID: targetPID, instruction: taskInstruction) {
+        case .paused:
             interactionStatus = VoicePauseCopy.paused
             return
-        }
-        guard let pid = targetPID, pid > 0 else {
+        case .missingTarget:
             interactionStatus = "无有效前台目标"
             return
-        }
-        guard !taskInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        case .missingInstruction:
             interactionStatus = "请先在应用中填写选区处理指令"
             return
+        case .start(let target):
+            pid = target
         }
         invalidatePending()
         let token = resultGeneration.begin()
