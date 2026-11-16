@@ -908,7 +908,7 @@ func showNativeSettings(app *appState) error {
 		return fmt.Errorf("无法注册设置窗口: %w", regErr)
 	}
 	// 96-DPI logical layout; all children use the same scale as the parent.
-	scale := handyMonitorScale()
+	scale := uxMonitorScaleForPoint(currentCursorPoint())
 	if scale < 1 {
 		scale = 1
 	}

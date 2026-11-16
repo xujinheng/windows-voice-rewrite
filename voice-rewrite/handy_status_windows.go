@@ -464,9 +464,6 @@ func handyAwareWindowThread() func() {
 	}
 	return func() { procSetThreadDpiContextHandy.Call(old) }
 }
-func handyMonitorScale() float64 {
-	return uxMonitorScaleForPoint(currentCursorPoint())
-}
 func handyScaleForMonitor(mon uintptr) float64 {
 	// Deterministic DPI variants apply to explicit screenshots only.
 	if os.Getenv("VOICEREWRITE_VISUAL_PREVIEW") != "" {
