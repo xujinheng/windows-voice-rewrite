@@ -15,6 +15,14 @@ func TestPostedMeetingKeepsDemoAvailableWhilePaused(t *testing.T) {
 	if !HoldUsesMeeting(true, false) || HoldUsesMeeting(true, true) || HoldUsesMeeting(false, false) {
 		t.Fatal("hold meeting")
 	}
+	dropped := MeetingStopAction(true)
+	if dropped.Express || !dropped.DrainRecorder || !dropped.ClearBusy || !dropped.IdleTray || !dropped.ClosePill {
+		t.Fatal("canceled meeting")
+	}
+	live := MeetingStopAction(false)
+	if !live.Express || live.DrainRecorder || live.ClearBusy || live.IdleTray || live.ClosePill {
+		t.Fatal("live meeting")
+	}
 }
 
 func TestApplyCommandTogglesViewFlags(t *testing.T) {

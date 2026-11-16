@@ -462,12 +462,20 @@ func runApp() {
 		}
 		switch kind {
 		case input.FinishMeeting:
-			if holdMeeting.runtime.Context().Err() == nil {
+			stop := meetingcore.MeetingStopAction(holdMeeting.runtime.Context().Err() != nil)
+			if stop.Express {
 				go holdMeeting.express(app, rec, holdGeneration, meetingcore.VoiceMode(holdIsDictation))
-			} else {
+			}
+			if stop.DrainRecorder {
 				go func() { <-rec.result }()
+			}
+			if stop.ClearBusy {
 				app.busy.Store(false)
+			}
+			if stop.IdleTray {
 				app.setStatus(trayIdle)
+			}
+			if stop.ClosePill {
 				closeHandyStatus()
 			}
 			holdMeeting = nil
