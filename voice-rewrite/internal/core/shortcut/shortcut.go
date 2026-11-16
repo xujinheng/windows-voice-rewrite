@@ -250,6 +250,24 @@ func ValidateRewrite(candidate, dictation, exit string) (string, error) {
 	return validate(candidate, dictation, exit, "语音指令快捷键")
 }
 
+// AssignPair trims the two settings fields, validates rewrite, then dictation.
+// A validation error leaves the stored shortcuts unchanged.
+func AssignPair(record, dictation, exit, nextRecord, nextDictation string) (string, string, bool, error) {
+	nextRecord = strings.TrimSpace(nextRecord)
+	nextDictation = strings.TrimSpace(nextDictation)
+	var err error
+	nextRecord, err = ValidateRewrite(nextRecord, nextDictation, exit)
+	if err != nil {
+		return record, dictation, false, err
+	}
+	nextDictation, err = ValidateDictation(nextDictation, nextRecord, exit)
+	if err != nil {
+		return record, dictation, false, err
+	}
+	changed := record != nextRecord || dictation != nextDictation
+	return nextRecord, nextDictation, changed, nil
+}
+
 const pauseVK uint32 = 0x13
 
 // Startup is the keyboard and mouse registration decided before a host installs hooks.

@@ -43,6 +43,78 @@ const (
 	CommandCloseProfile
 )
 
+// HUDFlags is the meeting view state a button can change.
+type HUDFlags struct {
+	Paused, CaptionsOnly, ExpressionExpanded, ProfileOpen bool
+	SelectedReply                                         int
+}
+
+// Effect is the host work that follows a meeting button.
+type Effect int
+
+const (
+	EffectNone Effect = iota
+	EffectRefresh
+	EffectLayoutSaveRefresh
+	EffectSmallerText
+	EffectLargerText
+	EffectCopy
+	EffectRequestReplies
+	EffectToggleCapture
+	EffectOpenProfile
+	EffectSelectReply
+	EffectScrollLatest
+	EffectLayoutRefresh
+	EffectAccept
+	EffectRefine
+	EffectSaveProfile
+	EffectCloseProfile
+)
+
+// ApplyCommand returns the view flags after a button and the host effect.
+// Captions save the layout. Expanding an expression only lays the window out again.
+func ApplyCommand(flags HUDFlags, action Command, replyIndex int) (HUDFlags, Effect) {
+	switch action {
+	case CommandTogglePause:
+		flags.Paused = !flags.Paused
+		return flags, EffectRefresh
+	case CommandCaptions:
+		flags.CaptionsOnly = !flags.CaptionsOnly
+		return flags, EffectLayoutSaveRefresh
+	case CommandSmallerText:
+		return flags, EffectSmallerText
+	case CommandLargerText:
+		return flags, EffectLargerText
+	case CommandCopyReply, CommandCopyExpression:
+		return flags, EffectCopy
+	case CommandRequestReplies:
+		return flags, EffectRequestReplies
+	case CommandToggleCapture:
+		return flags, EffectToggleCapture
+	case CommandOpenProfile:
+		return flags, EffectOpenProfile
+	case CommandSelectReply:
+		flags.SelectedReply = replyIndex
+		return flags, EffectSelectReply
+	case CommandScrollLatest:
+		return flags, EffectScrollLatest
+	case CommandToggleExpression:
+		flags.ExpressionExpanded = !flags.ExpressionExpanded
+		return flags, EffectLayoutRefresh
+	case CommandAcceptReplies:
+		return flags, EffectAccept
+	case CommandRefine:
+		return flags, EffectRefine
+	case CommandSaveProfile:
+		return flags, EffectSaveProfile
+	case CommandCloseProfile:
+		flags.ProfileOpen = false
+		return flags, EffectCloseProfile
+	default:
+		return flags, EffectNone
+	}
+}
+
 // CommandFor maps a meeting button id to the action it performs.
 // Reply buttons also return the suggestion index, starting at zero.
 func CommandFor(id int) (Command, int) {

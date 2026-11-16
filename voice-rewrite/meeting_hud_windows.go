@@ -589,20 +589,22 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			if wParam>>16 != 0 {
 				break
 			}
-			switch action, index := meetingcore.CommandFor(int(wParam & 0xffff)); action {
-			case meetingcore.CommandTogglePause:
-				p.paused = !p.paused
+			action, index := meetingcore.CommandFor(int(wParam & 0xffff))
+			flags := meetingcore.HUDFlags{Paused: p.paused, CaptionsOnly: p.captionsOnly, ExpressionExpanded: p.expressionExpanded, ProfileOpen: p.profileOpen, SelectedReply: p.selectedReply}
+			next, effect := meetingcore.ApplyCommand(flags, action, index)
+			p.paused, p.captionsOnly, p.expressionExpanded, p.profileOpen, p.selectedReply = next.Paused, next.CaptionsOnly, next.ExpressionExpanded, next.ProfileOpen, next.SelectedReply
+			switch effect {
+			case meetingcore.EffectRefresh:
 				updateMeetingHUD(p.latest)
-			case meetingcore.CommandCaptions:
-				p.captionsOnly = !p.captionsOnly
+			case meetingcore.EffectLayoutSaveRefresh:
 				p.layout()
 				p.savePreferences()
 				updateMeetingHUD(p.latest)
-			case meetingcore.CommandSmallerText:
+			case meetingcore.EffectSmallerText:
 				p.resizeText(-2)
-			case meetingcore.CommandLargerText:
+			case meetingcore.EffectLargerText:
 				p.resizeText(2)
-			case meetingcore.CommandCopyReply, meetingcore.CommandCopyExpression:
+			case meetingcore.EffectCopy:
 				reply := p.displayedReplies[p.selectedReply]
 				value := meetingcore.CopyText(action, reply.English, reply.Complete, p.copyExpression)
 				if value != "" {
@@ -610,42 +612,39 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 						winErr("复制失败: " + err.Error())
 					}
 				}
-			case meetingcore.CommandRequestReplies:
+			case meetingcore.EffectRequestReplies:
 				if session := p.session(); session != nil {
 					session.requestReplies()
 				}
-			case meetingcore.CommandToggleCapture:
+			case meetingcore.EffectToggleCapture:
 				if session := p.session(); session != nil {
 					session.setCapturePaused(!p.latest.capturePaused)
 					p.app.refreshMeeting()
 				}
-			case meetingcore.CommandOpenProfile:
+			case meetingcore.EffectOpenProfile:
 				p.openProfile()
-			case meetingcore.CommandSelectReply:
-				p.selectedReply = index
+			case meetingcore.EffectSelectReply:
 				p.lastReply = time.Time{}
 				p.renderReply()
-			case meetingcore.CommandScrollLatest:
+			case meetingcore.EffectScrollLatest:
 				p.scrollToLatest()
-			case meetingcore.CommandToggleExpression:
-				p.expressionExpanded = !p.expressionExpanded
+			case meetingcore.EffectLayoutRefresh:
 				p.layout()
 				updateMeetingHUD(p.latest)
-			case meetingcore.CommandAcceptReplies:
+			case meetingcore.EffectAccept:
 				if session := p.session(); session != nil && !p.paused {
 					session.acceptPendingReplies()
 					p.app.refreshMeeting()
 				}
-			case meetingcore.CommandRefine:
+			case meetingcore.EffectRefine:
 				reply := p.displayedReplies[p.selectedReply]
 				instruction := strings.TrimSpace(uxWinText(p.instruction))
 				if session := p.session(); session != nil && meetingcore.RefineEnabled(reply.Complete, instruction, p.paused) {
 					session.refineReply(p.selectedReply, instruction)
 				}
-			case meetingcore.CommandSaveProfile:
+			case meetingcore.EffectSaveProfile:
 				p.saveProfile()
-			case meetingcore.CommandCloseProfile:
-				p.profileOpen = false
+			case meetingcore.EffectCloseProfile:
 				p.layout()
 			}
 			return 0

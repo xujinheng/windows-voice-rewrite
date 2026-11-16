@@ -7,12 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
-	"strings"
 	"sync"
 	"syscall"
 	"unsafe"
 
 	"voicerewrite/internal/contract"
+	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/desktop"
 	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/settingsform"
@@ -629,24 +629,14 @@ func (p *uxSettings) save() error {
 	if p.capturingShortcut != 0 {
 		return errors.New(shortcut.CapturePendingMessage)
 	}
-	newRewrite := strings.TrimSpace(uxWinText(p.rewriteShortcut))
-	newDictation := strings.TrimSpace(uxWinText(p.shortcut))
-	newRewrite, err = shortcut.ValidateRewrite(newRewrite, newDictation, cfg.HotkeyExit)
+	newRewrite, newDictation, changedShortcut, err := shortcut.AssignPair(cfg.HotkeyRecord, cfg.DictationHotkey, cfg.HotkeyExit, uxWinText(p.rewriteShortcut), uxWinText(p.shortcut))
 	if err != nil {
 		return err
 	}
-	newDictation, err = shortcut.ValidateDictation(newDictation, newRewrite, cfg.HotkeyExit)
-	if err != nil {
-		return err
-	}
-	changedShortcut := cfg.HotkeyRecord != newRewrite || cfg.DictationHotkey != newDictation
-	cfg.HotkeyRecord = newRewrite
-	cfg.DictationHotkey = newDictation
+	cfg.HotkeyRecord, cfg.DictationHotkey = newRewrite, newDictation
 	selected, _, _ := procSendMessage.Call(p.microphone, uxCBGetCurSel, 0, 0)
-	if p.microphone != 0 && selected != ^uintptr(0) && selected < uintptr(len(p.microphoneIDs)) {
-		cfg.AudioDeviceID = p.microphoneIDs[selected]
-	}
-	changedAudioDevice := cfg.AudioDeviceID != p.app.cfg.AudioDeviceID
+	deviceID, changedAudioDevice := coreconfig.ChooseAudioDevice(cfg.AudioDeviceID, int(selected), p.microphone != 0 && selected != ^uintptr(0), p.microphoneIDs)
+	cfg.AudioDeviceID = deviceID
 	if err = saveConfig(cfg); err != nil {
 		return err
 	}

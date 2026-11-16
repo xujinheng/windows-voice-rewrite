@@ -2,6 +2,36 @@ package meeting
 
 import "testing"
 
+func TestApplyCommandTogglesViewFlags(t *testing.T) {
+	flags := HUDFlags{SelectedReply: 1, ProfileOpen: true}
+	next, effect := ApplyCommand(flags, CommandTogglePause, 0)
+	if !next.Paused || effect != EffectRefresh || !next.ProfileOpen {
+		t.Fatalf("pause %+v %v", next, effect)
+	}
+	next, effect = ApplyCommand(next, CommandCaptions, 0)
+	if !next.CaptionsOnly || effect != EffectLayoutSaveRefresh {
+		t.Fatalf("captions %+v %v", next, effect)
+	}
+	next, effect = ApplyCommand(next, CommandToggleExpression, 0)
+	if !next.ExpressionExpanded || effect != EffectLayoutRefresh {
+		t.Fatalf("expression %+v %v", next, effect)
+	}
+	next, effect = ApplyCommand(next, CommandSelectReply, 2)
+	if next.SelectedReply != 2 || effect != EffectSelectReply {
+		t.Fatalf("reply %+v %v", next, effect)
+	}
+	next, effect = ApplyCommand(next, CommandCloseProfile, 0)
+	if next.ProfileOpen || effect != EffectCloseProfile {
+		t.Fatalf("close %+v %v", next, effect)
+	}
+	if _, effect = ApplyCommand(next, CommandCopyReply, 0); effect != EffectCopy {
+		t.Fatal(effect)
+	}
+	if _, effect = ApplyCommand(next, CommandNone, 0); effect != EffectNone {
+		t.Fatal(effect)
+	}
+}
+
 func TestMeetingButtonsStayContiguous(t *testing.T) {
 	if ButtonExpression-ButtonPause != 15 {
 		t.Fatalf("button span %d", ButtonExpression-ButtonPause)

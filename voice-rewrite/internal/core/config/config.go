@@ -76,6 +76,16 @@ func MeetingASRModeTitle(mode string) string {
 	}
 }
 
+// ChooseAudioDevice keeps the current device unless the combo index is in range.
+// The second result is whether the chosen id differs from the current one.
+func ChooseAudioDevice(current, index int, selectable bool, ids []int) (int, bool) {
+	if !selectable || index < 0 || index >= len(ids) {
+		return current, false
+	}
+	next := ids[index]
+	return next, next != current
+}
+
 func MeetingASRModeNote() string {
 	return MeetingASRLlamaPrefix + " 重复提交累积音频并延续文本前缀；不是原生编码器流式识别。需服务支持该协议。保存会取消当前处理并重新开始。"
 }

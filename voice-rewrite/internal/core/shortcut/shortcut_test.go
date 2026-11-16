@@ -36,6 +36,14 @@ func TestDictationAndRewriteShortcutCollisions(t *testing.T) {
 	if v, err := ValidateDictation("Ctrl+P", "Mouse5", "Ctrl+Alt+F10"); err != nil || v != "Ctrl+P" {
 		t.Fatalf("combo: %q %v", v, err)
 	}
+	record, dictation, changed, err := AssignPair("Mouse5", "Mouse4", "Ctrl+Alt+F10", " mouse5 ", "Ctrl+P")
+	if err != nil || record != "Mouse5" || dictation != "Ctrl+P" || !changed {
+		t.Fatalf("assign %q %q %v %v", record, dictation, changed, err)
+	}
+	record, dictation, changed, err = AssignPair("Mouse5", "Mouse4", "Ctrl+Alt+F10", "Pause", "Mouse4")
+	if err == nil || record != "Mouse5" || dictation != "Mouse4" || changed {
+		t.Fatal("invalid pair replaced the stored shortcuts")
+	}
 	if v, err := ValidateRewrite("Mouse5", "Ctrl+P", "Ctrl+Alt+F10"); err != nil || v != "Mouse5" {
 		t.Fatalf("mouse: %q %v", v, err)
 	}
