@@ -69,15 +69,15 @@ struct SideButtonHoldState {
     }
 
     private(set) var pressed: [Int: Press] = [:]
-    private var cancelledPending: Set<Int> = []
+    private var cancelledReleases: [Int: Release] = [:]
     private var sequence: UInt64 = 0
 
     var hasPendingPress: Bool { pressed.values.contains { !$0.active } }
 
     mutating func press(_ button: Int) -> UInt64? {
-        guard pressed[button] == nil, sequence < UInt64.max else { return nil }
+        guard pressed[button] == nil, cancelledReleases[button] == nil,
+              sequence < UInt64.max else { return nil }
         sequence += 1
-        cancelledPending.remove(button)
         pressed[button] = Press(token: sequence, active: false)
         return sequence
     }
@@ -96,15 +96,15 @@ struct SideButtonHoldState {
 
     mutating func reset() -> Bool {
         let hadActive = pressed.values.contains { $0.active }
-        for (button, press) in pressed where !press.active {
-            cancelledPending.insert(button)
+        for (button, press) in pressed {
+            cancelledReleases[button] = press.active ? .held : .short
         }
         pressed.removeAll()
         return hadActive
     }
 
-    mutating func takeCancelledRelease(_ button: Int) -> Bool {
-        cancelledPending.remove(button) != nil
+    mutating func takeCancelledRelease(_ button: Int) -> Release {
+        cancelledReleases.removeValue(forKey: button) ?? .ignored
     }
 }
 
@@ -250,11 +250,20 @@ public final class SideMouseButtonDriver {
         let button = Int(event.getIntegerValueField(.mouseEventButtonNumber))
         // A pause or binding change can cancel a pending press after its down
         // event was suppressed. Replay that click on release, even if unbound.
-        if type == .otherMouseUp, state.takeCancelledRelease(button) {
-            targetPIDs.removeValue(forKey: button)
-            if let down = downEvents.removeValue(forKey: button) {
-                replay(down: down, up: event)
+        if type == .otherMouseUp {
+            switch state.takeCancelledRelease(button) {
+            case .short:
+                targetPIDs.removeValue(forKey: button)
+                if let down = downEvents.removeValue(forKey: button) {
+                    replay(down: down, up: event)
+                }
                 return nil
+            case .held:
+                targetPIDs.removeValue(forKey: button)
+                downEvents.removeValue(forKey: button)
+                return nil
+            case .ignored:
+                break
             }
         }
         if voicePaused {
