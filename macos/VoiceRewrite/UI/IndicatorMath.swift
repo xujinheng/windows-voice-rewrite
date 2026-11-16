@@ -38,6 +38,10 @@ enum IndicatorMath {
     static let spinnerCenterX: Int = 30
     static let spinnerRadius: Int = 8
     static let spinnerDotSize: Int = 4
+    static let cancelIgnore: Int = 0
+    static let cancelPending: Int = 1
+    static let cancelDismiss: Int = 2
+    static let cancelWork: Int = 3
 
     static let pill = IndicatorRGB(r: 0x20, g: 0x24, b: 0x2E)
     static let clockText = IndicatorRGB(r: 0xF5, g: 0xF3, b: 0xF7)
@@ -62,6 +66,19 @@ enum IndicatorMath {
 
     static func terminal(_ phase: IndicatorPhase) -> Bool {
         return ((((phase == .success) || (phase == .error)) || (phase == .answer)) || (phase == .fallback))
+    }
+
+    static func cancelChoice(pending: Bool, current: Bool, terminal: Bool) -> Int {
+        if pending {
+            return cancelPending
+        }
+        if !current {
+            return cancelIgnore
+        }
+        if terminal {
+            return cancelDismiss
+        }
+        return cancelWork
     }
 
     static func label(_ phase: IndicatorPhase, mode: String) -> String {

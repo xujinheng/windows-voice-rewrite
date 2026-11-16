@@ -15,6 +15,7 @@ func p(goName, external string) parameter { return parameter{goName, external} }
 var signatures = map[string]signature{
 	"Width":                    {name: "width", params: []parameter{p("phase", "_")}, result: kindInt},
 	"Terminal":                 {name: "terminal", params: []parameter{p("phase", "_")}, result: kindBool},
+	"CancelChoice":             {name: "cancelChoice", params: []parameter{p("pending", ""), p("current", ""), p("terminal", "")}, result: kindInt},
 	"Label":                    {name: "label", params: []parameter{p("phase", "_"), p("mode", "")}, result: kindString},
 	"Accent":                   {name: "accent", params: []parameter{p("phase", ""), p("mode", "")}, result: kindOther},
 	"TerminalMark":             {name: "terminalMark", params: []parameter{p("phase", "_")}, result: kindOther},
@@ -64,7 +65,7 @@ func swiftType(goName string, sig signature) string {
 		return "String"
 	case "started", "changed", "now":
 		return "Date"
-	case "pending":
+	case "pending", "current", "terminal":
 		return "Bool"
 	case "index", "i":
 		return "Int"

@@ -1014,14 +1014,16 @@ final class WorkspaceModel: ObservableObject {
             IndicatorMath.normalizeMicrophoneLevel(Double(self?.microphone.rmsLevel ?? 0))
         }, onCancel: { [weak self] in
             guard let self else { return }
-            switch indicatorCancel(pending: self.indicatorSnapshot.pending, terminal: IndicatorMath.terminal(self.indicatorSnapshot.phase)) {
-            case .ignoreHold:
+            switch IndicatorMath.cancelChoice(pending: self.indicatorSnapshot.pending, current: true, terminal: IndicatorMath.terminal(self.indicatorSnapshot.phase)) {
+            case IndicatorMath.cancelPending:
                 self.sideGate.suppressNextHold()
                 self.dismissIndicator()
-            case .dismiss:
+            case IndicatorMath.cancelDismiss:
                 self.dismissIndicator()
-            case .cancelWork:
+            case IndicatorMath.cancelWork:
                 self.cancelCurrent()
+            default:
+                break
             }
         }, onAutoDismiss: { [weak self] in
             self?.indicatorSnapshot.visible = false

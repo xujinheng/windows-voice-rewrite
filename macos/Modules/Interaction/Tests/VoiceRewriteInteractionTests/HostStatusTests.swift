@@ -86,12 +86,6 @@ final class HostStatusTests: XCTestCase {
         XCTAssertEqual(modelReply(ok: true, text: "a", spoken: false, instruction: nil, mayWrite: true, previewOnly: false), .write("a"))
     }
 
-    func testIndicatorCancelChoosesThePreviewAndTerminalPaths() {
-        XCTAssertEqual(indicatorCancel(pending: true, terminal: true), .ignoreHold)
-        XCTAssertEqual(indicatorCancel(pending: false, terminal: true), .dismiss)
-        XCTAssertEqual(indicatorCancel(pending: false, terminal: false), .cancelWork)
-    }
-
     func testInsertionStatusKeepsPasswordAndClipboardSentences() {
         XCTAssertEqual(
             insertionStatus(InteractionFailure.secureField, rewrite: true, passwordRewrite: "改写", passwordDictation: "听写"),

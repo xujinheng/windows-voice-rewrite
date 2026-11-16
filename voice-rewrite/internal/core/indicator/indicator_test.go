@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+func TestCancelChoicePrefersThePreview(t *testing.T) {
+	if CancelChoice(true, false, true) != CancelPending || CancelChoice(false, false, true) != CancelIgnore || CancelChoice(false, true, true) != CancelDismiss || CancelChoice(false, true, false) != CancelWork {
+		t.Fatal("cancel")
+	}
+}
+
 func TestCompactGeometry(t *testing.T) {
 	if Height != 50 {
 		t.Fatalf("height %d", Height)

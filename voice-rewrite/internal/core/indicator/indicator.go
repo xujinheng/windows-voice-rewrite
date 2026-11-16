@@ -174,6 +174,28 @@ func Allowed(phase Phase) bool {
 	}
 }
 
+const (
+	CancelIgnore  = 0
+	CancelPending = 1
+	CancelDismiss = 2
+	CancelWork    = 3
+)
+
+// CancelChoice is the pill cancel. A pending preview wins, a stale message is ignored,
+// and a finished phase only closes the pill.
+func CancelChoice(pending, current, terminal bool) int {
+	if pending {
+		return CancelPending
+	}
+	if !current {
+		return CancelIgnore
+	}
+	if terminal {
+		return CancelDismiss
+	}
+	return CancelWork
+}
+
 func Terminal(phase Phase) bool {
 	return phase == Success || phase == Error || phase == Answer || phase == Fallback
 }

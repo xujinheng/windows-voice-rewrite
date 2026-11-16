@@ -129,6 +129,7 @@ func emitIndicator(dir string) (string, error) {
 	order := []struct{ name, result string }{
 		{"Width", "Int"},
 		{"Terminal", "Bool"},
+		{"CancelChoice", "Int"},
 		{"Label", "String"},
 		{"Accent", "IndicatorRGB"},
 		{"TerminalMark", "IndicatorRGB"},

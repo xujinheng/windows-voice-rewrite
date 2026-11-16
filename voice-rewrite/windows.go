@@ -606,27 +606,24 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_STATUS_CANCEL {
-			if activeHandyStatus != nil && activeHandyStatus.pending && msg.WParam == 0 {
+			status := activeHandyStatus
+			switch indicator.CancelChoice(status != nil && status.pending && msg.WParam == 0, status != nil && app.epoch.Valid(uint64(msg.WParam)) && status.owner == uint64(msg.WParam), status != nil && indicator.Terminal(status.phase)) {
+			case indicator.CancelPending:
 				discardPendingSide()
-				continue
-			}
-			if !app.epoch.Valid(uint64(msg.WParam)) || activeHandyStatus == nil || activeHandyStatus.owner != uint64(msg.WParam) {
-				continue // a cancel click queued by a previous session
-			}
-			if indicator.Terminal(activeHandyStatus.phase) {
+			case indicator.CancelDismiss:
 				closeHandyStatus() // close a completed status, not the answer card
-				continue
+			case indicator.CancelWork:
+				app.epoch.Start() // cancel either Mouse4 or Mouse5 before paste
+				if active != nil {
+					stopHoldWatch()
+					rec := active
+					active = nil
+					rec.Stop()
+					go func() { <-rec.result }()
+				}
+				closeHandyStatus()
+				app.setStatus(trayIdle)
 			}
-			app.epoch.Start() // cancel either Mouse4 or Mouse5 before paste
-			if active != nil {
-				stopHoldWatch()
-				rec := active
-				active = nil
-				rec.Stop()
-				go func() { <-rec.result }()
-			}
-			closeHandyStatus()
-			app.setStatus(trayIdle)
 			continue
 		}
 		if msg.Message == WM_APPLY_RESULT {
