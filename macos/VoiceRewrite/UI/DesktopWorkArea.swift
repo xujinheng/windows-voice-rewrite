@@ -19,6 +19,24 @@ struct DesktopWorkArea {
     }
 }
 
+struct ResultRect {
+    var x, y, w, h: Int32
+    var hit: ResultHitRect { ResultHitRect(left: x, top: y, right: x + w, bottom: y + h) }
+}
+
+/// Card control frames. At scale 1 these match internal/core/popup.
+enum ResultCardChrome {
+    static func editor(width: Int32, height: Int32) -> ResultRect {
+        ResultRect(x: 22, y: 59, w: width - 44, h: height - 119)
+    }
+    static func closeButton(width: Int32) -> ResultRect {
+        ResultRect(x: width - 51, y: 11, w: 31, h: 29)
+    }
+    static func copyButton(width: Int32, height: Int32) -> ResultRect {
+        ResultRect(x: width - 119, y: height - 48, w: 98, h: 33)
+    }
+}
+
 enum ResultCardMetrics {
     static let width: CGFloat = 476
 

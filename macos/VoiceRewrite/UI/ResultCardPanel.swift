@@ -101,10 +101,10 @@ final class ResultCardPanel {
         let height = Int32(frame.height.rounded())
         let width = Int32(frame.width.rounded())
         let window = ResultHitRect(left: 0, top: 0, right: width, bottom: height)
-        let editor = ResultHitRect(left: 16, top: 44, right: width - 16, bottom: height - 56)
+        let editor = ResultCardChrome.editor(width: width, height: height).hit
         let buttons = [
-            ResultHitRect(left: width - 196, top: height - 48, right: width - 104, bottom: height - 12),
-            ResultHitRect(left: width - 96, top: height - 48, right: width - 16, bottom: height - 12),
+            ResultCardChrome.closeButton(width: width).hit,
+            ResultCardChrome.copyButton(width: width, height: height).hit,
         ]
         if ResultCardMetrics.clickDismisses(x: localX, y: localY, window: window, editor: editor, buttons: buttons) {
             dismiss()
@@ -124,28 +124,32 @@ private struct ResultCardView: View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Color(indicator: IndicatorMath.pill))
+            let editor = ResultCardChrome.editor(width: Int32(width), height: Int32(height))
+            let close = ResultCardChrome.closeButton(width: Int32(width))
+            let copy = ResultCardChrome.copyButton(width: Int32(width), height: Int32(height))
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color(indicator: IndicatorMath.labelText))
                 .lineLimit(1)
-                .frame(width: width - 32, alignment: .leading)
-                .position(x: width / 2, y: 28)
+                .frame(width: CGFloat(close.x - 28), alignment: .leading)
+                .position(x: 16 + CGFloat(close.x - 28) / 2, y: 28)
             ScrollView {
                 Text(text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                     .foregroundStyle(Color(indicator: IndicatorMath.clockText))
             }
-            .frame(width: width - 32, height: height - 100)
-            .position(x: width / 2, y: 44 + (height - 100) / 2)
+            .frame(width: CGFloat(editor.w), height: CGFloat(editor.h))
+            .position(x: CGFloat(editor.x) + CGFloat(editor.w) / 2, y: CGFloat(editor.y) + CGFloat(editor.h) / 2)
             Button(action: onCopy) {
-                Text("复制").frame(width: 88, height: 32)
+                Text("复制结果").frame(width: CGFloat(copy.w), height: CGFloat(copy.h))
             }
             .buttonStyle(.borderedProminent)
-            .position(x: width - 148, y: height - 30)
+            .position(x: CGFloat(copy.x) + CGFloat(copy.w) / 2, y: CGFloat(copy.y) + CGFloat(copy.h) / 2)
             Button(action: onClose) {
-                Text("关闭").frame(width: 80, height: 32)
+                Text("×").frame(width: CGFloat(close.w), height: CGFloat(close.h))
             }
-            .buttonStyle(.bordered)
-            .position(x: width - 56, y: height - 30)
+            .buttonStyle(.plain)
+            .foregroundStyle(Color(indicator: IndicatorMath.closeGlyph))
+            .position(x: CGFloat(close.x) + CGFloat(close.w) / 2, y: CGFloat(close.y) + CGFloat(close.h) / 2)
         }
         .frame(width: width, height: height)
     }

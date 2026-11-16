@@ -11,7 +11,7 @@ VoiceRewrite has native Windows (Go/Win32) and macOS (SwiftUI/AppKit with a bund
 | `internal/core/input` | Map a physical side button to dictation, rewrite, or ignore, and track one button's press, hold, and release. Hosts own the event tap or mouse hook. |
 | `internal/core/shortcut` | Canonical voice hotkeys: mouse side buttons, function keys, and Ctrl/Alt/Shift combinations. Bare typing keys and Pause/Break are rejected, and two voice actions cannot share a shortcut. macOS maps the key name to its own virtual key codes. |
 | `internal/core/desktop` | Keep a window inside a monitor work area, including monitors with negative coordinates. |
-| `internal/core/popup` | Result-card size for a text length, and which clicks dismiss the card instead of the text or its buttons. |
+| `internal/core/popup` | Result-card size for a text length, the editor, note, close, copy, and apply frames, and which clicks dismiss the card instead of the text or its buttons. |
 | `internal/core/settingsform` | Logical-pixel geometry for the settings window: stretching rows and the shared field, label, and shortcut rectangles. Hosts scale them to the monitor DPI. |
 | `internal/core/texttarget` | Win32 edit, rich edit, and WinForms edit classes, including password style, plus Chrome, Edge, Firefox, CEF, and Electron window classes. A renderer surface only authorizes a guarded paste probe. When a password probe cannot run, the whole browser or Electron window is treated as sensitive. |
 | `internal/core/logfile` | Rotate a diagnostic log before it is opened: one active file up to 4 MiB and three numbered backups. Hosts choose the path and write the lines. |

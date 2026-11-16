@@ -15,7 +15,7 @@ import (
 	"unsafe"
 
 	"voicerewrite/internal/core/desktop"
-	"voicerewrite/internal/core/popup"
+	corepopup "voicerewrite/internal/core/popup"
 	"voicerewrite/internal/core/texttarget"
 )
 
@@ -565,7 +565,7 @@ func showAnswerPopup(msg popupMessage) error {
 	// Never truncate a model response: users must be able to review and copy
 	// the full answer, including large translations and generated documents.
 	n := utf8.RuneCountInString(msg.body)
-	logicalW, logicalH := popup.SizeForText(n)
+	logicalW, logicalH := corepopup.SizeForText(n)
 	// Keep result on the source monitor's WORK AREA, including negative coordinates.
 	work := uxWorkAreaForPoint(msg.anchor)
 	scale := uxMonitorScaleForPoint(msg.anchor)
@@ -612,7 +612,7 @@ func showAnswerPopup(msg popupMessage) error {
 	}
 	// No permanent status copy: the body is the product. A slim inline
 	// status appears only after an actual Copy/Apply action.
-	noteRect := popup.Note(cw, scale)
+	noteRect := corepopup.Note(cw, scale)
 	note, err := makeChild("STATIC", "", WS_CHILD|WS_VISIBLE, noteRect.X, noteRect.Y, noteRect.W, noteRect.H, hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
@@ -621,7 +621,8 @@ func showAnswerPopup(msg popupMessage) error {
 	popup.note = note
 	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | uxWSTabStop | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
 	editorText := strings.ReplaceAll(strings.ReplaceAll(msg.body, "\r\n", "\n"), "\n", "\r\n")
-	editor, err := makeChild("EDIT", "", bodyStyle, px(22), px(59), cw-px(44), ch-px(119), hwnd, 0)
+	editorFrame := corepopup.Editor(cw, ch, scale)
+	editor, err := makeChild("EDIT", "", bodyStyle, editorFrame.X, editorFrame.Y, editorFrame.W, editorFrame.H, hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -637,18 +638,20 @@ func showAnswerPopup(msg popupMessage) error {
 		return errors.New("结果正文未写入文本控件")
 	}
 	// The header Close action stays outside the draggable caption hit area.
-	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(51), px(11), px(31), px(29), hwnd, BUTTON_CLOSE); err != nil {
+	closeFrame := corepopup.CloseButton(cw, scale)
+	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, closeFrame.X, closeFrame.Y, closeFrame.W, closeFrame.H, hwnd, BUTTON_CLOSE); err != nil {
 		closeActiveAnswer()
 		return err
 	}
-	bottom := ch - px(48)
 	if msg.allowApply {
-		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(243), bottom, px(116), px(33), hwnd, BUTTON_APPLY); err != nil {
+		applyFrame := corepopup.ApplyButton(cw, ch, scale)
+		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, applyFrame.X, applyFrame.Y, applyFrame.W, applyFrame.H, hwnd, BUTTON_APPLY); err != nil {
 			closeActiveAnswer()
 			return err
 		}
 	}
-	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(119), bottom, px(98), px(33), hwnd, BUTTON_COPY); err != nil {
+	copyFrame := corepopup.CopyButton(cw, ch, scale)
+	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, copyFrame.X, copyFrame.Y, copyFrame.W, copyFrame.H, hwnd, BUTTON_COPY); err != nil {
 		closeActiveAnswer()
 		return err
 	}
