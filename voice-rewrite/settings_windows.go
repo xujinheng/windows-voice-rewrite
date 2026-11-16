@@ -608,9 +608,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			}
 			if (wParam>>16)&0xffff == 0x0300 { // EN_CHANGE
 				if idx, ok := p.probeEdits[lParam]; ok {
-					p.probeMu.Lock()
-					p.probeSerial[idx]++ // reject in-flight stale response
-					p.probeMu.Unlock()
+					p.bumpProbe(idx) // reject in-flight stale response
 					uxSetText(p.probeStatus[idx], serviceprobe.StatusStale)
 				}
 			}
@@ -622,10 +620,9 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				p.beginShortcutCapture(wParam & 0xffff)
 				return 0
 			case contract.ActionSave:
+				// save() writes the restart notice or the immediate-effect line.
 				if err := p.save(); err != nil {
 					uxSetText(p.hint, "保存失败："+err.Error())
-				} else {
-					// save() provides the precise message, including restart notices.
 				}
 				return 0
 			case contract.ActionClose:
@@ -637,10 +634,10 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				}
 				return 0
 			case contract.ActionProbeASR:
-				p.check("ASR", uxWinText(p.inputs[0]), uxWinText(p.inputs[2]), uxWinText(p.inputs[1]))
+				p.check("ASR", p.inputValue("asr_base_url"), p.inputValue("asr_api_key"), p.inputValue("asr_model"))
 				return 0
 			case contract.ActionProbeLLM:
-				p.check("LLM", uxWinText(p.inputs[3]), uxWinText(p.inputs[5]), uxWinText(p.inputs[4]))
+				p.check("LLM", p.inputValue("llm_base_url"), p.inputValue("llm_api_key"), p.inputValue("text_model"))
 				return 0
 			}
 		}
@@ -695,6 +692,22 @@ func (p *uxSettings) save() error {
 	return nil
 }
 
+func (p *uxSettings) inputValue(id string) string {
+	index, ok := contract.InputIndex(id)
+	if p == nil || !ok || index < 0 || index >= len(p.inputs) {
+		return ""
+	}
+	return uxWinText(p.inputs[index])
+}
+
+func (p *uxSettings) bumpProbe(idx int) uint64 {
+	p.probeMu.Lock()
+	p.probeSerial[idx]++
+	serial := p.probeSerial[idx]
+	p.probeMu.Unlock()
+	return serial
+}
+
 func (p *uxSettings) check(kind, base, key, model string) {
 	if p == nil || p.window == 0 {
 		return
@@ -707,10 +720,7 @@ func (p *uxSettings) check(kind, base, key, model string) {
 	if !ok || idx < 0 || idx >= len(p.probeStatus) {
 		return
 	}
-	p.probeMu.Lock()
-	p.probeSerial[idx]++
-	serial := p.probeSerial[idx]
-	p.probeMu.Unlock()
+	serial := p.bumpProbe(idx)
 	uxSetText(p.probeStatus[idx], serviceprobe.StatusRunning)
 	h := p.window
 	go func() {
