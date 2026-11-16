@@ -41,6 +41,42 @@ func TestDictationAndRewriteShortcutCollisions(t *testing.T) {
 	}
 }
 
+func TestStartupHotkeyRulesKeepWindowsOrder(t *testing.T) {
+	ready, err := ValidateStartup("hold", "Mouse4", "Mouse5", "Ctrl+Alt+F10")
+	if err != nil || !ready.DictationMouse || !ready.RewriteMouse || ready.DictationButton != 1 || ready.RewriteButton != 2 {
+		t.Fatalf("defaults %#v %v", ready, err)
+	}
+	if ready.ExitVK != 0x79 || ready.ExitMods != Ctrl|Alt|0x4000 {
+		t.Fatalf("exit registration vk=%#x mods=%#x", ready.ExitVK, ready.ExitMods)
+	}
+	keyboard, err := ValidateStartup("hold", "Ctrl+Alt+R", "F8", "Ctrl+Alt+F10")
+	if err != nil || keyboard.DictationMouse || keyboard.DictationVK != 'R' || keyboard.RewriteVK != 0x77 {
+		t.Fatalf("keyboard %#v %v", keyboard, err)
+	}
+	cases := []struct{ mode, dictation, rewrite, exit, want string }{
+		{"hold", "Pause", "Mouse5", "Ctrl+Alt+F10", "听写快捷键无效，请重新录入（支持功能键和 Ctrl/Alt 组合键）"},
+		{"hold", "Shift+A", "Mouse5", "Ctrl+Alt+F10", "听写快捷键无效，请重新录入（支持功能键和 Ctrl/Alt 组合键）"},
+		{"hold", "Mouse4", "xbutton1", "Ctrl+Alt+F10", "听写和改写不能占用同一个鼠标侧键"},
+		{"toggle", "Ctrl+P", "Mouse5", "Ctrl+Alt+F10", "键盘听写快捷键当前只支持按住说话模式（record_mode=hold）"},
+		{"toggle", "Mouse4", "Mouse5", "Ctrl+Alt+F10", "Mouse4/Mouse5 目前仅支持 record_mode=hold"},
+		{"hold", "Mouse4", "Shift+A", "Ctrl+Alt+F10", "Shift+字母会干扰打字，请同时使用 Ctrl 或 Alt"},
+		{"hold", "Mouse4", "Ctrl+Alt+F10", "Ctrl+Alt+F10", "Record and exit hotkeys must differ"},
+		{"hold", "Ctrl+Alt+F10", "Mouse5", "Ctrl+Alt+F10", "Record and exit hotkeys must differ"},
+		{"hold", "F9", "F9", "Ctrl+Alt+F10", "Record and exit hotkeys must differ"},
+		{"hold", "Mouse4", "Pause", "Ctrl+Alt+F10", "Pause/Break 不支持按住录音模式"},
+		{"hold", "Mouse4", "Mouse5", "Mouse4", `mouse button "Mouse4" must use the mouse hook`},
+	}
+	for _, tc := range cases {
+		_, err := ValidateStartup(tc.mode, tc.dictation, tc.rewrite, tc.exit)
+		if err == nil || err.Error() != tc.want {
+			t.Errorf("%s/%s/%s/%s: got %v want %s", tc.mode, tc.dictation, tc.rewrite, tc.exit, err, tc.want)
+		}
+	}
+	if _, err := ValidateStartup("toggle", "Mouse4", "Pause", "Ctrl+Alt+F10"); err != nil {
+		t.Fatalf("toggle pause rewrite is registered by Windows: %v", err)
+	}
+}
+
 func TestBindingReportsKeyAndModifiers(t *testing.T) {
 	for _, tc := range []struct{ raw, key string }{
 		{"Ctrl+Alt+R", "R"},

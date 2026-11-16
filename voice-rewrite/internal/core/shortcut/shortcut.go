@@ -176,6 +176,74 @@ func ValidateRewrite(candidate, dictation, exit string) (string, error) {
 	return validate(candidate, dictation, exit, "语音指令快捷键")
 }
 
+const pauseVK uint32 = 0x13
+
+// Startup is the keyboard and mouse registration decided before a host installs hooks.
+type Startup struct {
+	DictationMouse             bool
+	DictationButton            uint16
+	DictationMods, DictationVK uint32
+	RewriteMouse               bool
+	RewriteButton              uint16
+	RewriteMods, RewriteVK     uint32
+	ExitMods, ExitVK           uint32
+}
+
+// ValidateStartup applies the Windows launch rules in their existing order.
+// Dictation parse failures keep one message. Rewrite and exit parse failures
+// keep the parser's own message. An exit shortcut cannot be a mouse button.
+func ValidateStartup(mode, dictation, rewrite, exit string) (Startup, error) {
+	var out Startup
+	dictationButton, dictationMouse := WindowsSideButton(dictation)
+	rewriteButton, rewriteMouse := WindowsSideButton(rewrite)
+	out.DictationMouse = dictationMouse
+	out.DictationButton = dictationButton
+	out.RewriteMouse = rewriteMouse
+	out.RewriteButton = rewriteButton
+	if !dictationMouse {
+		_, mods, vk, _, err := Parse(dictation)
+		if err != nil || vk == pauseVK {
+			return Startup{}, errors.New("听写快捷键无效，请重新录入（支持功能键和 Ctrl/Alt 组合键）")
+		}
+		out.DictationMods, out.DictationVK = mods, vk
+	}
+	if dictationMouse && rewriteMouse && dictationButton == rewriteButton {
+		return Startup{}, errors.New("听写和改写不能占用同一个鼠标侧键")
+	}
+	if mode != "hold" && !dictationMouse {
+		return Startup{}, errors.New("键盘听写快捷键当前只支持按住说话模式（record_mode=hold）")
+	}
+	if rewriteMouse {
+		if mode != "hold" {
+			return Startup{}, errors.New("Mouse4/Mouse5 目前仅支持 record_mode=hold")
+		}
+	} else {
+		_, mods, vk, _, err := Parse(rewrite)
+		if err != nil {
+			return Startup{}, err
+		}
+		out.RewriteMods, out.RewriteVK = mods, vk
+	}
+	_, exitMods, exitVK, exitMouse, err := Parse(exit)
+	if err != nil {
+		return Startup{}, err
+	}
+	if exitMouse {
+		return Startup{}, fmt.Errorf("mouse button %q must use the mouse hook", exit)
+	}
+	out.ExitMods, out.ExitVK = exitMods, exitVK
+	sameRewriteExit := !rewriteMouse && out.RewriteMods == exitMods && out.RewriteVK == exitVK
+	sameRewriteDictation := !rewriteMouse && !dictationMouse && out.RewriteMods == out.DictationMods && out.RewriteVK == out.DictationVK
+	sameDictationExit := !dictationMouse && exitMods == out.DictationMods && exitVK == out.DictationVK
+	if sameRewriteExit || sameRewriteDictation || sameDictationExit {
+		return Startup{}, errors.New("Record and exit hotkeys must differ")
+	}
+	if mode == "hold" && !rewriteMouse && out.RewriteVK == pauseVK {
+		return Startup{}, errors.New("Pause/Break 不支持按住录音模式")
+	}
+	return out, nil
+}
+
 // Binding is the keyboard or mouse action described by a stored shortcut.
 // Key is the canonical name, such as R, F8, or PageDown. Virtual-key numbers
 // stay inside Parse for the Windows host.

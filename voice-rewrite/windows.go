@@ -93,7 +93,6 @@ const (
 	MOD_NOREPEAT     = 0x4000
 	MOD_SHIFT        = 0x0004
 	VK_F9            = 0x78
-	VK_PAUSE         = 0x13
 	VK_F10           = 0x79
 	VK_CONTROL       = 0x11
 	VK_MENU          = 0x12
@@ -253,18 +252,6 @@ func (a *appState) fail(e error) {
 	a.setStatus(trayError) // nonmodal; available via tray's last-error command
 }
 
-// Reuse the portable capture/parser rules for registration.
-func parseHotkey(s string) (uintptr, uintptr, error) {
-	_, mods, vk, mouse, err := shortcut.Parse(s)
-	if err != nil {
-		return 0, 0, err
-	}
-	if mouse {
-		return 0, 0, fmt.Errorf("mouse button %q must use the mouse hook", s)
-	}
-	return uintptr(mods), uintptr(vk), nil
-}
-
 var recordVirtualKey uintptr = VK_F9
 
 // A named Windows mutex prevents two app instances from swallowing the same
@@ -351,52 +338,18 @@ func runApp() {
 	defer closeNativeSettings()
 	defer closeHandyStatus()
 	activeHandyAppWindow = hwnd
-	selectedMouseButton, usingMouse := shortcut.WindowsSideButton(cfg.HotkeyRecord)
-	dictationButton, dictationMouse := shortcut.WindowsSideButton(cfg.DictationHotkey)
-	var dictationVK, dictationMods uintptr
-	if !dictationMouse {
-		dictationMods, dictationVK, e = parseHotkey(cfg.DictationHotkey)
-		if e != nil || dictationVK == VK_PAUSE {
-			winErr("听写快捷键无效，请重新录入（支持功能键和 Ctrl/Alt 组合键）")
-			return
-		}
-	}
-	if dictationMouse && usingMouse && dictationButton == selectedMouseButton {
-		winErr("听写和改写不能占用同一个鼠标侧键")
-		return
-	}
-	if cfg.RecordMode != "hold" && !dictationMouse {
-		winErr("键盘听写快捷键当前只支持按住说话模式（record_mode=hold）")
-		return
-	}
-	var recordMods, recordVK uintptr
-	if usingMouse {
-		if cfg.RecordMode != "hold" {
-			winErr("Mouse4/Mouse5 目前仅支持 record_mode=hold")
-			return
-		}
-	} else {
-		recordMods, recordVK, e = parseHotkey(cfg.HotkeyRecord)
-		if e != nil {
-			winErr(e.Error())
-			return
-		}
-	}
-	exitMods, exitVK, e := parseHotkey(cfg.HotkeyExit)
+	ready, e := shortcut.ValidateStartup(cfg.RecordMode, cfg.DictationHotkey, cfg.HotkeyRecord, cfg.HotkeyExit)
 	if e != nil {
 		winErr(e.Error())
 		return
 	}
-	if (!usingMouse && recordMods == exitMods && recordVK == exitVK) ||
-		(!usingMouse && !dictationMouse && recordMods == dictationMods && recordVK == dictationVK) ||
-		(!dictationMouse && exitMods == dictationMods && exitVK == dictationVK) {
-		winErr("Record and exit hotkeys must differ")
-		return
-	}
-	if cfg.RecordMode == "hold" && !usingMouse && recordVK == VK_PAUSE {
-		winErr("Pause/Break 不支持按住录音模式")
-		return
-	}
+	usingMouse := ready.RewriteMouse
+	dictationMouse := ready.DictationMouse
+	selectedMouseButton := ready.RewriteButton
+	dictationButton := ready.DictationButton
+	dictationMods, dictationVK := uintptr(ready.DictationMods), uintptr(ready.DictationVK)
+	recordMods, recordVK := uintptr(ready.RewriteMods), uintptr(ready.RewriteVK)
+	exitMods, exitVK := uintptr(ready.ExitMods), uintptr(ready.ExitVK)
 	if !usingMouse {
 		recordVirtualKey = recordVK
 		if rv, _, _ := procRegisterHotKey.Call(0, HOTKEY_RECORD, recordMods, recordVK); rv == 0 {
