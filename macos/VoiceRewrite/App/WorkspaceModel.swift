@@ -604,39 +604,41 @@ final class WorkspaceModel: ObservableObject {
                 generation = next
                 let snapshot = try await interaction.captureSelection(
                     generation: next, intent: .replaceSelection)
-                guard resultGeneration.accepts(token) else {
-                    await interaction.cancelTask(generation: next)
+                let captured = rewriteVoiceAfterCapture(
+                    tokenValid: resultGeneration.accepts(token),
+                    tooLong: SelectionLimit.tooLongMessage(selected: snapshot.originalSelectedText))
+                if captured.cancelTask || captured.cancelMicrophone {
+                    await cancelSelectionCue(captured, generation: next)
+                }
+                presentSelectionCue(captured)
+                if captured.leave {
                     isStarting = false
                     return
                 }
-                if let message = SelectionLimit.tooLongMessage(selected: snapshot.originalSelectedText) {
-                    await interaction.cancelTask(generation: next)
-                    interactionStatus = message
-                    recordingStatus = recordingIdle()
-                    showIndicator(phase: .error, mode: "改写", pending: false)
-                } else {
+                if captured.startMicrophone {
                     try await microphone.start()
-                    guard resultGeneration.accepts(token) else {
-                        microphone.cancel()
-                        await interaction.cancelTask(generation: next)
+                    let ready = rewriteVoiceMicrophoneReady(tokenValid: resultGeneration.accepts(token))
+                    if ready.beginRecording {
+                        activeVoiceSelection = (snapshot, next)
+                        isVoiceSelectionRecording = true
+                        isRecording = true
+                        showIndicator(phase: .recording, mode: "改写", pending: false)
+                    }
+                    if ready.cancelTask || ready.cancelMicrophone {
+                        await cancelSelectionCue(ready, generation: next)
+                    }
+                    presentSelectionCue(ready)
+                    if ready.leave {
                         isStarting = false
                         return
                     }
-                    activeVoiceSelection = (snapshot, next)
-                    isVoiceSelectionRecording = true
-                    isRecording = true
-                    showIndicator(phase: .recording, mode: "改写", pending: false)
-                    recordingStatus = rewriteRecording()
-                    interactionStatus = rewriteSelectionLocked()
                 }
             } catch {
-                microphone.cancel()
-                if let generation { await interaction.cancelTask(generation: generation) }
-                if resultGeneration.accepts(token) {
-                    interactionStatus = rewriteCaptureStatus(error, password: ResultCopy.passwordSelection)
-                    recordingStatus = recordingIdle()
-                    showIndicator(phase: .error, mode: "改写", pending: false)
-                }
+                let failed = rewriteVoiceCaptureFailed(
+                    tokenValid: resultGeneration.accepts(token),
+                    status: rewriteCaptureStatus(error, password: ResultCopy.passwordSelection))
+                await cancelSelectionCue(failed, generation: generation)
+                presentSelectionCue(failed)
             }
             isStarting = false
             stopWhenSideMouseReleased(.rewrite)
@@ -793,18 +795,14 @@ final class WorkspaceModel: ObservableObject {
                 let generation = try await interaction.beginTask(targetProcessID: pid)
                 let snapshot = try await interaction.captureSelection(
                     generation: generation, intent: .replaceSelection)
-                guard resultGeneration.accepts(token) else {
-                    await interaction.cancelTask(generation: generation)
-                    return
+                let step = typedSelectionAfterCapture(
+                    tokenValid: resultGeneration.accepts(token),
+                    tooLong: SelectionLimit.tooLongMessage(selected: snapshot.originalSelectedText))
+                if step.cancelTask || step.cancelMicrophone {
+                    await cancelSelectionCue(step, generation: generation)
                 }
-                if let message = SelectionLimit.tooLongMessage(selected: snapshot.originalSelectedText) {
-                    await interaction.cancelTask(generation: generation)
-                    isProcessing = false
-                    interactionStatus = message
-                    llmProbeStatus = probeTaskIncomplete()
-                    showIndicator(phase: .error, mode: "改写", pending: false)
-                    return
-                }
+                presentSelectionCue(step)
+                guard step.sendTask else { return }
                 cancelProbes()
                 llmProbeStatus = probeRewritingSelection()
                 showIndicator(phase: .rewriting, mode: "改写", pending: false)
@@ -823,12 +821,39 @@ final class WorkspaceModel: ObservableObject {
                 }
                 activeRequestID = id
             } catch {
-                guard resultGeneration.accepts(token) else { return }
-                isProcessing = false
-                interactionStatus = rewriteTaskNotStarted(error.localizedDescription)
-                llmProbeStatus = probeTaskIncomplete()
-                showIndicator(phase: .error, mode: "改写", pending: false)
+                let failed = typedSelectionStartFailed(
+                    tokenValid: resultGeneration.accepts(token),
+                    detail: error.localizedDescription)
+                presentSelectionCue(failed)
             }
+        }
+    }
+
+    /// The microphone is canceled before the Accessibility task.
+    private func cancelSelectionCue(_ cue: SelectionCue, generation: UInt64?) async {
+        if cue.cancelMicrophone {
+            microphone.cancel()
+        }
+        if cue.cancelTask, let generation {
+            await interaction.cancelTask(generation: generation)
+        }
+    }
+
+    private func presentSelectionCue(_ cue: SelectionCue) {
+        if cue.stopProcessing {
+            isProcessing = false
+        }
+        if let status = cue.interactionStatus {
+            interactionStatus = status
+        }
+        if let status = cue.recordingStatus {
+            recordingStatus = status
+        }
+        if let probe = cue.llmProbe {
+            llmProbeStatus = probe
+        }
+        if cue.showError {
+            showIndicator(phase: .error, mode: "改写", pending: false)
         }
     }
 
