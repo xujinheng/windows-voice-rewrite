@@ -102,3 +102,17 @@ func TestBindingReportsKeyAndModifiers(t *testing.T) {
 		t.Fatal("keyboard shortcut mapped as a mouse button")
 	}
 }
+
+func TestMacKeyboardDefaultsStayKeyboardShortcuts(t *testing.T) {
+	seen := map[string]bool{}
+	for _, raw := range []string{MacDictationShortcut, MacRewriteShortcut, MacTextEditShortcut} {
+		binding, err := Bind(raw)
+		if err != nil || binding.Mouse || seen[binding.Key] {
+			t.Fatalf("%s %#v %v", raw, binding, err)
+		}
+		seen[binding.Key] = true
+	}
+	if MacDictationShortcut != "Ctrl+Alt+R" || MacRewriteShortcut != "Ctrl+Alt+E" || MacTextEditShortcut != "Ctrl+Alt+T" {
+		t.Fatalf("mac defaults %s %s %s", MacDictationShortcut, MacRewriteShortcut, MacTextEditShortcut)
+	}
+}

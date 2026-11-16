@@ -22,6 +22,13 @@ const (
 	Shift = shift
 )
 
+// macOS settings defaults. Windows defaults stay Mouse4, Mouse5, and Ctrl+Alt+F10.
+const (
+	MacDictationShortcut = "Ctrl+Alt+R"
+	MacRewriteShortcut   = "Ctrl+Alt+E"
+	MacTextEditShortcut  = "Ctrl+Alt+T"
+)
+
 var namedKeys = map[string]uint32{
 	"SPACE": 0x20, "TAB": 0x09, "ENTER": 0x0D,
 	"LEFT": 0x25, "UP": 0x26, "RIGHT": 0x27, "DOWN": 0x28,

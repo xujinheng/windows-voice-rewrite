@@ -48,7 +48,7 @@ func TestNormalizeConfig(t *testing.T) {
 	if got.ASRModel != "whisper-1" || got.HotkeyRecord != "Mouse5" || got.DictationHotkey != "Mouse4" || got.RecordMode != "hold" || got.HotkeyExit != "Ctrl+Alt+F10" {
 		t.Fatalf("missing defaults: %+v", got)
 	}
-	if got.MaxResponseTokens != 1200 || got.MaxRecordSeconds != 60 || got.MaxSelectedRunes != 12000 || got.SelectionCopyAttempts != 3 || got.SelectionCopyTimeoutMS != 1800 {
+	if got.MaxResponseTokens != 1200 || got.MaxRecordSeconds != DefaultRecordSeconds || got.MaxSelectedRunes != DefaultMaxSelectedRunes || got.SelectionCopyAttempts != 3 || got.SelectionCopyTimeoutMS != 1800 {
 		t.Fatalf("invalid bounds not clamped: %+v", got)
 	}
 	if got.ASRAPIKey != "opaque" || cfg.ASRAPIKey != "opaque" {

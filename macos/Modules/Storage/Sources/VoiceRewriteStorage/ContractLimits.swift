@@ -1,4 +1,4 @@
-// Source: voice-rewrite/internal/core/config
+// Source: voice-rewrite/internal/core/config and voice-rewrite/internal/core/shortcut
 import Foundation
 
 public enum ContractLimits {
@@ -12,6 +12,9 @@ public enum ContractLimits {
     public static let defaultLLMBaseURL = "http://127.0.0.1:1234/v1"
     public static let defaultASRModel = "whisper-1"
     public static let defaultTextModel = "auto"
+    public static let macDictationShortcut = "Ctrl+Alt+R"
+    public static let macRewriteShortcut = "Ctrl+Alt+E"
+    public static let macTextEditShortcut = "Ctrl+Alt+T"
 }
 
 extension MacSettings {

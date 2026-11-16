@@ -251,7 +251,7 @@ func emitLimits(moduleRoot string) (string, error) {
 		return "", fmt.Errorf("no url schemes")
 	}
 	var b strings.Builder
-	b.WriteString(sourceNote("voice-rewrite/internal/core/config"))
+	b.WriteString(sourceNote("voice-rewrite/internal/core/config and voice-rewrite/internal/core/shortcut"))
 	b.WriteString("import Foundation\n\npublic enum ContractLimits {\n")
 	for _, item := range want {
 		value, ok := values[item.goName]
@@ -273,6 +273,22 @@ func emitLimits(moduleRoot string) (string, error) {
 		value, ok := defaults[item.goName]
 		if !ok {
 			return "", fmt.Errorf("missing default %s", item.goName)
+		}
+		b.WriteString("    public static let " + item.swift + " = " + strconv.Quote(value) + "\n")
+	}
+	shortcut, err := parseFile(filepath.Join(moduleRoot, "internal", "core", "shortcut", "shortcut.go"))
+	if err != nil {
+		return "", err
+	}
+	shortcutValues := stringConsts(shortcut)
+	for _, item := range []struct{ goName, swift string }{
+		{"MacDictationShortcut", "macDictationShortcut"},
+		{"MacRewriteShortcut", "macRewriteShortcut"},
+		{"MacTextEditShortcut", "macTextEditShortcut"},
+	} {
+		value, ok := shortcutValues[item.goName]
+		if !ok {
+			return "", fmt.Errorf("missing shortcut default %s", item.goName)
 		}
 		b.WriteString("    public static let " + item.swift + " = " + strconv.Quote(value) + "\n")
 	}
@@ -359,10 +375,21 @@ func mentions(fn *ast.FuncDecl, field string) bool {
 	return found
 }
 
-func emitSelection(path string) (string, error) {
+func emitSelection(path, configPath string) (string, error) {
 	file, err := parseFile(path)
 	if err != nil {
 		return "", err
+	}
+	config, err := parseFile(configPath)
+	if err != nil {
+		return "", err
+	}
+	numbers := map[string]string{}
+	for _, spec := range constSpecs(config) {
+		numbers[spec.name] = spec.value
+	}
+	for _, spec := range constSpecs(file) {
+		numbers[spec.name] = spec.value
 	}
 	fn := findFunc(file, "SelectedLengthError")
 	if fn == nil {
@@ -374,8 +401,8 @@ func emitSelection(path string) (string, error) {
 		as, ok := n.(*ast.AssignStmt)
 		if ok && len(as.Lhs) == 1 && len(as.Rhs) == 1 {
 			if id, ok := as.Lhs[0].(*ast.Ident); ok && id.Name == "limit" {
-				if lit, ok := as.Rhs[0].(*ast.BasicLit); ok {
-					limit = lit.Value
+				if value := numberValue(as.Rhs[0], numbers); value != "" {
+					limit = value
 				}
 			}
 		}
@@ -404,6 +431,20 @@ func emitSelection(path string) (string, error) {
 	b.WriteString("        return \"" + sentence + "\"\n")
 	b.WriteString("    }\n}\n")
 	return b.String(), nil
+}
+
+func numberValue(expr ast.Expr, numbers map[string]string) string {
+	switch n := expr.(type) {
+	case *ast.BasicLit:
+		if n.Kind == token.INT {
+			return n.Value
+		}
+	case *ast.Ident:
+		return numbers[n.Name]
+	case *ast.SelectorExpr:
+		return numbers[n.Sel.Name]
+	}
+	return ""
 }
 
 func emitSettings() string {

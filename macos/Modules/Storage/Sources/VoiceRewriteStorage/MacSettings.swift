@@ -29,9 +29,9 @@ public struct MacSettings: Codable, Equatable, Sendable {
         asrModel: String = ContractLimits.defaultASRModel,
         textModel: String = ContractLimits.defaultTextModel,
         maxRecordSeconds: Int = ContractLimits.defaultRecordSeconds,
-        dictationShortcut: String = "Ctrl+Alt+R",
-        rewriteShortcut: String = "Ctrl+Alt+E",
-        textEditShortcut: String = "Ctrl+Alt+T"
+        dictationShortcut: String = ContractLimits.macDictationShortcut,
+        rewriteShortcut: String = ContractLimits.macRewriteShortcut,
+        textEditShortcut: String = ContractLimits.macTextEditShortcut
     ) {
         self.asrBaseURL = asrBaseURL
         self.llmBaseURL = llmBaseURL
@@ -63,9 +63,9 @@ public struct MacSettings: Codable, Equatable, Sendable {
         }
         if asrModel.isEmpty { asrModel = ContractLimits.defaultASRModel }
         if textModel.isEmpty { textModel = ContractLimits.defaultTextModel }
-        dictationShortcut = normalizedShortcut(dictationShortcut, fallback: "Ctrl+Alt+R")
-        rewriteShortcut = normalizedShortcut(rewriteShortcut, fallback: "Ctrl+Alt+E")
-        textEditShortcut = normalizedShortcut(textEditShortcut, fallback: "Ctrl+Alt+T")
+        dictationShortcut = normalizedShortcut(dictationShortcut, fallback: ContractLimits.macDictationShortcut)
+        rewriteShortcut = normalizedShortcut(rewriteShortcut, fallback: ContractLimits.macRewriteShortcut)
+        textEditShortcut = normalizedShortcut(textEditShortcut, fallback: ContractLimits.macTextEditShortcut)
         guard asrBaseURL.utf8.count <= ContractLimits.maxEndpointBytes,
               llmBaseURL.utf8.count <= ContractLimits.maxEndpointBytes,
               asrModel.utf8.count <= ContractLimits.maxModelIDBytes,
@@ -99,9 +99,9 @@ public struct MacSettings: Codable, Equatable, Sendable {
             throw SettingsError.invalidJSON
         }
         let shortcutDefaults = [
-            "dictation_shortcut": "Ctrl+Alt+R",
-            "rewrite_shortcut": "Ctrl+Alt+E",
-            "text_edit_shortcut": "Ctrl+Alt+T",
+            "dictation_shortcut": ContractLimits.macDictationShortcut,
+            "rewrite_shortcut": ContractLimits.macRewriteShortcut,
+            "text_edit_shortcut": ContractLimits.macTextEditShortcut,
         ]
         for (key, value) in shortcutDefaults where values[key] == nil {
             values[key] = value

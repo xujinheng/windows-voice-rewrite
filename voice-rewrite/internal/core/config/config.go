@@ -34,9 +34,10 @@ type Config struct {
 }
 
 const (
-	RecordSecondsMin     = 1
-	RecordSecondsMax     = 180
-	DefaultRecordSeconds = 60
+	RecordSecondsMin        = 1
+	RecordSecondsMax        = 180
+	DefaultRecordSeconds    = 60
+	DefaultMaxSelectedRunes = 12000
 )
 
 func Defaults() Config {
@@ -52,7 +53,7 @@ func Defaults() Config {
 		RecordMode:             "hold",
 		HotkeyExit:             "Ctrl+Alt+F10",
 		MaxRecordSeconds:       DefaultRecordSeconds,
-		MaxSelectedRunes:       12000,
+		MaxSelectedRunes:       DefaultMaxSelectedRunes,
 		MaxResponseTokens:      1200,
 		SelectionCopyAttempts:  2,
 		SelectionCopyTimeoutMS: 750,
@@ -115,7 +116,7 @@ func Normalize(cfg Config) (Config, error) {
 		cfg.MaxRecordSeconds = DefaultRecordSeconds
 	}
 	if cfg.MaxSelectedRunes <= 0 || cfg.MaxSelectedRunes > 100000 {
-		cfg.MaxSelectedRunes = 12000
+		cfg.MaxSelectedRunes = DefaultMaxSelectedRunes
 	}
 	if cfg.SelectionCopyAttempts < 1 || cfg.SelectionCopyAttempts > 5 {
 		cfg.SelectionCopyAttempts = 3

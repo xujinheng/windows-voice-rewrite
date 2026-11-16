@@ -224,7 +224,7 @@ func TestSelectionValidationAndCancelBeforeNetwork(t *testing.T) {
 	if err := SelectedLengthError(3, "中文测试"); err == nil || err.Error() != "选中文字超过 3 字限制" {
 		t.Fatalf("length: %v", err)
 	}
-	if SelectedLengthError(3, "abc") != nil || SelectedLengthError(0, strings.Repeat("a", 12000)) != nil {
+	if SelectedLengthError(3, "abc") != nil || SelectedLengthError(0, strings.Repeat("a", coreconfig.DefaultMaxSelectedRunes)) != nil {
 		t.Fatal("selection inside the limit was rejected")
 	}
 }

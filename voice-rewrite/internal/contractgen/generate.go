@@ -38,7 +38,7 @@ func Generate(moduleRoot string) (map[string]string, error) {
 		return nil, fmt.Errorf("limits: %w", err)
 	}
 	out[filepath.Join(repo, "macos/Modules/Storage/Sources/VoiceRewriteStorage/ContractLimits.swift")] = limits
-	selection, err := emitSelection(filepath.Join(core, "textedit", "rewrite.go"))
+	selection, err := emitSelection(filepath.Join(core, "textedit", "rewrite.go"), filepath.Join(core, "config", "config.go"))
 	if err != nil {
 		return nil, fmt.Errorf("selection: %w", err)
 	}

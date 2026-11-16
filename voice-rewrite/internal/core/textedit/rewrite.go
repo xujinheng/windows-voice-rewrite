@@ -36,7 +36,7 @@ func validateSelectedText(ctx context.Context, cfg coreconfig.Config, selected s
 // An empty selection is allowed; callers that require text check that separately.
 func SelectedLengthError(limit int, selected string) error {
 	if limit <= 0 {
-		limit = 12000
+		limit = coreconfig.DefaultMaxSelectedRunes
 	}
 	if utf8.RuneCountInString(selected) > limit {
 		return fmt.Errorf("选中文字超过 %d 字限制", limit)
