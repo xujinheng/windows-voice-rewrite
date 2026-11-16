@@ -155,38 +155,10 @@ func (p *uxSettings) layout() {
 			Min: 0, Max: spec.content - 1, Page: uint32(spec.page), Pos: spec.pos}
 		procSetScrollInfoUX.Call(p.window, spec.axis, uintptr(unsafe.Pointer(&info)), 1)
 	}
-	contentW := viewW
-	if contentW < uxContentWidth {
-		contentW = uxContentWidth
-	}
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*p.scale + 0.5)) }
 	for _, ctrl := range p.controls {
-		x, y, w, h := settingsform.Layout(settingsform.Spec{X: ctrl.x, Y: ctrl.y, W: ctrl.w, H: ctrl.h, Stretch: ctrl.stretch, Right: ctrl.right}, contentW)
-		x -= p.scrollX
-		// Keep the primary footer actions horizontally accessible even when
-		// the form itself needs horizontal scrolling at high DPI.
-		anchor := settingsform.AnchorNone
-		switch ctrl.id {
-		case contract.SaveButton:
-			anchor = settingsform.AnchorSave
-		case contract.AdvancedButton:
-			anchor = settingsform.AnchorAdvanced
-		case contract.CloseButton:
-			anchor = settingsform.AnchorClose
-		case contract.NavSpeech, contract.NavAI, contract.NavInput:
-			x = ctrl.x
-		}
-		if ctrl.hwnd == p.hint {
-			anchor = settingsform.AnchorHint
-		}
-		if anchor != settingsform.AnchorNone {
-			x, w = settingsform.AnchoredX(anchor, viewW, w, x)
-		}
-		if ctrl.id == contract.NavSpeech || ctrl.id == contract.NavAI || ctrl.id == contract.NavInput {
-			procMoveWindow.Call(ctrl.hwnd, sc(x), sc(y), sc(w), sc(h), 1)
-		} else {
-			procMoveWindow.Call(ctrl.hwnd, sc(x), sc(y-p.scrollY), sc(w), sc(h), 1)
-		}
+		x, y, w, h := settingsform.Place(settingsform.Spec{X: ctrl.x, Y: ctrl.y, W: ctrl.w, H: ctrl.h, Stretch: ctrl.stretch, Right: ctrl.right}, int(ctrl.id), ctrl.hwnd == p.hint, viewW, p.scrollX, p.scrollY)
+		procMoveWindow.Call(ctrl.hwnd, sc(x), sc(y), sc(w), sc(h), 1)
 	}
 	procInvalidateRectSettings.Call(p.window, 0, 1)
 }

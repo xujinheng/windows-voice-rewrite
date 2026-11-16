@@ -2,6 +2,8 @@
 // Hosts scale it to the monitor DPI when creating native controls.
 package settingsform
 
+import "voicerewrite/internal/contract"
+
 const (
 	DesignWidth   int32 = 816
 	DesignHeight  int32 = 484
@@ -138,6 +140,38 @@ func ScrollLimit(content, view int32) int32 {
 		return 0
 	}
 	return content - view
+}
+
+// Place is one settings control after scroll. Navigation stays at its design
+// position. The footer and hint are pinned. Every other control scrolls.
+func Place(spec Spec, id int, hint bool, viewW, scrollX, scrollY int32) (x, y, w, h int32) {
+	contentW := viewW
+	if contentW < DesignWidth {
+		contentW = DesignWidth
+	}
+	x, y, w, h = Layout(spec, contentW)
+	x -= scrollX
+	anchor := AnchorNone
+	switch id {
+	case contract.SaveButton:
+		anchor = AnchorSave
+	case contract.AdvancedButton:
+		anchor = AnchorAdvanced
+	case contract.CloseButton:
+		anchor = AnchorClose
+	case contract.NavSpeech, contract.NavAI, contract.NavInput:
+		x = spec.X
+	}
+	if hint {
+		anchor = AnchorHint
+	}
+	if anchor != AnchorNone {
+		x, w = AnchoredX(anchor, viewW, w, x)
+	}
+	if id == contract.NavSpeech || id == contract.NavAI || id == contract.NavInput {
+		return x, y, w, h
+	}
+	return x, y - scrollY, w, h
 }
 
 // ClampScroll keeps a scroll offset inside the range the settings window can show.
