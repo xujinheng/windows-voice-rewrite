@@ -19,7 +19,7 @@ final class WorkspaceModel: ObservableObject {
     @Published var llmKeyInput = ""
     @Published var taskInstruction = ""
     @Published private(set) var connection: Connection = .disconnected
-    @Published private(set) var recordingStatus = "未录音"
+    @Published private(set) var recordingStatus = recordingIdle()
     @Published private(set) var serviceStatus = "尚未连接"
     @Published private(set) var asrProbeStatus = ServiceProbeCopy.idle
     @Published private(set) var llmProbeStatus = ServiceProbeCopy.idle
@@ -632,7 +632,7 @@ final class WorkspaceModel: ObservableObject {
                 if let message = SelectionLimit.tooLongMessage(selected: snapshot.originalSelectedText) {
                     await interaction.cancelTask(generation: next)
                     interactionStatus = message
-                    recordingStatus = "未录音"
+                    recordingStatus = recordingIdle()
                     showIndicator(phase: .error, mode: "改写", pending: false)
                 } else {
                     try await microphone.start()
@@ -654,7 +654,7 @@ final class WorkspaceModel: ObservableObject {
                 if let generation { await interaction.cancelTask(generation: generation) }
                 if resultGeneration.accepts(token) {
                     interactionStatus = rewriteCaptureStatus(error, password: ResultCopy.passwordSelection)
-                    recordingStatus = "未录音"
+                    recordingStatus = recordingIdle()
                     showIndicator(phase: .error, mode: "改写", pending: false)
                 }
             }
@@ -667,7 +667,7 @@ final class WorkspaceModel: ObservableObject {
         invalidatePending()
         let token = resultGeneration.begin()
         isStarting = true
-        recordingStatus = "正在申请麦克风权限并启动录音"
+        recordingStatus = dictationRequestingMicrophone()
         Task { @MainActor [weak self] in
             guard let self else { return }
             if let pid = targetPID, pid > 0 {
@@ -677,13 +677,13 @@ final class WorkspaceModel: ObservableObject {
                         generation: generation, intent: .insertAtCaret)
                     if resultGeneration.accepts(token) {
                         activeInsert = (snapshot, generation)
-                        interactionStatus = "已锁定原应用光标；识别后将验证并写入"
+                        interactionStatus = dictationCaretLocked()
                     }
                 } catch {
                     interactionStatus = captureStatus(error, password: ResultCopy.passwordDictation)
                 }
             } else {
-                interactionStatus = "未指定外部文本框；本次录音仅显示识别结果。请在目标软件中按配置的听写快捷键开始听写"
+                interactionStatus = dictationNoTarget()
             }
             guard resultGeneration.accepts(token) else { return }
             do {
@@ -691,9 +691,9 @@ final class WorkspaceModel: ObservableObject {
                 guard resultGeneration.accepts(token) else { microphone.cancel(); return }
                 isRecording = true
                 showIndicator(phase: .recording, mode: "听写", pending: false)
-                recordingStatus = "录音中；松开当前绑定侧键或再次按配置的快捷键停止"
+                recordingStatus = dictationRecording()
             } catch {
-                recordingStatus = "无法启动麦克风：\(error.localizedDescription)"
+                recordingStatus = dictationMicrophoneFailed(error.localizedDescription)
                 showIndicator(phase: .error, mode: "听写", pending: false)
             }
             isStarting = false
@@ -707,7 +707,7 @@ final class WorkspaceModel: ObservableObject {
         isRecording = false
         isProcessing = true
         showIndicator(phase: .processing, mode: indicatorSnapshot.mode, pending: false)
-        recordingStatus = "正在处理语音"
+        recordingStatus = dictationProcessing()
         let token = resultGeneration.latest
         let insertion = activeInsert
         let voiceSelection = activeVoiceSelection
@@ -769,7 +769,7 @@ final class WorkspaceModel: ObservableObject {
                             case .ready(let text):
                                 self.transcription = text
                                 self.rememberHistory(title: ResultCopy.dictationHistory, value: text)
-                                self.recordingStatus = "语音识别已完成"
+                                self.recordingStatus = dictationRecognized()
                                 self.asrProbeStatus = "ASR：真实录音识别成功"
                                 if let insertion {
                                     self.showIndicator(phase: .applying, mode: "听写", pending: false)
@@ -778,7 +778,7 @@ final class WorkspaceModel: ObservableObject {
                                         do {
                                             try await self.interaction.insertIfCurrent(
                                                 insertion.snapshot, text: text, generation: insertion.generation)
-                                            self.interactionStatus = "已安全插入原目标"
+                                            self.interactionStatus = dictationInserted()
                                             self.showIndicator(phase: .success, mode: "听写", pending: false)
                                         } catch {
                                             self.interactionStatus = insertionStatus(error, rewrite: false, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation)
@@ -792,7 +792,7 @@ final class WorkspaceModel: ObservableObject {
                                 }
                             }
                         case .failure(let failure):
-                            self.recordingStatus = "识别失败：\(failure.localizedDescription)"
+                            self.recordingStatus = dictationRecognizeFailed(failure.localizedDescription)
                             self.asrProbeStatus = "ASR：实际转写失败"
                             self.showIndicator(phase: .error, mode: "听写", pending: false)
                         }
@@ -802,7 +802,7 @@ final class WorkspaceModel: ObservableObject {
             } catch {
                 guard resultGeneration.accepts(token) else { return }
                 isProcessing = false
-                recordingStatus = "无法识别：\(error.localizedDescription)"
+                recordingStatus = dictationCannotRecognize(error.localizedDescription)
                 asrProbeStatus = "ASR：实际转写未完成"
                 showIndicator(phase: .error, mode: indicatorSnapshot.mode, pending: false)
                 if let voiceSelection {

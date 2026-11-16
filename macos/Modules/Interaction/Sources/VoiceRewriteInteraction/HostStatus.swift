@@ -134,6 +134,30 @@ public func shortcutNotRegistered() -> String {
     "快捷键未能注册；设置未保存，原快捷键保持有效"
 }
 
+public func recordingIdle() -> String { "未录音" }
+
+public func dictationRequestingMicrophone() -> String { "正在申请麦克风权限并启动录音" }
+
+public func dictationCaretLocked() -> String { "已锁定原应用光标；识别后将验证并写入" }
+
+public func dictationNoTarget() -> String {
+    "未指定外部文本框；本次录音仅显示识别结果。请在目标软件中按配置的听写快捷键开始听写"
+}
+
+public func dictationRecording() -> String { "录音中；松开当前绑定侧键或再次按配置的快捷键停止" }
+
+public func dictationMicrophoneFailed(_ detail: String) -> String { "无法启动麦克风：\(detail)" }
+
+public func dictationProcessing() -> String { "正在处理语音" }
+
+public func dictationRecognized() -> String { "语音识别已完成" }
+
+public func dictationInserted() -> String { "已安全插入原目标" }
+
+public func dictationRecognizeFailed(_ detail: String) -> String { "识别失败：\(detail)" }
+
+public func dictationCannotRecognize(_ detail: String) -> String { "无法识别：\(detail)" }
+
 public func serviceProbeRunning(name: String, running: String) -> String {
     return name + "：" + running
 }

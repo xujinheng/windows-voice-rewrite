@@ -21,6 +21,15 @@ final class HostStatusTests: XCTestCase {
         XCTAssertTrue(rewriteCaptureStatus(InteractionFailure.notEditable, password: "选区").hasPrefix("无法开始语音选区处理："))
     }
 
+    func testDictationRecordingSentencesStayMacOnly() {
+        XCTAssertEqual(recordingIdle(), "未录音")
+        XCTAssertEqual(dictationCaretLocked(), "已锁定原应用光标；识别后将验证并写入")
+        XCTAssertTrue(dictationNoTarget().contains("未指定外部文本框"))
+        XCTAssertEqual(dictationMicrophoneFailed("denied"), "无法启动麦克风：denied")
+        XCTAssertEqual(dictationInserted(), "已安全插入原目标")
+        XCTAssertEqual(dictationRecognizeFailed("timeout"), "识别失败：timeout")
+    }
+
     func testShortcutInstallReusesTheSameKeyboard() {
         XCTAssertEqual(shortcutInstall(validPlan: false, sameKeyboard: true), .rejected)
         XCTAssertEqual(shortcutInstall(validPlan: true, sameKeyboard: true), .reuse)
