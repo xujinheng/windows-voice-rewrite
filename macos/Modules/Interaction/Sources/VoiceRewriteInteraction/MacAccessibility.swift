@@ -235,6 +235,30 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         try optionalAttribute(target, kAXValueAttribute) as? String
     }
 
+    // Verify only the target's actual focused AX element after an attempted write.
+    // The selected range is expected to change, so pre-write validation cannot
+    // be reused as the post-write receipt.
+    private func confirmWrite(_ target: AXUIElement, expected: SelectionObservation,
+                              expectedValue: String) -> Bool {
+        let deadline = ProcessInfo.processInfo.systemUptime + 1.25
+        repeat {
+            guard Self.accessibilityPermissionGranted(),
+                  NSWorkspace.shared.frontmostApplication?.processIdentifier == expected.processID,
+                  !IsSecureEventInputEnabled() else { return false }
+            let app = AXUIElementCreateApplication(expected.processID)
+            AXUIElementSetMessagingTimeout(app, 0.4)
+            guard let focused = try? readAttribute(app, kAXFocusedUIElementAttribute),
+                  CFGetTypeID(focused) == AXUIElementGetTypeID(),
+                  CFEqual(focused, target) else { return false }
+            if let value = try? wholeValue(target),
+               TextWriteVerification.confirms(actual: value, expected: expectedValue) {
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.025)
+        } while ProcessInfo.processInfo.systemUptime < deadline
+        return false
+    }
+
     private func postPaste(expected: SelectionObservation) throws {
         // Foreground delivery is required by several editors, including native and
         // Chromium text controls. Never post into an unverified focus.
@@ -262,23 +286,9 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
             guard pasteboard.isOwned(lease) else { throw ClipboardFailure.ownershipLost }
             try postPaste(expected: expected)
 
-            // AXValue is the receipt. Sending keys or reading the clipboard is not proof.
-            let deadline = ProcessInfo.processInfo.systemUptime + 0.75
-            var confirmed = false
-            repeat {
-                guard Self.accessibilityPermissionGranted(),
-                      NSWorkspace.shared.frontmostApplication?.processIdentifier == expected.processID,
-                      !IsSecureEventInputEnabled() else { break }
-                guard let active = try? read(),
-                      active.processID == expected.processID,
-                      active.identity.isSameElement(as: expected.identity) else { break }
-                if let value = try? wholeValue(target),
-                   TextWriteVerification.confirms(actual: value, expected: expectedValue) {
-                    confirmed = true
-                    break
-                }
-                Thread.sleep(forTimeInterval: 0.025)
-            } while ProcessInfo.processInfo.systemUptime < deadline
+            // A posted paste is not proof of delivery. Allow the editor time to
+            // publish the new AXValue without posting a second keystroke.
+            let confirmed = confirmWrite(target, expected: expected, expectedValue: expectedValue)
 
             // Never overwrite a user or clipboard manager's newer clipboard contents.
             try pasteboard.finish(lease)
@@ -305,8 +315,10 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         if support == .success && settable.boolValue {
             let code = AXUIElementSetAttributeValue(target, kAXSelectedTextAttribute as CFString, text as CFString)
             if code == .success {
-                guard let actual = try wholeValue(target),
-                      TextWriteVerification.confirms(actual: actual, expected: expectedValue) else {
+                // Some browsers update AXValue after SetAttributeValue returns.
+                // Confirm asynchronously visible content before reporting failure;
+                // an unconfirmed write is never retried with a paste.
+                guard confirmWrite(target, expected: expected, expectedValue: expectedValue) else {
                     throw InteractionFailure.writeNotConfirmed
                 }
                 return
