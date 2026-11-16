@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"voicerewrite/internal/contract"
+	coreconfig "voicerewrite/internal/core/config"
 )
 
 func emitDesktop(core string) (string, error) {
@@ -246,6 +247,17 @@ func emitLimits(moduleRoot string) (string, error) {
 	if validate == nil {
 		return "", fmt.Errorf("ValidateBaseURL")
 	}
+	for _, field := range []string{"Scheme", "Host", "User", "RawQuery", "Fragment", "Opaque"} {
+		if !mentions(validate, field) {
+			return "", fmt.Errorf("ValidateBaseURL missing %s", field)
+		}
+	}
+	if err := requireCanonicalEndpoints(config); err != nil {
+		return "", err
+	}
+	if err := requireStoredCredential(config); err != nil {
+		return "", err
+	}
 	schemes := schemeLits(validate)
 	if len(schemes) == 0 {
 		return "", fmt.Errorf("no url schemes")
@@ -319,12 +331,39 @@ func emitLimits(moduleRoot string) (string, error) {
 	if !ok || hello == "" {
 		return "", fmt.Errorf("missing HelloName")
 	}
-	b.WriteString("    public static let helperName = " + strconv.Quote(hello) + "\n")
+	b.WriteString("    public static let helperName = " + strconv.Quote(hello) + "\n\n")
+	b.WriteString("    public static func storedCredentialTooLong(_ value: String) -> Bool {\n")
+	b.WriteString("        value.utf8.count > maxCredentialBytes\n")
+	b.WriteString("    }\n\n")
+	b.WriteString("    public static func canonicalEndpoints(asrBaseURL: String, asrModel: String, llmBaseURL: String, textModel: String) -> CanonicalEndpointFields? {\n")
+	b.WriteString("        let asrURL = trimEndpoint(asrBaseURL)\n")
+	b.WriteString("        let llmURL = trimEndpoint(llmBaseURL)\n")
+	b.WriteString("        var asr = asrModel.trimmingCharacters(in: .whitespacesAndNewlines)\n")
+	b.WriteString("        var text = textModel.trimmingCharacters(in: .whitespacesAndNewlines)\n")
+	b.WriteString("        if asrURL.utf8.count > maxEndpointBytes || llmURL.utf8.count > maxEndpointBytes || asr.utf8.count > maxModelIDBytes || text.utf8.count > maxModelIDBytes {\n")
+	b.WriteString("            return nil\n")
+	b.WriteString("        }\n")
+	b.WriteString("        if !MacSettings.acceptsBaseURL(asrURL) || !MacSettings.acceptsBaseURL(llmURL) {\n")
+	b.WriteString("            return nil\n")
+	b.WriteString("        }\n")
+	b.WriteString("        if asr.isEmpty { asr = defaultASRModel }\n")
+	b.WriteString("        if text.isEmpty { text = defaultTextModel }\n")
+	b.WriteString("        return CanonicalEndpointFields(asrBaseURL: asrURL, asrModel: asr, llmBaseURL: llmURL, textModel: text)\n")
+	b.WriteString("    }\n\n")
+	b.WriteString("    private static func trimEndpoint(_ value: String) -> String {\n")
+	b.WriteString("        var text = value.trimmingCharacters(in: .whitespacesAndNewlines)\n")
+	b.WriteString("        while text.hasSuffix(\"/\") { text.removeLast() }\n")
+	b.WriteString("        return text\n")
+	b.WriteString("    }\n")
+	b.WriteString("}\n\npublic struct CanonicalEndpointFields: Equatable {\n")
+	b.WriteString("    public var asrBaseURL: String\n")
+	b.WriteString("    public var asrModel: String\n")
+	b.WriteString("    public var llmBaseURL: String\n")
+	b.WriteString("    public var textModel: String\n")
 	b.WriteString("}\n\nextension MacSettings {\n")
 	b.WriteString("    public static func acceptsBaseURL(_ value: String) -> Bool {\n")
 	b.WriteString("        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)\n")
-	b.WriteString("        guard trimmed.contains(\"://\"),\n")
-	b.WriteString("              let url = URLComponents(string: trimmed),\n")
+	b.WriteString("        guard let url = URLComponents(string: trimmed),\n")
 	b.WriteString("              let scheme = url.scheme?.lowercased(),\n")
 	checks := make([]string, len(schemes))
 	for i, scheme := range schemes {
@@ -340,6 +379,9 @@ func emitLimits(moduleRoot string) (string, error) {
 	}
 	if mentions(validate, "Fragment") {
 		b.WriteString(",\n              (url.fragment ?? \"\").isEmpty")
+	}
+	if mentions(validate, "Opaque") {
+		b.WriteString(",\n              trimmed.contains(\"://\")")
 	}
 	b.WriteString(",\n              url.url != nil else {\n            return false\n        }\n        return true\n    }\n}\n")
 	return b.String(), nil
@@ -488,8 +530,8 @@ func numberValue(expr ast.Expr, numbers map[string]string) string {
 	return ""
 }
 
-func emitSettings() string {
-	bindings := map[string]string{
+func settingsMaps() (bindings, actions, status map[string]string) {
+	return map[string]string{
 		"asr_base_url":       "model.settings.asrBaseURL",
 		"asr_model":          "model.settings.asrModel",
 		"asr_api_key":        "model.asrKeyInput",
@@ -500,16 +542,18 @@ func emitSettings() string {
 		"rewrite_shortcut":   "model.settings.rewriteShortcut",
 		"dictation_shortcut": "model.settings.dictationShortcut",
 		"text_edit_shortcut": "model.settings.textEditShortcut",
-	}
-	actions := map[string]string{
+	}, map[string]string{
 		"probe_asr": "model.checkASRService()",
 		"probe_llm": "model.checkLLMService()",
 		"save":      "model.saveSettings()",
-	}
-	status := map[string]string{
+	}, map[string]string{
 		"probe_asr_status": "model.asrProbeStatus",
 		"probe_llm_status": "model.llmProbeStatus",
 	}
+}
+
+func emitSettings() (string, error) {
+	bindings, actions, status := settingsMaps()
 	var b strings.Builder
 	b.WriteString(sourceNote("voice-rewrite/internal/contract"))
 	b.WriteString("import SwiftUI\nimport VoiceRewriteStorage\n\nstruct SettingsView: View {\n")
@@ -525,7 +569,11 @@ func emitSettings() string {
 				b.WriteString("                Text(model.settingsStatus).foregroundStyle(.secondary)\n")
 				b.WriteString("                    .font(.footnote).textSelection(.enabled)\n")
 			}
-			b.WriteString(renderControl(control, bindings, actions, status))
+			line, err := renderControl(control, bindings, actions, status)
+			if err != nil {
+				return "", err
+			}
+			b.WriteString(line)
 		}
 		b.WriteString("            }\n")
 	}
@@ -534,32 +582,173 @@ func emitSettings() string {
 		if control.StaleProbe == "" || !control.VisibleOn(contract.MacOS) {
 			continue
 		}
-		b.WriteString("        .onChange(of: " + bindings[control.ID] + ") { _, _ in model.markConnectionProbeStale(." + control.StaleProbe + ") }\n")
+		binding, ok := bindings[control.ID]
+		if !ok || binding == "" {
+			return "", fmt.Errorf("stale probe %s has no binding", control.ID)
+		}
+		b.WriteString("        .onChange(of: " + binding + ") { _, _ in model.markConnectionProbeStale(." + control.StaleProbe + ") }\n")
 	}
 	b.WriteString("        .formStyle(.grouped)\n    }\n}\n")
-	return b.String()
+	return b.String(), nil
 }
 
-func renderControl(control contract.Control, bindings, actions, status map[string]string) string {
+func renderControl(control contract.Control, bindings, actions, status map[string]string) (string, error) {
 	id := ".accessibilityIdentifier(" + strconv.Quote(control.ID) + ")"
 	switch control.Kind {
 	case contract.Text, contract.Shortcut:
-		return "                TextField(" + strconv.Quote(control.Label) + ", text: $" + bindings[control.ID] + ")\n                    " + id + "\n"
+		binding, err := requiredBinding(control, bindings)
+		if err != nil {
+			return "", err
+		}
+		return "                TextField(" + strconv.Quote(control.Label) + ", text: $" + binding + ")\n                    " + id + "\n", nil
 	case contract.Secret:
-		return "                SecureField(" + strconv.Quote(control.Hint) + ", text: $" + bindings[control.ID] + ")\n                    .accessibilityLabel(" + strconv.Quote(control.Label) + ")\n                    " + id + "\n"
+		binding, err := requiredBinding(control, bindings)
+		if err != nil {
+			return "", err
+		}
+		return "                SecureField(" + strconv.Quote(control.Hint) + ", text: $" + binding + ")\n                    .accessibilityLabel(" + strconv.Quote(control.Label) + ")\n                    " + id + "\n", nil
 	case contract.Stepper:
-		return "                Stepper(\"" + control.Label + "：\\(model.settings.maxRecordSeconds) 秒\",\n                        value: $model.settings.maxRecordSeconds, in: MacSettings.recordSeconds)\n                    " + id + "\n"
+		if control.ID != "max_record_seconds" {
+			return "", fmt.Errorf("stepper %s has no renderer", control.ID)
+		}
+		if _, err := requiredBinding(control, bindings); err != nil {
+			return "", err
+		}
+		return "                Stepper(\"" + control.Label + "：\\(model.settings.maxRecordSeconds) 秒\",\n                        value: $model.settings.maxRecordSeconds, in: MacSettings.recordSeconds)\n                    " + id + "\n", nil
 	case contract.Button:
+		action, ok := actions[control.ID]
+		if !ok || action == "" {
+			return "", fmt.Errorf("button %s has no action", control.ID)
+		}
 		disabled := ""
 		if strings.HasPrefix(control.ID, "probe_") {
 			disabled = "\n                    .disabled(model.isCheckingServices)"
 		}
-		return "                Button(" + strconv.Quote(control.Label) + ") { " + actions[control.ID] + " }" + disabled + "\n                    " + id + "\n"
+		return "                Button(" + strconv.Quote(control.Label) + ") { " + action + " }" + disabled + "\n                    " + id + "\n", nil
 	case contract.Status:
-		return "                Text(" + status[control.ID] + ").font(.footnote).foregroundStyle(.secondary)\n                    .textSelection(.enabled)\n                    " + id + "\n"
+		label, ok := status[control.ID]
+		if !ok || label == "" {
+			return "", fmt.Errorf("status %s has no binding", control.ID)
+		}
+		return "                Text(" + label + ").font(.footnote).foregroundStyle(.secondary)\n                    .textSelection(.enabled)\n                    " + id + "\n", nil
 	case contract.Note:
-		return "                Text(" + strconv.Quote(control.Label) + ")\n                    .font(.footnote).foregroundStyle(.secondary)\n                    " + id + "\n"
+		return "                Text(" + strconv.Quote(control.Label) + ")\n                    .font(.footnote).foregroundStyle(.secondary)\n                    " + id + "\n", nil
 	default:
-		return ""
+		return "", fmt.Errorf("unsupported kind %q for %s", control.Kind, control.ID)
 	}
+}
+
+func requiredBinding(control contract.Control, bindings map[string]string) (string, error) {
+	binding, ok := bindings[control.ID]
+	if !ok || binding == "" {
+		return "", fmt.Errorf("control %s has no binding", control.ID)
+	}
+	return binding, nil
+}
+
+func requireCanonicalEndpoints(file *ast.File) error {
+	fn := findFunc(file, "CanonicalEndpoints")
+	if fn == nil || !callsSelector(fn, "TrimSpace") || !callsSelector(fn, "TrimRight") || !callsFunc(fn, "ValidateBaseURL") {
+		return fmt.Errorf("CanonicalEndpoints shape")
+	}
+	count := 0
+	ast.Inspect(fn, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		id, ok := call.Fun.(*ast.Ident)
+		if ok && id.Name == "ValidateBaseURL" {
+			count++
+		}
+		return true
+	})
+	if count < 2 || !identMentions(fn, "MaxEndpointBytes") || !identMentions(fn, "MaxModelIDBytes") || !mentions(fn, "ASRModel") || !mentions(fn, "TextModel") {
+		return fmt.Errorf("CanonicalEndpoints shape")
+	}
+	return nil
+}
+
+func requireStoredCredential(file *ast.File) error {
+	fn := findFunc(file, "StoredCredentialTooLong")
+	if fn == nil {
+		return fmt.Errorf("StoredCredentialTooLong")
+	}
+	ok := false
+	ast.Inspect(fn, func(n ast.Node) bool {
+		ret, isRet := n.(*ast.ReturnStmt)
+		if !isRet || len(ret.Results) != 1 {
+			return true
+		}
+		bin, isBin := ret.Results[0].(*ast.BinaryExpr)
+		if !isBin || bin.Op != token.GTR {
+			return true
+		}
+		call, isCall := bin.X.(*ast.CallExpr)
+		lim, isLim := bin.Y.(*ast.Ident)
+		if !isCall || !isLim || lim.Name != "MaxCredentialBytes" || len(call.Args) != 1 {
+			return true
+		}
+		id, isID := call.Fun.(*ast.Ident)
+		if isID && id.Name == "len" {
+			ok = true
+		}
+		return true
+	})
+	if !ok {
+		return fmt.Errorf("StoredCredentialTooLong shape")
+	}
+	return nil
+}
+
+func identMentions(fn *ast.FuncDecl, name string) bool {
+	found := false
+	ast.Inspect(fn, func(n ast.Node) bool {
+		id, ok := n.(*ast.Ident)
+		if ok && id.Name == name {
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+func emitEndpointVectors() (string, error) {
+	cases := [][4]string{
+		{" http://127.0.0.1:8081/v1/ ", " qwen3-asr ", "http://127.0.0.1:1234/v1", ""},
+		{"http://localhost/v1?key=1", "m", "http://127.0.0.1:1234/v1", "auto"},
+		{"http://user:pass@127.0.0.1/v1", "m", "http://127.0.0.1:1234/v1", "auto"},
+		{"http://127.0.0.1/v1#frag", "m", "http://127.0.0.1:1234/v1", "auto"},
+		{"file:///tmp/x", "m", "http://127.0.0.1:1234/v1", "auto"},
+		{"http:example.com", "m", "http://127.0.0.1:1234/v1", "auto"},
+	}
+	var b strings.Builder
+	b.WriteString(sourceNote("voice-rewrite/internal/core/config.CanonicalEndpoints"))
+	b.WriteString("import XCTest\n@testable import VoiceRewriteStorage\n\nfinal class CanonicalEndpointVectors: XCTestCase {\n")
+	b.WriteString("    func testGoCanonicalEndpoints() {\n")
+	for _, item := range cases {
+		got, err := coreconfig.CanonicalEndpoints(item[0], item[1], item[2], item[3])
+		call := fmt.Sprintf("ContractLimits.canonicalEndpoints(asrBaseURL: %s, asrModel: %s, llmBaseURL: %s, textModel: %s)",
+			strconv.Quote(item[0]), strconv.Quote(item[1]), strconv.Quote(item[2]), strconv.Quote(item[3]))
+		if err != nil {
+			b.WriteString("        XCTAssertNil(" + call + ")\n")
+			continue
+		}
+		b.WriteString("        XCTAssertEqual(" + call + "?.asrBaseURL, " + strconv.Quote(got.ASRBaseURL) + ")\n")
+		b.WriteString("        XCTAssertEqual(" + call + "?.asrModel, " + strconv.Quote(got.ASRModel) + ")\n")
+		b.WriteString("        XCTAssertEqual(" + call + "?.llmBaseURL, " + strconv.Quote(got.LLMBaseURL) + ")\n")
+		b.WriteString("        XCTAssertEqual(" + call + "?.textModel, " + strconv.Quote(got.TextModel) + ")\n")
+	}
+	raw := strings.Repeat(" ", coreconfig.MaxCredentialBytes)
+	b.WriteString("        XCTAssertEqual(ContractLimits.storedCredentialTooLong(String(repeating: \" \", count: " + strconv.Itoa(coreconfig.MaxCredentialBytes) + ")), " + swiftBool(coreconfig.StoredCredentialTooLong(raw)) + ")\n")
+	b.WriteString("        XCTAssertEqual(ContractLimits.storedCredentialTooLong(String(repeating: \" \", count: " + strconv.Itoa(coreconfig.MaxCredentialBytes+1) + ")), " + swiftBool(coreconfig.StoredCredentialTooLong(raw+" ")) + ")\n")
+	b.WriteString("    }\n}\n")
+	return b.String(), nil
+}
+
+func swiftBool(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
 }

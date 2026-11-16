@@ -1,6 +1,8 @@
 // Package contract is the settings catalog both desktop hosts render.
 // Native widgets and pixel placement stay in the host. Labels, order,
 // which controls exist, and the Windows button command are decided here.
+// A control with Platform set is missing on the other host. That is not full
+// parity. Gap names the issues that still have to add it.
 package contract
 
 type Platform string
@@ -42,6 +44,8 @@ type Control struct {
 	Stacked bool
 	// StaleProbe is the macOS connection check marked stale when this field changes.
 	StaleProbe string
+	// Gap is required when Platform is not both hosts. It cites the open issues.
+	Gap string
 }
 
 func Pages() []Page {
@@ -70,21 +74,21 @@ func Controls() []Control {
 		{ID: "probe_llm", Page: "writing", Label: "测试连接", Kind: Button},
 		{ID: "probe_llm_status", Page: "writing", Kind: Status},
 
-		{ID: "max_record_seconds", Page: "input", Label: "最长录音", Kind: Stepper, Platform: MacOS, Stacked: true},
-		{ID: "record_note", Page: "input", Label: "录音数据为 16 kHz 单声道 PCM16，最长 180 秒。", Kind: Note, Platform: MacOS},
+		{ID: "max_record_seconds", Page: "input", Label: "最长录音", Kind: Stepper, Platform: MacOS, Stacked: true, Gap: "#61 #69"},
+		{ID: "record_note", Page: "input", Label: "录音数据为 16 kHz 单声道 PCM16，最长 180 秒。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
 		{ID: "rewrite_shortcut", Page: "input", Label: "语音指令", Kind: Shortcut, Stacked: true},
-		{ID: "capture_rewrite", Page: "input", Label: "录入按键", Kind: Button, Platform: Windows},
+		{ID: "capture_rewrite", Page: "input", Label: "录入按键", Kind: Button, Platform: Windows, Gap: "#61 #69"},
 		{ID: "dictation_shortcut", Page: "input", Label: "听写快捷键", Kind: Shortcut, Stacked: true},
-		{ID: "capture_dictation", Page: "input", Label: "录入按键", Kind: Button, Platform: Windows},
-		{ID: "text_edit_shortcut", Page: "input", Label: "文字指令", Kind: Text, Platform: MacOS, Stacked: true},
-		{ID: "microphone", Page: "input", Label: "麦克风", Kind: Choice, Platform: Windows, Stacked: true},
-		{ID: "input_note_windows", Page: "input", Label: "语音指令用于改写/解释/问答；更换按键或设备后需重启软件。", Kind: Note, Platform: Windows},
-		{ID: "input_note_macos", Page: "input", Label: "与 Windows 使用同一套写法，例如 Ctrl+Alt+R、F8 或 Mouse4。Alt 在 macOS 上是 Option。未配置鼠标绑定时，Mouse4 默认听写、Mouse5 默认改写；显式配置鼠标键时仅拦截已分配的侧键。F21–F24 在 macOS 上不可用，三个功能不能绑定同一个按键。", Kind: Note, Platform: MacOS},
+		{ID: "capture_dictation", Page: "input", Label: "录入按键", Kind: Button, Platform: Windows, Gap: "#61 #69"},
+		{ID: "text_edit_shortcut", Page: "input", Label: "文字指令", Kind: Text, Platform: MacOS, Stacked: true, Gap: "#61 #69"},
+		{ID: "microphone", Page: "input", Label: "麦克风", Kind: Choice, Platform: Windows, Stacked: true, Gap: "#61 #69"},
+		{ID: "input_note_windows", Page: "input", Label: "语音指令用于改写/解释/问答；更换按键或设备后需重启软件。", Kind: Note, Platform: Windows, Gap: "#61 #69"},
+		{ID: "input_note_macos", Page: "input", Label: "与 Windows 使用同一套写法，例如 Ctrl+Alt+R、F8 或 Mouse4。Alt 在 macOS 上是 Option。未配置鼠标绑定时，Mouse4 默认听写、Mouse5 默认改写；显式配置鼠标键时仅拦截已分配的侧键。F21–F24 在 macOS 上不可用，三个功能不能绑定同一个按键。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
 
 		{ID: "save", Page: "save", Label: "保存设置", Kind: Button},
-		{ID: "advanced", Page: "save", Label: "高级配置", Kind: Button, Platform: Windows},
-		{ID: "close", Page: "save", Label: "关闭", Kind: Button, Platform: Windows},
-		{ID: "save_note", Page: "save", Label: "API Key 为可选项；需要认证时先保存再检测。连接检测共用 Windows 的 Go Core 规则：ASR 发送生成的静音 WAV，LLM 查询 /models，不发送用户录音或文本。密钥仅保存在 Keychain。", Kind: Note, Platform: MacOS},
+		{ID: "advanced", Page: "save", Label: "高级配置", Kind: Button, Platform: Windows, Gap: "#61 #69"},
+		{ID: "close", Page: "save", Label: "关闭", Kind: Button, Platform: Windows, Gap: "#61 #69"},
+		{ID: "save_note", Page: "save", Label: "API Key 为可选项；需要认证时先保存再检测。连接检测共用 Windows 的 Go Core 规则：ASR 发送生成的静音 WAV，LLM 查询 /models，不发送用户录音或文本。密钥仅保存在 Keychain。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
 	}
 }
 

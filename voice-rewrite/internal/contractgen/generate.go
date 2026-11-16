@@ -54,7 +54,16 @@ func Generate(moduleRoot string) (map[string]string, error) {
 		return nil, fmt.Errorf("log: %w", err)
 	}
 	out[logPath] = logText
-	out[filepath.Join(repo, "macos/VoiceRewrite/UI/SettingsView.swift")] = emitSettings()
+	settings, err := emitSettings()
+	if err != nil {
+		return nil, fmt.Errorf("settings: %w", err)
+	}
+	out[filepath.Join(repo, "macos/VoiceRewrite/UI/SettingsView.swift")] = settings
+	vectors, err := emitEndpointVectors()
+	if err != nil {
+		return nil, fmt.Errorf("endpoints: %w", err)
+	}
+	out[filepath.Join(repo, "macos/Modules/Storage/Tests/VoiceRewriteStorageTests/CanonicalEndpointVectors.swift")] = vectors
 	return out, nil
 }
 
@@ -593,20 +602,24 @@ func emitHistory(path string) (string, error) {
 	if limit == "" || maxBytes == "" {
 		return "", fmt.Errorf("history bounds")
 	}
+	accept := findFunc(file, "Accept")
+	keep := findFunc(file, "KeepCount")
 	remember := findFunc(file, "Remember")
-	ast.Inspect(remember, func(n ast.Node) bool {
-		as, ok := n.(*ast.AssignStmt)
-		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
-			return true
-		}
-		id, ok := as.Lhs[0].(*ast.Ident)
-		if ok && id.Name == "title" {
-			if text, ok := stringLit(as.Rhs[0]); ok {
-				fallback = text
-			}
-		}
-		return true
-	})
+	if accept == nil || keep == nil || remember == nil || !callsFunc(remember, "Accept") || !callsFunc(remember, "KeepCount") || !callsSelector(accept, "TrimSpace") {
+		return "", fmt.Errorf("history policy")
+	}
+	fallback, valueOp, valueLimit, err := acceptPolicy(accept)
+	if err != nil {
+		return "", err
+	}
+	keepOp, sizeOp, err := keepPolicy(keep)
+	if err != nil {
+		return "", err
+	}
+	valueSwift, err := swiftHistoryLimit(valueLimit)
+	if err != nil {
+		return "", err
+	}
 	menu := findFunc(file, "MenuLine")
 	ast.Inspect(menu, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -653,24 +666,33 @@ func emitHistory(path string) (string, error) {
 	}
 	b.WriteString("    static var sectionTitle: String { " + title + " }\n\n")
 	b.WriteString("    private(set) var entries: [SessionHistoryEntry] = []\n    private var nextID: UInt64 = 0\n\n")
+	b.WriteString("    static func accept(title: String, value: String) -> String? {\n")
+	b.WriteString("        if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || value.utf8.count " + valueOp + " " + valueSwift + " {\n")
+	b.WriteString("            return nil\n")
+	b.WriteString("        }\n")
+	b.WriteString("        if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {\n")
+	b.WriteString("            return " + strconv.Quote(fallback) + "\n")
+	b.WriteString("        }\n")
+	b.WriteString("        return title\n")
+	b.WriteString("    }\n\n")
+	b.WriteString("    static func keepCount(_ texts: [String]) -> Int {\n")
+	b.WriteString("        var bytes = 0\n        var keep = 0\n")
+	b.WriteString("        for text in texts {\n")
+	b.WriteString("            if keep " + keepOp + " Self.limit || bytes + text.utf8.count " + sizeOp + " Self.maxBytes { return keep }\n")
+	b.WriteString("            bytes += text.utf8.count\n            keep += 1\n")
+	b.WriteString("        }\n")
+	b.WriteString("        return keep\n")
+	b.WriteString("    }\n\n")
 	b.WriteString("    mutating func remember(title: String, value: String) {\n")
-	b.WriteString("        let text = value\n")
-	b.WriteString("        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,\n")
-	b.WriteString("              text.utf8.count <= Self.maxBytes else { return }\n")
-	b.WriteString("        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)\n")
+	b.WriteString("        guard let storedTitle = Self.accept(title: title, value: value) else { return }\n")
 	b.WriteString("        nextID += 1\n")
 	b.WriteString("        entries.insert(SessionHistoryEntry(\n")
 	b.WriteString("            id: nextID,\n")
-	b.WriteString("            title: trimmedTitle.isEmpty ? " + strconv.Quote(fallback) + " : trimmedTitle,\n")
-	b.WriteString("            text: text,\n")
+	b.WriteString("            title: storedTitle,\n")
+	b.WriteString("            text: value,\n")
 	b.WriteString("            createdAt: Date()\n")
 	b.WriteString("        ), at: 0)\n")
-	b.WriteString("        var bytes = 0\n        var keep = 0\n")
-	b.WriteString("        for entry in entries {\n")
-	b.WriteString("            let size = entry.text.utf8.count\n")
-	b.WriteString("            if keep >= Self.limit || bytes + size > Self.maxBytes { break }\n")
-	b.WriteString("            bytes += size\n            keep += 1\n")
-	b.WriteString("        }\n")
+	b.WriteString("        let keep = Self.keepCount(entries.map(\\.text))\n")
 	b.WriteString("        if keep < entries.count { entries.removeSubrange(keep...) }\n")
 	b.WriteString("    }\n\n")
 	b.WriteString("    func entry(id: UInt64) -> SessionHistoryEntry? {\n")
@@ -684,6 +706,104 @@ func emitHistory(path string) (string, error) {
 	b.WriteString("        return \"\\(index + 1). \\(kind(title: title)) · \\(clock.string(from: createdAt))\"\n")
 	b.WriteString("    }\n}\n")
 	return b.String(), nil
+}
+
+func callsFunc(fn *ast.FuncDecl, name string) bool {
+	if fn == nil {
+		return false
+	}
+	found := false
+	ast.Inspect(fn, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		id, ok := call.Fun.(*ast.Ident)
+		if ok && id.Name == name {
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+func callsSelector(fn *ast.FuncDecl, name string) bool {
+	if fn == nil {
+		return false
+	}
+	found := false
+	ast.Inspect(fn, func(n ast.Node) bool {
+		sel, ok := n.(*ast.SelectorExpr)
+		if ok && sel.Sel.Name == name {
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+func acceptPolicy(fn *ast.FuncDecl) (fallback, op, limit string, err error) {
+	ast.Inspect(fn, func(n ast.Node) bool {
+		if expr, ok := n.(ast.Expr); ok {
+			if text, ok := stringLit(expr); ok && text != "" {
+				fallback = text
+			}
+		}
+		bin, ok := n.(*ast.BinaryExpr)
+		if !ok {
+			return true
+		}
+		call, ok := bin.X.(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 {
+			return true
+		}
+		id, ok := call.Fun.(*ast.Ident)
+		lim, ok2 := bin.Y.(*ast.Ident)
+		if ok && ok2 && id.Name == "len" {
+			op = bin.Op.String()
+			limit = lim.Name
+		}
+		return true
+	})
+	if fallback == "" || op == "" || limit == "" {
+		return "", "", "", fmt.Errorf("history accept shape")
+	}
+	return fallback, op, limit, nil
+}
+
+func keepPolicy(fn *ast.FuncDecl) (keepOp, sizeOp string, err error) {
+	ast.Inspect(fn, func(n ast.Node) bool {
+		bin, ok := n.(*ast.BinaryExpr)
+		if !ok {
+			return true
+		}
+		if xid, ok := bin.X.(*ast.Ident); ok && xid.Name == "keep" {
+			if yid, ok := bin.Y.(*ast.Ident); ok && yid.Name == "Limit" {
+				keepOp = bin.Op.String()
+			}
+		}
+		left, ok := bin.X.(*ast.BinaryExpr)
+		yid, ok2 := bin.Y.(*ast.Ident)
+		if ok && ok2 && left.Op == token.ADD && yid.Name == "MaxBytes" {
+			sizeOp = bin.Op.String()
+		}
+		return true
+	})
+	if keepOp == "" || sizeOp == "" {
+		return "", "", fmt.Errorf("history keep shape")
+	}
+	return keepOp, sizeOp, nil
+}
+
+func swiftHistoryLimit(name string) (string, error) {
+	switch name {
+	case "MaxBytes":
+		return "Self.maxBytes", nil
+	case "Limit":
+		return "Self.limit", nil
+	default:
+		return "", fmt.Errorf("history limit %s", name)
+	}
 }
 
 func sessionTitle(file *ast.File) (string, error) {

@@ -220,6 +220,13 @@ const (
 	CredentialTooLong  = "输入内容过长"
 )
 
+// StoredCredentialTooLong reports that the credential bytes about to be stored
+// exceed the settings limit. The caller passes the stored form: macOS passes
+// the typed field, and Windows passes the trimmed field it writes.
+func StoredCredentialTooLong(value string) bool {
+	return len(value) > MaxCredentialBytes
+}
+
 // Endpoints is the non-secret ASR and LLM identity stored by both desktop hosts.
 type Endpoints struct {
 	ASRBaseURL string

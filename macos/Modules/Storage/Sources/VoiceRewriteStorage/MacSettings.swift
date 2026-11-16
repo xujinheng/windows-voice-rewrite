@@ -48,7 +48,7 @@ public struct MacSettings: Codable, Equatable, Sendable {
     public static let maxCredentialBytes = ContractLimits.maxCredentialBytes
 
     public static func credentialTooLong(_ value: String) -> Bool {
-        value.trimmingCharacters(in: .whitespacesAndNewlines).utf8.count > maxCredentialBytes
+        ContractLimits.storedCredentialTooLong(value)
     }
 
     /// An empty field keeps the Keychain value. Spaces are a typed value and replace it.
@@ -59,32 +59,23 @@ public struct MacSettings: Codable, Equatable, Sendable {
     /// Applies the core recording-length and base-URL rules before the values
     /// are stored or sent to the helper.
     public mutating func canonicalize() throws {
-        asrBaseURL = trimEndpoint(asrBaseURL)
-        llmBaseURL = trimEndpoint(llmBaseURL)
-        asrModel = asrModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        textModel = textModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let endpoints = ContractLimits.canonicalEndpoints(
+            asrBaseURL: asrBaseURL,
+            asrModel: asrModel,
+            llmBaseURL: llmBaseURL,
+            textModel: textModel) else {
+            throw SettingsError.invalidValues
+        }
+        asrBaseURL = endpoints.asrBaseURL
+        llmBaseURL = endpoints.llmBaseURL
+        asrModel = endpoints.asrModel
+        textModel = endpoints.textModel
         if !Self.recordSeconds.contains(maxRecordSeconds) {
             maxRecordSeconds = ContractLimits.defaultRecordSeconds
         }
-        if asrModel.isEmpty { asrModel = ContractLimits.defaultASRModel }
-        if textModel.isEmpty { textModel = ContractLimits.defaultTextModel }
         dictationShortcut = normalizedShortcut(dictationShortcut, fallback: ContractLimits.macDictationShortcut)
         rewriteShortcut = normalizedShortcut(rewriteShortcut, fallback: ContractLimits.macRewriteShortcut)
         textEditShortcut = normalizedShortcut(textEditShortcut, fallback: ContractLimits.macTextEditShortcut)
-        guard asrBaseURL.utf8.count <= ContractLimits.maxEndpointBytes,
-              llmBaseURL.utf8.count <= ContractLimits.maxEndpointBytes,
-              asrModel.utf8.count <= ContractLimits.maxModelIDBytes,
-              textModel.utf8.count <= ContractLimits.maxModelIDBytes,
-              Self.acceptsBaseURL(asrBaseURL),
-              Self.acceptsBaseURL(llmBaseURL) else {
-            throw SettingsError.invalidValues
-        }
-    }
-
-    private func trimEndpoint(_ value: String) -> String {
-        var text = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        while text.hasSuffix("/") { text.removeLast() }
-        return text
     }
 
     private func normalizedShortcut(_ value: String, fallback: String) -> String {

@@ -23,19 +23,52 @@ public enum ContractLimits {
     public static let logMaxBytes = 4 << 20
     public static let logBackups = 3
     public static let helperName = "VoiceRewrite"
+
+    public static func storedCredentialTooLong(_ value: String) -> Bool {
+        value.utf8.count > maxCredentialBytes
+    }
+
+    public static func canonicalEndpoints(asrBaseURL: String, asrModel: String, llmBaseURL: String, textModel: String) -> CanonicalEndpointFields? {
+        let asrURL = trimEndpoint(asrBaseURL)
+        let llmURL = trimEndpoint(llmBaseURL)
+        var asr = asrModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        var text = textModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        if asrURL.utf8.count > maxEndpointBytes || llmURL.utf8.count > maxEndpointBytes || asr.utf8.count > maxModelIDBytes || text.utf8.count > maxModelIDBytes {
+            return nil
+        }
+        if !MacSettings.acceptsBaseURL(asrURL) || !MacSettings.acceptsBaseURL(llmURL) {
+            return nil
+        }
+        if asr.isEmpty { asr = defaultASRModel }
+        if text.isEmpty { text = defaultTextModel }
+        return CanonicalEndpointFields(asrBaseURL: asrURL, asrModel: asr, llmBaseURL: llmURL, textModel: text)
+    }
+
+    private static func trimEndpoint(_ value: String) -> String {
+        var text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        while text.hasSuffix("/") { text.removeLast() }
+        return text
+    }
+}
+
+public struct CanonicalEndpointFields: Equatable {
+    public var asrBaseURL: String
+    public var asrModel: String
+    public var llmBaseURL: String
+    public var textModel: String
 }
 
 extension MacSettings {
     public static func acceptsBaseURL(_ value: String) -> Bool {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.contains("://"),
-              let url = URLComponents(string: trimmed),
+        guard let url = URLComponents(string: trimmed),
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
               let host = url.host, !host.isEmpty,
               url.user == nil, url.password == nil,
               (url.percentEncodedQuery ?? "").isEmpty,
               (url.fragment ?? "").isEmpty,
+              trimmed.contains("://"),
               url.url != nil else {
             return false
         }

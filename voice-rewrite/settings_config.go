@@ -12,9 +12,10 @@ func uxUpdatedConfig(old Config, values [6]string) (Config, error) {
 	if err != nil {
 		return old, err
 	}
+	// Windows stores the trimmed field, so the shared byte check sees that stored value.
 	asrKey := strings.TrimSpace(values[2])
 	llmKey := strings.TrimSpace(values[5])
-	if len(asrKey) > coreconfig.MaxCredentialBytes || len(llmKey) > coreconfig.MaxCredentialBytes {
+	if coreconfig.StoredCredentialTooLong(asrKey) || coreconfig.StoredCredentialTooLong(llmKey) {
 		return old, errors.New(coreconfig.CredentialTooLong)
 	}
 	cfg := old

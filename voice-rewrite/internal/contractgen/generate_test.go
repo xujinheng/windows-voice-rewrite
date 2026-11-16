@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"voicerewrite/internal/contract"
 )
 
 func TestGenerateHostFilesFromCore(t *testing.T) {
@@ -46,6 +48,34 @@ func TestGenerateHostFilesFromCore(t *testing.T) {
 	settings := first[filepath.Join(filepath.Dir(root), "macos/VoiceRewrite/UI/SettingsView.swift")]
 	if !strings.Contains(settings, "测试连接") || !strings.Contains(settings, "asr_base_url") {
 		t.Fatal("settings view is not driven by the catalog")
+	}
+	history := first[filepath.Join(filepath.Dir(root), "macos/VoiceRewrite/App/SessionHistory.swift")]
+	if !strings.Contains(history, "static func accept") || !strings.Contains(history, "语音结果") || strings.Contains(history, "trimmedTitle") {
+		t.Fatal("history policy was not transcribed from Go")
+	}
+	limits := first[filepath.Join(filepath.Dir(root), "macos/Modules/Storage/Sources/VoiceRewriteStorage/ContractLimits.swift")]
+	if !strings.Contains(limits, "func canonicalEndpoints") || !strings.Contains(limits, "func storedCredentialTooLong") || !strings.Contains(limits, "trimmed.contains(\"://\")") {
+		t.Fatal("endpoint rules were not generated from Go")
+	}
+	vectors := first[filepath.Join(filepath.Dir(root), "macos/Modules/Storage/Tests/VoiceRewriteStorageTests/CanonicalEndpointVectors.swift")]
+	if !strings.Contains(vectors, "XCTAssertNil") || !strings.Contains(vectors, "count: 4001") {
+		t.Fatal("endpoint vectors")
+	}
+	bindings, actions, status := settingsMaps()
+	for _, control := range contract.Controls() {
+		if !control.VisibleOn(contract.MacOS) {
+			continue
+		}
+		line, err := renderControl(control, bindings, actions, status)
+		if err != nil || !strings.Contains(line, control.ID) {
+			t.Fatalf("visible %s: %v", control.ID, err)
+		}
+	}
+	if _, err := renderControl(contract.Control{ID: "microphone", Kind: contract.Choice, Label: "麦克风"}, bindings, actions, status); err == nil {
+		t.Fatal("choice rendered")
+	}
+	if _, err := renderControl(contract.Control{ID: "extra", Kind: contract.Button, Label: "多余"}, bindings, actions, status); err == nil {
+		t.Fatal("empty button rendered")
 	}
 	logText := first[filepath.Join(filepath.Dir(root), "macos/VoiceRewrite/App/DiagnosticLog.swift")]
 	for _, piece := range []string{

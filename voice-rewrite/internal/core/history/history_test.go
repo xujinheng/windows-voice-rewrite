@@ -31,6 +31,12 @@ func TestHistoryBoundedNewestFirstAndPrivate(t *testing.T) {
 	if _, found := h.Get(1); found {
 		t.Fatal("evicted result still accessible")
 	}
+	if stored, ok := Accept("  spaced  ", "x"); !ok || stored != "  spaced  " {
+		t.Fatalf("title %q %v", stored, ok)
+	}
+	if _, ok := Accept("title", strings.Repeat("x", MaxBytes+1)); ok {
+		t.Fatal("oversize accepted")
+	}
 	h.Remember("", "   ")
 	if len(h.Snapshot()) != Limit {
 		t.Fatal("blank result was remembered")

@@ -62,6 +62,9 @@ func TestNormalizeConfig(t *testing.T) {
 	if _, err := CanonicalEndpoints("http://localhost/v1?key=1", "m", "http://127.0.0.1:1234/v1", "auto"); err == nil {
 		t.Fatal("query URL accepted")
 	}
+	if StoredCredentialTooLong(strings.Repeat(" ", MaxCredentialBytes)) || !StoredCredentialTooLong(strings.Repeat(" ", MaxCredentialBytes+1)) {
+		t.Fatal("credential bytes")
+	}
 	spaced := Defaults()
 	spaced.ASRBaseURL = "  http://127.0.0.1:8080/v1  "
 	spaced.LLMBaseURL = "\thttp://127.0.0.1:1234/v1\n"

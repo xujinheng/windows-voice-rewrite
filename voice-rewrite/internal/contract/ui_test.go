@@ -35,6 +35,11 @@ func TestSettingsCatalogKeepsSharedPagesAndOrder(t *testing.T) {
 	if join(macInput) != "max_record_seconds rewrite_shortcut dictation_shortcut text_edit_shortcut" {
 		t.Fatalf("macos input: %v", macInput)
 	}
+	for _, control := range Controls() {
+		if control.Platform == Both && control.Gap != "" || control.Platform != Both && control.Gap != "#61 #69" {
+			t.Fatalf("gap %s %q", control.ID, control.Gap)
+		}
+	}
 	save, ok := Find("save")
 	probe, pok := Find("probe_asr")
 	if !ok || !pok || save.Label != "保存设置" || probe.Label != "测试连接" {
