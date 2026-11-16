@@ -17,6 +17,9 @@ final class KeychainCredentialsTests: XCTestCase {
         XCTAssertEqual(probeRequest(.transcribe), ProbeRequest(name: "ASR", operation: "probe_asr"))
         XCTAssertEqual(probeRequest(.selectedTask), ProbeRequest(name: "LLM", operation: "probe_llm"))
         XCTAssertNil(probeRequest(.spokenSelectedTask))
+        XCTAssertEqual(probeField(.transcribe), .asr)
+        XCTAssertEqual(probeField(.selectedTask), .llm)
+        XCTAssertEqual(probeField(.spokenSelectedTask), .both)
     }
 
     func testHelperConfigIsScopedAndNeverPersisted() throws {

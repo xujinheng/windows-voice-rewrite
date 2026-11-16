@@ -537,10 +537,12 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func setProbeStatus(_ message: String, for operation: HelperOperation) {
-        switch operation {
-        case .transcribe: asrProbeStatus = message
-        case .selectedTask: llmProbeStatus = message
-        case .spokenSelectedTask:
+        switch probeField(operation) {
+        case .asr:
+            asrProbeStatus = message
+        case .llm:
+            llmProbeStatus = message
+        case .both:
             asrProbeStatus = message
             llmProbeStatus = message
         }
