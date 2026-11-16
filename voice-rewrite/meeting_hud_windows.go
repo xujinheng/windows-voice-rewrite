@@ -416,7 +416,7 @@ func updateMeetingHUD(view meetingView) {
 	for _, i := range []int{6, 7, 8} {
 		meetingEnableWindow.Call(p.buttons[i], meetingBool(p.owner != 0))
 	}
-	meetingEnableWindow.Call(p.buttons[12], meetingBool(p.owner != 0 && view.reply.PendingAvailable && !p.paused))
+	meetingEnableWindow.Call(p.buttons[12], meetingBool(meetingcore.AcceptEnabled(p.owner != 0, view.reply.PendingAvailable, p.paused)))
 	p.setText(p.buttons[12], meetingcore.ButtonFace(meetingcore.ButtonAcceptReplies, buttons), false)
 	if p.paused {
 		return

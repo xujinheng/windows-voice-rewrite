@@ -32,6 +32,10 @@ const (
 	WindowsSaveRestart = "设置已保存。快捷键和录音设备将在重启 VoiceRewrite 后生效。"
 	// WindowsSaveImmediate is shown when only endpoints or models changed.
 	WindowsSaveImmediate = "✓ 已保存，API 地址和模型立即生效"
+	// SaveFailedPrefix is shown before the error when settings cannot be written.
+	SaveFailedPrefix = "保存失败："
+	// OpenAdvancedFailedPrefix is shown before the error when the config file cannot be opened.
+	OpenAdvancedFailedPrefix = "打开高级配置失败："
 	// Tray and pause sentences. Hosts paint icons and own the menu window.
 	VoiceRecording    = "正在录音 · 按键松开后提交"
 	VoiceTranscribing = "正在识别语音"

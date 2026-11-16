@@ -47,6 +47,19 @@ func InputIndex(id string) (int, bool) {
 	return 0, false
 }
 
+// ProbeInputs is the URL, key, and model a settings probe reads.
+// The field id is the URL field, which also marks that probe stale.
+func ProbeInputs(kind string) (field, url, key, model string, ok bool) {
+	switch kind {
+	case "ASR":
+		return "asr_base_url", "asr_base_url", "asr_api_key", "asr_model", true
+	case "LLM":
+		return "llm_base_url", "llm_base_url", "llm_api_key", "text_model", true
+	default:
+		return "", "", "", "", false
+	}
+}
+
 // ProbeSlot is the connection check cleared when this field changes.
 // Slots follow the first appearance of each stale-probe name in the catalog.
 func ProbeSlot(id string) (int, bool) {

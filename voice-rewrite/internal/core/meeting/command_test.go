@@ -57,7 +57,7 @@ func TestMeetingButtonsStayContiguous(t *testing.T) {
 	if CopyText(CommandCopyExpression, "en", true, "expr") != "expr" {
 		t.Fatal("expression copy")
 	}
-	if !ReplyCopyEnabled(true, "en") || ReplyCopyEnabled(true, "") || !RefineEnabled(true, "短一点", false) || RefineEnabled(true, "短一点", true) || RefineEnabled(false, "短一点", false) {
+	if !ReplyCopyEnabled(true, "en") || ReplyCopyEnabled(true, "") || !AcceptEnabled(true, true, false) || AcceptEnabled(true, true, true) || AcceptEnabled(false, true, false) || !RefineEnabled(true, "短一点", false) || RefineEnabled(true, "短一点", true) || RefineEnabled(false, "短一点", false) {
 		t.Fatal("copy and refine gates")
 	}
 }

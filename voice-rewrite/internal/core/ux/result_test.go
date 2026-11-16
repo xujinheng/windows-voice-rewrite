@@ -33,7 +33,7 @@ func TestResultCardTitles(t *testing.T) {
 	if SaveWhileBusy != "请先完成当前录音／改写，再保存" {
 		t.Fatal("save while busy")
 	}
-	if WindowsSaveNotice(true) != "设置已保存。快捷键和录音设备将在重启 VoiceRewrite 后生效。" || WindowsSaveNotice(false) != "✓ 已保存，API 地址和模型立即生效" {
+	if WindowsSaveNotice(true) != "设置已保存。快捷键和录音设备将在重启 VoiceRewrite 后生效。" || WindowsSaveNotice(false) != "✓ 已保存，API 地址和模型立即生效" || SaveFailedPrefix != "保存失败：" || OpenAdvancedFailedPrefix != "打开高级配置失败：" {
 		t.Fatal("windows save notice")
 	}
 	if VoicePaused != "已暂停 · 鼠标侧键恢复正常功能" || PauseWhileBusy != "当前任务仍在处理；结束后可暂停语音操作。" {

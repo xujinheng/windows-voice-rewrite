@@ -598,7 +598,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			case contract.ActionSave:
 				// save() writes the restart notice or the immediate-effect line.
 				if err := p.save(); err != nil {
-					uxSetText(p.hint, "保存失败："+err.Error())
+					uxSetText(p.hint, ux.SaveFailedPrefix+err.Error())
 				}
 				return 0
 			case contract.ActionClose:
@@ -606,14 +606,14 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				return 0
 			case contract.ActionAdvanced:
 				if err := shellOpenLocalFile(configPath()); err != nil {
-					uxSetText(p.hint, "打开高级配置失败："+err.Error())
+					uxSetText(p.hint, ux.OpenAdvancedFailedPrefix+err.Error())
 				}
 				return 0
 			case contract.ActionProbeASR:
-				p.check("ASR", p.inputValue("asr_base_url"), p.inputValue("asr_api_key"), p.inputValue("asr_model"))
+				p.probe("ASR")
 				return 0
 			case contract.ActionProbeLLM:
-				p.check("LLM", p.inputValue("llm_base_url"), p.inputValue("llm_api_key"), p.inputValue("text_model"))
+				p.probe("LLM")
 				return 0
 			}
 		}
@@ -680,13 +680,17 @@ func (p *uxSettings) bumpProbe(idx int) uint64 {
 	return serial
 }
 
-func (p *uxSettings) check(kind, base, key, model string) {
-	if p == nil || p.window == 0 {
+func (p *uxSettings) probe(kind string) {
+	field, url, key, model, ok := contract.ProbeInputs(kind)
+	if !ok {
 		return
 	}
-	field := "asr_base_url"
-	if kind == "LLM" {
-		field = "llm_base_url"
+	p.check(kind, p.inputValue(url), p.inputValue(key), p.inputValue(model), field)
+}
+
+func (p *uxSettings) check(kind, base, key, model, field string) {
+	if p == nil || p.window == 0 {
+		return
 	}
 	idx, ok := contract.ProbeSlot(field)
 	if !ok || idx < 0 || idx >= len(p.probeStatus) {

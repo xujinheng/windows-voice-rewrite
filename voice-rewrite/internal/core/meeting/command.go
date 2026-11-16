@@ -100,6 +100,10 @@ func ReplyCopyEnabled(complete bool, english string) bool {
 	return complete && english != ""
 }
 
+func AcceptEnabled(owner, pending, paused bool) bool {
+	return owner && pending && !paused
+}
+
 func RefineEnabled(complete bool, instruction string, paused bool) bool {
 	return complete && instruction != "" && !paused
 }
