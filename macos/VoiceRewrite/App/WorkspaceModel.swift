@@ -650,31 +650,42 @@ final class WorkspaceModel: ObservableObject {
         recordingStatus = dictationRequestingMicrophone()
         Task { @MainActor [weak self] in
             guard let self else { return }
+            var captured = false
+            var failure: String?
+            var snapshot: SelectionSnapshot?
+            var generation: UInt64 = 0
             if let pid = targetPID, pid > 0 {
                 do {
-                    let generation = try await interaction.beginTask(targetProcessID: pid)
-                    let snapshot = try await interaction.captureSelection(
+                    generation = try await interaction.beginTask(targetProcessID: pid)
+                    snapshot = try await interaction.captureSelection(
                         generation: generation, intent: .insertAtCaret)
-                    if resultGeneration.accepts(token) {
-                        activeInsert = (snapshot, generation)
-                        interactionStatus = dictationCaretLocked()
-                    }
+                    captured = true
                 } catch {
-                    interactionStatus = captureStatus(error, password: ResultCopy.passwordDictation)
+                    failure = captureStatus(error, password: ResultCopy.passwordDictation)
                 }
-            } else {
-                interactionStatus = dictationNoTarget()
             }
-            guard resultGeneration.accepts(token) else { return }
+            let arm = dictationArm(hasTarget: (targetPID ?? 0) > 0, tokenValid: resultGeneration.accepts(token), captured: captured, captureFailure: failure)
+            if let status = arm.interactionStatus { interactionStatus = status }
+            if arm.keepInsert, let snapshot {
+                activeInsert = (snapshot, generation)
+            }
+            guard arm.startMicrophone else { return }
             do {
                 try await microphone.start()
-                guard resultGeneration.accepts(token) else { microphone.cancel(); return }
+                let ready = dictationMicrophoneReady(started: true, tokenValid: resultGeneration.accepts(token), failure: "")
+                if ready.cancelMicrophone {
+                    microphone.cancel()
+                    return
+                }
                 isRecording = true
                 showIndicator(phase: .recording, mode: "听写", pending: false)
-                recordingStatus = dictationRecording()
+                if let status = ready.recordingStatus { recordingStatus = status }
             } catch {
-                recordingStatus = dictationMicrophoneFailed(error.localizedDescription)
-                showIndicator(phase: .error, mode: "听写", pending: false)
+                let ready = dictationMicrophoneReady(started: false, tokenValid: true, failure: error.localizedDescription)
+                if let status = ready.recordingStatus { recordingStatus = status }
+                if ready.showError {
+                    showIndicator(phase: .error, mode: "听写", pending: false)
+                }
             }
             isStarting = false
             stopWhenSideMouseReleased(.dictation)

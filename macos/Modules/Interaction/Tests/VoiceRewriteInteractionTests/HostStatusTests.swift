@@ -208,6 +208,47 @@ final class HostStatusTests: XCTestCase {
         XCTAssertFalse(dictation.cancelTask)
     }
 
+    func testDictationArmStillRecordsAfterACaptureFailure() {
+        let missing = dictationArm(hasTarget: false, tokenValid: true, captured: false, captureFailure: nil)
+        XCTAssertEqual(missing.interactionStatus, dictationNoTarget())
+        XCTAssertFalse(missing.keepInsert)
+        XCTAssertTrue(missing.startMicrophone)
+
+        let failed = dictationArm(hasTarget: true, tokenValid: true, captured: false, captureFailure: "密码")
+        XCTAssertEqual(failed.interactionStatus, "密码")
+        XCTAssertTrue(failed.startMicrophone)
+        XCTAssertFalse(failed.keepInsert)
+
+        let locked = dictationArm(hasTarget: true, tokenValid: true, captured: true, captureFailure: nil)
+        XCTAssertEqual(locked.interactionStatus, dictationCaretLocked())
+        XCTAssertTrue(locked.keepInsert)
+        XCTAssertTrue(locked.startMicrophone)
+
+        let stale = dictationArm(hasTarget: true, tokenValid: false, captured: true, captureFailure: nil)
+        XCTAssertNil(stale.interactionStatus)
+        XCTAssertFalse(stale.keepInsert)
+        XCTAssertFalse(stale.startMicrophone)
+
+        let staleMiss = dictationArm(hasTarget: false, tokenValid: false, captured: false, captureFailure: nil)
+        XCTAssertEqual(staleMiss.interactionStatus, dictationNoTarget())
+        XCTAssertFalse(staleMiss.startMicrophone)
+
+        let recording = dictationMicrophoneReady(started: true, tokenValid: true, failure: "")
+        XCTAssertEqual(recording.recordingStatus, dictationRecording())
+        XCTAssertTrue(recording.showRecording)
+        XCTAssertFalse(recording.cancelMicrophone)
+
+        let expired = dictationMicrophoneReady(started: true, tokenValid: false, failure: "")
+        XCTAssertNil(expired.recordingStatus)
+        XCTAssertTrue(expired.cancelMicrophone)
+        XCTAssertFalse(expired.showRecording)
+
+        let broken = dictationMicrophoneReady(started: false, tokenValid: true, failure: "忙")
+        XCTAssertEqual(broken.recordingStatus, dictationMicrophoneFailed("忙"))
+        XCTAssertTrue(broken.showError)
+        XCTAssertFalse(broken.cancelMicrophone)
+    }
+
     func testShortcutParseFailurePrefersTheTransportError() {
         XCTAssertEqual(shortcutParseFailure(transport: "断开", userText: "格式不对"), "断开")
         XCTAssertEqual(shortcutParseFailure(transport: nil, userText: "格式不对"), "格式不对")
