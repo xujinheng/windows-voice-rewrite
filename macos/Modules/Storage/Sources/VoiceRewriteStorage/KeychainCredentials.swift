@@ -180,7 +180,8 @@ public struct HelperConfigFactory {
         operation: HelperOperation,
         _ performRequest: ([String: Any]) throws -> Result
     ) throws -> Result {
-        try settings.validateForPersistence()
+        var settings = settings
+        try settings.canonicalize()
         // Do not read or transmit a credential that the requested operation will not use.
         let asr: String
         let llm: String

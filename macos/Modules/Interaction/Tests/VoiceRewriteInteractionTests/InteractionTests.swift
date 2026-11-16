@@ -188,8 +188,10 @@ private final class FakeHotKeyDriver: HotKeyDriver {
     var registered = Set<HotKeyToken>()
     var released: [HotKeyToken] = []
     var failure: HotKeyFailure?
+    var rejectKeyCode: UInt32?
     func register(_ shortcut: HotKeyShortcut) throws -> HotKeyToken {
         if let failure { throw failure }
+        if shortcut.keyCode == rejectKeyCode { throw HotKeyFailure.systemConflict(-9878) }
         let token = HotKeyToken(id: next)
         next += 1
         registered.insert(token)
@@ -219,6 +221,39 @@ final class HotKeyTests: XCTestCase {
             XCTAssertEqual($0 as? HotKeyFailure, .systemConflict(-9878))
         }
         XCTAssertTrue(driver.registered.isEmpty)
+        }
+    }
+
+    func testFailedReplacementKeepsOldKeysAndRollsBackPartialAdditions() async throws {
+        try await MainActor.run {
+            let driver = FakeHotKeyDriver(), registry = HotKeyRegistry(driver: driver)
+            let oldOne = HotKeyShortcut(keyCode: 2, modifiers: [.command])
+            let oldTwo = HotKeyShortcut(keyCode: 3, modifiers: [.option])
+            let added = HotKeyShortcut(keyCode: 4, modifiers: [.control])
+            let rejected = HotKeyShortcut(keyCode: 5, modifiers: [.shift, .control])
+            try registry.register(oldOne)
+            try registry.register(oldTwo)
+            driver.rejectKeyCode = rejected.keyCode
+            XCTAssertThrowsError(try registry.replace(with: [oldOne, added, rejected])) {
+                XCTAssertEqual($0 as? HotKeyFailure, .systemConflict(-9878))
+            }
+            XCTAssertEqual(registry.registeredCount, 2)
+            XCTAssertEqual(driver.registered.count, 2)
+            XCTAssertEqual(driver.released.count, 1)
+
+            driver.rejectKeyCode = nil
+            try registry.replace(with: [oldTwo, oldOne])
+            XCTAssertEqual(driver.next, 4)
+            XCTAssertEqual(driver.released.count, 1)
+
+            try registry.replace(with: [oldTwo, added])
+            XCTAssertEqual(registry.registeredCount, 2)
+            XCTAssertEqual(driver.registered.count, 2)
+            XCTAssertEqual(driver.released.count, 2)
+            XCTAssertThrowsError(try registry.replace(with: [oldTwo, oldTwo])) {
+                XCTAssertEqual($0 as? HotKeyFailure, .duplicate)
+            }
+            XCTAssertEqual(registry.registeredCount, 2)
         }
     }
 
@@ -278,6 +313,14 @@ final class ClipboardTests: XCTestCase {
         XCTAssertEqual(board.restores, 0)
     }
 
+    func testZeroChangeCountIsNotOwnership() {
+        XCTAssertFalse(ClipboardOwnership.mayRestore(hasOriginal: true, owned: 0, current: 0))
+        XCTAssertFalse(ClipboardOwnership.mayRestore(hasOriginal: true, owned: 11, current: 12))
+        XCTAssertFalse(ClipboardOwnership.mayRestore(hasOriginal: false, owned: 11, current: 11))
+        XCTAssertFalse(ClipboardOwnership.mayRestore(hasOriginal: true, owned: 11, current: nil))
+        XCTAssertTrue(ClipboardOwnership.mayRestore(hasOriginal: true, owned: 11, current: 11))
+    }
+
     func testPartialWriteFailureRestoresOnlyIfOwned() async throws {
         let board = FakeClipboard(), protector = ClipboardProtector(board: board)
         let original = board.current.items
@@ -298,6 +341,18 @@ final class ClipboardTests: XCTestCase {
 }
 
 final class TextWriteVerificationTests: XCTestCase {
+    func testUnverifiableAXValueCannotAuthorizeAnyWrite() {
+        XCTAssertNil(TextWriteVerification.expectedValue(
+            original: nil, selectedText: "",
+            range: .init(location: 0, length: 0), replacement: "dictation"))
+        XCTAssertNil(TextWriteVerification.expectedValue(
+            original: nil, selectedText: "old",
+            range: .init(location: 0, length: 3), replacement: "rewrite"))
+        XCTAssertEqual(TextWriteVerification.expectedValue(
+            original: "", selectedText: "",
+            range: .init(location: 0, length: 0), replacement: "dictation"), "dictation")
+    }
+
     func testInsertionAndReplacementUseUTF16Ranges() {
         let baseline = "A😀B"
         XCTAssertEqual(TextWriteVerification.expectedValue(

@@ -79,6 +79,15 @@ final class BridgeClientTests: XCTestCase {
         let failure = try JSONDecoder().decode(BridgeReply.self, from: lines[1])
         try failure.validate()
         XCTAssertEqual(failure.error?.code, "unsupported_op")
+        XCTAssertEqual(failure.error?.userText, "unsupported operation")
+    }
+
+    func testBridgeErrorPrefersCoreRecoveryText() {
+        let recovery = BridgeErrorMessage(
+            code: "asr_failed",
+            message: "API 验证失败。检查服务地址、模型 ID 和 API Key。")
+        XCTAssertTrue(recovery.userText.contains("API 验证失败"))
+        XCTAssertEqual(BridgeErrorMessage(code: "asr_failed", message: "   ").userText, "asr_failed")
     }
 
     func testFrameLimitAndMalformedResponse() throws {

@@ -46,12 +46,32 @@ public final class HotKeyRegistry {
     public init(driver: any HotKeyDriver) { self.driver = driver }
 
     public func register(_ shortcut: HotKeyShortcut) throws {
-        guard shortcut.keyCode <= 127, !shortcut.modifiers.isEmpty,
+        let bareFunctionKey = Self.functionKeyCodes.contains(shortcut.keyCode)
+        guard shortcut.keyCode <= 127, !shortcut.modifiers.isEmpty || bareFunctionKey,
               shortcut.modifiers.rawValue & ~UInt8(0x0F) == 0 else {
             throw HotKeyFailure.invalidShortcut
         }
         guard registrations[shortcut] == nil else { throw HotKeyFailure.duplicate }
         registrations[shortcut] = try driver.register(shortcut)
+    }
+
+    public func replace(with shortcuts: [HotKeyShortcut]) throws {
+        guard Set(shortcuts).count == shortcuts.count else { throw HotKeyFailure.duplicate }
+        let existing = Set(registrations.keys)
+        let desired = Set(shortcuts)
+        var added: [HotKeyShortcut] = []
+        do {
+            for shortcut in shortcuts where !existing.contains(shortcut) {
+                try register(shortcut)
+                added.append(shortcut)
+            }
+        } catch {
+            for shortcut in added { unregister(shortcut) }
+            throw error
+        }
+        for shortcut in existing where !desired.contains(shortcut) {
+            unregister(shortcut)
+        }
     }
 
     public func unregister(_ shortcut: HotKeyShortcut) {
@@ -65,6 +85,8 @@ public final class HotKeyRegistry {
     }
 
     public var registeredCount: Int { registrations.count }
+
+    private static let functionKeyCodes: Set<UInt32> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]
 
     deinit {
         // The driver must remain owned by the registry; OS hotkeys are never left registered.

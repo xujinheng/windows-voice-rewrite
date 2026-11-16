@@ -146,10 +146,10 @@ func TestMeetingSchedulerCanceledWaiterRemoved(t *testing.T) {
 
 func TestMeetingExpressionRemainsReadableWhileWorking(t *testing.T) {
 	last := meetingLine{kind: "SAY", english: "I would add one more point.", complete: true}
-	if meetingRetainEnglish(last) != last {
+	if retainedEnglish(last) != last {
 		t.Fatal("the last completed spoken English was lost")
 	}
-	if meetingRetainEnglish(meetingLine{english: "Half a sentence"}).english != "" {
+	if retainedEnglish(meetingLine{english: "Half a sentence"}).english != "" {
 		t.Fatal("uncommitted English must not survive a failed request")
 	}
 	if heading := meetingcore.ExpressionHeading("正在识别", true); !strings.Contains(heading, "仍可复制") {

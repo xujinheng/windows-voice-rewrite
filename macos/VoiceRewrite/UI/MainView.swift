@@ -48,6 +48,16 @@ struct MainView: View {
                         LabeledContent("麦克风", value: model.recordingStatus)
                         LabeledContent("原生交互", value: model.interactionStatus)
                         LabeledContent("鼠标侧键", value: model.sideMouseStatus)
+                        Text(model.updateStatus).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
+                        HStack {
+                            Button("检查更新") { model.checkForUpdate() }
+                                .disabled(model.isCheckingUpdate)
+                            if model.updatePage != nil {
+                                Button("打开发布页面") { model.openUpdatePage() }
+                            }
+                            Button("查看诊断日志") { DiagnosticLog.reveal() }
+                            Spacer()
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
@@ -59,6 +69,9 @@ struct MainView: View {
                     .disabled(model.isStarting || model.isProcessing)
                     Button("取消任务") { model.cancelCurrent() }
                         .disabled(!model.isRecording && !model.isStarting && !model.isProcessing)
+                    Button(model.voicePaused ? VoicePauseCopy.resume : VoicePauseCopy.pause) {
+                        model.toggleVoicePause()
+                    }
                     Spacer()
                     Button("请求辅助功能权限") { model.requestAccessibility() }
                     Button("重新检测鼠标侧键") { model.refreshSideMouse() }
@@ -71,14 +84,36 @@ struct MainView: View {
                 GroupBox("选区改写") {
                     VStack(alignment: .leading, spacing: 8) {
                         TextField("输入改写/翻译指令，再切到其他应用选中文字", text: $model.taskInstruction)
-                        Text("Mouse4：按住说话，松开听写；Mouse5：选中文字，按住说出修改要求，松开处理。短按侧键保留正常导航。")
+                        Text("侧键默认：Mouse4 听写、Mouse5 选区改写；在设置中调整后按新绑定执行。短按侧键保留正常导航。")
                             .font(.footnote).foregroundStyle(.secondary)
-                        Text("键盘备用：Ctrl+Option+R 听写、Ctrl+Option+E 语音改写、Ctrl+Option+T 文字指令。")
+                        Text("键盘默认：Ctrl+Option+R 听写、Ctrl+Option+E 语音改写、Ctrl+Option+T 文字指令；可在设置中更改。")
                             .font(.footnote).foregroundStyle(.secondary)
                         Text("语音选区模式需要先在目标应用选中文字；录音中不得改变目标、焦点或选区，否则只保留预览。")
                             .font(.footnote).foregroundStyle(.secondary)
                         resultView(model.processedText, empty: "这里显示真实模型结果；未经授权不会更改其他应用文本。")
                     }
+                }
+
+                GroupBox("最近 10 次结果（仅当前会话）") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if model.sessionHistory.isEmpty {
+                            Text("当前会话还没有可恢复的语音结果。")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(Array(model.sessionHistory.enumerated()), id: \.element.id) { index, entry in
+                                Button(SessionHistory.menuLine(index: index, title: entry.title, createdAt: entry.createdAt)) {
+                                    model.showSessionHistory(id: entry.id)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            if let restoredHistoryText = model.restoredHistoryText, !restoredHistoryText.isEmpty {
+                                resultView(restoredHistoryText, empty: "")
+                            }
+                            Button("清空本次会话历史") { model.clearSessionHistory() }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
                 }
                 Text("更改目标应用或选区会阻止旧任务写入。真实麦克风、Keychain 和辅助功能权限需在本机授权。")
                     .font(.footnote).foregroundStyle(.secondary)
@@ -106,7 +141,12 @@ struct MainView: View {
                 Text(empty).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .frame(minHeight: 70, alignment: .topLeading)
+        .frame(minHeight: resultHeight(value), alignment: .topLeading)
         .padding(8)
+    }
+
+    private func resultHeight(_ value: String?) -> CGFloat {
+        guard let value, !value.isEmpty else { return 70 }
+        return ResultCardMetrics.height(unicodeScalars: value.unicodeScalars.count)
     }
 }

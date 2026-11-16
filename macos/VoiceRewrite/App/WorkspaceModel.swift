@@ -5,6 +5,24 @@ import Microphone
 import VoiceRewriteInteraction
 import VoiceRewriteStorage
 
+enum ServiceProbeCopy {
+    static let idle = "尚未检测连接"
+    static let running = "正在检测服务…"
+    static let stale = "连接配置已修改 · 请重新检测"
+}
+
+enum SettingsCopy {
+    static let saveWhileBusy = "请先完成当前录音／改写，再保存"
+}
+
+enum VoicePauseCopy {
+    static let paused = "已暂停 · 鼠标侧键恢复正常功能"
+    static let idle = "待机 · 使用配置的听写和改写快捷键"
+    static let pause = "暂停语音操作（保留鼠标侧键原功能）"
+    static let resume = "恢复语音操作"
+    static let busy = "当前任务仍在处理；结束后可暂停语音操作。"
+}
+
 @MainActor
 final class WorkspaceModel: ObservableObject {
     enum Connection: Equatable {
@@ -21,8 +39,8 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var connection: Connection = .disconnected
     @Published private(set) var recordingStatus = "未录音"
     @Published private(set) var serviceStatus = "尚未连接"
-    @Published private(set) var asrProbeStatus = "尚未检测"
-    @Published private(set) var llmProbeStatus = "尚未检测"
+    @Published private(set) var asrProbeStatus = ServiceProbeCopy.idle
+    @Published private(set) var llmProbeStatus = ServiceProbeCopy.idle
     @Published private(set) var isCheckingServices = false
     @Published private(set) var interactionStatus = "全局快捷键尚未注册"
     @Published private(set) var sideMouseStatus = "尚未检查鼠标侧键监听"
@@ -34,8 +52,19 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var isStarting = false
     @Published private(set) var isProcessing = false
     @Published private(set) var accessibilityAuthorized = false
+    @Published private(set) var sessionHistory: [SessionHistoryEntry] = []
+    @Published private(set) var restoredHistoryText: String?
+    @Published private(set) var voicePaused = false
+    @Published private(set) var updateStatus = "尚未检查更新"
+    @Published private(set) var updatePage: String?
+    @Published private(set) var isCheckingUpdate = false
+    private var historyStore = SessionHistory()
+    private var updateCheck = ResultGeneration()
 
     private let microphone = MicrophoneRecorder()
+    private let recordingIndicator = RecordingIndicatorController()
+    private var indicatorSnapshot = IndicatorSnapshot()
+    private var ignoreNextSideHold = false
     private let credentials = KeychainCredentials()
     private let interaction = InteractionSession.macOS()
     private var store: SettingsStore?
@@ -53,9 +82,8 @@ final class WorkspaceModel: ObservableObject {
     private var activeSideAction: SideMouseAction?
     private var pendingSideRelease: SideMouseAction?
 
-    private let recordShortcut = HotKeyShortcut(keyCode: 15, modifiers: [.control, .option])
-    private let editShortcut = HotKeyShortcut(keyCode: 17, modifiers: [.control, .option])
-    private let spokenEditShortcut = HotKeyShortcut(keyCode: 14, modifiers: [.control, .option])
+    private var activeShortcutPlan: MacShortcutPlan?
+    private var shortcutGeneration = ResultGeneration()
 
     init() {
         do {
@@ -69,6 +97,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func launch() {
+        DiagnosticLog.note("应用已启动")
         if case .disconnected = connection { connect() }
         if hotKeys == nil { registerHotKeys() }
         refreshSideMouse()
@@ -77,8 +106,8 @@ final class WorkspaceModel: ObservableObject {
     func connect() {
         let token = helloGeneration.begin()
         cancelProbes()
-        asrProbeStatus = "尚未检测"
-        llmProbeStatus = "尚未检测"
+        asrProbeStatus = ServiceProbeCopy.idle
+        llmProbeStatus = ServiceProbeCopy.idle
         bridge?.stop()
         bridge = nil
         connection = .connecting
@@ -119,7 +148,9 @@ final class WorkspaceModel: ObservableObject {
                     }
                     self.connection = .connected("VoiceRewrite / JSONL v1")
                     self.serviceStatus = "Go Helper 已连接"
+                    DiagnosticLog.note("Go Helper 已连接")
                     self.checkServices()
+                    self.refreshShortcutsFromCore()
                 case .failure:
                     self.connection = .failed("Go Helper 握手失败")
                     self.serviceStatus = "不可用"
@@ -129,18 +160,40 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func saveSettings() {
-        cancelProbes()
+        if isRecording || isStarting || isProcessing {
+            settingsStatus = SettingsCopy.saveWhileBusy
+            return
+        }
+        guard let dictation = ShortcutBinding(canonical: settings.dictationShortcut),
+              let rewrite = ShortcutBinding(canonical: settings.rewriteShortcut),
+              let textEdit = ShortcutBinding(canonical: settings.textEditShortcut),
+              MacShortcutPlan(dictation: dictation, rewrite: rewrite, textEdit: textEdit) != nil else {
+            settingsStatus = "快捷键冲突或不受 macOS 支持；设置未保存"
+            return
+        }
+        _ = shortcutGeneration.begin()
         defer {
             asrKeyInput = ""
             llmKeyInput = ""
         }
         do {
             guard let store else { throw SettingsError.insecureStorage }
-            try store.save(settings)
+            let previous = activeShortcutPlan
+            guard try ShortcutSaveTransaction.run(
+                activate: { self.register(dictation: dictation, rewrite: rewrite, textEdit: textEdit) },
+                persist: { try store.save(self.settings) },
+                restore: { self.restoreShortcutPlan(previous) }
+            ) else {
+                settingsStatus = "快捷键未能注册；设置未保存，原快捷键保持有效"
+                return
+            }
             try saveCredential(asrKeyInput, account: .asr)
             try saveCredential(llmKeyInput, account: .llm)
             settingsStatus = "设置已保存，密钥不写入配置文件"
+            DiagnosticLog.note("设置已保存")
+            cancelProbes()
             checkServices()
+            refreshShortcutsFromCore()
         } catch {
             settingsStatus = "无法安全保存设置：\(error.localizedDescription)"
         }
@@ -164,29 +217,125 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func registerHotKeys() {
+        guard let dictation = ShortcutBinding(canonical: settings.dictationShortcut),
+              let rewrite = ShortcutBinding(canonical: settings.rewriteShortcut),
+              let textEdit = ShortcutBinding(canonical: settings.textEditShortcut) else {
+            interactionStatus = "快捷键将在 Go Helper 连接后确认"
+            return
+        }
+        register(dictation: dictation, rewrite: rewrite, textEdit: textEdit)
+    }
+
+    private func refreshShortcutsFromCore() {
+        guard let bridge, case .connected = connection else { return }
+        let token = shortcutGeneration.begin()
+        let values = (dictation: settings.dictationShortcut,
+                      rewrite: settings.rewriteShortcut,
+                      textEdit: settings.textEditShortcut)
+        parseShortcut(values.dictation) { [weak self] dictation in
+            guard let self, self.shortcutGeneration.accepts(token), let dictation else { return }
+            self.parseShortcut(values.rewrite) { [weak self] rewrite in
+                guard let self, self.shortcutGeneration.accepts(token), let rewrite else { return }
+                self.parseShortcut(values.textEdit) { [weak self] textEdit in
+                    guard let self, self.shortcutGeneration.accepts(token), let textEdit else { return }
+                    if self.register(dictation: dictation, rewrite: rewrite, textEdit: textEdit) {
+                        self.settings.dictationShortcut = dictation.normalized
+                        self.settings.rewriteShortcut = rewrite.normalized
+                        self.settings.textEditShortcut = textEdit.normalized
+                    }
+                }
+            }
+        }
+    }
+
+    private func parseShortcut(_ value: String, done: @escaping (ShortcutBinding?) -> Void) {
+        guard let bridge else {
+            done(nil)
+            return
+        }
+        bridge.send(operation: "parse_shortcut", fields: ["shortcut": .string(value)]) { [weak self] reply in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                switch reply {
+                case .success(let response) where response.ok:
+                    done(ShortcutBinding(response.result))
+                case .success(let response):
+                    self.interactionStatus = "快捷键无效：\(response.error?.userText ?? "无法解析")"
+                    done(nil)
+                case .failure(let failure):
+                    self.interactionStatus = "快捷键无效：\(failure.localizedDescription)"
+                    done(nil)
+                }
+            }
+        }
+    }
+
+    /// Keep working global shortcuts registered until every new key succeeds.
+    @discardableResult
+    private func register(dictation: ShortcutBinding, rewrite: ShortcutBinding,
+                          textEdit: ShortcutBinding) -> Bool {
+        guard let next = MacShortcutPlan(dictation: dictation, rewrite: rewrite, textEdit: textEdit) else {
+            interactionStatus = "快捷键冲突或不受 macOS 支持；原快捷键保持有效"
+            return false
+        }
+        let label = "\(MacShortcut.display(dictation.normalized)) 听写；\(MacShortcut.display(textEdit.normalized)) 文本指令；\(MacShortcut.display(rewrite.normalized)) 语音修改选区"
+        do {
+            if let registry = hotKeys {
+                try registry.replace(with: next.keyboard)
+            } else {
+                let (driver, registry) = try createHotKeyRegistry(plan: next)
+                hotKeyDriver = driver
+                hotKeys = registry
+            }
+            activeShortcutPlan = next
+            sideMouse?.setBindings(next.sideButtons)
+            interactionStatus = label
+            return true
+        } catch {
+            interactionStatus = "快捷键注册失败：\(error.localizedDescription)；原快捷键保持有效"
+            return false
+        }
+    }
+
+    private func restoreShortcutPlan(_ previous: MacShortcutPlan?) {
+        guard let registry = hotKeys else {
+            if let previous, let restored = try? createHotKeyRegistry(plan: previous) {
+                hotKeyDriver = restored.0
+                hotKeys = restored.1
+                activeShortcutPlan = previous
+                sideMouse?.setBindings(previous.sideButtons)
+            }
+            return
+        }
+        do {
+            try registry.replace(with: previous?.keyboard ?? [])
+            activeShortcutPlan = previous
+            sideMouse?.setBindings(previous?.sideButtons ?? SideMouseBindings())
+        } catch {
+            interactionStatus = "无法恢复原快捷键：\(error.localizedDescription)"
+        }
+    }
+
+    private func createHotKeyRegistry(plan: MacShortcutPlan) throws -> (CarbonHotKeyDriver, HotKeyRegistry) {
         let driver = CarbonHotKeyDriver { [weak self] shortcut, pid in
-            guard let self else { return }
-            if shortcut == self.recordShortcut {
+            guard let self, let bound = self.activeShortcutPlan else { return }
+            if shortcut == bound.dictation {
                 self.toggleRecording(from: pid)
-            } else if shortcut == self.editShortcut {
+            } else if shortcut == bound.textEdit {
                 self.processSelectedText(from: pid)
-            } else if shortcut == self.spokenEditShortcut {
+            } else if shortcut == bound.rewrite {
                 self.toggleVoiceSelectedText(from: pid)
             }
         }
         let registry = HotKeyRegistry(driver: driver)
         do {
-            try registry.register(recordShortcut)
-            try registry.register(editShortcut)
-            try registry.register(spokenEditShortcut)
-            hotKeyDriver = driver
-            hotKeys = registry
-            interactionStatus = "Ctrl+Option+R 听写；Ctrl+Option+T 文本指令；Ctrl+Option+E 语音修改选区"
+            for shortcut in plan.keyboard { try registry.register(shortcut) }
         } catch {
             registry.shutdown()
             driver.shutdown()
-            interactionStatus = "无法注册全局快捷键，请检查系统快捷键冲突"
+            throw error
         }
+        return (driver, registry)
     }
 
     func refreshSideMouse() {
@@ -199,6 +348,13 @@ final class WorkspaceModel: ObservableObject {
         }
         let isFreshStart = sideMouse == nil
         let driver = sideMouse ?? SideMouseButtonDriver(
+            bindings: activeShortcutPlan?.sideButtons ?? SideMouseBindings(),
+            onPress: { [weak self] action in
+                self?.previewIndicator(action)
+            },
+            onPreviewDismissed: { [weak self] in
+                self?.dismissPreviewIndicator()
+            },
             onHold: { [weak self] action, pid in
                 self?.sideMouseHeld(action, targetPID: pid)
             },
@@ -209,19 +365,23 @@ final class WorkspaceModel: ObservableObject {
                 self?.cancelCurrent()
             },
             onObservedButton: { [weak self] button in
-                if let action = SideMouseAction(rawValue: button) {
+                if let action = self?.activeShortcutPlan?.sideButtons.action(for: button) ?? SideMouseBindings().action(for: button) {
                     self?.sideMouseStatus = action == .dictation
-                        ? "已收到 Mouse4 按下；继续按住以开始听写"
-                        : "已收到 Mouse5 按下；继续按住以开始改写"
+                        ? "已收到 Mouse\(button + 1) 按下；继续按住以开始听写"
+                        : "已收到 Mouse\(button + 1) 按下；继续按住以开始改写"
                 } else {
                     self?.sideMouseStatus = "检测到辅助鼠标按钮 \(button)；当前绑定按钮 3/4"
                 }
             }
         )
         do {
+            driver.setBindings(activeShortcutPlan?.sideButtons ?? SideMouseBindings())
             try driver.start()
             sideMouse = driver
-            if isFreshStart { sideMouseStatus = "监听已启动；等待 Mouse4/Mouse5 事件" }
+            driver.setVoicePaused(voicePaused)
+            if isFreshStart {
+                sideMouseStatus = voicePaused ? VoicePauseCopy.paused : "监听已启动；等待已绑定的鼠标侧键事件"
+            }
         } catch {
             driver.shutdown()
             sideMouse = nil
@@ -229,9 +389,32 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    func toggleVoicePause() {
+        if isRecording || isStarting || isProcessing {
+            interactionStatus = VoicePauseCopy.busy
+            return
+        }
+        voicePaused.toggle()
+        sideMouse?.setVoicePaused(voicePaused)
+        dismissPreviewIndicator()
+        sideMouseStatus = voicePaused ? VoicePauseCopy.paused : VoicePauseCopy.idle
+    }
+
     private func sideMouseHeld(_ action: SideMouseAction, targetPID: Int32?) {
-        guard !isRecording && !isStarting && !isProcessing && activeSideAction == nil else { return }
-        sideMouseStatus = action == .dictation ? "Mouse4 长按已触发" : "Mouse5 长按已触发"
+        guard !voicePaused else {
+            dismissPreviewIndicator()
+            return
+        }
+        guard !isRecording && !isStarting && !isProcessing && activeSideAction == nil else {
+            dismissPreviewIndicator()
+            return
+        }
+        if ignoreNextSideHold {
+            ignoreNextSideHold = false
+            return
+        }
+        let mappedButton = (activeShortcutPlan?.sideButtons ?? SideMouseBindings()).button(for: action)
+        sideMouseStatus = mappedButton.map { "Mouse\($0 + 1) 长按已触发" } ?? "已通过配置的快捷键触发"
         switch action {
         case .dictation: toggleRecording(from: targetPID)
         case .rewrite: toggleVoiceSelectedText(from: targetPID)
@@ -276,6 +459,11 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    func markConnectionProbeStale(_ operation: HelperOperation) {
+        cancelProbes()
+        setProbeStatus(ServiceProbeCopy.stale, for: operation)
+    }
+
     private func cancelProbes() {
         _ = probeGeneration.begin()
         for id in activeProbeIDs.values { bridge?.cancel(id: id) }
@@ -285,6 +473,44 @@ final class WorkspaceModel: ObservableObject {
 
     // Windows and macOS use the same Go Core probe semantics via voicebridge.
     // No user microphone input or selected text is sent by these operations.
+    func checkForUpdate() {
+        guard let bridge, case .connected = connection else {
+            updateStatus = "请先连接 Go Helper"
+            updatePage = nil
+            return
+        }
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        let token = updateCheck.begin()
+        isCheckingUpdate = true
+        updateStatus = "正在检查更新"
+        updatePage = nil
+        bridge.send(operation: "check_update", fields: ["current_version": .string(version)]) { [weak self] reply in
+            Task { @MainActor [weak self] in
+                guard let self, self.updateCheck.accepts(token) else { return }
+                self.isCheckingUpdate = false
+                switch reply {
+                case .success(let response):
+                    if response.ok {
+                        self.updateStatus = response.result?["summary"]?.string ?? "检查更新没有返回说明"
+                        if response.result?["newer"]?.boolValue == true {
+                            self.updatePage = response.result?["page"]?.string
+                        }
+                    } else {
+                        self.updateStatus = response.error?.userText ?? "检查更新失败"
+                    }
+                case .failure(let failure):
+                    self.updateStatus = "检查更新失败：\(failure.localizedDescription)"
+                }
+                DiagnosticLog.note(self.updateStatus)
+            }
+        }
+    }
+
+    func openUpdatePage() {
+        guard let updatePage, let url = URL(string: updatePage) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     func checkServices() {
         runProbes([.transcribe, .selectedTask])
     }
@@ -319,7 +545,7 @@ final class WorkspaceModel: ObservableObject {
             case .spokenSelectedTask:
                 continue
             }
-            setProbeStatus("\(name)：正在检测服务…", for: operation)
+            setProbeStatus("\(name)：" + ServiceProbeCopy.running, for: operation)
             do {
                 let config = try requestConfig(for: operation)
                 let id = bridge.send(operation: bridgeOperation, fields: ["config": config]) {
@@ -381,11 +607,13 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func toggleRecording(from targetPID: Int32? = nil) {
+        if voicePaused && !isRecording { return }
         if isRecording { stopRecording() }
         else if !isStarting && !isProcessing { startRecording(targetPID: targetPID) }
     }
 
     func toggleVoiceSelectedText(from targetPID: Int32?) {
+        if voicePaused && !isRecording { return }
         if isRecording {
             if isVoiceSelectionRecording { stopRecording() }
             return
@@ -399,6 +627,7 @@ final class WorkspaceModel: ObservableObject {
         let token = resultGeneration.begin()
         isStarting = true
         interactionStatus = "正在安全获取原应用选区"
+        showIndicator(phase: .selection, mode: "改写", pending: false)
         Task { @MainActor [weak self] in
             guard let self else { return }
             var generation: UInt64?
@@ -422,7 +651,8 @@ final class WorkspaceModel: ObservableObject {
                 activeVoiceSelection = (snapshot, next)
                 isVoiceSelectionRecording = true
                 isRecording = true
-                recordingStatus = "语音修改选区录音中；松开 Mouse5 或再次按 Ctrl+Option+E 结束"
+                showIndicator(phase: .recording, mode: "改写", pending: false)
+                recordingStatus = "语音修改选区录音中；松开当前绑定侧键或再次按配置的快捷键结束"
                 interactionStatus = "已锁定选区；录音后校验焦点与选区是否仍有效"
             } catch {
                 microphone.cancel()
@@ -430,6 +660,7 @@ final class WorkspaceModel: ObservableObject {
                 if resultGeneration.accepts(token) {
                     interactionStatus = "无法开始语音选区处理：\(error.localizedDescription)"
                     recordingStatus = "未录音"
+                    showIndicator(phase: .error, mode: "改写", pending: false)
                 }
             }
             isStarting = false
@@ -457,16 +688,18 @@ final class WorkspaceModel: ObservableObject {
                     interactionStatus = Self.captureErrorMessage(error)
                 }
             } else {
-                interactionStatus = "未指定外部文本框；本次录音仅显示识别结果。请在目标软件中按 Mouse4 开始听写"
+                interactionStatus = "未指定外部文本框；本次录音仅显示识别结果。请在目标软件中按配置的听写快捷键开始听写"
             }
             guard resultGeneration.accepts(token) else { return }
             do {
                 try await microphone.start()
                 guard resultGeneration.accepts(token) else { microphone.cancel(); return }
                 isRecording = true
-                recordingStatus = "录音中；松开 Mouse4 或再次按 Ctrl+Option+R 停止"
+                showIndicator(phase: .recording, mode: "听写", pending: false)
+                recordingStatus = "录音中；松开当前绑定侧键或再次按配置的快捷键停止"
             } catch {
                 recordingStatus = "无法启动麦克风：\(error.localizedDescription)"
+                showIndicator(phase: .error, mode: "听写", pending: false)
             }
             isStarting = false
             stopWhenSideMouseReleased(.dictation)
@@ -479,6 +712,7 @@ final class WorkspaceModel: ObservableObject {
         pendingSideRelease = nil
         isRecording = false
         isProcessing = true
+        showIndicator(phase: .processing, mode: indicatorSnapshot.mode, pending: false)
         recordingStatus = "正在处理语音"
         let token = resultGeneration.latest
         let insertion = activeInsert
@@ -528,28 +762,38 @@ final class WorkspaceModel: ObservableObject {
                         switch reply {
                         case .success(let response):
                             guard response.ok, let text = response.result?["text"]?.string else {
-                                self.recordingStatus = "ASR 请求失败：\(response.error?.code ?? "invalid_reply")"
+                                self.recordingStatus = "ASR 请求失败：\(response.error?.userText ?? "invalid_reply")"
                                 self.asrProbeStatus = "ASR：实际转写失败"
+                                self.showIndicator(phase: .error, mode: "听写", pending: false)
                                 return
                             }
                             self.transcription = text
+                            self.rememberHistory(title: ResultCopy.dictationHistory, value: text)
                             self.recordingStatus = "语音识别已完成"
                             self.asrProbeStatus = "ASR：真实录音识别成功"
                             if let insertion {
+                                self.showIndicator(phase: .applying, mode: "听写", pending: false)
                                 Task { @MainActor [weak self] in
                                     guard let self, self.resultGeneration.accepts(token) else { return }
                                     do {
                                         try await self.interaction.insertIfCurrent(
                                             insertion.snapshot, text: text, generation: insertion.generation)
                                         self.interactionStatus = "已安全插入原目标"
+                                        self.showIndicator(phase: .success, mode: "听写", pending: false)
                                     } catch {
                                         self.interactionStatus = Self.insertionErrorMessage(error)
+                                        ResultCardPanel.shared.present(title: ResultCopy.dictationCopyManually, text: text)
+                                        self.showIndicator(phase: .fallback, mode: "听写", pending: false)
                                     }
                                 }
+                            } else {
+                                ResultCardPanel.shared.present(title: ResultCopy.dictationNotInserted, text: text)
+                                self.showIndicator(phase: .fallback, mode: "听写", pending: false)
                             }
                         case .failure(let failure):
                             self.recordingStatus = "识别失败：\(failure.localizedDescription)"
                             self.asrProbeStatus = "ASR：实际转写失败"
+                            self.showIndicator(phase: .error, mode: "听写", pending: false)
                         }
                     }
                 }
@@ -559,6 +803,7 @@ final class WorkspaceModel: ObservableObject {
                 isProcessing = false
                 recordingStatus = "无法识别：\(error.localizedDescription)"
                 asrProbeStatus = "ASR：实际转写未完成"
+                showIndicator(phase: .error, mode: indicatorSnapshot.mode, pending: false)
                 if let voiceSelection {
                     await interaction.cancelTask(generation: voiceSelection.generation)
                     interactionStatus = "语音选区任务未执行"
@@ -568,6 +813,10 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func processSelectedText(from targetPID: Int32?) {
+        guard !voicePaused else {
+            interactionStatus = VoicePauseCopy.paused
+            return
+        }
         guard let pid = targetPID, pid > 0 else {
             interactionStatus = "无有效前台目标"
             return
@@ -580,6 +829,7 @@ final class WorkspaceModel: ObservableObject {
         let token = resultGeneration.begin()
         isProcessing = true
         interactionStatus = "正在校验选区"
+        showIndicator(phase: .selection, mode: "改写", pending: false)
         let instruction = taskInstruction
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -593,6 +843,7 @@ final class WorkspaceModel: ObservableObject {
                 }
                 cancelProbes()
                 llmProbeStatus = "LLM：正在处理选区…"
+                showIndicator(phase: .rewriting, mode: "改写", pending: false)
                 let config = try requestConfig(for: .selectedTask)
                 guard let bridge else { throw BridgeFailure.notRunning }
                 let id = bridge.send(operation: "selected_task", fields: [
@@ -612,6 +863,7 @@ final class WorkspaceModel: ObservableObject {
                 isProcessing = false
                 interactionStatus = "选区任务未执行：\(error.localizedDescription)"
                 llmProbeStatus = "LLM：实际任务未完成"
+                showIndicator(phase: .error, mode: "改写", pending: false)
             }
         }
     }
@@ -630,12 +882,13 @@ final class WorkspaceModel: ObservableObject {
         switch reply {
         case .success(let response):
             guard response.ok, let text = response.result?["text"]?.string else {
-                interactionStatus = "模型处理失败：\(response.error?.code ?? "invalid_reply")"
+                interactionStatus = "模型处理失败：\(response.error?.userText ?? "invalid_reply")"
                 if spoken {
                     recordingStatus = "语音修改未完成"
                     asrProbeStatus = "ASR / LLM：语音选区任务失败"
                 }
                 llmProbeStatus = "LLM：实际任务失败"
+                showIndicator(phase: .error, mode: "改写", pending: false)
                 Task { await interaction.cancelTask(generation: generation) }
                 return
             }
@@ -643,36 +896,48 @@ final class WorkspaceModel: ObservableObject {
                 guard let instruction = response.result?["instruction"]?.string,
                       !instruction.isEmpty else {
                     interactionStatus = "语音指令响应缺失；未写入原选区"
+                    showIndicator(phase: .error, mode: "改写", pending: false)
                     Task { await interaction.cancelTask(generation: generation) }
                     return
                 }
                 transcription = instruction
+                rememberHistory(title: ResultCopy.dictationHistory, value: instruction)
                 asrProbeStatus = "ASR：语音指令识别成功"
                 recordingStatus = "语音修改已处理"
             }
             processedText = text
+            let intent = response.result?["intent"]?.string ?? ""
+            rememberHistory(title: ResultCopy.historyTitle(intent: intent), value: text)
             llmProbeStatus = "LLM：实际文本任务成功"
+            let cardTitle = ResultCopy.cardTitle(intent: intent)
             let mayWrite = response.result?["may_attempt_replace"]?.boolValue == true
             let previewOnly = response.result?["preview_only"]?.boolValue != false
             guard mayWrite && !previewOnly else {
+                ResultCardPanel.shared.present(title: cardTitle, text: text)
                 interactionStatus = "仅预览结果；未获模型路由修改授权"
+                showIndicator(phase: .answer, mode: "改写", pending: false)
                 Task { await interaction.cancelTask(generation: generation) }
                 return
             }
+            showIndicator(phase: .applying, mode: "改写", pending: false)
             Task { @MainActor [weak self] in
                 guard let self, self.resultGeneration.accepts(token) else { return }
                 do {
                     try await self.interaction.replaceIfCurrent(snapshot, with: text,
                                                                generation: generation)
                     self.interactionStatus = "原选区验证通过并已替换"
+                    self.showIndicator(phase: .success, mode: "改写", pending: false)
                 } catch {
                     self.interactionStatus = Self.insertionErrorMessage(error)
+                    ResultCardPanel.shared.present(title: cardTitle, text: text)
+                    self.showIndicator(phase: .fallback, mode: "改写", pending: false)
                 }
             }
         case .failure(let failure):
             interactionStatus = "文本任务失败或已取消：\(failure.localizedDescription)"
             llmProbeStatus = "LLM：实际文本任务失败或已取消"
             if spoken { recordingStatus = "语音选区处理失败" }
+            showIndicator(phase: .error, mode: "改写", pending: false)
             Task { await interaction.cancelTask(generation: generation) }
         }
     }
@@ -720,17 +985,87 @@ final class WorkspaceModel: ObservableObject {
         return "原应用写入未完成；结果已保留，可手动复制"
     }
 
+    func clearSessionHistory() {
+        historyStore.clear()
+        sessionHistory = []
+        restoredHistoryText = nil
+        ResultCardPanel.shared.dismiss()
+    }
+
+    func showSessionHistory(id: UInt64) {
+        guard let entry = historyStore.entry(id: id) else { return }
+        restoredHistoryText = entry.text
+        ResultCardPanel.shared.present(title: ResultCopy.historyRestoreTitle(entry.title), text: entry.text)
+    }
+
+    private func rememberHistory(title: String, value: String) {
+        historyStore.remember(title: title, value: value)
+        sessionHistory = historyStore.entries
+    }
+
     func cancelCurrent() {
+        dismissIndicator()
         invalidatePending()
         microphone.cancel()
         isRecording = false
         isStarting = false
+        isProcessing = false
         recordingStatus = "已取消"
         interactionStatus = "已取消当前操作"
     }
 
+    private func previewIndicator(_ action: SideMouseAction) {
+        guard !isRecording && !isStarting && !isProcessing else { return }
+        showIndicator(phase: .recording, mode: action == .dictation ? "听写" : "改写", pending: true)
+    }
+
+    private func dismissPreviewIndicator() {
+        ignoreNextSideHold = false
+        guard indicatorSnapshot.pending else { return }
+        dismissIndicator()
+    }
+
+    private func showIndicator(phase: IndicatorPhase, mode: String, pending: Bool) {
+        let now = Date()
+        if !indicatorSnapshot.visible {
+            indicatorSnapshot.started = now
+        }
+        if !indicatorSnapshot.visible || indicatorSnapshot.phase != phase || indicatorSnapshot.pending != pending {
+            indicatorSnapshot.changed = now
+        }
+        indicatorSnapshot.visible = true
+        indicatorSnapshot.pending = pending
+        indicatorSnapshot.phase = phase
+        indicatorSnapshot.mode = mode
+        recordingIndicator.present(indicatorSnapshot, levelSource: { [weak self] in
+            IndicatorMath.normalizeMicrophoneLevel(Double(self?.microphone.rmsLevel ?? 0))
+        }, onCancel: { [weak self] in
+            guard let self else { return }
+            if self.indicatorSnapshot.pending {
+                self.ignoreNextSideHold = true
+                self.dismissIndicator()
+                return
+            }
+            if IndicatorMath.terminal(self.indicatorSnapshot.phase) {
+                self.dismissIndicator()
+                return
+            }
+            self.cancelCurrent()
+        }, onAutoDismiss: { [weak self] in
+            self?.indicatorSnapshot.visible = false
+            self?.indicatorSnapshot.pending = false
+        })
+    }
+
+    private func dismissIndicator() {
+        indicatorSnapshot.visible = false
+        indicatorSnapshot.pending = false
+        recordingIndicator.dismiss()
+    }
+
     func shutdown() {
         _ = helloGeneration.begin()
+        _ = shortcutGeneration.begin()
         cancelProbes()
         cancelCurrent()
         sideMouse?.shutdown()
@@ -740,6 +1075,7 @@ final class WorkspaceModel: ObservableObject {
         hotKeyDriver?.shutdown()
         hotKeys = nil
         hotKeyDriver = nil
+        activeShortcutPlan = nil
         bridge?.stop()
         bridge = nil
         connection = .disconnected

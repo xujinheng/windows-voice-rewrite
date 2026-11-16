@@ -18,7 +18,15 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
+	"voicerewrite/internal/core/history"
+	"voicerewrite/internal/core/indicator"
+	"voicerewrite/internal/core/input"
+	"voicerewrite/internal/core/logfile"
 	meetingcore "voicerewrite/internal/core/meeting"
+	"voicerewrite/internal/core/session"
+	"voicerewrite/internal/core/shortcut"
+	"voicerewrite/internal/core/update"
+	"voicerewrite/internal/core/ux"
 )
 
 var buildID = "0.29.0-dev" // overwritten by -ldflags -X at build time
@@ -171,17 +179,17 @@ type appState struct {
 	logger      *log.Logger
 	cfg         Config
 	busy        atomic.Bool
-	epoch       taskEpoch
+	epoch       session.Epoch
 	status      atomic.Int32
 	trayMu      sync.Mutex
 	tray        *trayIndicator
 	popups      chan popupMessage
 	lastErrorMu sync.Mutex
 	lastError   string
-	history     resultHistory
+	history     history.Store
 	paused      atomic.Bool
 	updateBusy  atomic.Bool
-	updateReady chan updateNotice
+	updateReady chan update.Notice
 }
 
 // Shell notification APIs and icon lifetime are owned by the Windows UI thread.
@@ -197,14 +205,14 @@ func (a *appState) setStatus(s trayState) {
 
 // Worker threads never mutate native windows. All phase updates are owned by
 // the UI message pump and tagged with the recording epoch to discard late events.
-func (a *appState) postHandyPhase(phase uintptr, generation uint64) {
-	if a.epoch.valid(generation) {
-		procPostMessage.Call(a.Window, WM_STATUS_UPDATE, phase, uintptr(generation))
+func (a *appState) postHandyPhase(phase indicator.Phase, generation uint64) {
+	if a.epoch.Valid(generation) {
+		procPostMessage.Call(a.Window, WM_STATUS_UPDATE, uintptr(phase), uintptr(generation))
 	}
 }
 
 func (a *appState) showAnswer(title, body string, anchor trayPoint, selection *selectedText, allowApply bool, generation uint64) {
-	if !a.epoch.valid(generation) {
+	if !a.epoch.Valid(generation) {
 		return
 	}
 	msg := popupMessage{title: title, body: body, anchor: anchor, app: a, selection: selection, allowApply: allowApply, generation: generation}
@@ -223,7 +231,7 @@ func (a *appState) rememberResult(title, value string) {
 	if strings.TrimSpace(value) == "" {
 		return
 	}
-	a.history.remember(title, value)
+	a.history.Remember(title, value)
 }
 
 func winErr(msg string) {
@@ -240,14 +248,14 @@ func (a *appState) fail(e error) {
 	}
 	a.logger.Printf("ERROR: %v", e)
 	a.lastErrorMu.Lock()
-	a.lastError = friendlyError(e)
+	a.lastError = ux.Present(e)
 	a.lastErrorMu.Unlock()
 	a.setStatus(trayError) // nonmodal; available via tray's last-error command
 }
 
 // Reuse the portable capture/parser rules for registration.
 func parseHotkey(s string) (uintptr, uintptr, error) {
-	_, mods, vk, mouse, err := parseShortcutParts(s)
+	_, mods, vk, mouse, err := shortcut.Parse(s)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -309,7 +317,7 @@ func runApp() {
 	}
 	_ = os.MkdirAll(logDir, 0700)
 	logPath := filepath.Join(logDir, "VoiceRewrite.log")
-	_ = rotateLogBeforeOpen(logPath, logFileMaxBytes, logBackupCount)
+	_ = logfile.Rotate(logPath, logfile.MaxBytes, logfile.Backups)
 	f, e := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if e != nil {
 		f = os.Stderr
@@ -336,15 +344,15 @@ func runApp() {
 		return
 	}
 	defer procDestroyWindow.Call(hwnd)
-	app := &appState{Window: hwnd, logger: l, cfg: cfg, popups: make(chan popupMessage, 4), updateReady: make(chan updateNotice, 1)}
-	defer app.epoch.shutdown()
+	app := &appState{Window: hwnd, logger: l, cfg: cfg, popups: make(chan popupMessage, 4), updateReady: make(chan update.Notice, 1)}
+	defer app.epoch.Shutdown()
 	defer app.closeMeeting()
 	defer closeActiveAnswer()
 	defer closeNativeSettings()
 	defer closeHandyStatus()
 	activeHandyAppWindow = hwnd
-	selectedMouseButton, usingMouse := mouseSideButton(cfg.HotkeyRecord)
-	dictationButton, dictationMouse := mouseSideButton(cfg.DictationHotkey)
+	selectedMouseButton, usingMouse := shortcut.WindowsSideButton(cfg.HotkeyRecord)
+	dictationButton, dictationMouse := shortcut.WindowsSideButton(cfg.DictationHotkey)
 	var dictationVK, dictationMods uintptr
 	if !dictationMouse {
 		dictationMods, dictationVK, e = parseHotkey(cfg.DictationHotkey)
@@ -409,15 +417,15 @@ func runApp() {
 		return
 	}
 	defer procUnregisterHotKey.Call(0, HOTKEY_EXIT)
-	indicator, err := newTrayIndicator(hwnd, &app.paused, &app.history)
+	trayIcon, err := newTrayIndicator(hwnd, &app.paused, &app.history)
 	if err != nil {
 		winErr("无法创建系统托盘图标: " + err.Error())
 		return
 	}
-	app.tray = indicator
+	app.tray = trayIcon
 	defer func() {
 		app.trayMu.Lock()
-		indicator.close()
+		trayIcon.close()
 		app.tray = nil
 		app.trayMu.Unlock()
 	}()
@@ -487,7 +495,7 @@ func runApp() {
 		app.setStatus(trayTranscribing)
 		l.Print("recording stop requested; selection/model processing moved to worker")
 		if cfg.RecordMode == "hold" && (holdIsDictation || holdMeeting != nil) {
-			app.postHandyPhase(statusProcessing, holdGeneration)
+			app.postHandyPhase(indicator.Processing, holdGeneration)
 			if holdMeeting != nil {
 				if holdMeeting.runtime.Context().Err() == nil {
 					mode := meetingcore.VoiceMode(holdIsDictation)
@@ -503,7 +511,7 @@ func runApp() {
 			}
 			holdMeeting = nil
 		} else if cfg.RecordMode == "hold" {
-			app.postHandyPhase(statusSelection, holdGeneration)
+			app.postHandyPhase(indicator.Selection, holdGeneration)
 			go processRecordedHold(app, rec, holdTargetWindow, currentCursorPoint(), holdGeneration)
 		} else {
 			sel := selected
@@ -522,7 +530,7 @@ func runApp() {
 		if app.meeting != nil && !app.meeting.demo {
 			holdMeeting = app.meeting
 		}
-		holdGeneration = app.epoch.start()
+		holdGeneration = app.epoch.Start()
 		active = rec
 		app.setStatus(trayRecording)
 		holdSession++
@@ -554,7 +562,7 @@ func runApp() {
 		// Promote the immediate mouse-down preview without recreating its HWND.
 		// Keyboard hold has no preview and uses the usual status path.
 		if button == 0 || !promotePendingHandyStatus(rec, statusMode, holdGeneration) {
-			showHandyStatus(rec, statusMode, statusRecording, holdGeneration)
+			showHandyStatus(rec, statusMode, indicator.Recording, holdGeneration)
 		}
 		// The native status bar is the start feedback. A synchronous Beep
 		// blocks this Win32 message loop and makes the shortcut feel sluggish.
@@ -585,7 +593,7 @@ func runApp() {
 		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil {
 			return
 		}
-		if sideButtonFlow(button, selectedMouseButton, dictationButton) == "ignore" {
+		if input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "ignore" {
 			return
 		}
 		if uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
@@ -599,7 +607,7 @@ func runApp() {
 		// physical mouse-down, but only a 250ms hold activates voice mode.
 		// A short click closes this preview and replays browser navigation.
 		mode := "改写"
-		if sideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation" {
+		if input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation" {
 			mode = "听写"
 		}
 		showPendingHandyStatus(mode)
@@ -625,7 +633,7 @@ func runApp() {
 			app.fail(p.err)
 			return
 		}
-		activateHold(p.recorder, sideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation", button, p.targetWindow)
+		activateHold(p.recorder, input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation", button, p.targetWindow)
 	}
 
 	for {
@@ -659,8 +667,8 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_STATUS_UPDATE {
-			if app.epoch.valid(uint64(msg.LParam)) && activeHandyStatus != nil && activeHandyStatus.owner == uint64(msg.LParam) {
-				updateHandyStatus(msg.WParam)
+			if app.epoch.Valid(uint64(msg.LParam)) && activeHandyStatus != nil && activeHandyStatus.owner == uint64(msg.LParam) {
+				updateHandyStatus(indicator.Phase(msg.WParam))
 			}
 			continue
 		}
@@ -669,14 +677,14 @@ func runApp() {
 				discardPendingSide()
 				continue
 			}
-			if !app.epoch.valid(uint64(msg.WParam)) || activeHandyStatus == nil || activeHandyStatus.owner != uint64(msg.WParam) {
+			if !app.epoch.Valid(uint64(msg.WParam)) || activeHandyStatus == nil || activeHandyStatus.owner != uint64(msg.WParam) {
 				continue // a cancel click queued by a previous session
 			}
-			if isHandyTerminalPhase(activeHandyStatus.phase) {
+			if indicator.Terminal(activeHandyStatus.phase) {
 				closeHandyStatus() // close a completed status, not the answer card
 				continue
 			}
-			app.epoch.start() // cancel either Mouse4 or Mouse5 before paste
+			app.epoch.Start() // cancel either Mouse4 or Mouse5 before paste
 			if active != nil {
 				stopHoldWatch()
 				rec := active
@@ -699,7 +707,7 @@ func runApp() {
 							closeActiveAnswer()
 						} else {
 							l.Printf("popup apply failed: %v", err)
-							popup.setNote("无法安全替换，请使用复制结果")
+							popup.setNote(ux.ApplyUnsafe)
 						}
 					default:
 					}
@@ -710,7 +718,7 @@ func runApp() {
 		if msg.Message == WM_SHOW_ANSWER {
 			select {
 			case answer := <-app.popups:
-				if !app.epoch.valid(answer.generation) {
+				if !app.epoch.Valid(answer.generation) {
 					l.Print("discarded stale popup result")
 					continue
 				}
@@ -718,7 +726,7 @@ func runApp() {
 					l.Printf("popup window: %v", err)
 					app.fail(err)
 				} else {
-					app.postHandyPhase(statusAnswer, answer.generation)
+					app.postHandyPhase(indicator.Answer, answer.generation)
 					l.Printf("popup native window displayed; chars=%d", utf8.RuneCountInString(answer.body))
 				}
 			default:
@@ -727,7 +735,7 @@ func runApp() {
 		}
 		if msg.Message == WM_TOGGLE_READY {
 			result := <-toggleResult
-			if !app.epoch.valid(result.generation) {
+			if !app.epoch.Valid(result.generation) {
 				result.rec.Stop()
 				go func() { <-result.rec.result }()
 				continue
@@ -742,11 +750,11 @@ func runApp() {
 		}
 		if msg.Message == WM_TRAY_UPDATE {
 			state := trayState(app.status.Load())
-			if state == trayError && activeHandyStatus != nil && !isHandyTerminalPhase(activeHandyStatus.phase) && app.epoch.valid(activeHandyStatus.owner) {
-				updateHandyStatus(statusError)
+			if state == trayError && activeHandyStatus != nil && !indicator.Terminal(activeHandyStatus.phase) && app.epoch.Valid(activeHandyStatus.owner) {
+				updateHandyStatus(indicator.Error)
 			}
 			// Always run Shell_NotifyIconW on the thread that owns the tray window.
-			if err := indicator.notify(state, false); err != nil {
+			if err := trayIcon.notify(state, false); err != nil {
 				l.Printf("tray state update failed: %v", err)
 			}
 			procKillTimer.Call(0, TRAY_RESET_TIMER_ID)
@@ -771,7 +779,7 @@ func runApp() {
 			event := uint32(msg.LParam & 0xffff)
 			if trayMenuRequested(event) {
 				l.Printf("tray: context menu requested event=0x%04x", event)
-				command, menuErr := indicator.contextMenu(app.meeting != nil)
+				command, menuErr := trayIcon.contextMenu(app.meeting != nil)
 				if menuErr != nil {
 					l.Printf("tray: menu failed: %v", menuErr)
 				} else {
@@ -786,7 +794,7 @@ func runApp() {
 				continue
 			}
 			go func() {
-				notice := checkForUpdate(buildID)
+				notice := update.Check(buildID)
 				select {
 				case app.updateReady <- notice:
 					procPostMessage.Call(hwnd, WM_TRAY_UPDATE_READY, 0, 0)
@@ -800,14 +808,10 @@ func runApp() {
 			app.updateBusy.Store(false)
 			select {
 			case notice := <-app.updateReady:
-				if notice.err != nil {
-					winErr("检查更新失败：" + notice.err.Error())
-				} else if !notice.found {
-					winErr("当前仓库尚未发布可下载的版本。\n" + releasesPage)
-				} else if !notice.newer {
-					winErr("当前版本：" + buildID + "\n最新发布：" + notice.latest + "\n已是最新版本。")
-				} else if askViewUpdate(notice.latest) {
-					if err := shellOpenLocalFile(releasesPage); err != nil {
+				if notice.Err != nil || !notice.Found || !notice.Newer {
+					winErr(notice.Summary(buildID))
+				} else if askViewUpdate(notice.Latest) {
+					if err := shellOpenLocalFile(update.ReleasesPage); err != nil {
 						winErr("无法打开发布页面：" + err.Error())
 					}
 				}
@@ -828,7 +832,7 @@ func runApp() {
 		}
 		if msg.Message == WM_TRAY_TOGGLE_PAUSE {
 			if app.busy.Load() {
-				winErr("当前任务仍在处理；结束后可暂停语音操作。")
+				winErr(ux.PauseWhileBusy)
 				continue
 			}
 			newPaused := !app.paused.Load()
@@ -843,24 +847,24 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_TRAY_LAST_RESULT {
-			history := app.history.snapshot()
-			if len(history) == 0 {
+			recent := app.history.Snapshot()
+			if len(recent) == 0 {
 				winErr("当前会话还没有可恢复的语音结果。")
 			} else {
-				app.showAnswer(history[0].Title+" · 历史结果", history[0].Text, currentCursorPoint(), nil, false, app.epoch.current())
+				app.showAnswer(ux.HistoryRestoreTitle(recent[0].Title), recent[0].Text, currentCursorPoint(), nil, false, app.epoch.Current())
 			}
 			continue
 		}
 		if msg.Message == WM_TRAY_HISTORY_ITEM {
-			if entry, ok := app.history.get(uint64(msg.WParam)); ok {
-				app.showAnswer(entry.Title+" · 历史结果", entry.Text, currentCursorPoint(), nil, false, app.epoch.current())
+			if entry, ok := app.history.Get(uint64(msg.WParam)); ok {
+				app.showAnswer(ux.HistoryRestoreTitle(entry.Title), entry.Text, currentCursorPoint(), nil, false, app.epoch.Current())
 			} else {
 				winErr("该结果已从本次会话历史中清除。")
 			}
 			continue
 		}
 		if msg.Message == WM_TRAY_CLEAR_HISTORY {
-			app.history.clear()
+			app.history.Clear()
 			closeActiveAnswer()
 			continue
 		}
@@ -880,8 +884,8 @@ func runApp() {
 			}
 			continue
 		}
-		if indicator.taskbarCreated != 0 && msg.Message == indicator.taskbarCreated {
-			if err := indicator.notify(trayState(app.status.Load()), true); err != nil {
+		if trayIcon.taskbarCreated != 0 && msg.Message == trayIcon.taskbarCreated {
+			if err := trayIcon.notify(trayState(app.status.Load()), true); err != nil {
 				l.Printf("tray re-add failed: %v", err)
 			}
 			continue
@@ -912,7 +916,7 @@ func runApp() {
 				rec.Stop()
 				go func() { <-rec.result }()
 				l.Print("ERROR: hold watcher exceeded maximum duration without observing key release")
-				app.postHandyPhase(statusError, holdGeneration)
+				app.postHandyPhase(indicator.Error, holdGeneration)
 				app.fail(errors.New("未收到录音按键或鼠标侧键的松开事件，已自动结束。请检查是否有鼠标驱动将侧键映射为其他按键。"))
 			}
 			continue
@@ -998,7 +1002,7 @@ func runApp() {
 				continue
 			}
 			// Legacy toggle mode also prepares its selection on a worker.
-			generation := app.epoch.start()
+			generation := app.epoch.Start()
 			app.busy.Store(true)
 			app.setStatus(trayTranscribing)
 			go func() {
@@ -1026,7 +1030,7 @@ func runApp() {
 					app.busy.Store(false)
 					return
 				}
-				if !app.epoch.valid(generation) {
+				if !app.epoch.Valid(generation) {
 					restoreSelectionClipboardIfOwned(hwnd, sel)
 					rec.Stop()
 					go func() { <-rec.result }()

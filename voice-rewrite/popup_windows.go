@@ -13,6 +13,11 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 	"unsafe"
+
+	"voicerewrite/internal/core/desktop"
+	corepopup "voicerewrite/internal/core/popup"
+	"voicerewrite/internal/core/texttarget"
+	"voicerewrite/internal/core/ux"
 )
 
 // The result card is an ordinary HWND with a complete Win32 message pump.
@@ -181,7 +186,7 @@ func nativePasswordFieldFocused(target uintptr) bool {
 	info := guiThreadInfo{Size: uint32(unsafe.Sizeof(guiThreadInfo{}))}
 	if ok, _, _ := procGetGUIThreadInfo.Call(tid, uintptr(unsafe.Pointer(&info))); ok != 0 && info.Focus != 0 {
 		style, _, _ := procGetWindowLongPtr.Call(info.Focus, GWL_STYLE)
-		if nativePasswordControl(windowClassName(info.Focus), style) {
+		if texttarget.NativePassword(windowClassName(info.Focus), uint32(style)) {
 			return true
 		}
 	}
@@ -190,10 +195,7 @@ func nativePasswordFieldFocused(target uintptr) bool {
 
 func isSafelyEditableControl(target uintptr) bool {
 	focusClass := foregroundFocusedClass(target)
-	if focusClass == "" {
-		return false
-	}
-	if focusClass != "edit" && !strings.HasPrefix(focusClass, "richedit") && !strings.HasPrefix(focusClass, "windowsforms10.edit") {
+	if focusClass == "" || !texttarget.NativeEditClass(focusClass) {
 		return false
 	}
 	tid, _, _ := procGetWindowThreadProcessId.Call(target, 0)
@@ -209,12 +211,7 @@ func isSafelyEditableControl(target uintptr) bool {
 // A positive value only authorizes a guarded PASTE PROBE for explicit edits,
 // never an unconditional replacement or general-purpose write permission.
 func isBrowserEditorSurface(target uintptr) bool {
-	focus := foregroundFocusedClass(target)
-	root := windowClassName(target)
-	if focus == "" {
-		return false
-	}
-	return (strings.Contains(root, "chrome_widgetwin") || strings.Contains(root, "mozillawindowclass")) && (strings.Contains(focus, "chrome") || strings.Contains(focus, "mozilla") || strings.Contains(focus, "renderwidget"))
+	return texttarget.BrowserEditorSurface(windowClassName(target), foregroundFocusedClass(target))
 }
 func currentCursorPoint() trayPoint {
 	var p trayPoint
@@ -232,11 +229,11 @@ func (p *answerPopup) setNote(s string) {
 	runtime.KeepAlive(label)
 }
 func (p *answerPopup) apply() {
-	if p == nil || p.app == nil || p.selection == nil || !p.allowApply || p.canceled.Load() || !p.app.epoch.valid(p.generation) {
+	if p == nil || p.app == nil || p.selection == nil || !p.allowApply || p.canceled.Load() || !p.app.epoch.Valid(p.generation) {
 		return
 	}
 	if !p.app.busy.CompareAndSwap(false, true) {
-		p.setNote("任务尚未结束，请稍后点击应用")
+		p.setNote(ux.ApplyBusy)
 		return
 	}
 	app := p.app
@@ -244,7 +241,7 @@ func (p *answerPopup) apply() {
 	body := p.body
 	hwnd := p.window
 	p.applyResult = make(chan error, 1)
-	p.setNote("正在核验原选区并应用…")
+	p.setNote(ux.ApplyChecking)
 	if valid, _, _ := procIsWindow.Call(sel.TargetWindow); valid == 0 {
 		p.applyResult <- errors.New("原编辑窗口已关闭")
 		procPostMessage.Call(app.Window, WM_APPLY_RESULT, 0, 0)
@@ -255,7 +252,7 @@ func (p *answerPopup) apply() {
 	go func() {
 		defer app.busy.Store(false)
 		time.Sleep(90 * time.Millisecond)
-		err := replaceSelectionWithGuard(app.Window, sel, body, app.cfg, !isSafelyEditableControl(sel.TargetWindow), func() bool { return !p.canceled.Load() && app.epoch.valid(p.generation) })
+		err := replaceSelectionWithGuard(app.Window, sel, body, app.cfg, !isSafelyEditableControl(sel.TargetWindow), func() bool { return !p.canceled.Load() && app.epoch.Valid(p.generation) })
 		if err != nil {
 			app.logger.Printf("manual apply failed: %v", err)
 		} else {
@@ -452,9 +449,9 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			switch uint16(wParam & 0xffff) {
 			case BUTTON_COPY:
 				if err := setClipboardText(hwnd, activeAnswer.body); err == nil {
-					activeAnswer.setNote("已复制结果到剪贴板")
+					activeAnswer.setNote(ux.CopySucceeded)
 				} else {
-					activeAnswer.setNote("复制失败，请尝试选中正文复制")
+					activeAnswer.setNote(ux.CopyFailed)
 				}
 				return 0
 			case BUTTON_CLOSE:
@@ -569,12 +566,12 @@ func showAnswerPopup(msg popupMessage) error {
 	// Never truncate a model response: users must be able to review and copy
 	// the full answer, including large translations and generated documents.
 	n := utf8.RuneCountInString(msg.body)
-	logicalW, logicalH := popupSizeForText(n)
+	logicalW, logicalH := corepopup.SizeForText(n)
 	// Keep result on the source monitor's WORK AREA, including negative coordinates.
 	work := uxWorkAreaForPoint(msg.anchor)
 	scale := uxMonitorScaleForPoint(msg.anchor)
 	width, height := int32(float64(logicalW)*scale), int32(float64(logicalH)*scale)
-	x, y, width, height := desktopPopupPlacement(msg.anchor.X, msg.anchor.Y, width, height, work)
+	x, y, width, height := desktop.PlacePopup(msg.anchor.X, msg.anchor.Y, width, height, work)
 	class, _ := syscall.UTF16PtrFromString("VoiceRewrite.ResultCard")
 	instance, _, _ := procGetModuleHandle.Call(0)
 	wc := trayWindowClass{Size: uint32(unsafe.Sizeof(trayWindowClass{})), Style: 0x00020000, WndProc: answerWndProcCallback, Instance: instance, ClassName: class}
@@ -616,7 +613,8 @@ func showAnswerPopup(msg popupMessage) error {
 	}
 	// No permanent status copy: the body is the product. A slim inline
 	// status appears only after an actual Copy/Apply action.
-	note, err := makeChild("STATIC", "", WS_CHILD|WS_VISIBLE, px(132), px(16), cw-px(190), px(20), hwnd, 0)
+	noteRect := corepopup.Note(cw, scale)
+	note, err := makeChild("STATIC", "", WS_CHILD|WS_VISIBLE, noteRect.X, noteRect.Y, noteRect.W, noteRect.H, hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -624,7 +622,8 @@ func showAnswerPopup(msg popupMessage) error {
 	popup.note = note
 	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | uxWSTabStop | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
 	editorText := strings.ReplaceAll(strings.ReplaceAll(msg.body, "\r\n", "\n"), "\n", "\r\n")
-	editor, err := makeChild("EDIT", "", bodyStyle, px(22), px(59), cw-px(44), ch-px(119), hwnd, 0)
+	editorFrame := corepopup.Editor(cw, ch, scale)
+	editor, err := makeChild("EDIT", "", bodyStyle, editorFrame.X, editorFrame.Y, editorFrame.W, editorFrame.H, hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -640,18 +639,20 @@ func showAnswerPopup(msg popupMessage) error {
 		return errors.New("结果正文未写入文本控件")
 	}
 	// The header Close action stays outside the draggable caption hit area.
-	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(51), px(11), px(31), px(29), hwnd, BUTTON_CLOSE); err != nil {
+	closeFrame := corepopup.CloseButton(cw, scale)
+	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, closeFrame.X, closeFrame.Y, closeFrame.W, closeFrame.H, hwnd, BUTTON_CLOSE); err != nil {
 		closeActiveAnswer()
 		return err
 	}
-	bottom := ch - px(48)
 	if msg.allowApply {
-		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(243), bottom, px(116), px(33), hwnd, BUTTON_APPLY); err != nil {
+		applyFrame := corepopup.ApplyButton(cw, ch, scale)
+		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, applyFrame.X, applyFrame.Y, applyFrame.W, applyFrame.H, hwnd, BUTTON_APPLY); err != nil {
 			closeActiveAnswer()
 			return err
 		}
 	}
-	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(119), bottom, px(98), px(33), hwnd, BUTTON_COPY); err != nil {
+	copyFrame := corepopup.CopyButton(cw, ch, scale)
+	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, copyFrame.X, copyFrame.Y, copyFrame.W, copyFrame.H, hwnd, BUTTON_COPY); err != nil {
 		closeActiveAnswer()
 		return err
 	}

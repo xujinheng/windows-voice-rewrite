@@ -11,7 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/provider"
+	"voicerewrite/internal/core/shortcut"
 	"voicerewrite/internal/core/speech"
 	"voicerewrite/internal/core/textedit"
 )
@@ -147,11 +149,11 @@ func TestThinkingTag(t *testing.T) {
 func TestHoldReleaseDebounce(t *testing.T) {
 	polls := 0
 	for _, pressed := range []bool{true, true, false, true, true, false} {
-		if releaseDebounced(pressed, &polls) {
+		if input.ReleaseDebounced(pressed, &polls) {
 			t.Fatalf("premature release")
 		}
 	}
-	if !releaseDebounced(false, &polls) {
+	if !input.ReleaseDebounced(false, &polls) {
 		t.Fatal("release not detected")
 	}
 }
@@ -174,7 +176,7 @@ func TestMouseButtonMapping(t *testing.T) {
 		{" Mouse5 ", 2, true}, {"F9", 0, false},
 		{"", 0, false}, {"Mouse6", 0, false},
 	} {
-		got, ok := mouseSideButton(tc.text)
+		got, ok := shortcut.WindowsSideButton(tc.text)
 		if got != tc.want || ok != tc.ok {
 			t.Errorf("mouseSideButton(%q)=%d,%t; want %d,%t", tc.text, got, ok, tc.want, tc.ok)
 		}

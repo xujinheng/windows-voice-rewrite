@@ -5,6 +5,8 @@ package main
 import (
 	"syscall"
 	"unsafe"
+
+	"voicerewrite/internal/core/popup"
 )
 
 // WH_MOUSE_LL observes mouse-downs outside VoiceRewrite's HWND without taking
@@ -51,32 +53,32 @@ var (
 	})
 )
 
-func popupScreenRect(hwnd uintptr) popupHitRect {
+func popupScreenRect(hwnd uintptr) popup.HitRect {
 	if hwnd == 0 {
-		return popupHitRect{}
+		return popup.HitRect{}
 	}
 	var rect rect32
 	ok, _, _ := popupGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&rect)))
 	if ok == 0 {
-		return popupHitRect{}
+		return popup.HitRect{}
 	}
-	return popupHitRect{rect.Left, rect.Top, rect.Right, rect.Bottom}
+	return popup.HitRect{Left: rect.Left, Top: rect.Top, Right: rect.Right, Bottom: rect.Bottom}
 }
 
 func popupDismissAt(p *answerPopup, x, y int32) bool {
 	window := popupScreenRect(p.window)
-	if !window.contains(x, y) {
+	if !window.Contains(x, y) {
 		return true
 	}
 	editor := popupScreenRect(p.edit)
-	buttons := make([]popupHitRect, 0, 3)
+	buttons := make([]popup.HitRect, 0, 3)
 	for _, id := range []uintptr{BUTTON_APPLY, BUTTON_COPY, BUTTON_CLOSE} {
 		hwnd, _, _ := popupGetDlgItem.Call(p.window, id)
 		if hwnd != 0 {
 			buttons = append(buttons, popupScreenRect(hwnd))
 		}
 	}
-	return popupClickDismisses(x, y, window, editor, buttons)
+	return popup.ClickDismisses(x, y, window, editor, buttons)
 }
 
 func installPopupClickAwayHook() error {

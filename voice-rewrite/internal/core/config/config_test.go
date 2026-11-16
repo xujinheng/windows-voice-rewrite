@@ -54,6 +54,21 @@ func TestNormalizeConfig(t *testing.T) {
 	if got.ASRAPIKey != "opaque" || cfg.ASRAPIKey != "opaque" {
 		t.Fatal("normalization must not handle secrets")
 	}
+	endpoints, err := CanonicalEndpoints(" http://127.0.0.1:8081/v1/ ", " qwen3-asr ", "http://127.0.0.1:1234/v1", "")
+	if err != nil || endpoints.ASRBaseURL != "http://127.0.0.1:8081/v1" || endpoints.ASRModel != "qwen3-asr" || endpoints.TextModel != "auto" {
+		t.Fatalf("endpoints %+v %v", endpoints, err)
+	}
+	if _, err := CanonicalEndpoints("http://localhost/v1?key=1", "m", "http://127.0.0.1:1234/v1", "auto"); err == nil {
+		t.Fatal("query URL accepted")
+	}
+	spaced := Defaults()
+	spaced.ASRBaseURL = "  http://127.0.0.1:8080/v1  "
+	spaced.LLMBaseURL = "\thttp://127.0.0.1:1234/v1\n"
+	spaced.MaxRecordSeconds = RecordSecondsMax
+	trimmed, err := Normalize(spaced)
+	if err != nil || trimmed.ASRBaseURL != "http://127.0.0.1:8080/v1" || trimmed.LLMBaseURL != "http://127.0.0.1:1234/v1" || trimmed.MaxRecordSeconds != RecordSecondsMax {
+		t.Fatalf("canonical settings: %+v %v", trimmed, err)
+	}
 }
 
 func TestNormalizeRejectsInvalidConfiguration(t *testing.T) {

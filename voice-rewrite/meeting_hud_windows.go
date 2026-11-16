@@ -11,6 +11,7 @@ import (
 	"time"
 	"unsafe"
 
+	"voicerewrite/internal/core/desktop"
 	meetingcore "voicerewrite/internal/core/meeting"
 )
 
@@ -102,7 +103,7 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	anchor := currentCursorPoint()
 	work, scale := uxWorkAreaForPoint(anchor), uxMonitorScaleForPoint(anchor)
 	prefs, _ := meetingcore.LoadPreferences(meetingPreferencesPath())
-	x, y, w, h := meetingGeometry(prefs, work, scale)
+	x, y, w, h := meetingcore.Place(prefs, work, scale)
 	hwnd, _, err := procCreateWindow.Call(WS_EX_TOPMOST|WS_EX_TOOLWINDOW, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),
 		WS_CAPTION|WS_SYSMENU|0x00040000|0x00010000|0x02000000, int32ptr(x), int32ptr(y), int32ptr(w), int32ptr(h), 0, 0, module, 0)
 	runtime.KeepAlive(className)
@@ -620,7 +621,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			var bounds rect32
 			popupGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds)))
 			work := uxWorkAreaForPoint(trayPoint{X: bounds.Left, Y: bounds.Top})
-			w, h := desktopFitSize(p.px(600), p.px(720), work, 0)
+			w, h := desktop.Fit(p.px(600), p.px(720), work, 0)
 			info.MinSize = trayPoint{X: w, Y: h}
 			return 0
 

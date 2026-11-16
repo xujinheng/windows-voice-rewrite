@@ -58,7 +58,8 @@ public final class SettingsStore {
     }
 
     public func save(_ settings: MacSettings) throws {
-        try settings.validateForPersistence()
+        var settings = settings
+        try settings.canonicalize()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         var bytes = try encoder.encode(settings)

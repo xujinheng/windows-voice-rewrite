@@ -22,11 +22,23 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(try store.load(), settings)
         let file = dir.appendingPathComponent("settings.json")
         let data = try Data(contentsOf: file)
-        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(Set(json.keys), ["asr_base_url", "llm_base_url", "asr_model", "text_model", "max_record_seconds"])
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(Set(json.keys), [
+            "asr_base_url", "llm_base_url", "asr_model", "text_model", "max_record_seconds",
+            "dictation_shortcut", "rewrite_shortcut", "text_edit_shortcut",
+        ])
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: dir.path)[.posixPermissions] as? NSNumber)?.intValue, 0o700)
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber)?.intValue, 0o600)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: dir.path), ["settings.json"])
+        json.removeValue(forKey: "dictation_shortcut")
+        json.removeValue(forKey: "rewrite_shortcut")
+        json.removeValue(forKey: "text_edit_shortcut")
+        try JSONSerialization.data(withJSONObject: json).write(to: file)
+        let migrated = try store.load()
+        XCTAssertEqual(migrated.dictationShortcut, "Ctrl+Alt+R")
+        XCTAssertEqual(migrated.rewriteShortcut, "Ctrl+Alt+E")
+        XCTAssertEqual(migrated.textEditShortcut, "Ctrl+Alt+T")
+        XCTAssertEqual(migrated.textModel, "text-model")
     }
 
     func testInvalidJSONAndUnknownSecretFieldsAreRejected() throws {
@@ -90,5 +102,36 @@ final class SettingsStoreTests: XCTestCase {
         settings.asrBaseURL = "https://user:password@example.test/v1"
         XCTAssertThrowsError(try SettingsStore(directory: dir).save(settings))
         XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("settings.json").path))
+    }
+
+    func testCoreRecordingLimitAndCanonicalURL() throws {
+        let dir = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir.deletingLastPathComponent()) }
+        let store = SettingsStore(directory: dir)
+        var settings = MacSettings.defaults
+        settings.maxRecordSeconds = 180
+        settings.asrBaseURL = "  HTTP://127.0.0.1:8080/v1  "
+        settings.asrModel = "   "
+        try store.save(settings)
+        let loaded = try store.load()
+        XCTAssertEqual(loaded.maxRecordSeconds, 180)
+        XCTAssertEqual(loaded.asrBaseURL, "HTTP://127.0.0.1:8080/v1")
+        XCTAssertEqual(loaded.asrModel, "whisper-1")
+
+        let file = dir.appendingPathComponent("settings.json")
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        object["max_record_seconds"] = 181
+        try JSONSerialization.data(withJSONObject: object).write(to: file)
+        XCTAssertEqual(try store.load().maxRecordSeconds, 60)
+
+        settings = MacSettings.defaults
+        settings.llmBaseURL = "https://example.invalid/v1?key=leak"
+        XCTAssertThrowsError(try store.save(settings))
+        settings.llmBaseURL = "http://example.test/v1#fragment"
+        XCTAssertThrowsError(try store.save(settings))
+        settings.llmBaseURL = "http:example.com"
+        XCTAssertThrowsError(try store.save(settings))
+        XCTAssertTrue(MacSettings.acceptsBaseURL("http://example.test/v1?"))
+        XCTAssertFalse(MacSettings.acceptsBaseURL("file:///tmp/x"))
     }
 }

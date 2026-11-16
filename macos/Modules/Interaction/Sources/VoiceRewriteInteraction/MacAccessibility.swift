@@ -276,10 +276,10 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
     func writeSelectedText(_ text: String, expected: SelectionObservation) throws {
         let target = try revalidate(expected)
         let baseline = try wholeValue(target)
-        let expectedValue = baseline.flatMap {
-            TextWriteVerification.expectedValue(
-                original: $0, selectedText: expected.selectedText,
-                range: expected.range, replacement: text)
+        guard let expectedValue = TextWriteVerification.expectedValue(
+            original: baseline, selectedText: expected.selectedText,
+            range: expected.range, replacement: text) else {
+            throw InteractionFailure.unsupportedNativeWrite
         }
 
         var settable = DarwinBoolean(false)
@@ -288,11 +288,9 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         if support == .success && settable.boolValue {
             let code = AXUIElementSetAttributeValue(target, kAXSelectedTextAttribute as CFString, text as CFString)
             if code == .success {
-                if let expectedValue {
-                    guard let actual = try wholeValue(target),
-                          TextWriteVerification.confirms(actual: actual, expected: expectedValue) else {
-                        throw InteractionFailure.writeNotConfirmed
-                    }
+                guard let actual = try wholeValue(target),
+                      TextWriteVerification.confirms(actual: actual, expected: expectedValue) else {
+                    throw InteractionFailure.writeNotConfirmed
                 }
                 return
             }
@@ -308,7 +306,6 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
 
         // Only paste when the entire original value and UTF-16 range can be verified.
         // Unsupported web editors without readable AXValue remain preview/copy only.
-        guard let expectedValue else { throw InteractionFailure.unsupportedNativeWrite }
         try guardedPaste(text, expected: expected, expectedValue: expectedValue)
     }
 

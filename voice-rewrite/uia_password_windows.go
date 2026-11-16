@@ -4,11 +4,12 @@ package main
 
 import (
 	"runtime"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 	"unsafe"
+
+	"voicerewrite/internal/core/texttarget"
 )
 
 // Query UI Automation off the mouse hook and GUI threads. An inaccessible
@@ -95,13 +96,6 @@ func inspectFocusedPassword(timeout time.Duration) passwordProbe {
 		return passwordProbe{}
 	}
 }
-func browserLikeWindow(class string) bool {
-	class = strings.ToLower(class)
-	return strings.Contains(class, "chrome_widgetwin") ||
-		strings.Contains(class, "mozillawindowclass") ||
-		strings.Contains(class, "cefclientwindow") ||
-		strings.Contains(class, "electron")
-}
 func uiaSensitiveFocus(target uintptr) bool {
 	if target == 0 || !isSameForegroundWindow(target) {
 		return false
@@ -113,5 +107,5 @@ func uiaSensitiveFocus(target uintptr) bool {
 	if result.available {
 		return result.isPassword
 	}
-	return browserLikeWindow(windowClassName(target))
+	return texttarget.BrowserWindow(windowClassName(target))
 }

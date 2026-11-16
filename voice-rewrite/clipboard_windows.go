@@ -10,6 +10,8 @@ import (
 	"time"
 	"unicode/utf16"
 	"unsafe"
+
+	"voicerewrite/internal/core/clipboard"
 )
 
 func waitKeysReleased(max time.Duration) bool {
@@ -192,7 +194,7 @@ func copySelectionWithRetry(hwnd, target uintptr, cfg Config) (string, error) {
 		// Two-attempt default: retry an ignored Ctrl+C sooner, reserving
 		// the remaining budget for a slow clipboard response. No extra
 		// delay on successful copies and no longer overall timeout.
-		timeout := selectionCopyAttemptTimeout(time.Duration(cfg.SelectionCopyTimeoutMS)*time.Millisecond, i, cfg.SelectionCopyAttempts)
+		timeout := clipboard.AttemptTimeout(time.Duration(cfg.SelectionCopyTimeoutMS)*time.Millisecond, i, cfg.SelectionCopyAttempts)
 		text, err := clipboardCopy(hwnd, timeout)
 		if !isSameForegroundWindow(target) {
 			return "", errors.New("复制期间编辑窗口发生切换，已停止自动复制")

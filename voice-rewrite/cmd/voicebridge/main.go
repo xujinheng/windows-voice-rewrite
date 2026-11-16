@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -17,14 +18,17 @@ import (
 
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/serviceprobe"
+	"voicerewrite/internal/core/shortcut"
 	"voicerewrite/internal/core/speech"
 	"voicerewrite/internal/core/textedit"
+	"voicerewrite/internal/core/update"
+	"voicerewrite/internal/core/ux"
 )
 
 const (
 	protocolVersion     = 1
 	maxRequestBytes     = 8 << 20
-	maxPCMBytes         = 16000 * 2 * 60
+	maxPCMBytes         = 16000 * 2 * coreconfig.RecordSecondsMax
 	maxSelectedBytes    = 1 << 20
 	maxInstructionBytes = 32 << 10
 	maxSeenIDs          = 65536
@@ -33,14 +37,16 @@ const (
 var errFrameTooLarge = errors.New("frame exceeds limit")
 
 type request struct {
-	Version      int             `json:"v"`
-	ID           string          `json:"id"`
-	Op           string          `json:"op"`
-	Config       json.RawMessage `json:"config"`
-	PCMBase64    string          `json:"pcm_base64"`
-	SelectedText string          `json:"selected_text"`
-	Instruction  string          `json:"instruction"`
-	TargetID     string          `json:"target_id"`
+	Version        int             `json:"v"`
+	ID             string          `json:"id"`
+	Op             string          `json:"op"`
+	Config         json.RawMessage `json:"config"`
+	PCMBase64      string          `json:"pcm_base64"`
+	SelectedText   string          `json:"selected_text"`
+	Instruction    string          `json:"instruction"`
+	CurrentVersion string          `json:"current_version"`
+	Shortcut       string          `json:"shortcut"`
+	TargetID       string          `json:"target_id"`
 }
 
 type bridgeError struct {
@@ -194,11 +200,13 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	}
 	s.seen[req.ID] = struct{}{}
 
-	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "selected_voice_task" && req.Op != "probe_asr" && req.Op != "probe_llm" {
+	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "selected_voice_task" && req.Op != "probe_asr" && req.Op != "probe_llm" && req.Op != "check_update" {
 		s.mu.Unlock()
 		switch req.Op {
 		case "hello":
 			s.send(success(req.ID, map[string]any{"name": "VoiceRewrite", "protocol": protocolVersion}))
+		case "parse_shortcut":
+			s.send(parseShortcut(req))
 		case "cancel":
 			if req.TargetID == "" {
 				s.send(failure(req.ID, "invalid_request", "target_id is required"))
@@ -223,6 +231,9 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		return
 	}
 	timeout := s.options.TranscribeTimeout
+	if req.Op == "check_update" {
+		timeout = 8 * time.Second
+	}
 	if req.Op == "selected_task" {
 		timeout = s.options.SelectedTimeout
 	} else if req.Op == "selected_voice_task" {
@@ -243,7 +254,7 @@ func (s *bridgeServer) runTask(ctx context.Context, task *bridgeTask, req reques
 	reply := failure(req.ID, "internal_error", "request failed")
 	func() {
 		// Provider errors and unexpected panics may contain private request data.
-		// Only bridge-owned, constant error messages reach the protocol.
+		// Reaching the protocol requires a fixed recovery string or a constant fallback.
 		defer func() { _ = recover() }()
 		reply = processRequest(ctx, req)
 	}()
@@ -289,7 +300,35 @@ func selectedTaskSuccess(id string, result textedit.AssistantResult, instruction
 	return success(id, payload)
 }
 
+func parseShortcut(req request) response {
+	binding, err := shortcut.Bind(req.Shortcut)
+	if err != nil {
+		return failure(req.ID, "invalid_shortcut", err.Error())
+	}
+	return success(req.ID, map[string]any{
+		"normalized": binding.Normalized,
+		"key":        binding.Key,
+		"mouse":      binding.Mouse,
+		"ctrl":       binding.Ctrl,
+		"alt":        binding.Alt,
+		"shift":      binding.Shift,
+	})
+}
+
 func processRequest(ctx context.Context, req request) response {
+	if req.Op == "check_update" {
+		notice := update.Fetch(ctx, req.CurrentVersion, &http.Client{
+			Timeout:       8 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		})
+		if notice.Err != nil {
+			return failure(req.ID, "update_failed", notice.Summary(req.CurrentVersion))
+		}
+		return success(req.ID, map[string]any{
+			"found": notice.Found, "newer": notice.Newer, "latest": notice.Latest,
+			"page": update.ReleasesPage, "summary": notice.Summary(req.CurrentVersion),
+		})
+	}
 	if len(req.Config) == 0 || bytes.Equal(bytes.TrimSpace(req.Config), []byte("null")) {
 		return failure(req.ID, "invalid_config", "config object is required")
 	}
@@ -324,7 +363,7 @@ func processRequest(ctx context.Context, req request) response {
 			if ctx.Err() != nil {
 				return contextFailure(req.ID, ctx.Err())
 			}
-			return failure(req.ID, "asr_failed", "speech transcription failed")
+			return providerFailure(req.ID, "asr_failed", "speech transcription failed", err)
 		}
 		if ctx.Err() != nil {
 			return contextFailure(req.ID, ctx.Err())
@@ -355,7 +394,7 @@ func processRequest(ctx context.Context, req request) response {
 			if ctx.Err() != nil {
 				return contextFailure(req.ID, ctx.Err())
 			}
-			return failure(req.ID, "textedit_failed", "selected text processing failed")
+			return providerFailure(req.ID, "textedit_failed", "selected text processing failed", err)
 		}
 		if ctx.Err() != nil {
 			return contextFailure(req.ID, ctx.Err())
@@ -363,6 +402,15 @@ func processRequest(ctx context.Context, req request) response {
 		return selectedTaskSuccess(req.ID, result, instruction, req.Op == "selected_voice_task")
 	}
 	return failure(req.ID, "unsupported_op", "unsupported operation")
+}
+
+// Classified recovery text is a fixed catalog. Anything else stays a constant
+// so provider bodies, keys, and selected text never reach the protocol.
+func providerFailure(id, code, fallback string, err error) response {
+	if message, ok := ux.Classify(err); ok {
+		return failure(id, code, message)
+	}
+	return failure(id, code, fallback)
 }
 
 func contextFailure(id string, err error) response {

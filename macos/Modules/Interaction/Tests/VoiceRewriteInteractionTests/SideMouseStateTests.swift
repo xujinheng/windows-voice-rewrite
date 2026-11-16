@@ -2,6 +2,21 @@ import XCTest
 @testable import VoiceRewriteInteraction
 
 final class SideMouseStateTests: XCTestCase {
+    func testSideMouseBindingsRejectConflictsAndPreserveUnboundButtons() {
+        XCTAssertTrue(SideMouseBindings().isValid)
+        XCTAssertFalse(SideMouseBindings(dictationButton: 4, rewriteButton: 4).isValid)
+        XCTAssertFalse(SideMouseBindings(dictationButton: 5, rewriteButton: nil).isValid)
+        let mapping = SideMouseBindings(dictationButton: nil, rewriteButton: 3)
+        XCTAssertTrue(mapping.isValid)
+        XCTAssertNil(mapping.action(for: 4))
+        XCTAssertEqual(mapping.action(for: 3), .rewrite)
+        XCTAssertEqual(mapping.button(for: .rewrite), 3)
+        XCTAssertNil(mapping.button(for: .dictation))
+        let swapped = SideMouseBindings(dictationButton: 4, rewriteButton: 3)
+        XCTAssertEqual(swapped.button(for: .dictation), 4)
+        XCTAssertEqual(swapped.button(for: .rewrite), 3)
+    }
+
     func testMacAuxiliaryButtonNumbers() {
         XCTAssertEqual(SideMouseAction(rawValue: 3), .dictation)
         XCTAssertEqual(SideMouseAction(rawValue: 4), .rewrite)
@@ -38,6 +53,50 @@ final class SideMouseStateTests: XCTestCase {
         XCTAssertTrue(state.activate(3, token: second))
         XCTAssertTrue(state.reset())
         XCTAssertEqual(state.release(3), .ignored)
+    }
+
+    func testPausedOrReboundPendingMouseClickIsReplayedOnlyOnce() {
+        var state = SideButtonHoldState()
+        let pendingToken = state.press(3)!
+        XCTAssertFalse(state.reset())
+        XCTAssertFalse(state.activate(3, token: pendingToken))
+        XCTAssertEqual(state.takeCancelledRelease(3), .short)
+        XCTAssertEqual(state.takeCancelledRelease(3), .ignored)
+        XCTAssertEqual(state.release(3), .ignored)
+    }
+
+    func testCancelledHoldNeverReplaysNavigationClick() {
+        var state = SideButtonHoldState()
+        let heldToken = state.press(4)!
+        XCTAssertTrue(state.activate(4, token: heldToken))
+        XCTAssertTrue(state.reset())
+        XCTAssertEqual(state.takeCancelledRelease(4), .held)
+        XCTAssertEqual(state.takeCancelledRelease(4), .ignored)
+        XCTAssertEqual(state.release(4), .ignored)
+    }
+
+    func testCancelledPressMustFinishBeforeNewDownIsAccepted() {
+        var state = SideButtonHoldState()
+        let first = state.press(3)!
+        XCTAssertFalse(state.reset())
+        XCTAssertNil(state.press(3))
+        XCTAssertFalse(state.activate(3, token: first))
+        XCTAssertEqual(state.takeCancelledRelease(3), .short)
+        XCTAssertNotNil(state.press(3))
+        XCTAssertEqual(state.release(3), .short)
+    }
+
+    func testDisabledTapClearsCancelledReleaseMarkers() {
+        var state = SideButtonHoldState()
+        _ = state.press(3)
+        XCTAssertFalse(state.reset())
+        XCTAssertEqual(state.takeCancelledRelease(3), .short)
+        _ = state.press(4)
+        XCTAssertFalse(state.reset())
+        XCTAssertFalse(state.clear())
+        XCTAssertEqual(state.takeCancelledRelease(4), .ignored)
+        XCTAssertNotNil(state.press(4))
+        XCTAssertEqual(state.release(4), .short)
     }
 
     func testDifferentButtonsHaveIndependentTokens() {

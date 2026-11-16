@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	"voicerewrite/internal/core/input"
 )
 
 // Mouse4/Mouse5 are XBUTTON1/XBUTTON2. A low-level hook MUST run on a dedicated
@@ -114,7 +116,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 		defer close(done)
 		tid, _, _ := procGetCurrentThreadID.Call()
 		var mu sync.Mutex
-		var buttons [3]sideButtonState
+		var buttons [3]input.Hold
 		var capturedDown [3]bool
 		var timers [3]*time.Timer
 		closed := false
@@ -167,7 +169,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 				return callNextMouseHook(hook, code, message, data)
 			}
 			if event == WM_XBUTTONDOWN || event == WM_XBUTTONDBLCLK {
-				if buttons[button].down {
+				if buttons[button].Down() {
 					mu.Unlock()
 					return 1
 				}
@@ -175,22 +177,22 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 					mu.Unlock()
 					return callNextMouseHook(hook, code, message, data)
 				}
-				token, _ := buttons[button].press()
+				token, _ := buttons[button].Press()
 				// Start a local audio buffer at physical button-down. The hold
 				// timer only decides whether that buffer is used.
 				if ok, _, _ := procPostMessage.Call(hwnd, WM_SIDE_ARM, uintptr(button), 0); ok == 0 {
-					buttons[button].release()
+					buttons[button].Release()
 					mu.Unlock()
 					return callNextMouseHook(hook, code, message, data)
 				}
 				timers[button] = time.AfterFunc(sideHoldThreshold, func() {
 					mu.Lock()
 					defer mu.Unlock()
-					if closed || (paused != nil && paused.Load()) || !buttons[button].canActivate(token) {
+					if closed || (paused != nil && paused.Load()) || !buttons[button].CanActivate(token) {
 						return
 					}
 					if ok, _, _ := procPostMessage.Call(hwnd, WM_SIDE_DOWN, uintptr(button), 0); ok != 0 {
-						buttons[button].activate(token)
+						buttons[button].Activate(token)
 					}
 				})
 				mu.Unlock()
@@ -198,7 +200,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 			}
 			// A matching press was intercepted. Either finish the recording
 			// or replay the navigation click, never both.
-			wasHeld, active := buttons[button].release()
+			wasHeld, active := buttons[button].Release()
 			if !wasHeld {
 				mu.Unlock()
 				return callNextMouseHook(hook, code, message, data)

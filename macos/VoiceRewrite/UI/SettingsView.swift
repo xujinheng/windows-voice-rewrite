@@ -1,4 +1,5 @@
 import SwiftUI
+import VoiceRewriteStorage
 
 struct SettingsView: View {
     @ObservedObject var model: WorkspaceModel
@@ -27,8 +28,15 @@ struct SettingsView: View {
             }
             Section("录音配置") {
                 Stepper("最长录音：\(model.settings.maxRecordSeconds) 秒",
-                        value: $model.settings.maxRecordSeconds, in: 1...60)
-                Text("录音数据为 16 kHz 单声道 PCM16；最长 60 秒。")
+                        value: $model.settings.maxRecordSeconds, in: MacSettings.recordSeconds)
+                Text("录音数据为 16 kHz 单声道 PCM16，最长 \(MacSettings.recordSeconds.upperBound) 秒。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            Section("键盘快捷键") {
+                TextField("听写", text: $model.settings.dictationShortcut)
+                TextField("语音修改选区", text: $model.settings.rewriteShortcut)
+                TextField("文字指令", text: $model.settings.textEditShortcut)
+                Text("与 Windows 使用同一套写法，例如 Ctrl+Alt+R、F8 或 Mouse4。Alt 在 macOS 上是 Option。未配置鼠标绑定时，Mouse4 默认听写、Mouse5 默认改写；显式配置鼠标键时仅拦截已分配的侧键。F21–F24 在 macOS 上不可用，三个功能不能绑定同一个按键。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section("安全保存") {
@@ -39,6 +47,12 @@ struct SettingsView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
+        .onChange(of: model.settings.asrBaseURL) { _, _ in model.markConnectionProbeStale(.transcribe) }
+        .onChange(of: model.settings.asrModel) { _, _ in model.markConnectionProbeStale(.transcribe) }
+        .onChange(of: model.asrKeyInput) { _, _ in model.markConnectionProbeStale(.transcribe) }
+        .onChange(of: model.settings.llmBaseURL) { _, _ in model.markConnectionProbeStale(.selectedTask) }
+        .onChange(of: model.settings.textModel) { _, _ in model.markConnectionProbeStale(.selectedTask) }
+        .onChange(of: model.llmKeyInput) { _, _ in model.markConnectionProbeStale(.selectedTask) }
         .formStyle(.grouped)
     }
 }

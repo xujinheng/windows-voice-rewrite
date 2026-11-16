@@ -11,6 +11,9 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	"voicerewrite/internal/core/desktop"
+	"voicerewrite/internal/core/indicator"
 )
 
 // GDI+ recording status overlay.
@@ -34,7 +37,7 @@ const (
 
 type handyStatus struct {
 	window        uintptr
-	phase         uintptr
+	phase         indicator.Phase
 	mode          string
 	owner         uint64
 	mic           *audioRecorder
@@ -149,7 +152,7 @@ func handyStatusWndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 	case WM_TIMER:
 		if wParam == handyPulseTimer && activeHandyStatus != nil && activeHandyStatus.window == hwnd {
 			s := activeHandyStatus
-			if isHandyTerminalPhase(s.phase) && time.Since(s.changed) > handyTerminalDuration {
+			if indicator.Terminal(s.phase) && time.Since(s.changed) > indicator.TerminalDuration {
 				closeHandyStatus()
 				return 0
 			}
@@ -161,7 +164,7 @@ func handyStatusWndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 		if activeHandyStatus != nil && activeHandyStatus.window == hwnd {
 			s := activeHandyStatus
 			x := int(int16(lParam & 0xffff))
-			hover := handyCancelHit(int(math.Floor(float64(x)/s.scale)), handyStatusWidth(s.phase))
+			hover := indicator.CancelHit(int(math.Floor(float64(x)/s.scale)), indicator.Width(s.phase))
 			if hover != s.closeHovered {
 				s.closeHovered = hover
 				drawHandyStatus(s)
@@ -188,7 +191,7 @@ func handyStatusWndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 			// WM_LBUTTONUP is in *physical client pixels* under the PMv2
 			// context. The hitbox geometry is defined in logical units.
 			logicalX := int(math.Floor(float64(x) / activeHandyStatus.scale))
-			if handyCancelHit(logicalX, handyStatusWidth(activeHandyStatus.phase)) {
+			if indicator.CancelHit(logicalX, indicator.Width(activeHandyStatus.phase)) {
 				procPostMessage.Call(activeHandyAppWindow, WM_STATUS_CANCEL, uintptr(activeHandyStatus.owner), 0)
 				return 0
 			}
@@ -202,53 +205,6 @@ func handyStatusWndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 	v, _, _ := procDefWindowProc.Call(hwnd, message, wParam, lParam)
 	return v
 }
-
-func handyStatusWidth(phase uintptr) int {
-	if phase == statusRecording {
-		return handyRecordingWidth
-	}
-	return handyWorkingWidth
-}
-
-func handyPhaseAllowed(phase uintptr) bool {
-	switch phase {
-	case statusRecording, statusProcessing, statusSuccess, statusError, statusRewriting, statusApplying, statusAnswer, statusSelection, statusFallback:
-		return true
-	}
-	return false
-}
-func isHandyTerminalPhase(phase uintptr) bool {
-	return phase == statusSuccess || phase == statusError || phase == statusAnswer || phase == statusFallback
-}
-func handyStatusLabel(phase uintptr, mode string) string {
-	switch phase {
-	case statusProcessing:
-		if mode == "改写" {
-			return "识别指令…"
-		}
-		return "正在转写…"
-	case statusSelection:
-		return "读取选区…"
-	case statusRewriting:
-		return "AI 处理中…"
-	case statusApplying:
-		return "正在替换…"
-	case statusSuccess:
-		if mode == "改写" {
-			return "已发送粘贴指令"
-		}
-		return "已发送粘贴指令"
-	case statusAnswer:
-		return "已显示结果"
-	case statusError:
-		return "操作未完成 · 查看日志"
-	case statusFallback:
-		return "已复制 · 请手动粘贴"
-	}
-	return ""
-}
-
-// Dedicated lanes: a waveform cannot overlap the elapsed time or the cancel X.
 
 func initHandyGDI() error {
 	handyGdiInit.Do(func() {
@@ -321,7 +277,7 @@ func (p handyPainter) checkGlyph(cx, cy int) {
 	type vertex struct{ X, Y int32 }
 	shape := [6]vertex{{-6, 0}, {-4, -2}, {-1, 1}, {5, -6}, {7, -4}, {-1, 5}}
 	var brush uintptr
-	if ret, _, _ := gpCreateSolidFill.Call(uintptr(0xFF19342A), uintptr(unsafe.Pointer(&brush))); ret != 0 || brush == 0 {
+	if ret, _, _ := gpCreateSolidFill.Call(uintptr(indicator.CheckGlyph.Opaque()), uintptr(unsafe.Pointer(&brush))); ret != 0 || brush == 0 {
 		return
 	}
 	defer gpDeleteBrush.Call(brush)
@@ -340,7 +296,7 @@ func (p handyPainter) closeGlyph(cx, cy int) {
 		{{4, -6}, {6, -5}, {-4, 6}, {-6, 6}, {-6, 4}, {4, -6}},
 	}
 	var brush uintptr
-	if ret, _, _ := gpCreateSolidFill.Call(uintptr(0xFFAAA5B3), uintptr(unsafe.Pointer(&brush))); ret != 0 || brush == 0 {
+	if ret, _, _ := gpCreateSolidFill.Call(uintptr(indicator.CloseGlyph.Opaque()), uintptr(unsafe.Pointer(&brush))); ret != 0 || brush == 0 {
 		return
 	}
 	defer gpDeleteBrush.Call(brush)
@@ -400,8 +356,8 @@ func drawHandyStatus(s *handyStatus) {
 	if s == nil || s.window == 0 || initHandyGDI() != nil {
 		return
 	}
-	logicalWidth := handyStatusWidth(s.phase)
-	width, height := handyPhysicalSize(logicalWidth, handyStatusHeight, s.scale)
+	logicalWidth := indicator.Width(s.phase)
+	width, height := indicator.PhysicalSize(logicalWidth, indicator.Height, s.scale)
 	dc, _, _ := procCreateCompatibleDCHandy.Call(0)
 	if dc == 0 {
 		return
@@ -434,21 +390,15 @@ func drawHandyStatus(s *handyStatus) {
 	// DIB width to a painter which itself multiplies by s.scale.
 	p.pill(0x11000000, 3, 8, logicalWidth-6, handyBodyHeight)
 	p.pill(0x22000000, 4, 7, logicalWidth-8, handyBodyHeight)
-	p.pill(0xFF20242E, handyPillInset, handyBodyTop, logicalWidth-2*handyPillInset, handyBodyHeight)
+	p.pill(indicator.Pill.Opaque(), handyPillInset, handyBodyTop, logicalWidth-2*handyPillInset, handyBodyHeight)
 	// Avoid a translucent full-size second fill: it makes a faint double edge
 	// and reduces color consistency around anti-aliased corners.
 
-	accent := uint32(0xFFE981AA) // Mouse4 dictation: Handy rose
-	if s.mode == "改写" {
-		accent = 0xFFAFA5FF // Mouse5 rewrite: soft lavender for clear mode feedback
-	}
-	if s.phase == statusError {
-		accent = 0xFFFF818A
-	}
-	if s.phase == statusRecording {
+	accent := indicator.Accent(s.phase, s.mode).Opaque()
+	if s.phase == indicator.Recording {
 		p.roundBar(accent, 12, 18, 3, 14)
 		// Left pink live indicator + nine equal-width capsule bars.
-		p.fill(accent, 23, handyIconCenterY-4, 8, 8, true)
+		p.fill(accent, 23, indicator.IconCenterY-4, 8, 8, true)
 		level := 0.0
 		if s.mic != nil {
 			level = float64(s.mic.level.Load()) / 1000.0
@@ -457,59 +407,45 @@ func drawHandyStatus(s *handyStatus) {
 			// Synthetic waveform only in explicit visual-preview mode.
 			level = 0.48
 		}
-		s.smoothedLevel = handySmoothedLevel(s.smoothedLevel, level)
+		s.smoothedLevel = indicator.SmoothedLevel(s.smoothedLevel, level)
 		for i := 0; i < 9; i++ {
-			h := handyWaveHeight(i, s.smoothedLevel, s.tick)
-			p.roundBar(accent, handyWaveformX(i), handyIconCenterY-h/2, handyWaveBarWidth, h)
+			h := indicator.WaveHeight(i, s.smoothedLevel, s.tick)
+			p.roundBar(accent, indicator.WaveformX(i), indicator.IconCenterY-h/2, indicator.WaveBarWidth, h)
 		}
 		// Non-overlapping time and close-button lanes.
-		p.text(handyDurationText(s.started, time.Now()), handyClockX, 10, handyClockWidth, 30, 14, 600, 0xFFF5F3F7)
+		p.text(indicator.DurationText(s.started, time.Now()), indicator.ClockX, 10, indicator.ClockWidth, 30, 14, 600, indicator.ClockText.Opaque())
 	} else {
-		if isHandyTerminalPhase(s.phase) {
+		if indicator.Terminal(s.phase) {
 			// Sending Ctrl+V is not proof that the target accepted the text.
 			// Keep the sent state neutral-blue; mint is reserved for visible answers.
-			col := uint32(0xFF8DBDE8)
-			if s.phase == statusAnswer {
-				col = 0xFF78D9AD
-			}
-			if s.phase == statusError {
-				col = 0xFFFF818A
-			} else if s.phase == statusFallback {
-				col = 0xFFF5C56B
-			}
-			p.fill(col, 22, handyIconCenterY-8, 16, 16, true)
-			if s.phase != statusError && s.phase != statusFallback {
-				p.checkGlyph(30, handyIconCenterY)
+			col := indicator.TerminalMark(s.phase).Opaque()
+			p.fill(col, 22, indicator.IconCenterY-8, 16, 16, true)
+			if s.phase != indicator.Error && s.phase != indicator.Fallback {
+				p.checkGlyph(30, indicator.IconCenterY)
 			} else {
 				// Amber fallback and red error use an exclamation instead of
 				// a green success check: copying is not insertion.
-				p.roundBar(0xFF38191D, 29, handyIconCenterY-5, 2, 7)
-				p.fill(0xFF38191D, 29, handyIconCenterY+4, 2, 2, true)
+				p.roundBar(indicator.AttentionGlyph.Opaque(), 29, indicator.IconCenterY-5, 2, 7)
+				p.fill(indicator.AttentionGlyph.Opaque(), 29, indicator.IconCenterY+4, 2, 2, true)
 			}
 		} else {
 			// Non-blocking animated dots that form a smooth circular progress wheel.
-			for i := 0; i < 8; i++ {
-				angle := float64(s.tick)*0.2 + float64(i)*math.Pi/4
-				x := int(math.Round(30 + 8*math.Cos(angle)))
-				y := int(math.Round(float64(handyIconCenterY) + 8*math.Sin(angle)))
-				alpha := uint32(65 + (i * 25))
-				if alpha > 255 {
-					alpha = 255
-				}
-				p.fill((alpha<<24)|(accent&0x00FFFFFF), x-2, y-2, 4, 4, true)
+			for i := 0; i < indicator.SpinnerDots; i++ {
+				x, y, alpha := indicator.SpinnerDot(i, s.tick)
+				p.fill((uint32(alpha)<<24)|(accent&0x00FFFFFF), x-indicator.SpinnerDotSize/2, y-indicator.SpinnerDotSize/2, indicator.SpinnerDotSize, indicator.SpinnerDotSize, true)
 			}
 		}
-		p.text(handyStatusLabel(s.phase, s.mode), handyWorkingTextX, 10, logicalWidth-handyWorkingTextX-handyWorkingTextRightGap, 30, 13, 500, 0xFFECE8F0)
+		p.text(indicator.Label(s.phase, s.mode), indicator.WorkingTextX, 10, logicalWidth-indicator.WorkingTextX-indicator.WorkingTextRightGap, 30, 13, 500, indicator.LabelText.Opaque())
 	}
 	if s.closeHovered {
-		p.fill(0xFF343A49, logicalWidth-34, 11, 28, 28, true)
+		p.fill(indicator.CloseHover.Opaque(), logicalWidth-34, 11, 28, 28, true)
 	}
 	// Crisp anti-aliased vector X; no separate text glyph competing with the timer.
-	p.closeGlyph(logicalWidth-handyCancelGlyphInset, handyIconCenterY)
+	p.closeGlyph(logicalWidth-indicator.CancelGlyphInset, indicator.IconCenterY)
 	target := handyPoint{s.x, s.y}
 	size := handySize{int32(width), int32(height)}
 	source := handyPoint{}
-	blend := handyBlend{Op: 0, Flags: 0, Alpha: handyStatusOpacity(s.started, s.changed, time.Now(), s.phase, s.pending), Format: 1}
+	blend := handyBlend{Op: 0, Flags: 0, Alpha: indicator.StatusOpacity(s.started, s.changed, time.Now(), s.phase, s.pending), Format: 1}
 	screen, _, _ := procGetDCScreenHandy.Call(0)
 	if screen != 0 {
 		procUpdateLayeredHandy.Call(s.window, screen, uintptr(unsafe.Pointer(&target)), uintptr(unsafe.Pointer(&size)), dc, uintptr(unsafe.Pointer(&source)), 0, uintptr(unsafe.Pointer(&blend)), handyULW_ALPHA)
@@ -561,22 +497,22 @@ func handyScreenPositionForMonitor(mon uintptr, w, h int) (int32, int32) {
 	if mon != 0 {
 		info := handyMonitorInfo{Size: uint32(unsafe.Sizeof(handyMonitorInfo{}))}
 		if ok, _, _ := procGetMonitorInfoHandy.Call(mon, uintptr(unsafe.Pointer(&info))); ok != 0 {
-			work := desktopWorkArea{info.Work.Left, info.Work.Top, info.Work.Right, info.Work.Bottom}
-			x := work.left + (work.right-work.left-int32(w))/2
-			y := work.bottom - int32(h) - 5
-			return desktopClampPosition(x, y, int32(w), int32(h), work)
+			work := desktop.WorkArea{Left: info.Work.Left, Top: info.Work.Top, Right: info.Work.Right, Bottom: info.Work.Bottom}
+			x := work.Left + (work.Right-work.Left-int32(w))/2
+			y := work.Bottom - int32(h) - 5
+			return desktop.Clamp(x, y, int32(w), int32(h), work)
 		}
 	}
 	x, _, _ := procGetSystemMetrics.Call(0)
 	y, _, _ := procGetSystemMetrics.Call(1)
 	return (int32(x) - int32(w)) / 2, int32(y) - int32(h) - 5
 }
-func showHandyStatus(rec *audioRecorder, mode string, phase uintptr, owner uint64) {
+func showHandyStatus(rec *audioRecorder, mode string, phase indicator.Phase, owner uint64) {
 	createHandyStatus(rec, mode, phase, owner, false)
 }
 
 func showPendingHandyStatus(mode string) {
-	createHandyStatus(nil, mode, statusRecording, 0, true)
+	createHandyStatus(nil, mode, indicator.Recording, 0, true)
 }
 
 // Keep the same native HWND when a held side button becomes a voice command;
@@ -594,7 +530,7 @@ func promotePendingHandyStatus(rec *audioRecorder, mode string, owner uint64) bo
 	return true
 }
 
-func createHandyStatus(rec *audioRecorder, mode string, phase uintptr, owner uint64, pending bool) {
+func createHandyStatus(rec *audioRecorder, mode string, phase indicator.Phase, owner uint64, pending bool) {
 	restore := handyAwareWindowThread()
 	defer restore()
 	closeHandyStatus()
@@ -608,7 +544,7 @@ func createHandyStatus(rec *audioRecorder, mode string, phase uintptr, owner uin
 	}
 	monitor := uxMonitorForPoint(currentCursorPoint())
 	scale := handyScaleForMonitor(monitor)
-	width, height := handyPhysicalSize(handyStatusWidth(phase), handyStatusHeight, scale)
+	width, height := indicator.PhysicalSize(indicator.Width(phase), indicator.Height, scale)
 	x, y := handyScreenPositionForMonitor(monitor, width, height)
 	hwnd, _, _ := procCreateWindow.Call(WS_EX_TOPMOST|WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE|WS_EX_LAYERED, uintptr(unsafe.Pointer(classname)), uintptr(unsafe.Pointer(title)), WS_POPUP, uintptr(x), uintptr(y), uintptr(width), uintptr(height), 0, 0, instance, 0)
 	runtime.KeepAlive(classname)
@@ -621,17 +557,17 @@ func createHandyStatus(rec *audioRecorder, mode string, phase uintptr, owner uin
 	procShowWindow.Call(hwnd, SW_SHOWNOACTIVATE)
 	procSetTimer.Call(hwnd, handyPulseTimer, 70, 0)
 }
-func updateHandyStatus(phase uintptr) {
+func updateHandyStatus(phase indicator.Phase) {
 	restore := handyAwareWindowThread()
 	defer restore()
 	s := activeHandyStatus
-	if s == nil || !handyPhaseAllowed(phase) {
+	if s == nil || !indicator.Allowed(phase) {
 		return
 	}
 	s.phase = phase
 	s.changed = time.Now()
 	s.scale = handyScaleForMonitor(s.monitor)
-	width, height := handyPhysicalSize(handyStatusWidth(phase), handyStatusHeight, s.scale)
+	width, height := indicator.PhysicalSize(indicator.Width(phase), indicator.Height, s.scale)
 	s.x, s.y = handyScreenPositionForMonitor(s.monitor, width, height)
 	// Resize the HWND with the bitmap; preserve focus and z-order.
 	procSetWindowPos.Call(s.window, 0, uintptr(s.x), uintptr(s.y), uintptr(width), uintptr(height), 0x0014)
