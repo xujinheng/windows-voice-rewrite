@@ -151,7 +151,7 @@ func TestUnifiedStatusPhases(t *testing.T) {
 		{Success, "改写", "已发送粘贴指令"},
 		{Success, "听写", "已发送粘贴指令"},
 		{Answer, "改写", "已显示结果"},
-		{Fallback, "听写", "已复制 · 请手动粘贴"},
+		{Fallback, "听写", "结果已保留 · 可复制"},
 		{Error, "改写", "操作未完成 · 查看日志"},
 	} {
 		if !Allowed(tt.phase) {
