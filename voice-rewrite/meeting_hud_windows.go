@@ -588,7 +588,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				return 0
 			}
 		case 0x0202: // WM_LBUTTONUP
-			if p.dragDivider >= 0 {
+			if meetingcore.MeetingDragEnd(p.dragDivider >= 0, true) == meetingcore.DragEndCommit {
 				p.dragSplitterTo(int32(int16(uint16(lParam >> 16))))
 				p.dragDivider = -1
 				meetingReleaseCapture.Call()
@@ -596,7 +596,9 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				return 0
 			}
 		case 0x0215: // WM_CAPTURECHANGED
-			p.dragDivider = -1
+			if meetingcore.MeetingDragEnd(p.dragDivider >= 0, false) == meetingcore.DragEndCancel {
+				p.dragDivider = -1
+			}
 		case WM_COMMAND:
 			if wParam>>16 != 0 {
 				break

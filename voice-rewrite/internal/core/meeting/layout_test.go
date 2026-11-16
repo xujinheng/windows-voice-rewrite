@@ -181,6 +181,9 @@ func TestSplitterHitUsesTheOpenBand(t *testing.T) {
 	if rails[0] != (Box{378, 98, 44, 1}) || rails[1] != (Box{378, 102, 44, 1}) {
 		t.Fatalf("rails %+v", rails)
 	}
+	if MeetingDragEnd(false, true) != DragEndIgnore || MeetingDragEnd(true, true) != DragEndCommit || MeetingDragEnd(true, false) != DragEndCancel || MeetingDragEnd(false, false) != DragEndIgnore {
+		t.Fatal("drag end")
+	}
 	if SplitterHit(96, y, shown, 4, true) != -1 || SplitterHit(96, y, shown, 4, false) != 1 || SplitterHit(104, y, shown, 4, false) != -1 || SplitterHit(80, y, shown, 4, false) != -1 {
 		t.Fatal("splitter band")
 	}

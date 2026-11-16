@@ -160,6 +160,27 @@ func ReadingFonts(size int32) (body, english, chinese FontFace) {
 	return FontFace{size, 400}, FontFace{size + 1, 450}, FontFace{size + 6, 600}
 }
 
+// DragEnd is how a meeting divider drag stops.
+type DragEnd int
+
+const (
+	DragEndIgnore DragEnd = iota
+	DragEndCommit
+	DragEndCancel
+)
+
+// MeetingDragEnd commits a button release while a divider is dragged.
+// Losing capture drops the drag without saving. A mouse-up with no drag is ignored.
+func MeetingDragEnd(dragging, buttonUp bool) DragEnd {
+	if !dragging {
+		return DragEndIgnore
+	}
+	if buttonUp {
+		return DragEndCommit
+	}
+	return DragEndCancel
+}
+
 // SplitterRails is the two one-pixel marks on a meeting divider.
 // The marks sit two pixels above and below the divider and are not scaled.
 func SplitterRails(centerX, y, halfWidth, thickness int32) [2]Box {
