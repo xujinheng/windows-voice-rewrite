@@ -138,7 +138,7 @@ func showMeetingHUD(owner uintptr, view meetingView) error {
 	// Native tab stops include selectable read-only text and the rewrite input.
 	p.status = child("STATIC", "", 0, 0, false)
 	for i, title := range []string{"冻结画面", "专注字幕", "A−", "A+", "复制回复", "复制英文", "生成建议", "暂停采集", "会议资料", "1 直接回应", "2 澄清一下", "3 争取时间", "查看新建议", "改写回复", "回到最新", "放大英文"} {
-		p.buttons[i] = child("BUTTON", title, 0x00010000|uxBSOwnerDraw, uintptr(7100+i), false)
+		p.buttons[i] = child("BUTTON", title, 0x00010000|uxBSOwnerDraw, uintptr(meetingcore.ButtonPause+i), false)
 	}
 	p.labels[0] = child("STATIC", "当前发言 · 中文优先", 0, 0, false)
 	editStyle := uintptr(WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | WS_BORDER | 0x00010000)
@@ -628,12 +628,12 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		case uxWMDrawItem:
 			if lParam != 0 {
 				item := (*drawItemStruct)(unsafe.Pointer(lParam))
-				if item.CtlID >= 7100 && item.CtlID <= 7115 {
-					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(p.buttons[item.CtlID-7100]), item.CtlID == 7106 || item.CtlID == 7112 && p.latest.reply.PendingAvailable || item.CtlID == 7115 && p.expressionExpanded)
+				if item.CtlID >= meetingcore.ButtonPause && item.CtlID <= meetingcore.ButtonExpression {
+					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(p.buttons[item.CtlID-meetingcore.ButtonPause]), meetingcore.ButtonPrimary(int(item.CtlID), p.latest.reply.PendingAvailable, p.expressionExpanded))
 					return 1
 				}
-				if item.CtlID == 7205 || item.CtlID == 7206 {
-					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(item.HwndItem), item.CtlID == 7205)
+				if item.CtlID == meetingcore.ButtonSaveProfile || item.CtlID == meetingcore.ButtonCloseProfile {
+					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(item.HwndItem), meetingcore.ButtonPrimary(int(item.CtlID), false, false))
 					return 1
 				}
 			}
@@ -676,25 +676,25 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			if wParam>>16 != 0 {
 				break
 			}
-			switch wParam & 0xffff {
-			case 7100:
+			switch action, index := meetingcore.CommandFor(int(wParam & 0xffff)); action {
+			case meetingcore.CommandTogglePause:
 				p.paused = !p.paused
 				updateMeetingHUD(p.latest)
-			case 7101:
+			case meetingcore.CommandCaptions:
 				p.captionsOnly = !p.captionsOnly
 				p.layout()
 				p.savePreferences()
 				updateMeetingHUD(p.latest)
-			case 7102:
+			case meetingcore.CommandSmallerText:
 				p.resizeText(-2)
-			case 7103:
+			case meetingcore.CommandLargerText:
 				p.resizeText(2)
-			case 7104, 7105:
+			case meetingcore.CommandCopyReply, meetingcore.CommandCopyExpression:
 				value := p.displayedReplies[p.selectedReply].English
 				if !p.displayedReplies[p.selectedReply].Complete {
 					value = ""
 				}
-				if wParam&0xffff == 7105 {
+				if action == meetingcore.CommandCopyExpression {
 					value = p.copyExpression
 				}
 				if value != "" {
@@ -702,40 +702,40 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 						winErr("复制失败: " + err.Error())
 					}
 				}
-			case 7106:
+			case meetingcore.CommandRequestReplies:
 				if p.app != nil && p.app.meeting != nil {
 					p.app.meeting.requestReplies()
 				}
-			case 7107:
+			case meetingcore.CommandToggleCapture:
 				if p.app != nil && p.app.meeting != nil {
 					p.app.meeting.setCapturePaused(!p.latest.capturePaused)
 					p.app.refreshMeeting()
 				}
-			case 7108:
+			case meetingcore.CommandOpenProfile:
 				p.openProfile()
-			case 7109, 7110, 7111:
-				p.selectedReply = int(wParam&0xffff) - 7109
+			case meetingcore.CommandSelectReply:
+				p.selectedReply = index
 				p.lastReply = time.Time{}
 				p.renderReply()
-			case 7114:
+			case meetingcore.CommandScrollLatest:
 				p.scrollToLatest()
-			case 7115:
+			case meetingcore.CommandToggleExpression:
 				p.expressionExpanded = !p.expressionExpanded
 				p.layout()
 				updateMeetingHUD(p.latest)
-			case 7112:
+			case meetingcore.CommandAcceptReplies:
 				if p.app != nil && p.app.meeting != nil && !p.paused {
 					p.app.meeting.acceptPendingReplies()
 					p.app.refreshMeeting()
 				}
-			case 7113:
+			case meetingcore.CommandRefine:
 				instruction := strings.TrimSpace(uxWinText(p.instruction))
 				if instruction != "" && p.displayedReplies[p.selectedReply].Complete && p.app != nil && p.app.meeting != nil && !p.paused {
 					p.app.meeting.refineReply(p.selectedReply, instruction)
 				}
-			case 7205:
+			case meetingcore.CommandSaveProfile:
 				p.saveProfile()
-			case 7206:
+			case meetingcore.CommandCloseProfile:
 				p.profileOpen = false
 				p.layout()
 			}

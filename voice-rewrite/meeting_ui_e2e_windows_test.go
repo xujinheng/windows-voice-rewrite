@@ -170,11 +170,11 @@ func TestMeetingWindowsE2E(t *testing.T) {
 		t.Fatalf("native error detail did not preserve recognized speech: %q", detail)
 	}
 
-	procSendMessage.Call(p.window, 0x0111, 7115, 0) // 收起英文
+	procSendMessage.Call(p.window, 0x0111, meetingcore.ButtonExpression, 0)
 	if p.expressionExpanded {
 		t.Fatal("native collapse-English action failed")
 	}
-	procSendMessage.Call(p.window, 0x0111, 7101, 0) // 专注字幕
+	procSendMessage.Call(p.window, 0x0111, meetingcore.ButtonCaptions, 0)
 	view.expression = meetingLine{kind: "SAY", english: "A newly completed answer.", complete: true}
 	view.expressionStatus = ""
 	updateMeetingHUD(view)

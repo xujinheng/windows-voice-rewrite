@@ -47,8 +47,8 @@ func (p *meetingHUD) openProfile() {
 		}
 		child("STATIC", "llama-prefix 重复提交累积音频并延续文本前缀；不是原生编码器流式识别。需服务支持该协议。保存会取消当前处理并重新开始。", 0, 0, false)
 		p.profileStatus = child("STATIC", "", 0, 0, false)
-		child("BUTTON", "保存并应用", 0x00010000|uxBSOwnerDraw, 7205, false)
-		child("BUTTON", "取消", 0x00010000|uxBSOwnerDraw, 7206, false)
+		child("BUTTON", "保存并应用", 0x00010000|uxBSOwnerDraw, meetingcore.ButtonSaveProfile, false)
+		child("BUTTON", "取消", 0x00010000|uxBSOwnerDraw, meetingcore.ButtonCloseProfile, false)
 		if err != nil {
 			for _, control := range p.profileControls {
 				if control != 0 {
