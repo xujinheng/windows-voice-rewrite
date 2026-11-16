@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"voicerewrite/internal/core/shortcut"
 )
 
 func TestClassifyKnownFailures(t *testing.T) {
@@ -54,6 +56,16 @@ func TestHostMessageKeepsCatalogSentences(t *testing.T) {
 	}
 	if got := HostMessage("ASR 请求失败：", NoSpeech+" sk-secret"); got != "ASR 请求失败："+NoSpeech+" sk-secret" {
 		t.Fatalf("suffixed catalog sentence forwarded: %q", got)
+	}
+	if got := HostMessage("快捷键无效：", shortcut.ShiftLetterMessage); got != shortcut.ShiftLetterMessage {
+		t.Fatalf("shortcut sentence prefixed: %q", got)
+	}
+	unknown := "未知修饰键 \"Win\""
+	if got := HostMessage("快捷键无效：", unknown); got != unknown {
+		t.Fatalf("modifier sentence prefixed: %q", got)
+	}
+	if got := HostMessage("快捷键无效：", "Helper 未运行"); got != "快捷键无效：Helper 未运行" {
+		t.Fatalf("transport error = %q", got)
 	}
 }
 

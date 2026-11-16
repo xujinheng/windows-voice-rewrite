@@ -2,7 +2,11 @@
 // The catalog never echoes request bodies, selected text, or API keys.
 package ux
 
-import "strings"
+import (
+	"strings"
+
+	"voicerewrite/internal/core/shortcut"
+)
 
 const (
 	unsupportedAudio = "语音接口不支持上传的音频格式（HTTP 415）。请确认 ASR 服务提供 /v1/audio/transcriptions，而不只是 /v1/chat/completions。"
@@ -82,9 +86,8 @@ func ownedSentence(message string) bool {
 	switch message {
 	case unsupportedAudio, authFailed, unreachable, timedOut, selectionMoved:
 		return true
-	default:
-		return false
 	}
+	return shortcut.FixedMessage(message)
 }
 
 // HostMessage is the status line for a bridge failure. A catalog sentence is

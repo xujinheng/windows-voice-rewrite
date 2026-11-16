@@ -29,6 +29,41 @@ const (
 	MacTextEditShortcut  = "Ctrl+Alt+T"
 )
 
+const (
+	KeyRejectedMessage      = "该按键不能用作全局录音快捷键"
+	WindowsComboMessage     = "Windows 系统键组合不支持录音快捷键"
+	BareKeyMessage          = "单键仅支持 F1–F24；字母、数字和方向键请搭配 Ctrl 或 Alt"
+	ShiftLetterMessage      = "Shift+字母会干扰打字，请同时使用 Ctrl 或 Alt"
+	EmptyShortcutMessage    = "请按下快捷键"
+	CtrlRepeatMessage       = "Ctrl 重复"
+	AltRepeatMessage        = "Alt 重复"
+	ShiftRepeatMessage      = "Shift 重复"
+	PauseReleaseMessage     = "Pause/Break 没有可靠的松开事件"
+	DictationInvalidMessage = "听写快捷键无效，请重新录入（支持功能键和 Ctrl/Alt 组合键）"
+	SameMouseMessage        = "听写和改写不能占用同一个鼠标侧键"
+	DictationHoldMessage    = "键盘听写快捷键当前只支持按住说话模式（record_mode=hold）"
+	MouseHoldMessage        = "Mouse4/Mouse5 目前仅支持 record_mode=hold"
+	PauseHoldMessage        = "Pause/Break 不支持按住录音模式"
+	RecordExitDifferMessage = "Record and exit hotkeys must differ"
+	UnknownModifierPrefix   = "未知修饰键 "
+	ShortcutCollisionSuffix = "不能与另一语音功能或退出快捷键相同"
+	MouseExitPrefix         = "mouse button "
+)
+
+// FixedMessage reports a shortcut sentence a host can show unchanged.
+func FixedMessage(message string) bool {
+	switch message {
+	case KeyRejectedMessage, WindowsComboMessage, BareKeyMessage, ShiftLetterMessage,
+		EmptyShortcutMessage, CtrlRepeatMessage, AltRepeatMessage, ShiftRepeatMessage,
+		PauseReleaseMessage, DictationInvalidMessage, SameMouseMessage, DictationHoldMessage,
+		MouseHoldMessage, PauseHoldMessage, RecordExitDifferMessage:
+		return true
+	}
+	return strings.HasPrefix(message, UnknownModifierPrefix) ||
+		strings.HasSuffix(message, ShortcutCollisionSuffix) ||
+		strings.HasPrefix(message, MouseExitPrefix)
+}
+
 var namedKeys = map[string]uint32{
 	"SPACE": 0x20, "TAB": 0x09, "ENTER": 0x0D,
 	"LEFT": 0x25, "UP": 0x26, "RIGHT": 0x27, "DOWN": 0x28,
@@ -62,16 +97,16 @@ func keyName(vk uint32) string {
 func FromKey(vk, modifiers uint32) (string, error) {
 	name := keyName(vk)
 	if name == "" {
-		return "", errors.New("该按键不能用作全局录音快捷键")
+		return "", errors.New(KeyRejectedMessage)
 	}
 	if modifiers & ^(alt|ctrl|shift) != 0 {
-		return "", errors.New("Windows 系统键组合不支持录音快捷键")
+		return "", errors.New(WindowsComboMessage)
 	}
 	if modifiers == 0 && (vk < 0x70 || vk > 0x87) {
-		return "", errors.New("单键仅支持 F1–F24；字母、数字和方向键请搭配 Ctrl 或 Alt")
+		return "", errors.New(BareKeyMessage)
 	}
 	if modifiers == shift && (vk < 0x70 || vk > 0x87) {
-		return "", errors.New("Shift+字母会干扰打字，请同时使用 Ctrl 或 Alt")
+		return "", errors.New(ShiftLetterMessage)
 	}
 	parts := []string{}
 	if modifiers&ctrl != 0 {
@@ -113,28 +148,28 @@ func Parse(raw string) (string, uint32, uint32, bool, error) {
 	}
 	parts := strings.Split(key, "+")
 	if len(parts) == 0 {
-		return "", 0, 0, false, errors.New("请按下快捷键")
+		return "", 0, 0, false, errors.New(EmptyShortcutMessage)
 	}
 	var modifiers uint32
 	for _, token := range parts[:len(parts)-1] {
 		switch strings.ToLower(strings.TrimSpace(token)) {
 		case "ctrl", "control":
 			if modifiers&ctrl != 0 {
-				return "", 0, 0, false, errors.New("Ctrl 重复")
+				return "", 0, 0, false, errors.New(CtrlRepeatMessage)
 			}
 			modifiers |= ctrl
 		case "alt", "option":
 			if modifiers&alt != 0 {
-				return "", 0, 0, false, errors.New("Alt 重复")
+				return "", 0, 0, false, errors.New(AltRepeatMessage)
 			}
 			modifiers |= alt
 		case "shift":
 			if modifiers&shift != 0 {
-				return "", 0, 0, false, errors.New("Shift 重复")
+				return "", 0, 0, false, errors.New(ShiftRepeatMessage)
 			}
 			modifiers |= shift
 		default:
-			return "", 0, 0, false, fmt.Errorf("未知修饰键 %q", token)
+			return "", 0, 0, false, fmt.Errorf(UnknownModifierPrefix+"%q", token)
 		}
 	}
 	last := strings.ToUpper(strings.TrimSpace(parts[len(parts)-1]))
@@ -165,12 +200,12 @@ func validate(candidate, other, exit, label string) (string, error) {
 		return "", err
 	}
 	if !mouse && vk == 0x13 {
-		return "", errors.New("Pause/Break 没有可靠的松开事件")
+		return "", errors.New(PauseReleaseMessage)
 	}
 	otherValue, _, _, _, _ := Parse(other)
 	exitValue, _, _, _, _ := Parse(exit)
 	if normalized == otherValue || normalized == exitValue {
-		return "", fmt.Errorf("%s不能与另一语音功能或退出快捷键相同", label)
+		return "", fmt.Errorf("%s"+ShortcutCollisionSuffix, label)
 	}
 	return normalized, nil
 }
@@ -210,19 +245,19 @@ func ValidateStartup(mode, dictation, rewrite, exit string) (Startup, error) {
 	if !dictationMouse {
 		_, mods, vk, _, err := Parse(dictation)
 		if err != nil || vk == pauseVK {
-			return Startup{}, errors.New("听写快捷键无效，请重新录入（支持功能键和 Ctrl/Alt 组合键）")
+			return Startup{}, errors.New(DictationInvalidMessage)
 		}
 		out.DictationMods, out.DictationVK = mods, vk
 	}
 	if dictationMouse && rewriteMouse && dictationButton == rewriteButton {
-		return Startup{}, errors.New("听写和改写不能占用同一个鼠标侧键")
+		return Startup{}, errors.New(SameMouseMessage)
 	}
 	if mode != "hold" && !dictationMouse {
-		return Startup{}, errors.New("键盘听写快捷键当前只支持按住说话模式（record_mode=hold）")
+		return Startup{}, errors.New(DictationHoldMessage)
 	}
 	if rewriteMouse {
 		if mode != "hold" {
-			return Startup{}, errors.New("Mouse4/Mouse5 目前仅支持 record_mode=hold")
+			return Startup{}, errors.New(MouseHoldMessage)
 		}
 	} else {
 		_, mods, vk, _, err := Parse(rewrite)
@@ -236,17 +271,17 @@ func ValidateStartup(mode, dictation, rewrite, exit string) (Startup, error) {
 		return Startup{}, err
 	}
 	if exitMouse {
-		return Startup{}, fmt.Errorf("mouse button %q must use the mouse hook", exit)
+		return Startup{}, fmt.Errorf(MouseExitPrefix+"%q must use the mouse hook", exit)
 	}
 	out.ExitMods, out.ExitVK = exitMods, exitVK
 	sameRewriteExit := !rewriteMouse && out.RewriteMods == exitMods && out.RewriteVK == exitVK
 	sameRewriteDictation := !rewriteMouse && !dictationMouse && out.RewriteMods == out.DictationMods && out.RewriteVK == out.DictationVK
 	sameDictationExit := !dictationMouse && exitMods == out.DictationMods && exitVK == out.DictationVK
 	if sameRewriteExit || sameRewriteDictation || sameDictationExit {
-		return Startup{}, errors.New("Record and exit hotkeys must differ")
+		return Startup{}, errors.New(RecordExitDifferMessage)
 	}
 	if mode == "hold" && !rewriteMouse && out.RewriteVK == pauseVK {
-		return Startup{}, errors.New("Pause/Break 不支持按住录音模式")
+		return Startup{}, errors.New(PauseHoldMessage)
 	}
 	return out, nil
 }

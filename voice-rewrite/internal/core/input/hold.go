@@ -1,5 +1,14 @@
 package input
 
+import "time"
+
+const (
+	// WindowsSideHold is how long Mouse4 or Mouse5 must stay down before recording starts.
+	WindowsSideHold = 250 * time.Millisecond
+	// MacSideHold is the macOS side-button hold. It is longer than the Windows threshold.
+	MacSideHold = 280 * time.Millisecond
+)
+
 // Hold is one physical button's press, hold, and release.
 // A late timer carries the old token and cannot start a newer press.
 type Hold struct {

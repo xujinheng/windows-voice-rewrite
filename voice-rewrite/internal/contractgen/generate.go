@@ -43,8 +43,31 @@ func Generate(moduleRoot string) (map[string]string, error) {
 		return nil, fmt.Errorf("selection: %w", err)
 	}
 	out[filepath.Join(repo, "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/SelectionLimit.swift")] = selection
+	hold, err := emitSideHold(filepath.Join(core, "input", "hold.go"))
+	if err != nil {
+		return nil, fmt.Errorf("hold: %w", err)
+	}
+	out[filepath.Join(repo, "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/SideHold.swift")] = hold
 	out[filepath.Join(repo, "macos/VoiceRewrite/UI/SettingsView.swift")] = emitSettings()
 	return out, nil
+}
+
+func emitSideHold(path string) (string, error) {
+	file, err := parseFile(path)
+	if err != nil {
+		return "", err
+	}
+	var value string
+	for _, spec := range constSpecs(file) {
+		if spec.name == "MacSideHold" {
+			value = spec.value
+		}
+	}
+	if value == "" {
+		return "", fmt.Errorf("MacSideHold")
+	}
+	return sourceNote("voice-rewrite/internal/core/input") +
+		"import Foundation\n\npublic enum SideHold {\n    public static let threshold: TimeInterval = " + value + "\n}\n", nil
 }
 
 func sourceNote(path string) string {
@@ -336,7 +359,11 @@ func emitCopy(core string) (string, error) {
 	b.WriteString("    static let resume = " + quoteConst(values, "ResumeVoice") + "\n")
 	b.WriteString("    static let busy = " + quoteConst(values, "PauseWhileBusy") + "\n")
 	b.WriteString("}\n\n")
-	failure, err := emitFailure(errorsFile, result)
+	shortcutFile, err := parseFile(filepath.Join(core, "shortcut", "shortcut.go"))
+	if err != nil {
+		return "", err
+	}
+	failure, err := emitFailure(errorsFile, result, shortcutFile)
 	if err != nil {
 		return "", err
 	}
@@ -344,9 +371,12 @@ func emitCopy(core string) (string, error) {
 	return b.String(), nil
 }
 
-func emitFailure(errorsFile, result *ast.File) (string, error) {
+func emitFailure(errorsFile, result, shortcutFile *ast.File) (string, error) {
 	values := stringConsts(errorsFile)
 	for name, value := range stringConsts(result) {
+		values[name] = value
+	}
+	for name, value := range stringConsts(shortcutFile) {
 		values[name] = value
 	}
 	sentences, err := recoverySentences(findFunc(errorsFile, "fixedRecovery"), values)
@@ -357,9 +387,17 @@ func emitFailure(errorsFile, result *ast.File) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	shortcutSentences, err := recoverySentences(findFunc(shortcutFile, "FixedMessage"), values)
+	if err != nil {
+		return "", err
+	}
+	affixes, err := affixChecks(findFunc(shortcutFile, "FixedMessage"), values)
+	if err != nil {
+		return "", err
+	}
 	seen := map[string]bool{}
-	ordered := make([]string, 0, len(sentences)+len(extra))
-	for _, sentence := range append(sentences, extra...) {
+	ordered := make([]string, 0, len(sentences)+len(extra)+len(shortcutSentences))
+	for _, sentence := range append(append(sentences, extra...), shortcutSentences...) {
 		if sentence == "" || seen[sentence] {
 			continue
 		}
@@ -370,7 +408,7 @@ func emitFailure(errorsFile, result *ast.File) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(ordered) == 0 || head == "" || tail == "" {
+	if len(ordered) == 0 || head == "" || tail == "" || len(affixes) == 0 {
 		return "", fmt.Errorf("failure catalog")
 	}
 	var b strings.Builder
@@ -383,6 +421,9 @@ func emitFailure(errorsFile, result *ast.File) (string, error) {
 	b.WriteString("        case " + quotedList(ordered) + ":\n")
 	b.WriteString("            return true\n")
 	b.WriteString("        default:\n")
+	b.WriteString("            if " + strings.Join(affixes, " || ") + " {\n")
+	b.WriteString("                return true\n")
+	b.WriteString("            }\n")
 	b.WriteString("            let head = " + strconv.Quote(head) + "\n")
 	b.WriteString("            let tail = " + strconv.Quote(tail) + "\n")
 	b.WriteString("            guard message.hasPrefix(head), message.hasSuffix(tail) else { return false }\n")
@@ -392,6 +433,41 @@ func emitFailure(errorsFile, result *ast.File) (string, error) {
 	b.WriteString("    }\n")
 	b.WriteString("}\n")
 	return b.String(), nil
+}
+
+func affixChecks(fn *ast.FuncDecl, values map[string]string) ([]string, error) {
+	if fn == nil {
+		return nil, fmt.Errorf("missing affix function")
+	}
+	var out []string
+	ast.Inspect(fn, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) < 2 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		text := ""
+		switch arg := call.Args[1].(type) {
+		case *ast.BasicLit:
+			text, _ = stringLit(arg)
+		case *ast.Ident:
+			text = values[arg.Name]
+		}
+		if text == "" {
+			return true
+		}
+		switch sel.Sel.Name {
+		case "HasPrefix":
+			out = append(out, "message.hasPrefix("+strconv.Quote(text)+")")
+		case "HasSuffix":
+			out = append(out, "message.hasSuffix("+strconv.Quote(text)+")")
+		}
+		return true
+	})
+	return out, nil
 }
 
 func recoverySentences(fn *ast.FuncDecl, values map[string]string) ([]string, error) {

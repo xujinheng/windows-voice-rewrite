@@ -1,6 +1,15 @@
 package input
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+func TestSideHoldDurationsStayHostSpecific(t *testing.T) {
+	if WindowsSideHold != 250*time.Millisecond || MacSideHold != 280*time.Millisecond {
+		t.Fatalf("windows %s mac %s", WindowsSideHold, MacSideHold)
+	}
+}
 
 func TestHoldShortPressDoesNotActivate(t *testing.T) {
 	var s Hold

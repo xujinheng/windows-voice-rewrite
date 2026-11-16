@@ -168,7 +168,7 @@ public final class SideMouseButtonDriver {
     }
 
     public init(
-        threshold: TimeInterval = 0.28,
+        threshold: TimeInterval = SideHold.threshold,
         bindings: SideMouseBindings = SideMouseBindings(),
         onPress: @escaping @MainActor (SideMouseAction) -> Void = { _ in },
         onPreviewDismissed: @escaping @MainActor () -> Void = {},
