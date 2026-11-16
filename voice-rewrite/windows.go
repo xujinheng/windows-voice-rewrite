@@ -78,7 +78,6 @@ var (
 const (
 	WM_HOTKEY        = 0x0312
 	WM_TIMER         = 0x0113
-	RECORD_TIMER_ID  = 3001
 	WM_HOLD_RELEASE  = 0x8000 + 50
 	WM_HOLD_TIMEOUT  = 0x8000 + 51
 	WM_TOGGLE_READY  = 0x8000 + 56
@@ -91,10 +90,8 @@ const (
 	HOTKEY_DICTATION = 102
 	MOD_ALT          = 0x0001
 	MOD_CTRL         = 0x0002
-	MOD_NOREPEAT     = 0x4000
 	MOD_SHIFT        = 0x0004
 	VK_F9            = 0x78
-	VK_F10           = 0x79
 	VK_CONTROL       = 0x11
 	VK_MENU          = 0x12
 	VK_SHIFT         = 0x10

@@ -58,7 +58,6 @@ var activeHandyAppWindow uintptr
 var (
 	gdiplusHandy                 = syscall.NewLazyDLL("gdiplus.dll")
 	gpStartup                    = gdiplusHandy.NewProc("GdiplusStartup")
-	gpShutdown                   = gdiplusHandy.NewProc("GdiplusShutdown")
 	gpBitmapFromScan             = gdiplusHandy.NewProc("GdipCreateBitmapFromScan0")
 	gpGetGraphics                = gdiplusHandy.NewProc("GdipGetImageGraphicsContext")
 	gpDeleteGraphics             = gdiplusHandy.NewProc("GdipDeleteGraphics")
@@ -88,7 +87,6 @@ var (
 	procGetDpiForMonitorHandy    = shcoreHandy.NewProc("GetDpiForMonitor")
 	procBeginPaintHandy          = user32.NewProc("BeginPaint")
 	procEndPaintHandy            = user32.NewProc("EndPaint")
-	procInvalidateRectHandy      = user32.NewProc("InvalidateRect")
 	procMonitorFromPointHandy    = user32.NewProc("MonitorFromPoint")
 	procGetMonitorInfoHandy      = user32.NewProc("GetMonitorInfoW")
 	handyStatusWndProcCallback   = syscall.NewCallback(handyStatusWndProc)

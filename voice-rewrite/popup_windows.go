@@ -33,10 +33,8 @@ const (
 	WM_CTLCOLORSTATIC              = 0x0138
 	WM_DRAWITEM                    = 0x002B
 	VK_ESCAPE                      = 0x1b
-	WS_OVERLAPPED                  = 0
 	resultWSPopup                  = 0x80000000
 	resultWMNCHitTest              = 0x0084
-	resultHTCaption                = 2
 	resultHTClient                 = 1
 	resultWMSize                   = 0x0005
 	WS_CAPTION                     = 0x00c00000
@@ -60,10 +58,6 @@ const (
 	GWL_STYLE                      = ^uintptr(15)
 	WS_DISABLED                    = 0x08000000
 	GA_ROOT                        = 2
-	SM_XVIRTUALSCREEN              = 76
-	SM_YVIRTUALSCREEN              = 77
-	SM_CXVIRTUALSCREEN             = 78
-	SM_CYVIRTUALSCREEN             = 79
 	DT_CENTER                      = 1
 	DT_VCENTER                     = 4
 	DT_SINGLELINE                  = 0x20

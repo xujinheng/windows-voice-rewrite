@@ -67,7 +67,6 @@ const (
 	uxWSTabStop               = 0x00010000
 	uxESAutoScroll            = 0x0080
 	uxESPassword              = 0x0020
-	uxWSBorder                = 0x00800000
 	uxWSCaption               = 0x00C00000
 	uxWSSysMenu               = 0x00080000
 	uxWSMinimizeBox           = 0x00020000
@@ -76,9 +75,6 @@ const (
 var (
 	uxGetWindowText  = user32.NewProc("GetWindowTextW")
 	uxSetTextColor   = gdi32.NewProc("SetTextColor")
-	uxSelectObject   = gdi32.NewProc("SelectObject")
-	uxRoundRect      = gdi32.NewProc("RoundRect")
-	uxGetStockObject = gdi32.NewProc("GetStockObject")
 	uxSetBkMode      = gdi32.NewProc("SetBkMode")
 	uxWindowCallback = syscall.NewCallback(uxSettingsWndProc)
 	uxActiveSettings *uxSettings
