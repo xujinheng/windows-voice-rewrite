@@ -142,13 +142,18 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         } else {
             throw InteractionFailure.selectionUnavailable
         }
+        // Browser location bars may support a readable value while omitting
+        // selected-text and value-change notifications. Capture the entire
+        // value so a changed URL/search query prevents later insertion.
+        let fullValue = (try? optionalAttribute(focused, kAXValueAttribute)) as? String
         return SelectionObservation(processID: pid,
                                     identity: AXFocusIdentity(element: focused),
                                     identityDescription: "AX(pid:\(pid),hash:\(CFHash(focused)))",
                                     selectedText: text,
                                     range: TextRange(location: range.location, length: range.length),
                                     isEditable: true, isSecure: false,
-                                    revision: tracker.revision)
+                                    revision: tracker.revision,
+                                    fullValue: fullValue)
     }
 
     func captureMonitoredSelection() throws -> SelectionObservation {
@@ -169,8 +174,12 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
                                 kAXSelectedTextChangedNotification as CFString, ptr)
         let valueStatus = AXObserverAddNotification(created, identity.element,
                                 kAXValueChangedNotification as CFString, ptr)
+        // Some browser address bars do not publish text-change notifications.
+        // In that case, keep observing app focus and require a readable full
+        // value that is compared again immediately before any write.
+        let hasTextNotifications = textStatus == .success || valueStatus == .success
         guard appStatus == .success,
-              textStatus == .success || valueStatus == .success else {
+              hasTextNotifications || before.fullValue != nil else {
             throw InteractionFailure.monitoringUnavailable
         }
         observer = created
@@ -186,7 +195,8 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
             guard before.processID == after.processID,
                   before.identity.isSameElement(as: after.identity),
                   before.range == after.range,
-                  before.selectedText == after.selectedText else {
+                  before.selectedText == after.selectedText,
+                  before.fullValue == nil || before.fullValue == after.fullValue else {
                 throw InteractionFailure.selectionChanged
             }
             return after
@@ -205,7 +215,8 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         guard now.processID == expected.processID else { throw InteractionFailure.applicationChanged }
         guard now.identity.isSameElement(as: expected.identity) else { throw InteractionFailure.focusChanged }
         guard now.revision == expected.revision, now.range == expected.range,
-              now.selectedText == expected.selectedText else {
+              now.selectedText == expected.selectedText,
+              expected.fullValue == nil || now.fullValue == expected.fullValue else {
             throw InteractionFailure.selectionChanged
         }
         guard let target = (expected.identity as? AXFocusIdentity)?.element else {
