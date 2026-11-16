@@ -146,6 +146,11 @@ const (
 	PostedRefreshMeeting
 )
 
+// HoldUsesMeeting reports that a live meeting, not a demo, owns the recording that just started.
+func HoldUsesMeeting(hasMeeting, demo bool) bool {
+	return hasMeeting && !demo
+}
+
 // PostedMeetingEffect is a meeting message from the tray. A paused app ignores a real start.
 // A demo still starts. Suggestions run only for a live meeting.
 func PostedMeetingEffect(message PostedMeeting, paused, hasMeeting, demo bool) PostedEffect {

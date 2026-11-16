@@ -133,7 +133,7 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 		// A result card preserves the transcript without requiring the user to
 		// guess what happened to their clipboard after a focus change.
 		follow := ux.DictationUnfocused()
-		app.rememberResult(ux.DictationHistoryTitle, text)
+		app.history.Remember(ux.DictationHistoryTitle, text)
 		app.showAnswer(follow.Title, text, currentCursorPoint(), nil, false, generation)
 		app.postHandyPhase(follow.Phase, generation)
 		return
@@ -143,12 +143,12 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	follow := ux.DictationInserted(err)
 	if follow.ShowCard {
 		app.fail(err)
-		app.rememberResult(ux.DictationHistoryTitle, text)
+		app.history.Remember(ux.DictationHistoryTitle, text)
 		app.showAnswer(follow.Title, text, currentCursorPoint(), nil, false, generation)
 		app.postHandyPhase(follow.Phase, generation)
 		return
 	}
-	app.rememberResult(ux.DictationHistoryTitle, text)
+	app.history.Remember(ux.DictationHistoryTitle, text)
 	app.logger.Printf("stage=paste flow=dictation ms=%d chars=%d status=unverified", time.Since(start).Milliseconds(), utf8.RuneCountInString(text))
 	app.setStatus(traySuccess)
 	app.postHandyPhase(follow.Phase, generation)
@@ -282,7 +282,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	action := textedit.RouteTask(answer, instruction, editable)
 	app.logger.Printf("route=%s intent=%s native_editable=%t browser_surface=%t", action, answer.Intent, editable, browserSurface)
 	allowApply := action == textedit.Replace || action == textedit.TryReplace
-	app.rememberResult(ux.HistoryTitle(answer.Intent), answer.Result)
+	app.history.Remember(ux.HistoryTitle(answer.Intent), answer.Result)
 	if allowApply {
 		app.postHandyPhase(ux.RewriteApplying().Phase, generation)
 		startedPaste := time.Now()

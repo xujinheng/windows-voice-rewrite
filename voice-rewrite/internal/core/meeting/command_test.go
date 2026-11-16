@@ -12,6 +12,9 @@ func TestPostedMeetingKeepsDemoAvailableWhilePaused(t *testing.T) {
 	if PostedMeetingEffect(PostedDemo, true, false, false) != PostedBeginDemo || PostedMeetingEffect(PostedStop, false, false, false) != PostedStopMeeting || PostedMeetingEffect(PostedRefresh, true, true, true) != PostedRefreshMeeting {
 		t.Fatal("demo")
 	}
+	if !HoldUsesMeeting(true, false) || HoldUsesMeeting(true, true) || HoldUsesMeeting(false, false) {
+		t.Fatal("hold meeting")
+	}
 }
 
 func TestApplyCommandTogglesViewFlags(t *testing.T) {

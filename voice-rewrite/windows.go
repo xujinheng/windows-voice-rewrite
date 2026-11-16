@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -222,13 +221,6 @@ func (a *appState) showAnswer(title, body string, anchor trayPoint, selection *s
 	if ok, _, err := procPostMessage.Call(a.Window, WM_SHOW_ANSWER, 0, 0); ok == 0 {
 		a.logger.Printf("cannot show popup: %v", err)
 	}
-}
-
-func (a *appState) rememberResult(title, value string) {
-	if strings.TrimSpace(value) == "" {
-		return
-	}
-	a.history.Remember(title, value)
 }
 
 func winErr(msg string) {
@@ -480,7 +472,7 @@ func runApp() {
 		holdButton = button
 		holdIsDictation = dictation
 		holdMeeting = nil
-		if app.meeting != nil && !app.meeting.demo {
+		if meetingcore.HoldUsesMeeting(app.meeting != nil, app.meeting != nil && app.meeting.demo) {
 			holdMeeting = app.meeting
 		}
 		holdGeneration = app.epoch.Start()
@@ -606,7 +598,8 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_STATUS_UPDATE {
-			if app.epoch.Valid(uint64(msg.LParam)) && activeHandyStatus != nil && activeHandyStatus.owner == uint64(msg.LParam) {
+			hasPill := activeHandyStatus != nil
+			if indicator.PhaseUpdateApplies(app.epoch.Valid(uint64(msg.LParam)), hasPill, hasPill && activeHandyStatus.owner == uint64(msg.LParam)) {
 				updateHandyStatus(indicator.Phase(msg.WParam))
 			}
 			continue
