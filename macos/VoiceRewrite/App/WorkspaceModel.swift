@@ -711,11 +711,12 @@ final class WorkspaceModel: ObservableObject {
             guard let self else { return }
             do {
                 let pcm = try await microphone.stop()
-                guard resultGeneration.accepts(token) else { return }
-                if let voiceSelection {
-                    cancelProbes()
-                    asrProbeStatus = probeRewriteListeningASR()
-                    llmProbeStatus = probeRewriteWaitingLLM()
+                let route = recordingDispatch(tokenValid: resultGeneration.accepts(token), voiceSelection: voiceSelection != nil)
+                guard route.send else { return }
+                if route.cancelProbes { cancelProbes() }
+                if let status = route.asrProbe { asrProbeStatus = status }
+                if let status = route.llmProbe { llmProbeStatus = status }
+                if route.spoken, let voiceSelection {
                     let config = try requestConfig(for: .spokenSelectedTask)
                     guard let bridge else { throw BridgeFailure.notRunning }
                     let id = bridge.send(operation: "selected_voice_task", fields: [
@@ -734,8 +735,6 @@ final class WorkspaceModel: ObservableObject {
                     activeRequestID = id
                     return
                 }
-                cancelProbes()
-                asrProbeStatus = probeTranscribing()
                 let config = try requestConfig(for: .transcribe)
                 guard let bridge else { throw BridgeFailure.notRunning }
                 let id = bridge.send(operation: "transcribe", fields: [
@@ -761,8 +760,9 @@ final class WorkspaceModel: ObservableObject {
                 }
                 activeRequestID = id
             } catch {
-                guard resultGeneration.accepts(token) else { return }
-                isProcessing = false
+                let failed = recordingStopFailure(tokenValid: resultGeneration.accepts(token))
+                guard failed.apply else { return }
+                if failed.stopProcessing { isProcessing = false }
                 applyTask(recordingStopFollowUp(detail: error.localizedDescription, voiceSelection: voiceSelection != nil, mode: indicatorSnapshot.mode), generation: voiceSelection?.generation)
             }
         }

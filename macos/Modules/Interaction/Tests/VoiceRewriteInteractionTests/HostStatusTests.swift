@@ -337,6 +337,36 @@ final class HostStatusTests: XCTestCase {
         XCTAssertTrue(failed.showError)
     }
 
+    func testRecordingDispatchKeepsSpokenAndDictationProbesApart() {
+        let stale = recordingDispatch(tokenValid: false, voiceSelection: true)
+        XCTAssertFalse(stale.send)
+        XCTAssertFalse(stale.cancelProbes)
+        XCTAssertNil(stale.asrProbe)
+        XCTAssertNil(stale.llmProbe)
+
+        let spoken = recordingDispatch(tokenValid: true, voiceSelection: true)
+        XCTAssertTrue(spoken.send)
+        XCTAssertTrue(spoken.spoken)
+        XCTAssertTrue(spoken.cancelProbes)
+        XCTAssertEqual(spoken.asrProbe, probeRewriteListeningASR())
+        XCTAssertEqual(spoken.llmProbe, probeRewriteWaitingLLM())
+        XCTAssertNotEqual(spoken.asrProbe, probeTranscribing())
+
+        let dictation = recordingDispatch(tokenValid: true, voiceSelection: false)
+        XCTAssertTrue(dictation.send)
+        XCTAssertFalse(dictation.spoken)
+        XCTAssertTrue(dictation.cancelProbes)
+        XCTAssertEqual(dictation.asrProbe, probeTranscribing())
+        XCTAssertNil(dictation.llmProbe)
+
+        let hidden = recordingStopFailure(tokenValid: false)
+        XCTAssertFalse(hidden.apply)
+        XCTAssertFalse(hidden.stopProcessing)
+        let shown = recordingStopFailure(tokenValid: true)
+        XCTAssertTrue(shown.apply)
+        XCTAssertTrue(shown.stopProcessing)
+    }
+
     func testShortcutParseFailurePrefersTheTransportError() {
         XCTAssertEqual(shortcutParseFailure(transport: "断开", userText: "格式不对"), "断开")
         XCTAssertEqual(shortcutParseFailure(transport: nil, userText: "格式不对"), "格式不对")
