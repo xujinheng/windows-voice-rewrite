@@ -323,9 +323,13 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
                 }
                 return
             }
+            // A browser may report a transient AX error even when the edit
+            // is applied. Confirm the exact expected text before giving up,
+            // but never repeat a write whose outcome is uncertain.
+            if code == .apiDisabled { throw InteractionFailure.accessibilityPermissionDenied }
             if code != .attributeUnsupported && code != .notImplemented && code != .noValue {
-                throw code == .apiDisabled ? InteractionFailure.accessibilityPermissionDenied
-                                          : InteractionFailure.systemError(code.rawValue)
+                if confirmWrite(target, expected: expected, expectedValue: expectedValue) { return }
+                throw InteractionFailure.writeNotConfirmed
             }
         } else if support != .success && support != .attributeUnsupported &&
                     support != .notImplemented && support != .noValue {
