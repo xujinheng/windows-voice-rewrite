@@ -171,18 +171,27 @@ final class WorkspaceModel: ObservableObject {
             settingsStatus = "快捷键冲突或不受 macOS 支持；设置未保存"
             return
         }
-        cancelProbes()
+        _ = shortcutGeneration.begin()
         defer {
             asrKeyInput = ""
             llmKeyInput = ""
         }
         do {
             guard let store else { throw SettingsError.insecureStorage }
-            try store.save(settings)
+            let previous = activeShortcutPlan
+            guard try ShortcutSaveTransaction.run(
+                activate: { self.register(dictation: dictation, rewrite: rewrite, textEdit: textEdit) },
+                persist: { try store.save(self.settings) },
+                restore: { self.restoreShortcutPlan(previous) }
+            ) else {
+                settingsStatus = "快捷键未能注册；设置未保存，原快捷键保持有效"
+                return
+            }
             try saveCredential(asrKeyInput, account: .asr)
             try saveCredential(llmKeyInput, account: .llm)
             settingsStatus = "设置已保存，密钥不写入配置文件"
             DiagnosticLog.note("设置已保存")
+            cancelProbes()
             checkServices()
             refreshShortcutsFromCore()
         } catch {
@@ -292,15 +301,29 @@ final class WorkspaceModel: ObservableObject {
             interactionStatus = label
             return true
         } catch {
-            if let previous,
-               let restored = try? createHotKeyRegistry(plan: previous) {
-                hotKeyDriver = restored.0
-                hotKeys = restored.1
-                activeShortcutPlan = previous
-            }
+            restoreShortcutPlan(previous)
             interactionStatus = "快捷键注册失败：\(error.localizedDescription)；已尝试恢复先前的快捷键"
             return false
         }
+    }
+
+    private func restoreShortcutPlan(_ previous: MacShortcutPlan?) {
+        if let previous, let current = activeShortcutPlan, current.sameKeyboard(as: previous) {
+            activeShortcutPlan = previous
+            sideMouse?.setBindings(previous.sideButtons)
+            return
+        }
+        hotKeys?.shutdown()
+        hotKeyDriver?.shutdown()
+        hotKeys = nil
+        hotKeyDriver = nil
+        activeShortcutPlan = nil
+        if let previous, let restored = try? createHotKeyRegistry(plan: previous) {
+            hotKeyDriver = restored.0
+            hotKeys = restored.1
+            activeShortcutPlan = previous
+        }
+        sideMouse?.setBindings(activeShortcutPlan?.sideButtons ?? SideMouseBindings())
     }
 
     private func createHotKeyRegistry(plan: MacShortcutPlan) throws -> (CarbonHotKeyDriver, HotKeyRegistry) {
