@@ -170,33 +170,22 @@ func (p *uxSettings) layout() {
 		x -= p.scrollX
 		// Keep the primary footer actions horizontally accessible even when
 		// the form itself needs horizontal scrolling at high DPI.
+		anchor := settingsform.AnchorNone
 		switch ctrl.id {
 		case contract.SaveButton:
-			x = 220
-			if viewW < 650 {
-				x = 12
-			}
+			anchor = settingsform.AnchorSave
 		case contract.AdvancedButton:
-			x = 358
-			if viewW < 650 {
-				x = 149
-			}
+			anchor = settingsform.AnchorAdvanced
 		case contract.CloseButton:
-			x = viewW - w - 18
-			if viewW < 650 {
-				x = 276
-			}
+			anchor = settingsform.AnchorClose
 		case contract.NavSpeech, contract.NavAI, contract.NavInput:
 			x = ctrl.x
 		}
 		if ctrl.hwnd == p.hint {
-			x = 223
-			if viewW < 650 {
-				x = 14
-			}
-			if w > viewW-x-12 {
-				w = viewW - x - 12
-			}
+			anchor = settingsform.AnchorHint
+		}
+		if anchor != settingsform.AnchorNone {
+			x, w = settingsform.AnchoredX(anchor, viewW, w, x)
 		}
 		if ctrl.id == contract.NavSpeech || ctrl.id == contract.NavAI || ctrl.id == contract.NavInput {
 			procMoveWindow.Call(ctrl.hwnd, sc(x), sc(y), sc(w), sc(h), 1)
@@ -254,26 +243,21 @@ func (p *uxSettings) scroll(axis, request uintptr) {
 	if max < 0 {
 		max = 0
 	}
-	var delta int32
-	switch request & 0xffff {
-	case 0:
-		delta = -24
-	case 1:
-		delta = 24
-	case 2:
-		delta = -view + 48
-	case 3:
-		delta = view - 48
-	case 6:
-		*pos = 0
-	case 7:
-		*pos = max
-	case 4, 5:
+	code := uint16(request)
+	if code == 4 || code == 5 {
 		info := uxScrollInfo{Size: uint32(unsafe.Sizeof(uxScrollInfo{})), Mask: uxSIFTrackPos}
 		procGetScrollInfoUX.Call(p.window, axis, uintptr(unsafe.Pointer(&info)))
 		*pos = info.TrackPos
+	} else {
+		delta, edge := settingsform.ScrollStep(code, view)
+		if edge < 0 {
+			*pos = 0
+		} else if edge > 0 {
+			*pos = max
+		}
+		*pos += delta
 	}
-	*pos = settingsform.ClampScroll(*pos+delta, max)
+	*pos = settingsform.ClampScroll(*pos, max)
 	p.layout()
 }
 
@@ -463,7 +447,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMMouseWheel:
 		if p != nil && p.window == hwnd {
 			delta := int32(int16((wParam >> 16) & 0xffff))
-			p.scrollY -= delta / 120 * 72
+			p.scrollY = settingsform.WheelScroll(p.scrollY, delta)
 			p.layout()
 		}
 		return 0
@@ -588,22 +572,15 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			// Native focus events keep the D2D field outline keyboard-visible.
 			notification := (wParam >> 16) & 0xffff
 			if notification == 0x0100 || notification == 0x0200 { // EN_SETFOCUS/EN_KILLFOCUS
-				if notification == 0x0200 {
-					p.focusRow = -1
-				} else {
-					p.focusRow = -1
+				index := -1
+				if notification == 0x0100 {
 					for idx, edit := range p.inputs {
 						if edit == lParam {
-							p.focusRow = idx % 3
+							index = idx
 						}
 					}
-					if p.rewriteShortcut == lParam {
-						p.focusRow = 0
-					}
-					if p.shortcut == lParam {
-						p.focusRow = 1
-					}
 				}
+				p.focusRow = settingsform.FocusRow(index, notification == 0x0100 && p.rewriteShortcut == lParam, notification == 0x0100 && p.shortcut == lParam)
 				refreshNativeWindow(hwnd)
 			}
 			if (wParam>>16)&0xffff == 0x0300 { // EN_CHANGE
