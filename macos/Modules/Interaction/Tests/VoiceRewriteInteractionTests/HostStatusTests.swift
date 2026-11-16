@@ -21,6 +21,16 @@ final class HostStatusTests: XCTestCase {
         XCTAssertTrue(rewriteCaptureStatus(InteractionFailure.notEditable, password: "选区").hasPrefix("无法开始语音选区处理："))
     }
 
+    func testSideMouseNoticesKeepButtonNumbers() {
+        XCTAssertEqual(sideMouseUnchecked(), "尚未检查鼠标侧键监听")
+        XCTAssertEqual(sideMouseObserved(button: 3, action: .dictation), "已收到 Mouse4 按下；继续按住以开始听写")
+        XCTAssertEqual(sideMouseObserved(button: 4, action: .rewrite), "已收到 Mouse5 按下；继续按住以开始改写")
+        XCTAssertEqual(sideMouseObserved(button: 2, action: nil), "检测到辅助鼠标按钮 2；当前绑定按钮 3/4")
+        XCTAssertEqual(sideMouseHoldStarted(button: nil), "已通过配置的快捷键触发")
+        XCTAssertEqual(sideMouseHoldStarted(button: 3), "Mouse4 长按已触发")
+        XCTAssertEqual(sideMouseStopped(), "鼠标侧键监听已停止")
+    }
+
     func testServiceProbeKeepsAMatchingMessage() {
         XCTAssertEqual(serviceProbeRunning(name: "ASR", running: "正在检测"), "ASR：正在检测")
         XCTAssertEqual(serviceProbeStatus(name: "ASR", ok: true, kind: "ASR", message: "可用", failure: "x"), "可用")

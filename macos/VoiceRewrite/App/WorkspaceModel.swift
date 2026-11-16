@@ -25,7 +25,7 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var llmProbeStatus = ServiceProbeCopy.idle
     @Published private(set) var isCheckingServices = false
     @Published private(set) var interactionStatus = "全局快捷键尚未注册"
-    @Published private(set) var sideMouseStatus = "尚未检查鼠标侧键监听"
+    @Published private(set) var sideMouseStatus = sideMouseUnchecked()
     @Published private(set) var settingsStatus = ""
     @Published private(set) var transcription: String?
     @Published private(set) var processedText: String?
@@ -327,7 +327,7 @@ final class WorkspaceModel: ObservableObject {
         guard accessibilityAuthorized else {
             sideMouse?.shutdown()
             sideMouse = nil
-            sideMouseStatus = "未授权辅助功能；请在系统设置授权后返回应用"
+            sideMouseStatus = sideMouseAccessibilityDenied()
             return
         }
         let isFreshStart = sideMouse == nil
@@ -349,13 +349,8 @@ final class WorkspaceModel: ObservableObject {
                 self?.cancelCurrent()
             },
             onObservedButton: { [weak self] button in
-                if let action = self?.activeShortcutPlan?.sideButtons.action(for: button) ?? SideMouseBindings().action(for: button) {
-                    self?.sideMouseStatus = action == .dictation
-                        ? "已收到 Mouse\(button + 1) 按下；继续按住以开始听写"
-                        : "已收到 Mouse\(button + 1) 按下；继续按住以开始改写"
-                } else {
-                    self?.sideMouseStatus = "检测到辅助鼠标按钮 \(button)；当前绑定按钮 3/4"
-                }
+                let action = self?.activeShortcutPlan?.sideButtons.action(for: button) ?? SideMouseBindings().action(for: button)
+                self?.sideMouseStatus = sideMouseObserved(button: button, action: action)
             }
         )
         do {
@@ -364,12 +359,12 @@ final class WorkspaceModel: ObservableObject {
             sideMouse = driver
             driver.setVoicePaused(voicePaused)
             if isFreshStart {
-                sideMouseStatus = voicePaused ? VoicePauseCopy.paused : "监听已启动；等待已绑定的鼠标侧键事件"
+                sideMouseStatus = voicePaused ? VoicePauseCopy.paused : sideMouseListening()
             }
         } catch {
             driver.shutdown()
             sideMouse = nil
-            sideMouseStatus = "监听失败：\(error.localizedDescription)；键盘快捷键仍可用"
+            sideMouseStatus = sideMouseListenFailed(error.localizedDescription)
         }
     }
 
@@ -395,7 +390,7 @@ final class WorkspaceModel: ObservableObject {
             break
         }
         let mappedButton = (activeShortcutPlan?.sideButtons ?? SideMouseBindings()).button(for: action)
-        sideMouseStatus = mappedButton.map { "Mouse\($0 + 1) 长按已触发" } ?? "已通过配置的快捷键触发"
+        sideMouseStatus = sideMouseHoldStarted(button: mappedButton)
         switch action {
         case .dictation: toggleRecording(from: targetPID)
         case .rewrite: toggleVoiceSelectedText(from: targetPID)
@@ -1045,7 +1040,7 @@ final class WorkspaceModel: ObservableObject {
         cancelCurrent()
         sideMouse?.shutdown()
         sideMouse = nil
-        sideMouseStatus = "鼠标侧键监听已停止"
+        sideMouseStatus = sideMouseStopped()
         hotKeys?.shutdown()
         hotKeyDriver?.shutdown()
         hotKeys = nil

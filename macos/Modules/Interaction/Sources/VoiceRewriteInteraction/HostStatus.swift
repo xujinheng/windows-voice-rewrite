@@ -53,6 +53,43 @@ public func insertionStatus(_ error: Error, rewrite: Bool, passwordRewrite: Stri
     return "原应用写入未完成；结果已保留，可手动复制"
 }
 
+public func sideMouseUnchecked() -> String {
+    "尚未检查鼠标侧键监听"
+}
+
+public func sideMouseAccessibilityDenied() -> String {
+    "未授权辅助功能；请在系统设置授权后返回应用"
+}
+
+public func sideMouseObserved(button: Int, action: SideMouseAction?) -> String {
+    guard let action else {
+        return "检测到辅助鼠标按钮 \(button)；当前绑定按钮 3/4"
+    }
+    if action == .dictation {
+        return "已收到 Mouse\(button + 1) 按下；继续按住以开始听写"
+    }
+    return "已收到 Mouse\(button + 1) 按下；继续按住以开始改写"
+}
+
+public func sideMouseListening() -> String {
+    "监听已启动；等待已绑定的鼠标侧键事件"
+}
+
+public func sideMouseListenFailed(_ detail: String) -> String {
+    "监听失败：\(detail)；键盘快捷键仍可用"
+}
+
+public func sideMouseHoldStarted(button: Int?) -> String {
+    if let button {
+        return "Mouse\(button + 1) 长按已触发"
+    }
+    return "已通过配置的快捷键触发"
+}
+
+public func sideMouseStopped() -> String {
+    "鼠标侧键监听已停止"
+}
+
 public func serviceProbeRunning(name: String, running: String) -> String {
     return name + "：" + running
 }
