@@ -348,8 +348,13 @@ final class WorkspaceModel: ObservableObject {
             try driver.start()
             sideMouse = driver
             driver.setVoicePaused(voicePaused)
-            if isFreshStart {
-                sideMouseStatus = voicePaused ? VoicePauseCopy.paused : sideMouseListening()
+            switch sideMouseStart(fresh: isFreshStart, paused: voicePaused) {
+            case .paused:
+                sideMouseStatus = VoicePauseCopy.paused
+            case .listening:
+                sideMouseStatus = sideMouseListening()
+            case .unchanged:
+                break
             }
         } catch {
             driver.shutdown()
@@ -359,14 +364,22 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func toggleVoicePause() {
-        if isRecording || isStarting || isProcessing {
-            interactionStatus = VoicePauseCopy.busy
-            return
+        let turn = voicePauseTurn(
+            busy: isRecording || isStarting || isProcessing,
+            currentlyPaused: voicePaused,
+            busyStatus: VoicePauseCopy.busy,
+            pausedStatus: VoicePauseCopy.paused,
+            idleStatus: VoicePauseCopy.idle)
+        if let status = turn.interactionStatus {
+            interactionStatus = status
         }
+        guard turn.toggle else { return }
         voicePaused.toggle()
         sideMouse?.setVoicePaused(voicePaused)
         dismissPreviewIndicator()
-        sideMouseStatus = voicePaused ? VoicePauseCopy.paused : VoicePauseCopy.idle
+        if let status = turn.sideStatus {
+            sideMouseStatus = status
+        }
     }
 
     private func sideMouseHeld(_ action: SideMouseAction, targetPID: Int32?) {

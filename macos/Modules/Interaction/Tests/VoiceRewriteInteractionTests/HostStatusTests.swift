@@ -337,6 +337,29 @@ final class HostStatusTests: XCTestCase {
         XCTAssertTrue(failed.showError)
     }
 
+    func testVoicePauseAndFreshSideMouseUseDifferentSentences() {
+        let busy = voicePauseTurn(busy: true, currentlyPaused: false, busyStatus: "忙", pausedStatus: "停", idleStatus: "待")
+        XCTAssertFalse(busy.toggle)
+        XCTAssertEqual(busy.interactionStatus, "忙")
+        XCTAssertNil(busy.sideStatus)
+
+        let pause = voicePauseTurn(busy: false, currentlyPaused: false, busyStatus: "忙", pausedStatus: "停", idleStatus: "待")
+        XCTAssertTrue(pause.toggle)
+        XCTAssertNil(pause.interactionStatus)
+        XCTAssertEqual(pause.sideStatus, "停")
+
+        let resume = voicePauseTurn(busy: false, currentlyPaused: true, busyStatus: "忙", pausedStatus: "停", idleStatus: "待")
+        XCTAssertTrue(resume.toggle)
+        XCTAssertEqual(resume.sideStatus, "待")
+        XCTAssertNotEqual(resume.sideStatus, sideMouseListening())
+
+        XCTAssertEqual(sideMouseStart(fresh: true, paused: true), .paused)
+        XCTAssertEqual(sideMouseStart(fresh: true, paused: false), .listening)
+        XCTAssertEqual(sideMouseStart(fresh: false, paused: false), .unchanged)
+        XCTAssertEqual(sideMouseStart(fresh: false, paused: true), .unchanged)
+        XCTAssertNotEqual(sideMouseListening(), "待")
+    }
+
     func testRecordingDispatchKeepsSpokenAndDictationProbesApart() {
         let stale = recordingDispatch(tokenValid: false, voiceSelection: true)
         XCTAssertFalse(stale.send)
