@@ -11,19 +11,18 @@ final class ResultCardPanel {
     private var localMonitor: Any?
     private var title = ""
     private var text = ""
+    private var note = ""
 
     func present(title: String, text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         self.title = title
         self.text = trimmed
+        note = ""
         let height = ResultCardMetrics.height(unicodeScalars: trimmed.unicodeScalars.count)
         ensurePanel()
         guard let panel else { return }
-        panel.contentView = NSHostingView(rootView: ResultCardView(
-            title: title, text: trimmed, width: ResultCardMetrics.width, height: height,
-            onCopy: { [weak self] in self?.copy() },
-            onClose: { [weak self] in self?.dismiss() }))
+        show(on: panel, height: height)
         place(panel, height: height)
         panel.orderFrontRegardless()
         installMonitors()
@@ -39,7 +38,18 @@ final class ResultCardPanel {
 
     private func copy() {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        let copied = NSPasteboard.general.setString(text, forType: .string)
+        note = copied ? ResultCopy.copySucceeded : ResultCopy.copyFailed
+        guard let panel else { return }
+        let height = ResultCardMetrics.height(unicodeScalars: text.unicodeScalars.count)
+        show(on: panel, height: height)
+    }
+
+    private func show(on panel: NSPanel, height: CGFloat) {
+        panel.contentView = NSHostingView(rootView: ResultCardView(
+            title: title, text: text, note: note, width: ResultCardMetrics.width, height: height,
+            onCopy: { [weak self] in self?.copy() },
+            onClose: { [weak self] in self?.dismiss() }))
     }
 
     private func ensurePanel() {
@@ -115,6 +125,7 @@ final class ResultCardPanel {
 private struct ResultCardView: View {
     let title: String
     let text: String
+    let note: String
     let width: CGFloat
     let height: CGFloat
     let onCopy: () -> Void
@@ -127,12 +138,21 @@ private struct ResultCardView: View {
             let editor = ResultCardChrome.editor(width: Int32(width), height: Int32(height))
             let close = ResultCardChrome.closeButton(width: Int32(width))
             let copy = ResultCardChrome.copyButton(width: Int32(width), height: Int32(height))
+            let status = ResultCardChrome.note(width: Int32(width))
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color(indicator: IndicatorMath.labelText))
                 .lineLimit(1)
-                .frame(width: CGFloat(close.x - 28), alignment: .leading)
-                .position(x: 16 + CGFloat(close.x - 28) / 2, y: 28)
+                .frame(width: note.isEmpty ? CGFloat(close.x - 28) : CGFloat(status.x - 24), alignment: .leading)
+                .position(x: 16 + (note.isEmpty ? CGFloat(close.x - 28) : CGFloat(status.x - 24)) / 2, y: 28)
+            if !note.isEmpty {
+                Text(note)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(indicator: IndicatorMath.labelText))
+                    .lineLimit(1)
+                    .frame(width: CGFloat(status.w), height: CGFloat(status.h), alignment: .leading)
+                    .position(x: CGFloat(status.x) + CGFloat(status.w) / 2, y: CGFloat(status.y) + CGFloat(status.h) / 2)
+            }
             ScrollView {
                 Text(text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                     .foregroundStyle(Color(indicator: IndicatorMath.clockText))

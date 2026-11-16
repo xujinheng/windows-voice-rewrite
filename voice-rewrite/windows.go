@@ -707,7 +707,7 @@ func runApp() {
 							closeActiveAnswer()
 						} else {
 							l.Printf("popup apply failed: %v", err)
-							popup.setNote("无法安全替换，请使用复制结果")
+							popup.setNote(ux.ApplyUnsafe)
 						}
 					default:
 					}

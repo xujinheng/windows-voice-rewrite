@@ -17,6 +17,7 @@ import (
 	"voicerewrite/internal/core/desktop"
 	corepopup "voicerewrite/internal/core/popup"
 	"voicerewrite/internal/core/texttarget"
+	"voicerewrite/internal/core/ux"
 )
 
 // The result card is an ordinary HWND with a complete Win32 message pump.
@@ -232,7 +233,7 @@ func (p *answerPopup) apply() {
 		return
 	}
 	if !p.app.busy.CompareAndSwap(false, true) {
-		p.setNote("任务尚未结束，请稍后点击应用")
+		p.setNote(ux.ApplyBusy)
 		return
 	}
 	app := p.app
@@ -240,7 +241,7 @@ func (p *answerPopup) apply() {
 	body := p.body
 	hwnd := p.window
 	p.applyResult = make(chan error, 1)
-	p.setNote("正在核验原选区并应用…")
+	p.setNote(ux.ApplyChecking)
 	if valid, _, _ := procIsWindow.Call(sel.TargetWindow); valid == 0 {
 		p.applyResult <- errors.New("原编辑窗口已关闭")
 		procPostMessage.Call(app.Window, WM_APPLY_RESULT, 0, 0)
@@ -448,9 +449,9 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			switch uint16(wParam & 0xffff) {
 			case BUTTON_COPY:
 				if err := setClipboardText(hwnd, activeAnswer.body); err == nil {
-					activeAnswer.setNote("已复制结果到剪贴板")
+					activeAnswer.setNote(ux.CopySucceeded)
 				} else {
-					activeAnswer.setNote("复制失败，请尝试选中正文复制")
+					activeAnswer.setNote(ux.CopyFailed)
 				}
 				return 0
 			case BUTTON_CLOSE:

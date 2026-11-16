@@ -5,6 +5,8 @@ enum ResultCopy {
     static let dictationHistory = "听写结果"
     static let dictationNotInserted = "听写结果 · 未自动插入"
     static let dictationCopyManually = "听写结果 · 请手动复制"
+    static let copySucceeded = "已复制结果到剪贴板"
+    static let copyFailed = "复制失败，请尝试选中正文复制"
 
     static func cardTitle(intent: String) -> String {
         switch intent {

@@ -35,6 +35,9 @@ enum ResultCardChrome {
     static func copyButton(width: Int32, height: Int32) -> ResultRect {
         ResultRect(x: width - 119, y: height - 48, w: 98, h: 33)
     }
+    static func note(width: Int32) -> ResultRect {
+        ResultRect(x: 132, y: 16, w: width - 190, h: 20)
+    }
 }
 
 enum ResultCardMetrics {

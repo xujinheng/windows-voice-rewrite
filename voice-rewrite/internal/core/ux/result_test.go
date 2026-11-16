@@ -24,4 +24,7 @@ func TestResultCardTitles(t *testing.T) {
 	if DictationNotInserted != "听写结果 · 未自动插入" || DictationCopyManually != "听写结果 · 请手动复制" {
 		t.Fatal("dictation card titles")
 	}
+	if CopySucceeded != "已复制结果到剪贴板" || CopyFailed != "复制失败，请尝试选中正文复制" {
+		t.Fatal("copy status")
+	}
 }
