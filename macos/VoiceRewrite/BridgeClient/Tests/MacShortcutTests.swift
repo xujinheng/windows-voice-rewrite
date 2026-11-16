@@ -12,6 +12,7 @@ final class MacShortcutTests: XCTestCase {
         XCTAssertEqual(text, HotKeyShortcut(keyCode: 17, modifiers: [.control, .option]))
         XCTAssertEqual(MacShortcut.display("Ctrl+Alt+R"), "Ctrl+Option+R")
         XCTAssertNil(MacShortcut.hotKey(key: "R", ctrl: false, alt: false, shift: false))
+        XCTAssertNil(MacShortcut.hotKey(key: "R", ctrl: false, alt: false, shift: true))
     }
 
     func testDefaultKeyboardPlanPreservesBothMouseSideButtons() throws {
@@ -51,5 +52,41 @@ final class MacShortcutTests: XCTestCase {
         XCTAssertNil(MacShortcutPlan(dictation: unsupported, rewrite: t, textEdit: r))
         XCTAssertEqual(MacShortcut.hotKey(key: "F13", ctrl: false, alt: false, shift: false)?.keyCode, 105)
         XCTAssertEqual(MacShortcut.hotKey(key: "F20", ctrl: false, alt: false, shift: false)?.keyCode, 90)
+    }
+
+    @MainActor
+    func testShortcutSaveTransactionSkipsPersistenceWhenRegistrationFails() throws {
+        var operations: [String] = []
+        let accepted = try ShortcutSaveTransaction.run(
+            activate: { operations.append("activate"); return false },
+            persist: { operations.append("persist") },
+            restore: { operations.append("restore") }
+        )
+        XCTAssertFalse(accepted)
+        XCTAssertEqual(operations, ["activate"])
+    }
+
+    @MainActor
+    func testShortcutSaveTransactionRestoresOnPersistenceFailure() {
+        enum TestFailure: Error { case disk }
+        var operations: [String] = []
+        XCTAssertThrowsError(try ShortcutSaveTransaction.run(
+            activate: { operations.append("activate"); return true },
+            persist: { operations.append("persist"); throw TestFailure.disk },
+            restore: { operations.append("restore") }
+        ))
+        XCTAssertEqual(operations, ["activate", "persist", "restore"])
+    }
+
+    @MainActor
+    func testShortcutSaveTransactionCommitsOnlyAfterRegistration() throws {
+        var operations: [String] = []
+        let accepted = try ShortcutSaveTransaction.run(
+            activate: { operations.append("activate"); return true },
+            persist: { operations.append("persist") },
+            restore: { operations.append("restore") }
+        )
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(operations, ["activate", "persist"])
     }
 }
