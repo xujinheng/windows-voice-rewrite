@@ -17,6 +17,8 @@ const (
 	ProfileMode       = "会议识别方式"
 	ProfileSaveFailed = "保存失败: "
 	ProfileModeFailed = "资料已保存；识别方式保存失败: "
+	ProfileOpenFailed = "打开会议资料失败: "
+	CopyFailed        = "复制失败: "
 )
 
 // ButtonView is the meeting state that changes a button's label.

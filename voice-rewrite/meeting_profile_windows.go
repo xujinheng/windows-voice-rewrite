@@ -59,7 +59,7 @@ func (p *meetingHUD) openProfile() {
 			}
 			p.profileControls = nil
 			p.profileBackground, p.profileTerms, p.profileMode, p.profileStatus = 0, 0, 0, 0
-			winErr("打开会议资料失败: " + err.Error())
+			winErr(meetingcore.ProfileOpenFailed + err.Error())
 			return
 		}
 	}
