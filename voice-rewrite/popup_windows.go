@@ -402,23 +402,20 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case WM_CTLCOLORSTATIC:
 		if activeAnswer != nil && activeAnswer.window == hwnd {
 			procSetBkMode.Call(wParam, TRANSPARENT)
+			kind := ux.CardChrome
 			if lParam == activeAnswer.edit {
-				procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.text))
-				procSetBkColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.surface))
+				kind = ux.CardEditor
+			} else if activeAnswer.note == lParam {
+				kind = ux.CardNote
+			}
+			if paintCardInk(wParam, kind) {
 				return activeAnswer.editBrush
 			}
-			if activeAnswer.note == lParam {
-				procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.muted))
-			} else {
-				procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.text))
-			}
-			procSetBkColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.background))
 			return activeAnswer.bgBrush
 		}
 	case WM_CTLCOLOREDIT:
 		if activeAnswer != nil && activeAnswer.window == hwnd && activeAnswer.editBrush != 0 {
-			procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.text))
-			procSetBkColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.surface))
+			paintCardInk(wParam, ux.CardEditor)
 			return activeAnswer.editBrush
 		}
 	case WM_DRAWITEM:
@@ -476,22 +473,36 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	return result
 }
 
+func paintCardInk(dc uintptr, kind ux.CardSurface) bool {
+	muted, editor := ux.CardInk(kind)
+	color := activeAnswer.palette.text
+	if muted {
+		color = activeAnswer.palette.muted
+	}
+	procSetTextColor.Call(dc, activeAnswer.palette.color(color))
+	if editor {
+		procSetBkColor.Call(dc, activeAnswer.palette.color(activeAnswer.palette.surface))
+		return true
+	}
+	procSetBkColor.Call(dc, activeAnswer.palette.color(activeAnswer.palette.background))
+	return false
+}
+
 func drawCardButton(item *drawItemStruct) bool {
 	if item == nil || activeAnswer == nil {
 		return false
 	}
-	label := ""
-	primary := false
+	button := ux.CardButton(-1)
 	switch item.CtlID {
 	case BUTTON_COPY:
-		label = ux.CopyAction
-		primary = !activeAnswer.allowApply
+		button = ux.CardCopy
 	case BUTTON_APPLY:
-		label = ux.ApplyAction
-		primary = true
+		button = ux.CardApply
 	case BUTTON_CLOSE:
-		label = ux.CloseGlyph
-	default:
+		button = ux.CardClose
+	}
+	label, primary, ok := ux.CardButtonFace(button, activeAnswer.allowApply)
+	if !ok {
 		return false
 	}
 	var font uintptr
