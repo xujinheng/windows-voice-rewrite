@@ -24,6 +24,12 @@ func TestVoiceStartKeepsSideAndKeyboardWindowsApart(t *testing.T) {
 	if RewriteHotkeyAction(false, false, true, false) != RewriteFinishToggle || RewriteHotkeyAction(false, false, true, true) != RewriteIgnore {
 		t.Fatal("recording")
 	}
+	if FinishRecording(false, true, true) != FinishToggle || FinishRecording(true, true, true) != FinishMeeting || FinishRecording(true, true, false) != FinishDictation || FinishRecording(true, false, false) != FinishSpokenRewrite {
+		t.Fatal("finish")
+	}
+	if !FinishShowsProcessing(FinishDictation) || !FinishShowsProcessing(FinishMeeting) || FinishShowsProcessing(FinishSpokenRewrite) || FinishShowsProcessing(FinishToggle) {
+		t.Fatal("pill")
+	}
 	if RewriteHotkeyAction(false, false, false, true) != RewriteStartHold || RewriteHotkeyAction(false, false, false, false) != RewritePrepareToggle {
 		t.Fatal("start")
 	}

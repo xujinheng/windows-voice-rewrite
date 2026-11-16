@@ -53,6 +53,35 @@ const (
 	RewritePrepareToggle
 )
 
+// RecordingFinish is where a stopped recording goes. A meeting wins over dictation.
+type RecordingFinish int
+
+const (
+	FinishToggle RecordingFinish = iota
+	FinishDictation
+	FinishSpokenRewrite
+	FinishMeeting
+)
+
+func FinishRecording(holdMode, dictation, meeting bool) RecordingFinish {
+	if !holdMode {
+		return FinishToggle
+	}
+	if meeting {
+		return FinishMeeting
+	}
+	if dictation {
+		return FinishDictation
+	}
+	return FinishSpokenRewrite
+}
+
+// FinishShowsProcessing is the pill for dictation and meeting. Spoken rewrite uses the selection pill.
+// Toggle mode does not change the pill here.
+func FinishShowsProcessing(kind RecordingFinish) bool {
+	return kind == FinishDictation || kind == FinishMeeting
+}
+
 func RewriteHotkeyAction(paused, busy, recording, holdMode bool) RewriteHotkey {
 	if paused || busy {
 		return RewriteIgnore
