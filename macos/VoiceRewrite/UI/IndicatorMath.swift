@@ -95,7 +95,7 @@ enum IndicatorMath {
         case .success: return "已发送粘贴指令"
         case .answer: return "已显示结果"
         case .error: return "操作未完成 · 查看日志"
-        case .fallback: return "已复制 · 请手动粘贴"
+        case .fallback: return "结果已保留 · 可复制"
         case .recording: return ""
         }
     }
