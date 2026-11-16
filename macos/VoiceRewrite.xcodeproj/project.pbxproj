@@ -10,9 +10,23 @@
 		1C0000000000000000000002 /* WorkspaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000002 /* WorkspaceModel.swift */; };
 		1C0000000000000000000003 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000003 /* MainView.swift */; };
 		1C0000000000000000000004 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000004 /* SettingsView.swift */; };
+		1C0000000000000000000020 /* IndicatorMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000020 /* IndicatorMath.swift */; };
+		1C0000000000000000000021 /* RecordingIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000021 /* RecordingIndicator.swift */; };
 		1C0000000000000000000005 /* BridgeProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000005 /* BridgeProtocol.swift */; };
 		1C0000000000000000000006 /* BridgeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000006 /* BridgeClient.swift */; };
 		1C0000000000000000000007 /* BridgeClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000007 /* BridgeClientTests.swift */; };
+		1C0000000000000000000022 /* IndicatorMathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000022 /* IndicatorMathTests.swift */; };
+		1C0000000000000000000023 /* SessionHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000023 /* SessionHistory.swift */; };
+		1C0000000000000000000024 /* SessionHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000024 /* SessionHistoryTests.swift */; };
+		1C0000000000000000000025 /* DiagnosticLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000025 /* DiagnosticLog.swift */; };
+		1C0000000000000000000026 /* DiagnosticLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000026 /* DiagnosticLogTests.swift */; };
+		1C0000000000000000000027 /* DesktopWorkArea.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000027 /* DesktopWorkArea.swift */; };
+		1C0000000000000000000028 /* DesktopWorkAreaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000028 /* DesktopWorkAreaTests.swift */; };
+		1C0000000000000000000029 /* MacShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000029 /* MacShortcut.swift */; };
+		1C0000000000000000000030 /* MacShortcutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000030 /* MacShortcutTests.swift */; };
+		1C0000000000000000000031 /* ResultCardPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000031 /* ResultCardPanel.swift */; };
+		1C0000000000000000000032 /* ResultCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000032 /* ResultCopy.swift */; };
+		1C0000000000000000000033 /* ResultCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000033 /* ResultCopyTests.swift */; };
 		1C0000000000000000000008 /* Microphone in Frameworks */ = {isa = PBXBuildFile; productRef = 1D0000000000000000000011 /* Microphone */; };
 		1C0000000000000000000009 /* VoiceRewriteStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 1D0000000000000000000012 /* VoiceRewriteStorage */; };
 		1C000000000000000000000A /* VoiceRewriteInteraction in Frameworks */ = {isa = PBXBuildFile; productRef = 1D0000000000000000000013 /* VoiceRewriteInteraction */; };
@@ -27,9 +41,23 @@
 		1B0000000000000000000002 /* WorkspaceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceModel.swift; sourceTree = "<group>"; };
 		1B0000000000000000000003 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		1B0000000000000000000004 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		1B0000000000000000000020 /* IndicatorMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorMath.swift; sourceTree = "<group>"; };
+		1B0000000000000000000021 /* RecordingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingIndicator.swift; sourceTree = "<group>"; };
 		1B0000000000000000000005 /* BridgeProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeProtocol.swift; sourceTree = "<group>"; };
 		1B0000000000000000000006 /* BridgeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeClient.swift; sourceTree = "<group>"; };
 		1B0000000000000000000007 /* BridgeClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeClientTests.swift; sourceTree = "<group>"; };
+		1B0000000000000000000022 /* IndicatorMathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorMathTests.swift; sourceTree = "<group>"; };
+		1B0000000000000000000023 /* SessionHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionHistory.swift; sourceTree = "<group>"; };
+		1B0000000000000000000024 /* SessionHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionHistoryTests.swift; sourceTree = "<group>"; };
+		1B0000000000000000000025 /* DiagnosticLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticLog.swift; sourceTree = "<group>"; };
+		1B0000000000000000000026 /* DiagnosticLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticLogTests.swift; sourceTree = "<group>"; };
+		1B0000000000000000000027 /* DesktopWorkArea.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkArea.swift; sourceTree = "<group>"; };
+		1B0000000000000000000028 /* DesktopWorkAreaTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkAreaTests.swift; sourceTree = "<group>"; };
+		1B0000000000000000000029 /* MacShortcut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacShortcut.swift; sourceTree = "<group>"; };
+		1B0000000000000000000030 /* MacShortcutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacShortcutTests.swift; sourceTree = "<group>"; };
+		1B0000000000000000000031 /* ResultCardPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultCardPanel.swift; sourceTree = "<group>"; };
+		1B0000000000000000000032 /* ResultCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultCopy.swift; sourceTree = "<group>"; };
+		1B0000000000000000000033 /* ResultCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultCopyTests.swift; sourceTree = "<group>"; };
 		1B0000000000000000000008 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		1A000000000000000000000C /* VoiceRewrite.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoiceRewrite.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A000000000000000000000D /* VoiceRewriteTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VoiceRewriteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -44,10 +72,10 @@
 		1A0000000000000000000002 /* Root */ = {isa = PBXGroup; children = ( 1A0000000000000000000004, 1A0000000000000000000003 ); sourceTree = "<group>"; };
 		1A0000000000000000000003 /* Products */ = {isa = PBXGroup; children = ( 1A000000000000000000000C, 1A000000000000000000000D ); name = Products; sourceTree = "<group>"; };
 		1A0000000000000000000004 /* VoiceRewrite */ = {isa = PBXGroup; children = ( 1A0000000000000000000005, 1A0000000000000000000006, 1A0000000000000000000007, 1A0000000000000000000009 ); path = VoiceRewrite; sourceTree = "<group>"; };
-		1A0000000000000000000005 /* App */ = {isa = PBXGroup; children = ( 1B0000000000000000000001, 1B0000000000000000000002 ); path = App; sourceTree = "<group>"; };
-		1A0000000000000000000006 /* UI */ = {isa = PBXGroup; children = ( 1B0000000000000000000003, 1B0000000000000000000004 ); path = UI; sourceTree = "<group>"; };
+		1A0000000000000000000005 /* App */ = {isa = PBXGroup; children = ( 1B0000000000000000000001, 1B0000000000000000000002, 1B0000000000000000000023, 1B0000000000000000000025, 1B0000000000000000000029 ); path = App; sourceTree = "<group>"; };
+		1A0000000000000000000006 /* UI */ = {isa = PBXGroup; children = ( 1B0000000000000000000003, 1B0000000000000000000004, 1B0000000000000000000020, 1B0000000000000000000021, 1B0000000000000000000027, 1B0000000000000000000031, 1B0000000000000000000032 ); path = UI; sourceTree = "<group>"; };
 		1A0000000000000000000007 /* BridgeClient */ = {isa = PBXGroup; children = ( 1B0000000000000000000005, 1B0000000000000000000006, 1A0000000000000000000008 ); path = BridgeClient; sourceTree = "<group>"; };
-		1A0000000000000000000008 /* Tests */ = {isa = PBXGroup; children = ( 1B0000000000000000000007 ); path = Tests; sourceTree = "<group>"; };
+		1A0000000000000000000008 /* Tests */ = {isa = PBXGroup; children = ( 1B0000000000000000000007, 1B0000000000000000000022, 1B0000000000000000000024, 1B0000000000000000000026, 1B0000000000000000000028, 1B0000000000000000000030, 1B0000000000000000000033 ); path = Tests; sourceTree = "<group>"; };
 		1A0000000000000000000009 /* Resources */ = {isa = PBXGroup; children = ( 1B0000000000000000000008 ); path = Resources; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
@@ -110,8 +138,8 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		1A000000000000000000000E = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( 1C0000000000000000000001, 1C0000000000000000000002, 1C0000000000000000000003, 1C0000000000000000000004, 1C0000000000000000000005, 1C0000000000000000000006 ); runOnlyForDeploymentPostprocessing = 0; };
-		1A0000000000000000000011 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( 1C0000000000000000000007 ); runOnlyForDeploymentPostprocessing = 0; };
+		1A000000000000000000000E = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( 1C0000000000000000000001, 1C0000000000000000000002, 1C0000000000000000000023, 1C0000000000000000000025, 1C0000000000000000000029, 1C0000000000000000000003, 1C0000000000000000000004, 1C0000000000000000000020, 1C0000000000000000000021, 1C0000000000000000000027, 1C0000000000000000000031, 1C0000000000000000000032, 1C0000000000000000000005, 1C0000000000000000000006 ); runOnlyForDeploymentPostprocessing = 0; };
+		1A0000000000000000000011 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( 1C0000000000000000000007, 1C0000000000000000000022, 1C0000000000000000000024, 1C0000000000000000000026, 1C0000000000000000000028, 1C0000000000000000000030, 1C0000000000000000000033 ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */

@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"unsafe"
+
+	"voicerewrite/internal/core/history"
 )
 
 // Windows notification-area (system tray) indicator. The icon is painted in
@@ -159,7 +161,7 @@ type trayIndicator struct {
 	menuOwner      uintptr
 	icons          [7]uintptr
 	paused         *atomic.Bool
-	history        *resultHistory
+	history        *history.Store
 	taskbarCreated uint32
 	created        bool
 }
@@ -214,7 +216,7 @@ func colorIcon(rgb uint32) (uintptr, error) {
 	return h, nil
 }
 
-func newTrayIndicator(hwnd uintptr, paused *atomic.Bool, history *resultHistory) (*trayIndicator, error) {
+func newTrayIndicator(hwnd uintptr, paused *atomic.Bool, history *history.Store) (*trayIndicator, error) {
 	t := &trayIndicator{hwnd: hwnd, paused: paused, history: history}
 	class, _ := syscall.UTF16PtrFromString("STATIC")
 	title, _ := syscall.UTF16PtrFromString("VoiceRewriteMenuOwner")
@@ -347,19 +349,15 @@ func (t *trayIndicator) contextMenu(meetingActive bool) (uintptr, error) {
 	procAppendMenu.Call(m, MF_STRING, 7, uintptr(unsafe.Pointer(resultLabel)))
 	// A bounded, in-memory history. Never put any transcript words in the
 	// system menu, which can be observed by other applications/screenshots.
-	var recent []resultEntry
+	var recent []history.Entry
 	if t.history != nil {
-		recent = t.history.snapshot()
+		recent = t.history.Snapshot()
 	}
 	if len(recent) != 0 {
 		submenu, _, _ := procCreatePopupMenu.Call()
 		if submenu != 0 {
 			for i, entry := range recent {
-				kind := "AI 结果"
-				if strings.Contains(entry.Title, "听写") {
-					kind = "听写"
-				}
-				label, _ := syscall.UTF16PtrFromString(fmt.Sprintf("%d. %s · %s", i+1, kind, entry.CreatedAt.Format("15:04")))
+				label, _ := syscall.UTF16PtrFromString(history.MenuLine(i, entry))
 				procAppendMenu.Call(submenu, MF_STRING, uintptr(1000+i), uintptr(unsafe.Pointer(label)))
 				runtime.KeepAlive(label)
 			}

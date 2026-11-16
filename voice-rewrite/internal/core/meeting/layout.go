@@ -1,6 +1,8 @@
 // Package meeting contains platform-neutral reading and layout rules.
 package meeting
 
+import "strings"
+
 // The six reading surfaces share the space left after fixed controls.
 // Values are logical 96-DPI pixels, independent of the physical monitor DPI.
 const (
@@ -30,6 +32,12 @@ func ValidPaneWeights(value PaneWeights) PaneWeights {
 		return DefaultPaneWeights
 	}
 	return value
+}
+
+// KeepFinishedEnglish reports whether a completed English line should stay
+// visible while a later request is running or has failed.
+func KeepFinishedEnglish(complete bool, english string) bool {
+	return complete && strings.TrimSpace(english) != ""
 }
 
 func VisiblePanes(captionsOnly, expanded bool) [PaneCount]bool {

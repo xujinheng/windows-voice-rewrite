@@ -2,7 +2,11 @@
 
 package main
 
-import "unsafe"
+import (
+	"unsafe"
+
+	"voicerewrite/internal/core/settingsform"
+)
 
 // These are deliberately *not* raised cards. A quiet left navigation rail,
 // understated dividers and one focused settings pane follow Raycast/Linear's
@@ -55,10 +59,10 @@ func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32, focusRow
 		rows = 2
 	}
 	for i := 0; i < rows; i++ {
-		frame := settingsFieldFrame(i)
+		frame := settingsform.FieldFrame(i)
 		if page == 2 {
-			frame = settingsShortcutFrame()
-			frame.Y += int32(i) * settingsFieldRowStep
+			frame = settingsform.ShortcutFrame()
+			frame.Y += int32(i) * settingsform.RowStep
 		}
 		x := float32(frame.X - scrollX)
 		y := float32(frame.Y - scrollY)
@@ -92,10 +96,10 @@ func (p *uxSettings) drawSettingsFallback(hdc uintptr) {
 		rows = 2
 	}
 	for i := 0; i < rows; i++ {
-		frame := settingsFieldFrame(i)
+		frame := settingsform.FieldFrame(i)
 		if p.page == 2 {
-			frame = settingsShortcutFrame()
-			frame.Y += int32(i) * settingsFieldRowStep
+			frame = settingsform.ShortcutFrame()
+			frame.Y += int32(i) * settingsform.RowStep
 		}
 		outline := p.palette.color(p.palette.border)
 		if p.focusRow == i {

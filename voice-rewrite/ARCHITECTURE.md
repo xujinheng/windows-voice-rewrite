@@ -6,8 +6,21 @@ VoiceRewrite has native Windows (Go/Win32) and macOS (SwiftUI/AppKit with a bund
 
 | Package | Responsibility |
 | --- | --- |
-| `internal/core/audio` | Validate interleaved PCM16 formats and packet sizes; mix channels, resample to 16 kHz and assemble 20 ms mono frames; provide audio framing, voice segmentation, preview timing, transcript chunking and the `FrameSource` contract. |
-| `internal/core/config` | Application settings schema and defaults, JSON parsing/serialization, normalization, API base-URL validation and credential-field transformation callbacks. No filesystem access or OS encryption implementation. |
+| `internal/core/audio` | Validate interleaved PCM16 formats and packet sizes; mix channels, resample to 16 kHz and assemble 20 ms mono frames; provide audio framing, voice segmentation, preview timing, transcript chunking, a 0–1000 recording-indicator RMS level, and the `FrameSource` contract. |
+| `internal/core/indicator` | Recording-pill phases, geometry, labels, opacity, waveform motion, progress-wheel beads, microphone-level gain, and the shared pill colors. Hosts paint the window and own the microphone. |
+| `internal/core/input` | Map a physical side button to dictation, rewrite, or ignore, and track one button's press, hold, and release. Hosts own the event tap or mouse hook. |
+| `internal/core/shortcut` | Canonical voice hotkeys: mouse side buttons, function keys, and Ctrl/Alt/Shift combinations. Bare typing keys and Pause/Break are rejected, and two voice actions cannot share a shortcut. macOS maps the key name to its own virtual key codes. |
+| `internal/core/desktop` | Keep a window inside a monitor work area, including monitors with negative coordinates. |
+| `internal/core/popup` | Result-card size for a text length, and which clicks dismiss the card instead of the text or its buttons. |
+| `internal/core/settingsform` | Logical-pixel geometry for the settings window: stretching rows and the shared field, label, and shortcut rectangles. Hosts scale them to the monitor DPI. |
+| `internal/core/texttarget` | Win32 edit, rich edit, and WinForms edit classes, including password style, plus Chrome, Edge, Firefox, CEF, and Electron window classes. A renderer surface only authorizes a guarded paste probe. When a password probe cannot run, the whole browser or Electron window is treated as sensitive. |
+| `internal/core/logfile` | Rotate a diagnostic log before it is opened: one active file up to 4 MiB and three numbered backups. Hosts choose the path and write the lines. |
+| `internal/core/session` | The active voice-task generation. Starting another generation cancels the previous context. Hosts still verify the editor target before writing. |
+| `internal/core/history` | Current-session voice results in memory: at most 10 entries and 4 MiB, newest first, never a partial transcript. Menu text is the category and time only. |
+| `internal/core/update` | Compare the installed version with GitHub releases and produce the shared status text. Hosts display the result and open the releases page. The checker does not download installers. |
+| `internal/core/clipboard` | Whether a captured clipboard may be restored, and how a synthetic copy retry spends its time budget. Hosts own the native pasteboard. |
+| `internal/core/ux` | Fixed recovery text for known provider and editor failures, and the shared result-card titles for dictation, preview, and restored history. Unknown errors stay with the host so private request data is not echoed. macOS keeps the same title strings beside the panel. |
+| `internal/core/config` | Application settings schema and defaults, JSON parsing/serialization, normalization, API base-URL validation and credential-field transformation callbacks. Base URLs are trimmed http(s) addresses without userinfo, query, or fragment. Recording length is kept from 1 to 180 seconds and otherwise returned to 60. No filesystem access or OS encryption implementation. |
 | `internal/core/provider` | Safe HTTP clients, redirect blocking, bounded responses, model discovery, HTTP errors and reasoning-tag removal. |
 | `internal/core/speech` | WAV/multipart ASR requests, transcript processing, chunking and request cancellation. |
 | `internal/core/serviceprobe` | Shared ASR silent-WAV upload and LLM model-list connection probing for both desktop hosts. |
@@ -26,8 +39,8 @@ amd64 and arm64. Xcode CI also builds and tests the native macOS application on 
 | --- | --- |
 | Meeting audio | `meeting_capture_windows.go` owns WASAPI process-loopback activation, COM buffers, events and process lifetime. It validates native packets before passing PCM16 data to `audio.PCMConverter`. `meeting_windows.go` and `microphone_windows.go` retain host device integration. |
 | Meeting coordinator | `meeting_session.go` constructs `meeting.Pipeline` and supplies inference, caption, metrics and HUD hooks. It retains host configuration snapshots, model scheduling, UI state and native presentation; `meeting_state.go` holds host view state. |
-| Text selection and insertion | `task_worker_windows.go` invokes `textedit.ResolveSelectedTask` and `textedit.RouteTask`. `clipboard_windows.go`, `uia_password_windows.go`, `unicode_input_windows.go`, `mouse_windows.go` and related Win32 code own foreground checks, clipboard restoration, guarded paste and input. |
-| Windows UI | `meeting_hud_windows.go`, `settings_windows.go`, `popup_windows.go`, `result_direct2d_windows.go`, `tray_windows.go` and their supporting Win32/Direct2D code render and dispatch native controls. |
+| Text selection and insertion | `task_worker_windows.go` invokes `textedit.ResolveSelectedTask` and `textedit.RouteTask`, and uses `session.Epoch` to cancel stale work. `clipboard_windows.go`, `uia_password_windows.go`, `unicode_input_windows.go`, `mouse_windows.go` and related Win32 code own foreground checks, clipboard restoration, guarded paste and input. Restoration is allowed only by `clipboard.MayRestore`. |
+| Windows UI | `meeting_hud_windows.go`, `settings_windows.go`, `popup_windows.go`, `result_direct2d_windows.go`, `tray_windows.go` and `handy_status_windows.go` render native controls. The recording pill reads its phases and geometry from `internal/core/indicator`. |
 | Configuration and credentials | `config.go` exposes the shared settings model to the host. `config_store.go` owns user paths and private/atomic file operations; `secrets_windows.go` encrypts/decrypts credentials with Windows DPAPI. `secrets_other.go` is not a macOS Keychain adapter. |
 
 ## Meeting data flow
@@ -50,7 +63,7 @@ using the current user's DPAPI protection.
 
 ## Native macOS integration
 
-`macos/VoiceRewrite.xcodeproj` builds the SwiftUI/AppKit host and bundles native Go `voicebridge`. The Helper calls the same `internal/core` packages as Windows; `probe_asr` and `probe_llm` expose identical service diagnostics. The `selected_voice_task` operation runs the same spoken-selection ASR + textedit orchestration used by Windows; macOS captures the physical microphone and validates the original Accessibility selection before attempting a result write. `Microphone` captures audio, `VoiceRewriteStorage` owns private settings and Keychain credentials, and `VoiceRewriteInteraction` owns Carbon shortcuts and guarded Accessibility insertion. Swift only handles the user interface, platform permissions and lifecycle.
+`macos/VoiceRewrite.xcodeproj` builds the SwiftUI/AppKit host and bundles native Go `voicebridge`. The Helper calls the same `internal/core` packages as Windows; `probe_asr` and `probe_llm` expose identical service diagnostics. ASR and text-edit failures use `ux.Classify`, so macOS shows the same recovery text as Windows when the failure is in the shared catalog. The `selected_voice_task` operation runs the same spoken-selection ASR + textedit orchestration used by Windows; macOS captures the physical microphone and validates the original Accessibility selection before attempting a result write. `Microphone` captures audio, `VoiceRewriteStorage` owns private settings and Keychain credentials, and `VoiceRewriteInteraction` owns Carbon shortcuts and guarded Accessibility insertion. Swift handles the user interface, platform permissions and lifecycle. The macOS recording pill uses the same phases, labels, sizes and fade timing as Windows. AppKit owns the non-activating panel. The microphone starts only after the side-button hold, so a short navigation click does not open the input device.
 
 macOS Meeting application-audio capture remains a separate integration requirement. Physical microphone, Keychain and Accessibility behavior plus distribution signing must be verified before public macOS release.
 

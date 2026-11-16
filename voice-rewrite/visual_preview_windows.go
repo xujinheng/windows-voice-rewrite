@@ -5,6 +5,8 @@ package main
 import (
 	"runtime"
 	"unsafe"
+
+	"voicerewrite/internal/core/indicator"
 )
 
 // runRecordingVisualPreview displays the real GDI+ layered recording overlay
@@ -13,7 +15,7 @@ import (
 func runRecordingVisualPreview() {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	showHandyStatus(nil, "听写", statusRecording, 0x56525348)
+	showHandyStatus(nil, "听写", indicator.Recording, 0x56525348)
 	defer closeHandyStatus()
 	if activeHandyStatus == nil {
 		return

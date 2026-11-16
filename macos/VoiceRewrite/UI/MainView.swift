@@ -48,6 +48,16 @@ struct MainView: View {
                         LabeledContent("麦克风", value: model.recordingStatus)
                         LabeledContent("原生交互", value: model.interactionStatus)
                         LabeledContent("鼠标侧键", value: model.sideMouseStatus)
+                        Text(model.updateStatus).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
+                        HStack {
+                            Button("检查更新") { model.checkForUpdate() }
+                                .disabled(model.isCheckingUpdate)
+                            if model.updatePage != nil {
+                                Button("打开发布页面") { model.openUpdatePage() }
+                            }
+                            Button("查看诊断日志") { DiagnosticLog.reveal() }
+                            Spacer()
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading).padding(8)
                 }
@@ -80,6 +90,28 @@ struct MainView: View {
                         resultView(model.processedText, empty: "这里显示真实模型结果；未经授权不会更改其他应用文本。")
                     }
                 }
+
+                GroupBox("最近 10 次结果（仅当前会话）") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if model.sessionHistory.isEmpty {
+                            Text("当前会话还没有可恢复的语音结果。")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(Array(model.sessionHistory.enumerated()), id: \.element.id) { index, entry in
+                                Button(SessionHistory.menuLine(index: index, title: entry.title, createdAt: entry.createdAt)) {
+                                    model.showSessionHistory(id: entry.id)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            if let restoredHistoryText = model.restoredHistoryText, !restoredHistoryText.isEmpty {
+                                resultView(restoredHistoryText, empty: "")
+                            }
+                            Button("清空本次会话历史") { model.clearSessionHistory() }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                }
                 Text("更改目标应用或选区会阻止旧任务写入。真实麦克风、Keychain 和辅助功能权限需在本机授权。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
@@ -106,7 +138,12 @@ struct MainView: View {
                 Text(empty).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .frame(minHeight: 70, alignment: .topLeading)
+        .frame(minHeight: resultHeight(value), alignment: .topLeading)
         .padding(8)
+    }
+
+    private func resultHeight(_ value: String?) -> CGFloat {
+        guard let value, !value.isEmpty else { return 70 }
+        return ResultCardMetrics.height(unicodeScalars: value.unicodeScalars.count)
     }
 }

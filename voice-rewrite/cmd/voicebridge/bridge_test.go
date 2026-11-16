@@ -399,6 +399,57 @@ func TestBridgePCMAndFrameLimits(t *testing.T) {
 	}
 }
 
+func TestBridgeClassifiedFailureUsesSharedRecovery(t *testing.T) {
+	const secret = "provider-body-must-not-appear"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, secret, http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	h := startBridge(t, defaultOptions())
+	h.send(requestForASR("auth", configFor(srv.URL)))
+	reply := h.receive()
+	data, err := json.Marshal(reply)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte(secret)) {
+		t.Fatal("classified bridge error leaked the provider body")
+	}
+	if reply.OK || reply.Error == nil || reply.Error.Code != "asr_failed" || !strings.Contains(reply.Error.Message, "API 验证失败") {
+		t.Fatalf("expected shared recovery text: %#v", reply)
+	}
+	h.close()
+}
+
+func TestBridgeParsesSharedShortcut(t *testing.T) {
+	h := startBridge(t, defaultOptions())
+	h.send(map[string]any{"v": 1, "id": "shortcut", "op": "parse_shortcut", "shortcut": "ctrl+alt+r"})
+	reply := h.receive()
+	if !reply.OK || reply.Result == nil {
+		t.Fatalf("shortcut: %#v", reply)
+	}
+	result := object(t, reply.Result)
+	if result["normalized"] != "Ctrl+Alt+R" || result["key"] != "R" || result["ctrl"] != true || result["alt"] != true || result["mouse"] != false {
+		t.Fatalf("binding: %#v", result)
+	}
+	h.send(map[string]any{"v": 1, "id": "bad-shortcut", "op": "parse_shortcut", "shortcut": "Shift+A"})
+	rejected := h.receive()
+	if rejected.OK || rejected.Error == nil || rejected.Error.Code != "invalid_shortcut" {
+		t.Fatalf("invalid shortcut accepted: %#v", rejected)
+	}
+	h.close()
+}
+
+func TestBridgeUpdateRejectsUnknownVersionWithoutNetwork(t *testing.T) {
+	h := startBridge(t, defaultOptions())
+	h.send(map[string]any{"v": 1, "id": "update", "op": "check_update", "current_version": "not-a-version"})
+	reply := h.receive()
+	if reply.OK || reply.Error == nil || reply.Error.Code != "update_failed" || !strings.Contains(reply.Error.Message, "未识别的版本") {
+		t.Fatalf("update check: %#v", reply)
+	}
+	h.close()
+}
+
 func TestBridgePrivateErrorsDoNotEchoInputs(t *testing.T) {
 	privateKey := "secret-key-should-not-appear"
 	privateText := "private-selection-should-not-appear"

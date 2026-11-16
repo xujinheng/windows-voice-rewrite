@@ -13,6 +13,10 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 	"unsafe"
+
+	"voicerewrite/internal/core/desktop"
+	"voicerewrite/internal/core/popup"
+	"voicerewrite/internal/core/texttarget"
 )
 
 // The result card is an ordinary HWND with a complete Win32 message pump.
@@ -181,7 +185,7 @@ func nativePasswordFieldFocused(target uintptr) bool {
 	info := guiThreadInfo{Size: uint32(unsafe.Sizeof(guiThreadInfo{}))}
 	if ok, _, _ := procGetGUIThreadInfo.Call(tid, uintptr(unsafe.Pointer(&info))); ok != 0 && info.Focus != 0 {
 		style, _, _ := procGetWindowLongPtr.Call(info.Focus, GWL_STYLE)
-		if nativePasswordControl(windowClassName(info.Focus), style) {
+		if texttarget.NativePassword(windowClassName(info.Focus), uint32(style)) {
 			return true
 		}
 	}
@@ -190,10 +194,7 @@ func nativePasswordFieldFocused(target uintptr) bool {
 
 func isSafelyEditableControl(target uintptr) bool {
 	focusClass := foregroundFocusedClass(target)
-	if focusClass == "" {
-		return false
-	}
-	if focusClass != "edit" && !strings.HasPrefix(focusClass, "richedit") && !strings.HasPrefix(focusClass, "windowsforms10.edit") {
+	if focusClass == "" || !texttarget.NativeEditClass(focusClass) {
 		return false
 	}
 	tid, _, _ := procGetWindowThreadProcessId.Call(target, 0)
@@ -209,12 +210,7 @@ func isSafelyEditableControl(target uintptr) bool {
 // A positive value only authorizes a guarded PASTE PROBE for explicit edits,
 // never an unconditional replacement or general-purpose write permission.
 func isBrowserEditorSurface(target uintptr) bool {
-	focus := foregroundFocusedClass(target)
-	root := windowClassName(target)
-	if focus == "" {
-		return false
-	}
-	return (strings.Contains(root, "chrome_widgetwin") || strings.Contains(root, "mozillawindowclass")) && (strings.Contains(focus, "chrome") || strings.Contains(focus, "mozilla") || strings.Contains(focus, "renderwidget"))
+	return texttarget.BrowserEditorSurface(windowClassName(target), foregroundFocusedClass(target))
 }
 func currentCursorPoint() trayPoint {
 	var p trayPoint
@@ -232,7 +228,7 @@ func (p *answerPopup) setNote(s string) {
 	runtime.KeepAlive(label)
 }
 func (p *answerPopup) apply() {
-	if p == nil || p.app == nil || p.selection == nil || !p.allowApply || p.canceled.Load() || !p.app.epoch.valid(p.generation) {
+	if p == nil || p.app == nil || p.selection == nil || !p.allowApply || p.canceled.Load() || !p.app.epoch.Valid(p.generation) {
 		return
 	}
 	if !p.app.busy.CompareAndSwap(false, true) {
@@ -255,7 +251,7 @@ func (p *answerPopup) apply() {
 	go func() {
 		defer app.busy.Store(false)
 		time.Sleep(90 * time.Millisecond)
-		err := replaceSelectionWithGuard(app.Window, sel, body, app.cfg, !isSafelyEditableControl(sel.TargetWindow), func() bool { return !p.canceled.Load() && app.epoch.valid(p.generation) })
+		err := replaceSelectionWithGuard(app.Window, sel, body, app.cfg, !isSafelyEditableControl(sel.TargetWindow), func() bool { return !p.canceled.Load() && app.epoch.Valid(p.generation) })
 		if err != nil {
 			app.logger.Printf("manual apply failed: %v", err)
 		} else {
@@ -569,12 +565,12 @@ func showAnswerPopup(msg popupMessage) error {
 	// Never truncate a model response: users must be able to review and copy
 	// the full answer, including large translations and generated documents.
 	n := utf8.RuneCountInString(msg.body)
-	logicalW, logicalH := popupSizeForText(n)
+	logicalW, logicalH := popup.SizeForText(n)
 	// Keep result on the source monitor's WORK AREA, including negative coordinates.
 	work := uxWorkAreaForPoint(msg.anchor)
 	scale := uxMonitorScaleForPoint(msg.anchor)
 	width, height := int32(float64(logicalW)*scale), int32(float64(logicalH)*scale)
-	x, y, width, height := desktopPopupPlacement(msg.anchor.X, msg.anchor.Y, width, height, work)
+	x, y, width, height := desktop.PlacePopup(msg.anchor.X, msg.anchor.Y, width, height, work)
 	class, _ := syscall.UTF16PtrFromString("VoiceRewrite.ResultCard")
 	instance, _, _ := procGetModuleHandle.Call(0)
 	wc := trayWindowClass{Size: uint32(unsafe.Sizeof(trayWindowClass{})), Style: 0x00020000, WndProc: answerWndProcCallback, Instance: instance, ClassName: class}
@@ -616,7 +612,8 @@ func showAnswerPopup(msg popupMessage) error {
 	}
 	// No permanent status copy: the body is the product. A slim inline
 	// status appears only after an actual Copy/Apply action.
-	note, err := makeChild("STATIC", "", WS_CHILD|WS_VISIBLE, px(132), px(16), cw-px(190), px(20), hwnd, 0)
+	noteRect := popup.Note(cw, scale)
+	note, err := makeChild("STATIC", "", WS_CHILD|WS_VISIBLE, noteRect.X, noteRect.Y, noteRect.W, noteRect.H, hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err

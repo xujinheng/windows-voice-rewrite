@@ -33,6 +33,12 @@ type Config struct {
 	SelectionCopyTimeoutMS int    `json:"selection_copy_timeout_ms"`
 }
 
+const (
+	RecordSecondsMin     = 1
+	RecordSecondsMax     = 180
+	DefaultRecordSeconds = 60
+)
+
 func Defaults() Config {
 	return Config{
 		MeetingASRMode:         "llama-prefix",
@@ -45,7 +51,7 @@ func Defaults() Config {
 		DictationHotkey:        "Mouse4",
 		RecordMode:             "hold",
 		HotkeyExit:             "Ctrl+Alt+F10",
-		MaxRecordSeconds:       60,
+		MaxRecordSeconds:       DefaultRecordSeconds,
 		MaxSelectedRunes:       12000,
 		MaxResponseTokens:      1200,
 		SelectionCopyAttempts:  2,
@@ -100,8 +106,8 @@ func Normalize(cfg Config) (Config, error) {
 	if cfg.MaxResponseTokens < 128 || cfg.MaxResponseTokens > 4096 {
 		cfg.MaxResponseTokens = 1200
 	}
-	if cfg.MaxRecordSeconds <= 0 || cfg.MaxRecordSeconds > 180 {
-		cfg.MaxRecordSeconds = 60
+	if cfg.MaxRecordSeconds < RecordSecondsMin || cfg.MaxRecordSeconds > RecordSecondsMax {
+		cfg.MaxRecordSeconds = DefaultRecordSeconds
 	}
 	if cfg.MaxSelectedRunes <= 0 || cfg.MaxSelectedRunes > 100000 {
 		cfg.MaxSelectedRunes = 12000
@@ -112,6 +118,8 @@ func Normalize(cfg Config) (Config, error) {
 	if cfg.SelectionCopyTimeoutMS < 500 || cfg.SelectionCopyTimeoutMS > 5000 {
 		cfg.SelectionCopyTimeoutMS = 1800
 	}
+	cfg.ASRBaseURL = strings.TrimSpace(cfg.ASRBaseURL)
+	cfg.LLMBaseURL = strings.TrimSpace(cfg.LLMBaseURL)
 	for _, base := range []string{cfg.ASRBaseURL, cfg.LLMBaseURL} {
 		if err := ValidateBaseURL(base); err != nil {
 			return cfg, fmt.Errorf("无效的 API 地址: %w", err)
@@ -141,4 +149,43 @@ func ValidateBaseURL(base string) error {
 		return errors.New("服务地址必须是无用户名、查询参数或锚点的 http(s) API 基础 URL")
 	}
 	return nil
+}
+
+const (
+	MaxEndpointBytes = 500
+	MaxModelIDBytes  = 150
+)
+
+// Endpoints is the non-secret ASR and LLM identity stored by both desktop hosts.
+type Endpoints struct {
+	ASRBaseURL string
+	ASRModel   string
+	LLMBaseURL string
+	TextModel  string
+}
+
+// CanonicalEndpoints trims addresses, drops a trailing slash, and fills empty
+// model names with the product defaults. It rejects addresses ValidateBaseURL
+// rejects and fields that exceed the settings form limits.
+func CanonicalEndpoints(asrURL, asrModel, llmURL, textModel string) (Endpoints, error) {
+	asrURL = strings.TrimRight(strings.TrimSpace(asrURL), "/")
+	llmURL = strings.TrimRight(strings.TrimSpace(llmURL), "/")
+	asrModel = strings.TrimSpace(asrModel)
+	textModel = strings.TrimSpace(textModel)
+	if len(asrURL) > MaxEndpointBytes || len(llmURL) > MaxEndpointBytes || len(asrModel) > MaxModelIDBytes || len(textModel) > MaxModelIDBytes {
+		return Endpoints{}, errors.New("输入内容过长")
+	}
+	if err := ValidateBaseURL(asrURL); err != nil {
+		return Endpoints{}, errors.New("请输入有效的 http:// 或 https:// 服务地址")
+	}
+	if err := ValidateBaseURL(llmURL); err != nil {
+		return Endpoints{}, errors.New("请输入有效的 http:// 或 https:// 服务地址")
+	}
+	if asrModel == "" {
+		asrModel = "whisper-1"
+	}
+	if textModel == "" {
+		textModel = "auto"
+	}
+	return Endpoints{ASRBaseURL: asrURL, ASRModel: asrModel, LLMBaseURL: llmURL, TextModel: textModel}, nil
 }

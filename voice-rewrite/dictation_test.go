@@ -9,35 +9,6 @@ import (
 	"voicerewrite/internal/core/speech"
 )
 
-func TestDualMouseFlows(t *testing.T) {
-	for _, tc := range []struct {
-		button uint16
-		want   string
-	}{
-		{1, "dictation"}, {2, "rewrite"}, {3, "ignore"}, {0, "ignore"},
-	} {
-		if got := sideButtonFlow(tc.button, 2, 1); got != tc.want {
-			t.Fatalf("%d: %q != %q", tc.button, got, tc.want)
-		}
-	}
-	if got := sideButtonFlow(2, 0, 1); got != "ignore" {
-		t.Fatalf("unexpected: %s", got)
-	}
-}
-func TestRMSLevel(t *testing.T) {
-	if pcmRMSLevel(nil) != 0 || pcmRMSLevel(make([]byte, 6400)) != 0 {
-		t.Fatal("silence must be 0")
-	}
-	loud := make([]byte, 6400)
-	for i := 0; i < len(loud); i += 2 {
-		loud[i] = 0xff
-		loud[i+1] = 0x7f
-	}
-	if got := pcmRMSLevel(loud); got < 990 || got > 1000 {
-		t.Fatalf("loud=%d", got)
-	}
-}
-
 func TestDictationTranscribesWithoutLLM(t *testing.T) {
 	var asrCalls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

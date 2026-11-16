@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
+
+	"voicerewrite/internal/core/audio"
 )
 
 type audioResult struct {
@@ -122,7 +124,7 @@ func (r *audioRecorder) collect() {
 				n = len(r.bufs[i])
 			}
 			if n > 0 {
-				r.level.Store(pcmRMSLevel(r.bufs[i][:n]))
+				r.level.Store(audio.RMSLevel(r.bufs[i][:n]))
 				pcm.Write(r.bufs[i][:n])
 			}
 			atomic.StoreUint32(&hdr.BytesRecorded, 0)

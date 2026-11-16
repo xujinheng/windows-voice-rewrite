@@ -8,6 +8,15 @@ public enum ClipboardFailure: Error, Equatable, Sendable {
     case restoreFailed
 }
 
+/// Matches core `clipboard.MayRestore`: a zero sequence never proves ownership,
+/// and a changed sequence belongs to someone else.
+public enum ClipboardOwnership {
+    public static func mayRestore(hasOriginal: Bool, owned: Int, current: Int?) -> Bool {
+        guard let current else { return false }
+        return hasOriginal && owned != 0 && current == owned
+    }
+}
+
 /// Exact opaque bytes for every type in every pasteboard item. Empty items are preserved.
 public struct ClipboardContents: Sendable, Equatable {
     public let items: [[String: Data]]
@@ -49,7 +58,7 @@ public final class ClipboardProtector: @unchecked Sendable {
             let id = UUID()
             do {
                 let count = try board.installTemporaryText(text, owner: id)
-                guard board.ownedChangeCount(owner: id) == count else {
+                guard ClipboardOwnership.mayRestore(hasOriginal: true, owned: count, current: board.ownedChangeCount(owner: id)) else {
                     throw ClipboardFailure.ownershipLost
                 }
                 lease = (id, before, count)
@@ -68,7 +77,8 @@ public final class ClipboardProtector: @unchecked Sendable {
     public func isOwned(_ id: UUID) -> Bool {
         synchronized {
             guard let held = lease, held.id == id else { return false }
-            return board.ownedChangeCount(owner: id) == held.ownedChangeCount
+            return ClipboardOwnership.mayRestore(
+                hasOriginal: true, owned: held.ownedChangeCount, current: board.ownedChangeCount(owner: id))
         }
     }
 
@@ -77,7 +87,8 @@ public final class ClipboardProtector: @unchecked Sendable {
         try synchronized {
             guard let held = lease, held.id == id else { throw ClipboardFailure.ownershipLost }
             lease = nil
-            guard board.ownedChangeCount(owner: id) == held.ownedChangeCount else {
+            guard ClipboardOwnership.mayRestore(
+                hasOriginal: true, owned: held.ownedChangeCount, current: board.ownedChangeCount(owner: id)) else {
                 throw ClipboardFailure.ownershipLost
             }
             do { try board.restore(held.before) }

@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	coreconfig "voicerewrite/internal/core/config"
 )
 
 func TestModelProbeStatuses(t *testing.T) {
@@ -37,10 +39,10 @@ func TestModelProbeStatuses(t *testing.T) {
 }
 
 func TestModelProbeRejectsTokenInURL(t *testing.T) {
-	if uxValidURL("http://localhost:8080/v1?api_key=secret") {
+	if coreconfig.ValidateBaseURL("http://localhost:8080/v1?api_key=secret") == nil {
 		t.Fatal("API base URL must not contain query secrets")
 	}
-	if !uxValidURL("https://localhost:8080/v1") {
+	if coreconfig.ValidateBaseURL("https://localhost:8080/v1") != nil {
 		t.Fatal("valid local secure URL rejected")
 	}
 }

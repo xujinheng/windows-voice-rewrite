@@ -38,6 +38,8 @@ struct SideButtonHoldState {
     private(set) var pressed: [Int: Press] = [:]
     private var sequence: UInt64 = 0
 
+    var hasPendingPress: Bool { pressed.values.contains { !$0.active } }
+
     mutating func press(_ button: Int) -> UInt64? {
         guard pressed[button] == nil, sequence < UInt64.max else { return nil }
         sequence += 1
@@ -78,6 +80,8 @@ private let mouseTapCallback: CGEventTapCallBack = { _, type, event, userData in
 @MainActor
 public final class SideMouseButtonDriver {
     private let threshold: TimeInterval
+    private let onPress: @MainActor (SideMouseAction) -> Void
+    private let onPreviewDismissed: @MainActor () -> Void
     private let onHold: @MainActor (SideMouseAction, Int32?) -> Void
     private let onRelease: @MainActor (SideMouseAction) -> Void
     private let onCancel: @MainActor () -> Void
@@ -91,12 +95,16 @@ public final class SideMouseButtonDriver {
 
     public init(
         threshold: TimeInterval = 0.28,
+        onPress: @escaping @MainActor (SideMouseAction) -> Void = { _ in },
+        onPreviewDismissed: @escaping @MainActor () -> Void = {},
         onHold: @escaping @MainActor (SideMouseAction, Int32?) -> Void,
         onRelease: @escaping @MainActor (SideMouseAction) -> Void,
         onCancel: @escaping @MainActor () -> Void,
         onObservedButton: @escaping @MainActor (Int) -> Void = { _ in }
     ) {
         self.threshold = threshold
+        self.onPress = onPress
+        self.onPreviewDismissed = onPreviewDismissed
         self.onHold = onHold
         self.onRelease = onRelease
         self.onCancel = onCancel
@@ -139,6 +147,7 @@ public final class SideMouseButtonDriver {
     }
 
     public func shutdown() {
+        let pending = state.hasPendingPress
         let active = state.reset()
         downEvents.removeAll()
         targetPIDs.removeAll()
@@ -148,14 +157,17 @@ public final class SideMouseButtonDriver {
         source = nil
         tap = nil
         if active { onCancel() }
+        else if pending { onPreviewDismissed() }
     }
 
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            let pending = state.hasPendingPress
             let active = state.reset()
             downEvents.removeAll()
             targetPIDs.removeAll()
             if active { onCancel() }
+            else if pending { onPreviewDismissed() }
             if type == .tapDisabledByTimeout, let tap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
@@ -174,6 +186,7 @@ public final class SideMouseButtonDriver {
         switch type {
         case .otherMouseDown:
             guard let token = state.press(button) else { return nil }
+            onPress(action)
             downEvents[button] = event.copy()
             targetPIDs[button] = NSWorkspace.shared.frontmostApplication?.processIdentifier
             DispatchQueue.main.asyncAfter(deadline: .now() + threshold) { [weak self] in
@@ -188,6 +201,7 @@ public final class SideMouseButtonDriver {
             targetPIDs.removeValue(forKey: button)
             switch release {
             case .short:
+                onPreviewDismissed()
                 if let down { replay(down: down, up: event) }
             case .held:
                 onRelease(action)

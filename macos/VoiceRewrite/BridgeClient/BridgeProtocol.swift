@@ -73,6 +73,12 @@ struct BridgeRequest {
 struct BridgeErrorMessage: Decodable, Equatable {
     let code: String
     let message: String
+
+    /// Catalog recovery text from core when present; otherwise the stable error code.
+    var userText: String {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? code : trimmed
+    }
 }
 
 struct BridgeReply: Decodable, Equatable {

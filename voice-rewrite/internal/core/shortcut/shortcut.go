@@ -1,0 +1,208 @@
+// Package shortcut normalizes voice hotkeys stored in configuration.
+// Modifier bits match the values Windows RegisterHotKey expects. Bare letters
+// are rejected so a shortcut cannot capture ordinary typing.
+package shortcut
+
+import (
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+const (
+	alt      uint32 = 0x0001
+	ctrl     uint32 = 0x0002
+	shift    uint32 = 0x0004
+	noRepeat uint32 = 0x4000
+
+	// Alt, Ctrl and Shift are the modifier bits stored with a keyboard shortcut.
+	Alt   = alt
+	Ctrl  = ctrl
+	Shift = shift
+)
+
+var namedKeys = map[string]uint32{
+	"SPACE": 0x20, "TAB": 0x09, "ENTER": 0x0D,
+	"LEFT": 0x25, "UP": 0x26, "RIGHT": 0x27, "DOWN": 0x28,
+	"HOME": 0x24, "END": 0x23, "PAGEUP": 0x21, "PAGEDOWN": 0x22,
+	"INSERT": 0x2D, "DELETE": 0x2E,
+}
+
+func keyName(vk uint32) string {
+	if vk >= 0x70 && vk <= 0x87 {
+		return fmt.Sprintf("F%d", vk-0x70+1)
+	}
+	if vk >= 'A' && vk <= 'Z' || vk >= '0' && vk <= '9' {
+		return string(rune(vk))
+	}
+	for name, key := range namedKeys {
+		if vk == key {
+			switch name {
+			case "PAGEUP":
+				return "PageUp"
+			case "PAGEDOWN":
+				return "PageDown"
+			default:
+				return strings.ToUpper(name[:1]) + strings.ToLower(name[1:])
+			}
+		}
+	}
+	return ""
+}
+
+// FromKey formats a physical key and Ctrl/Alt/Shift into the stored shortcut.
+func FromKey(vk, modifiers uint32) (string, error) {
+	name := keyName(vk)
+	if name == "" {
+		return "", errors.New("该按键不能用作全局录音快捷键")
+	}
+	if modifiers & ^(alt|ctrl|shift) != 0 {
+		return "", errors.New("Windows 系统键组合不支持录音快捷键")
+	}
+	if modifiers == 0 && (vk < 0x70 || vk > 0x87) {
+		return "", errors.New("单键仅支持 F1–F24；字母、数字和方向键请搭配 Ctrl 或 Alt")
+	}
+	if modifiers == shift && (vk < 0x70 || vk > 0x87) {
+		return "", errors.New("Shift+字母会干扰打字，请同时使用 Ctrl 或 Alt")
+	}
+	parts := []string{}
+	if modifiers&ctrl != 0 {
+		parts = append(parts, "Ctrl")
+	}
+	if modifiers&alt != 0 {
+		parts = append(parts, "Alt")
+	}
+	if modifiers&shift != 0 {
+		parts = append(parts, "Shift")
+	}
+	return strings.Join(append(parts, name), "+"), nil
+}
+
+// WindowsSideButton maps a stored shortcut to the XBUTTON id used by the mouse hook.
+// Mouse4 is XBUTTON1 (1) and Mouse5 is XBUTTON2 (2).
+func WindowsSideButton(s string) (uint16, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "mouse4", "xbutton1":
+		return 1, true
+	case "mouse5", "xbutton2":
+		return 2, true
+	default:
+		return 0, false
+	}
+}
+
+// Parse returns the canonical shortcut, modifier bits, virtual key, and whether
+// the value is a mouse side button. Keyboard modifiers include the no-repeat bit.
+func Parse(raw string) (string, uint32, uint32, bool, error) {
+	key := strings.TrimSpace(raw)
+	switch strings.ToLower(key) {
+	case "mouse4", "xbutton1":
+		return "Mouse4", 0, 0, true, nil
+	case "mouse5", "xbutton2":
+		return "Mouse5", 0, 0, true, nil
+	case "pause", "break":
+		return "Pause", noRepeat, 0x13, false, nil
+	}
+	parts := strings.Split(key, "+")
+	if len(parts) == 0 {
+		return "", 0, 0, false, errors.New("请按下快捷键")
+	}
+	var modifiers uint32
+	for _, token := range parts[:len(parts)-1] {
+		switch strings.ToLower(strings.TrimSpace(token)) {
+		case "ctrl", "control":
+			if modifiers&ctrl != 0 {
+				return "", 0, 0, false, errors.New("Ctrl 重复")
+			}
+			modifiers |= ctrl
+		case "alt":
+			if modifiers&alt != 0 {
+				return "", 0, 0, false, errors.New("Alt 重复")
+			}
+			modifiers |= alt
+		case "shift":
+			if modifiers&shift != 0 {
+				return "", 0, 0, false, errors.New("Shift 重复")
+			}
+			modifiers |= shift
+		default:
+			return "", 0, 0, false, fmt.Errorf("未知修饰键 %q", token)
+		}
+	}
+	last := strings.ToUpper(strings.TrimSpace(parts[len(parts)-1]))
+	var vk uint32
+	if strings.HasPrefix(last, "F") {
+		if n, err := strconv.Atoi(strings.TrimPrefix(last, "F")); err == nil && n >= 1 && n <= 24 {
+			vk = 0x70 + uint32(n) - 1
+		}
+	}
+	if vk == 0 && len(last) == 1 {
+		if last[0] >= 'A' && last[0] <= 'Z' || last[0] >= '0' && last[0] <= '9' {
+			vk = uint32(last[0])
+		}
+	}
+	if vk == 0 {
+		vk = namedKeys[last]
+	}
+	normalized, err := FromKey(vk, modifiers)
+	if err != nil {
+		return "", 0, 0, false, err
+	}
+	return normalized, modifiers | noRepeat, vk, false, nil
+}
+
+func validate(candidate, other, exit, label string) (string, error) {
+	normalized, _, vk, mouse, err := Parse(candidate)
+	if err != nil {
+		return "", err
+	}
+	if !mouse && vk == 0x13 {
+		return "", errors.New("Pause/Break 没有可靠的松开事件")
+	}
+	otherValue, _, _, _, _ := Parse(other)
+	exitValue, _, _, _, _ := Parse(exit)
+	if normalized == otherValue || normalized == exitValue {
+		return "", fmt.Errorf("%s不能与另一语音功能或退出快捷键相同", label)
+	}
+	return normalized, nil
+}
+
+func ValidateDictation(candidate, rewrite, exit string) (string, error) {
+	return validate(candidate, rewrite, exit, "听写快捷键")
+}
+
+func ValidateRewrite(candidate, dictation, exit string) (string, error) {
+	return validate(candidate, dictation, exit, "语音指令快捷键")
+}
+
+// Binding is the keyboard or mouse action described by a stored shortcut.
+// Key is the canonical name, such as R, F8, or PageDown. Virtual-key numbers
+// stay inside Parse for the Windows host.
+type Binding struct {
+	Normalized string
+	Key        string
+	Mouse      bool
+	Ctrl       bool
+	Alt        bool
+	Shift      bool
+}
+
+func Bind(raw string) (Binding, error) {
+	normalized, modifiers, _, mouse, err := Parse(raw)
+	if err != nil {
+		return Binding{}, err
+	}
+	key := normalized
+	if i := strings.LastIndex(normalized, "+"); i >= 0 {
+		key = normalized[i+1:]
+	}
+	return Binding{
+		Normalized: normalized,
+		Key:        key,
+		Mouse:      mouse,
+		Ctrl:       modifiers&Ctrl != 0,
+		Alt:        modifiers&Alt != 0,
+		Shift:      modifiers&Shift != 0,
+	}, nil
+}

@@ -11,6 +11,10 @@ import (
 	"sync"
 	"syscall"
 	"unsafe"
+
+	"voicerewrite/internal/core/desktop"
+	"voicerewrite/internal/core/settingsform"
+	"voicerewrite/internal/core/shortcut"
 )
 
 // A small, native settings surface; it does not host a browser or intercept
@@ -129,12 +133,12 @@ type uxControl struct {
 }
 
 func uxLayoutRect(c uxControl, clientWidth int32) (x, y, w, h int32) {
-	return layoutSettingsRect(uxLayoutSpec{x: c.x, y: c.y, w: c.w, h: c.h, stretch: c.stretch, right: c.right}, clientWidth)
+	return settingsform.Layout(settingsform.Spec{X: c.x, Y: c.y, W: c.w, H: c.h, Stretch: c.stretch, Right: c.right}, clientWidth)
 }
 
 // 96-DPI logical coordinate scrolling avoids inaccessible buttons on small
 // work areas and 125%–200% display scaling.
-const uxContentWidth, uxContentHeight int32 = 816, 484
+const uxContentWidth, uxContentHeight int32 = settingsform.DesignWidth, settingsform.DesignHeight
 
 type uxScrollInfo struct {
 	Size, Mask    uint32
@@ -143,15 +147,6 @@ type uxScrollInfo struct {
 	Pos, TrackPos int32
 }
 
-func uxScrollClamp(n, limit int32) int32 {
-	if n < 0 {
-		return 0
-	}
-	if n > limit {
-		return limit
-	}
-	return n
-}
 func (p *uxSettings) layout() {
 	if p == nil || p.window == 0 {
 		return
@@ -172,8 +167,8 @@ func (p *uxSettings) layout() {
 	if maxY < 0 {
 		maxY = 0
 	}
-	p.scrollX = uxScrollClamp(p.scrollX, maxX)
-	p.scrollY = uxScrollClamp(p.scrollY, maxY)
+	p.scrollX = settingsform.ClampScroll(p.scrollX, maxX)
+	p.scrollY = settingsform.ClampScroll(p.scrollY, maxY)
 	for _, spec := range []struct {
 		axis               uintptr
 		content, page, pos int32
@@ -298,7 +293,7 @@ func (p *uxSettings) scroll(axis, request uintptr) {
 		procGetScrollInfoUX.Call(p.window, axis, uintptr(unsafe.Pointer(&info)))
 		*pos = info.TrackPos
 	}
-	*pos = uxScrollClamp(*pos+delta, max)
+	*pos = settingsform.ClampScroll(*pos+delta, max)
 	p.layout()
 }
 
@@ -363,7 +358,7 @@ func uxCurrentShortcutModifiers() uint32 {
 		vk   uintptr
 		flag uint32
 	}{
-		{VK_CONTROL, shortcutCtrl}, {VK_MENU, shortcutAlt}, {VK_SHIFT, shortcutShift},
+		{VK_CONTROL, shortcut.Ctrl}, {VK_MENU, shortcut.Alt}, {VK_SHIFT, shortcut.Shift},
 	} {
 		state, _, _ := procGetAsyncKeyState.Call(m.vk)
 		if state&0x8000 != 0 {
@@ -386,7 +381,7 @@ func (p *uxSettings) acceptShortcutKey(vk, mods uint32) {
 		uxSetText(p.hint, "Windows 系统键组合不可录入，请使用 Ctrl/Alt/Shift")
 		return
 	}
-	candidate, err := shortcutFromKey(vk, mods)
+	candidate, err := shortcut.FromKey(vk, mods)
 	if err != nil {
 		uxSetText(p.hint, "无法录入："+err.Error())
 		return
@@ -402,10 +397,10 @@ func (p *uxSettings) acceptShortcut(candidate string) {
 	var target uintptr
 	if p.capturingShortcut == uxCaptureRewrite {
 		target = p.rewriteShortcut
-		normalized, err = uxRewriteShortcut(candidate, uxWinText(p.shortcut), p.app.cfg.HotkeyExit)
+		normalized, err = shortcut.ValidateRewrite(candidate, uxWinText(p.shortcut), p.app.cfg.HotkeyExit)
 	} else {
 		target = p.shortcut
-		normalized, err = uxDictationShortcut(candidate, uxWinText(p.rewriteShortcut), p.app.cfg.HotkeyExit)
+		normalized, err = shortcut.ValidateDictation(candidate, uxWinText(p.rewriteShortcut), p.app.cfg.HotkeyExit)
 	}
 	if err != nil {
 		uxSetText(p.hint, "无法录入："+err.Error())
@@ -505,11 +500,11 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			bounds := (*uxMinMaxInfo)(unsafe.Pointer(lParam))
 			work := uxWorkAreaAtCursor()
 			minW, minH := int32(480*p.scale), int32(420*p.scale)
-			if minW > work.right-work.left-12 {
-				minW = work.right - work.left - 12
+			if minW > work.Right-work.Left-12 {
+				minW = work.Right - work.Left - 12
 			}
-			if minH > work.bottom-work.top-12 {
-				minH = work.bottom - work.top - 12
+			if minH > work.Bottom-work.Top-12 {
+				minH = work.Bottom - work.Top - 12
 			}
 			bounds.MinSize = trayPoint{X: minW, Y: minH}
 		}
@@ -718,11 +713,11 @@ func (p *uxSettings) save() error {
 	}
 	newRewrite := strings.TrimSpace(uxWinText(p.rewriteShortcut))
 	newDictation := strings.TrimSpace(uxWinText(p.shortcut))
-	newRewrite, err = uxRewriteShortcut(newRewrite, newDictation, cfg.HotkeyExit)
+	newRewrite, err = shortcut.ValidateRewrite(newRewrite, newDictation, cfg.HotkeyExit)
 	if err != nil {
 		return err
 	}
-	newDictation, err = uxDictationShortcut(newDictation, newRewrite, cfg.HotkeyExit)
+	newDictation, err = shortcut.ValidateDictation(newDictation, newRewrite, cfg.HotkeyExit)
 	if err != nil {
 		return err
 	}
@@ -811,7 +806,7 @@ func uxCenteredWindow(w, h int32) (int32, int32) {
 	return (int32(width) - w) / 2, (int32(height) - h) / 2
 }
 
-func uxWorkAreaAtCursor() desktopWorkArea { return uxWorkAreaForPoint(currentCursorPoint()) }
+func uxWorkAreaAtCursor() desktop.WorkArea { return uxWorkAreaForPoint(currentCursorPoint()) }
 
 func showNativeSettings(app *appState) error {
 	restoreDPI := handyAwareWindowThread()
@@ -836,7 +831,7 @@ func showNativeSettings(app *appState) error {
 	}
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*scale + 0.5)) }
 	work := uxWorkAreaAtCursor()
-	winW, winH := desktopFitSize(int32(sc(860)), int32(sc(530)), work, 12)
+	winW, winH := desktop.Fit(int32(sc(860)), int32(sc(530)), work, 12)
 	x, y := uxCenteredWindow(winW, winH)
 	h, _, createErr := procCreateWindow.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),
 		uxWSCaption|uxWSSysMenu|uxWSMinimizeBox|uxWSThickFrame|WS_VSCROLL|0x00100000, uintptr(x), uintptr(y), uintptr(winW), uintptr(winH), 0, 0, module, 0)
@@ -895,9 +890,9 @@ func showNativeSettings(app *appState) error {
 	head := makeOne("STATIC", "设置", uxWSChild, 0, 0, 1, 1, 0, false)
 	setFont(head, p.titleFont)
 	start := len(p.controls)
-	firstLabel, firstEdit := settingsFieldLabel(0), settingsFieldEdit(0)
-	secondLabel, secondEdit := settingsFieldLabel(1), settingsFieldEdit(1)
-	thirdLabel, thirdEdit := settingsFieldLabel(2), settingsFieldEdit(2)
+	firstLabel, firstEdit := settingsform.FieldLabel(0), settingsform.FieldEdit(0)
+	secondLabel, secondEdit := settingsform.FieldLabel(1), settingsform.FieldEdit(1)
+	thirdLabel, thirdEdit := settingsform.FieldLabel(2), settingsform.FieldEdit(2)
 	makeOne("STATIC", "API 地址", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
 	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, firstEdit.X, firstEdit.Y, firstEdit.W, firstEdit.H, uxASRURLInput, false)
 	makeOne("STATIC", "模型 ID", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
@@ -923,9 +918,9 @@ func showNativeSettings(app *appState) error {
 	}
 	start = len(p.controls)
 	// Shortcut displays are read-only; the recorder button captures physical events.
-	short0 := settingsShortcutEdit()
+	short0 := settingsform.ShortcutEdit()
 	short1 := short0
-	short1.Y += settingsFieldRowStep
+	short1.Y += settingsform.RowStep
 	makeOne("STATIC", "语音指令", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
 	p.rewriteShortcut = makeOne("EDIT", app.cfg.HotkeyRecord, edit|0x0800, short0.X, short0.Y, short0.W, short0.H, uxRewriteInput, false)
 	p.captureButtons[0] = makeOne("BUTTON", "录入按键", btn, 593, 169, 194, 34, uxCaptureRewrite, false)

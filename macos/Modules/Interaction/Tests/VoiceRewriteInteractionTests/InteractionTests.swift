@@ -278,6 +278,14 @@ final class ClipboardTests: XCTestCase {
         XCTAssertEqual(board.restores, 0)
     }
 
+    func testZeroChangeCountIsNotOwnership() {
+        XCTAssertFalse(ClipboardOwnership.mayRestore(hasOriginal: true, owned: 0, current: 0))
+        XCTAssertFalse(ClipboardOwnership.mayRestore(hasOriginal: true, owned: 11, current: 12))
+        XCTAssertFalse(ClipboardOwnership.mayRestore(hasOriginal: false, owned: 11, current: 11))
+        XCTAssertFalse(ClipboardOwnership.mayRestore(hasOriginal: true, owned: 11, current: nil))
+        XCTAssertTrue(ClipboardOwnership.mayRestore(hasOriginal: true, owned: 11, current: 11))
+    }
+
     func testPartialWriteFailureRestoresOnlyIfOwned() async throws {
         let board = FakeClipboard(), protector = ClipboardProtector(board: board)
         let original = board.current.items

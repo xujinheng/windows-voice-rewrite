@@ -58,7 +58,7 @@ func EncodeWAV(pcm []byte) ([]byte, error) {
 	if len(pcm) == 0 || len(pcm)%2 != 0 {
 		return nil, errors.New("录音为空或 PCM 长度无效")
 	}
-	if len(pcm) > 16000*2*180 {
+	if len(pcm) > 16000*2*coreconfig.RecordSecondsMax {
 		return nil, errors.New("录音超出时长限制")
 	}
 	b := make([]byte, 44+len(pcm))
@@ -99,7 +99,7 @@ func Transcribe(ctx context.Context, cfg coreconfig.Config, pcm []byte) (string,
 	return audio.JoinASRChunks(results), nil
 }
 
-// transcribeChunk is one HTTP request; taskEpoch cancellation propagates
+// transcribeChunk is one HTTP request; the session epoch's cancellation propagates
 // through the request context to stop outstanding network I/O immediately.
 func NewASRRequest(ctx context.Context, cfg coreconfig.Config, pcm []byte) (*http.Request, error) {
 	wav, err := EncodeWAV(pcm)
