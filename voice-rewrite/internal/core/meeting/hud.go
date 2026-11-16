@@ -114,6 +114,12 @@ func ButtonFace(id int, view ButtonView) string {
 	}
 }
 
+// ReadingBody is a caption, translation, reply, expression, instruction, or profile field.
+// The live caption is not one of these fields.
+func ReadingBody(captions, english, chinese, responses, expression, source, instruction, background, terms bool) bool {
+	return captions || english || chinese || responses || expression || source || instruction || background || terms
+}
+
 // ReadingPaint uses the primary ink for the live caption and the surface for every reading control.
 // The live caption stays on the surface even when the caller does not repeat that.
 func ReadingPaint(live, reading bool) (primaryText, surface bool) {

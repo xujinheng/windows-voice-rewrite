@@ -665,7 +665,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			}
 			return 0
 		case WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC:
-			reading := lParam == p.captions || lParam == p.currentEnglish || lParam == p.currentChinese || lParam == p.responses || lParam == p.expression || lParam == p.expressionSource || lParam == p.instruction || lParam == p.profileBackground || lParam == p.profileTerms
+			reading := meetingcore.ReadingBody(lParam == p.captions, lParam == p.currentEnglish, lParam == p.currentChinese, lParam == p.responses, lParam == p.expression, lParam == p.expressionSource, lParam == p.instruction, lParam == p.profileBackground, lParam == p.profileTerms)
 			primary, surface := meetingcore.ReadingPaint(lParam == p.live, reading)
 			if primary {
 				procSetTextColor.Call(wParam, p.palette.color(p.palette.primary))

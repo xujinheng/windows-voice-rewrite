@@ -5,6 +5,24 @@ import (
 	"testing"
 )
 
+func TestReadingBodyLeavesTheLiveCaptionOut(t *testing.T) {
+	if ReadingBody(false, false, false, false, false, false, false, false, false) {
+		t.Fatal("empty")
+	}
+	flags := []bool{false, false, false, false, false, false, false, false, false}
+	for i := range flags {
+		flags[i] = true
+		if !ReadingBody(flags[0], flags[1], flags[2], flags[3], flags[4], flags[5], flags[6], flags[7], flags[8]) {
+			t.Fatal(i)
+		}
+		flags[i] = false
+	}
+	primary, surface := ReadingPaint(true, false)
+	if !primary || !surface {
+		t.Fatal("live stays on the surface")
+	}
+}
+
 func TestReadingPaintKeepsTheLiveCaptionOnTheSurface(t *testing.T) {
 	primary, surface := ReadingPaint(true, false)
 	if !primary || !surface {
