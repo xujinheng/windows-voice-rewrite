@@ -21,4 +21,20 @@ func TestSampleMeetingStaysADemo(t *testing.T) {
 	if CopyFailed == ProfileSaveFailed || CopyFailed == ProfileOpenFailed || !strings.HasSuffix(CopyFailed, ": ") || strings.Contains(CopyFailed, "：") {
 		t.Fatalf("copy %q", CopyFailed)
 	}
+	text := AfterProfileText(true)
+	if text.TryMode || text.Close || text.StatusPrefix != ProfileSaveFailed {
+		t.Fatal("profile text")
+	}
+	ready := AfterProfileText(false)
+	if !ready.TryMode || ready.Close || ready.StatusPrefix != "" {
+		t.Fatal("profile text ok")
+	}
+	mode := AfterProfileMode(true)
+	if mode.Close || mode.StatusPrefix != ProfileModeFailed || mode.StatusPrefix == ProfileSaveFailed {
+		t.Fatal("profile mode")
+	}
+	saved := AfterProfileMode(false)
+	if !saved.Close || saved.StatusPrefix != "" {
+		t.Fatal("profile saved")
+	}
 }

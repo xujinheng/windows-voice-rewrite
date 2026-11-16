@@ -96,14 +96,18 @@ func (p *meetingHUD) saveProfile() {
 	if s == nil {
 		return
 	}
-	if err := s.updateProfile(uxWinText(p.profileBackground), uxWinText(p.profileTerms)); err != nil {
-		uxSetText(p.profileStatus, meetingcore.ProfileSaveFailed+err.Error())
+	textErr := s.updateProfile(uxWinText(p.profileBackground), uxWinText(p.profileTerms))
+	textStep := meetingcore.AfterProfileText(textErr != nil)
+	if !textStep.TryMode {
+		uxSetText(p.profileStatus, textStep.StatusPrefix+textErr.Error())
 		return
 	}
 	index, _, _ := procSendMessage.Call(p.profileMode, uxCBGetCurSel, 0, 0)
 	mode := config.MeetingASRModeAt(int(index))
-	if err := s.setASRMode(mode); err != nil {
-		uxSetText(p.profileStatus, meetingcore.ProfileModeFailed+err.Error())
+	modeErr := s.setASRMode(mode)
+	modeStep := meetingcore.AfterProfileMode(modeErr != nil)
+	if !modeStep.Close {
+		uxSetText(p.profileStatus, modeStep.StatusPrefix+modeErr.Error())
 		return
 	}
 	p.profileOpen = false
