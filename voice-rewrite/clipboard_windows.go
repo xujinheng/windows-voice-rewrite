@@ -54,14 +54,14 @@ func sendCombo(letter uint16) error {
 }
 func clipboardSeq() uintptr { n, _, _ := procGetClipboardSequenceNumber.Call(); return n }
 func openClipboard(hwnd uintptr) error {
-	for i := 0; i < 20; i++ {
+	for i := 0; i < clipboard.OpenAttempts; i++ {
 		ok, _, _ := procOpenClipboard.Call(hwnd)
 		if ok != 0 {
 			return nil
 		}
-		time.Sleep(25 * time.Millisecond)
+		time.Sleep(clipboard.OpenPause)
 	}
-	return errors.New("无法打开剪贴板（其他程序可能正在占用）")
+	return clipboard.OpenError()
 }
 func getClipboardText(hwnd uintptr) (string, bool, error) {
 	if e := openClipboard(hwnd); e != nil {
@@ -74,21 +74,21 @@ func getClipboardText(hwnd uintptr) (string, bool, error) {
 	}
 	p, _, _ := procGlobalLock.Call(h)
 	if p == 0 {
-		return "", false, errors.New("读取剪贴板失败")
+		return "", false, clipboard.ReadError()
 	}
 	defer procGlobalUnlock.Call(h)
 	// Limit reads to the actual allocation instead of assuming a huge buffer.
 	allocationSize, _, _ := procGlobalSize.Call(h)
-	if allocationSize < 2 || allocationSize > 8*1024*1024 {
-		return "", false, errors.New("剪贴板文本长度异常")
+	if !clipboard.TextBlockReadable(allocationSize) {
+		return "", false, clipboard.TextLengthError()
 	}
 	data := unsafe.Slice((*uint16)(unsafe.Pointer(p)), int(allocationSize/2))
 	n := 0
 	for n < len(data) && data[n] != 0 {
 		n++
 	}
-	if n == len(data) {
-		return "", false, errors.New("剪贴板文本长度异常")
+	if !clipboard.TextTerminated(n, len(data)) {
+		return "", false, clipboard.TextLengthError()
 	}
 	text := string(utf16.Decode(data[:n]))
 	return text, true, nil
@@ -103,22 +103,22 @@ func setClipboardText(hwnd uintptr, s string) error {
 	size := uintptr(len(chars) * 2)
 	h, _, _ := procGlobalAlloc.Call(GMEM_MOVEABLE, size)
 	if h == 0 {
-		return errors.New("剪贴板内存分配失败")
+		return clipboard.AllocError()
 	}
 	p, _, _ := procGlobalLock.Call(h)
 	if p == 0 {
 		procGlobalFree.Call(h)
-		return errors.New("无法锁定剪贴板内存")
+		return clipboard.LockError()
 	}
 	copy(unsafe.Slice((*uint16)(unsafe.Pointer(p)), len(chars)), chars)
 	procGlobalUnlock.Call(h)
 	if ok, _, _ := procEmptyClipboard.Call(); ok == 0 {
 		procGlobalFree.Call(h)
-		return errors.New("无法清空剪贴板")
+		return clipboard.EmptyError()
 	}
 	if out, _, _ := procSetClipboardData.Call(CF_UNICODETEXT, h); out == 0 {
 		procGlobalFree.Call(h)
-		return errors.New("无法写入剪贴板")
+		return clipboard.WriteError()
 	}
 	return nil
 }
