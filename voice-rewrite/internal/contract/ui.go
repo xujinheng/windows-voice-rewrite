@@ -1,6 +1,6 @@
 // Package contract is the settings catalog both desktop hosts render.
-// Native widgets and pixel placement stay in the host. Labels, order, and
-// which controls exist are decided here.
+// Native widgets and pixel placement stay in the host. Labels, order,
+// which controls exist, and the Windows button command are decided here.
 package contract
 
 type Platform string

@@ -48,20 +48,20 @@ const (
 	uxBSOwnerDraw             = 0x000B
 	uxEMSetMargins            = 0x00D3
 	uxWMProbeDone             = 0x8000 + 104
-	uxSaveButton              = 9101
-	uxCloseButton             = 9102
-	uxAdvancedButton          = 9103
-	uxProbeASRButton          = 9104
-	uxProbeLLMButton          = 9105
+	uxSaveButton              = contract.SaveButton
+	uxCloseButton             = contract.CloseButton
+	uxAdvancedButton          = contract.AdvancedButton
+	uxProbeASRButton          = contract.ProbeASRButton
+	uxProbeLLMButton          = contract.ProbeLLMButton
 	uxShortcutInput           = 9106
 	uxRewriteInput            = 9108
-	uxCaptureRewrite          = 9140
-	uxCaptureDictation        = 9141
+	uxCaptureRewrite          = contract.CaptureRewrite
+	uxCaptureDictation        = contract.CaptureDictation
 	WM_SETTINGS_CAPTURE_MOUSE = 0x8000 + 105
 	uxMicrophoneInput         = 9107
-	uxNavSpeech               = 9120
-	uxNavAI                   = 9121
-	uxNavInput                = 9122
+	uxNavSpeech               = contract.NavSpeech
+	uxNavAI                   = contract.NavAI
+	uxNavInput                = contract.NavInput
 	uxASRURLInput             = 9130
 	uxASRModelInput           = 9131
 	uxASRKeyInput             = 9132
@@ -576,23 +576,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 					return 1
 				}
 			}
-			label := ""
-			primary := false
-			switch item.CtlID {
-			case uxSaveButton:
-				label, primary = "保存设置", true
-			case uxCloseButton:
-				label = "关闭"
-			case uxAdvancedButton:
-				label = "高级配置"
-			case uxProbeASRButton, uxProbeLLMButton:
-				label = "测试连接"
-			case uxCaptureRewrite, uxCaptureDictation:
-				label = "录入按键"
-				if p.capturingShortcut == uintptr(item.CtlID) {
-					label = "等待按键…"
-				}
-			}
+			label, primary := contract.ButtonLabel(int(item.CtlID), p.capturingShortcut == uintptr(item.CtlID))
 			if label != "" && uiDrawActionButton(item, p.palette, p.font, label, primary) {
 				return 1
 			}
@@ -664,32 +648,32 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 					}
 				}
 			}
-			switch wParam & 0xffff {
-			case uxNavSpeech, uxNavAI, uxNavInput:
-				p.switchPage(int((wParam & 0xffff) - uxNavSpeech))
+			switch action, page := contract.Command(int(wParam & 0xffff)); action {
+			case contract.ActionPage:
+				p.switchPage(page)
 				return 0
-			case uxCaptureRewrite, uxCaptureDictation:
+			case contract.ActionCapture:
 				p.beginShortcutCapture(wParam & 0xffff)
 				return 0
-			case uxSaveButton:
+			case contract.ActionSave:
 				if err := p.save(); err != nil {
 					uxSetText(p.hint, "保存失败："+err.Error())
 				} else {
 					// save() provides the precise message, including restart notices.
 				}
 				return 0
-			case uxCloseButton:
+			case contract.ActionClose:
 				procDestroyWindow.Call(hwnd)
 				return 0
-			case uxAdvancedButton:
+			case contract.ActionAdvanced:
 				if err := shellOpenLocalFile(configPath()); err != nil {
 					uxSetText(p.hint, "打开高级配置失败："+err.Error())
 				}
 				return 0
-			case uxProbeASRButton:
+			case contract.ActionProbeASR:
 				p.check("ASR", uxWinText(p.inputs[0]), uxWinText(p.inputs[2]), uxWinText(p.inputs[1]))
 				return 0
-			case uxProbeLLMButton:
+			case contract.ActionProbeLLM:
 				p.check("LLM", uxWinText(p.inputs[3]), uxWinText(p.inputs[5]), uxWinText(p.inputs[4]))
 				return 0
 			}
