@@ -21,8 +21,8 @@ public enum MicrophoneError: Error, Equatable, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .permissionDenied: return "Microphone permission was denied."
-        case .permissionRestricted: return "Microphone access is restricted."
+        case .permissionDenied: return "macOS 已拒绝麦克风访问。请在「系统设置 → 隐私与安全性 → 麦克风」中允许 VoiceRewrite，重启应用后重试。"
+        case .permissionRestricted: return "麦克风访问受到 macOS 或设备管理策略限制。"
         case .noInputDevice: return "No usable default microphone is available."
         case .unsupportedInputFormat: return "The default microphone uses an unsupported PCM format."
         case .converterUnavailable: return "Cannot create a 16 kHz mono audio converter."

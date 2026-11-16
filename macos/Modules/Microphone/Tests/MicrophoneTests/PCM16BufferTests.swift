@@ -2,6 +2,12 @@ import XCTest
 @testable import Microphone
 
 final class PCM16BufferTests: XCTestCase {
+    func testDeniedPermissionReportsRecoveryAndRestrictedIsDistinct() {
+        XCTAssertTrue(MicrophoneError.permissionDenied.localizedDescription.contains("系统设置"))
+        XCTAssertTrue(MicrophoneError.permissionDenied.localizedDescription.contains("VoiceRewrite"))
+        XCTAssertFalse(MicrophoneError.permissionRestricted.localizedDescription.contains("重启应用"))
+    }
+
     func testSignedLittleEndianAndClipping() throws {
         var pcm = PCM16Buffer()
         try pcm.append([-2, -1, -0.5, 0, 0.5, 1, 2])

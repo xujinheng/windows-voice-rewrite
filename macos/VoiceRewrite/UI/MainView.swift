@@ -46,6 +46,19 @@ struct MainView: View {
                                 .disabled(model.isCheckingServices)
                         }
                         LabeledContent("麦克风", value: model.recordingStatus)
+                        if model.microphonePermission == .denied {
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                Text("macOS 已拒绝麦克风访问；请在系统设置中允许 VoiceRewrite，然后退出并重新打开应用。")
+                                    .font(.footnote)
+                                    .foregroundStyle(.orange)
+                                Spacer()
+                                Button("打开麦克风权限设置") { model.openMicrophonePrivacySettings() }
+                            }
+                        } else if model.microphonePermission == .restricted {
+                            Text("麦克风访问受到 macOS 或设备管理策略限制。")
+                                .font(.footnote)
+                                .foregroundStyle(.orange)
+                        }
                         LabeledContent("原生交互", value: model.interactionStatus)
                         LabeledContent("鼠标侧键", value: model.sideMouseStatus)
                         Text(model.updateStatus).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)

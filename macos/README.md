@@ -31,6 +31,12 @@ GitHub Actions runs `swift test` in Microphone, Storage and Interaction and `xco
 
 To dictate into another app, place the caret in that app's editable text field and trigger Mouse4 or Ctrl+Option+R **without returning to VoiceRewrite**. The VoiceRewrite window's Start Microphone Recording button records for preview only because clicking it changes the foreground target. Cross-app insertion requires the original application and AX text focus to remain valid through recognition. Some web and Electron editors do not expose a verifiable complete AX text value and may require manually copying the result.
 
+## Microphone permission recovery
+
+When **开始麦克风录音** reports microphone access denied, the recording has not reached ASR. Quit VoiceRewrite, open **System Settings → Privacy & Security → Microphone**, enable the **current VoiceRewrite app**, then relaunch it. The dashboard now links to that settings pane and refreshes authorization when the app becomes active. A previously denied request cannot show another system prompt without changing the system authorization.
+
+CI macOS developer ZIPs are signed **ad hoc** rather than with a stable Developer ID identity. Replacing, moving or launching a different copy of the app can require fresh authorization; use one stable app location. If no VoiceRewrite entry appears, quit the app, run `tccutil reset Microphone com.xujinheng.VoiceRewrite` in Terminal **only if you intend to reset its microphone decision**, then reopen the app to request access again. Resetting does not grant permission automatically. If system restrictions prevent enabling the toggle, do not try to bypass macOS controls.
+
 ## Safety and limitations
 
 - The child Helper receives ephemeral Keychain credentials only through a bounded local stdin request. No keys are supplied in argv, environment variables or persistent model request logs.
