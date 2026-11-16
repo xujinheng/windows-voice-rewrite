@@ -21,6 +21,17 @@ final class HostStatusTests: XCTestCase {
         XCTAssertTrue(rewriteCaptureStatus(InteractionFailure.notEditable, password: "选区").hasPrefix("无法开始语音选区处理："))
     }
 
+    func testShortcutInstallReusesTheSameKeyboard() {
+        XCTAssertEqual(shortcutInstall(validPlan: false, sameKeyboard: true), .rejected)
+        XCTAssertEqual(shortcutInstall(validPlan: true, sameKeyboard: true), .reuse)
+        XCTAssertEqual(shortcutInstall(validPlan: true, sameKeyboard: false), .replace)
+        XCTAssertTrue(shortcutRestoreKeepsKeyboard(hasPrevious: true, sameKeyboard: true))
+        XCTAssertFalse(shortcutRestoreKeepsKeyboard(hasPrevious: false, sameKeyboard: true))
+        XCTAssertEqual(shortcutPlanLabel(dictation: "Option+R", textEdit: "Option+T", rewrite: "Option+E"), "Option+R 听写；Option+T 文本指令；Option+E 语音修改选区")
+        XCTAssertEqual(shortcutSaveRejected(), "快捷键冲突或不受 macOS 支持；设置未保存")
+        XCTAssertEqual(shortcutPlanRejected(), "快捷键冲突或不受 macOS 支持；原快捷键保持有效")
+    }
+
     func testSideMouseNoticesKeepButtonNumbers() {
         XCTAssertEqual(sideMouseUnchecked(), "尚未检查鼠标侧键监听")
         XCTAssertEqual(sideMouseObserved(button: 3, action: .dictation), "已收到 Mouse4 按下；继续按住以开始听写")

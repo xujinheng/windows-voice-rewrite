@@ -90,6 +90,50 @@ public func sideMouseStopped() -> String {
     "鼠标侧键监听已停止"
 }
 
+public enum ShortcutInstall: Equatable, Sendable {
+    case rejected
+    case reuse
+    case replace
+}
+
+public func shortcutInstall(validPlan: Bool, sameKeyboard: Bool) -> ShortcutInstall {
+    if !validPlan {
+        return .rejected
+    }
+    if sameKeyboard {
+        return .reuse
+    }
+    return .replace
+}
+
+public func shortcutRestoreKeepsKeyboard(hasPrevious: Bool, sameKeyboard: Bool) -> Bool {
+    hasPrevious && sameKeyboard
+}
+
+public func shortcutPlanLabel(dictation: String, textEdit: String, rewrite: String) -> String {
+    "\(dictation) 听写；\(textEdit) 文本指令；\(rewrite) 语音修改选区"
+}
+
+public func shortcutPlanRejected() -> String {
+    "快捷键冲突或不受 macOS 支持；原快捷键保持有效"
+}
+
+public func shortcutRegisterFailed(_ detail: String) -> String {
+    "快捷键注册失败：\(detail)；已尝试恢复先前的快捷键"
+}
+
+public func shortcutPendingHelper() -> String {
+    "快捷键将在 Go Helper 连接后确认"
+}
+
+public func shortcutSaveRejected() -> String {
+    "快捷键冲突或不受 macOS 支持；设置未保存"
+}
+
+public func shortcutNotRegistered() -> String {
+    "快捷键未能注册；设置未保存，原快捷键保持有效"
+}
+
 public func serviceProbeRunning(name: String, running: String) -> String {
     return name + "：" + running
 }

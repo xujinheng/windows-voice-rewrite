@@ -152,7 +152,7 @@ final class WorkspaceModel: ObservableObject {
               let rewrite = ShortcutBinding(canonical: settings.rewriteShortcut),
               let textEdit = ShortcutBinding(canonical: settings.textEditShortcut),
               MacShortcutPlan(dictation: dictation, rewrite: rewrite, textEdit: textEdit) != nil else {
-            settingsStatus = "快捷键冲突或不受 macOS 支持；设置未保存"
+            settingsStatus = shortcutSaveRejected()
             return
         }
         _ = shortcutGeneration.begin()
@@ -168,7 +168,7 @@ final class WorkspaceModel: ObservableObject {
                 persist: { try store.save(self.settings) },
                 restore: { self.restoreShortcutPlan(previous) }
             ) else {
-                settingsStatus = "快捷键未能注册；设置未保存，原快捷键保持有效"
+                settingsStatus = shortcutNotRegistered()
                 return
             }
             try saveCredential(asrKeyInput, account: .asr)
@@ -204,7 +204,7 @@ final class WorkspaceModel: ObservableObject {
         guard let dictation = ShortcutBinding(canonical: settings.dictationShortcut),
               let rewrite = ShortcutBinding(canonical: settings.rewriteShortcut),
               let textEdit = ShortcutBinding(canonical: settings.textEditShortcut) else {
-            interactionStatus = "快捷键将在 Go Helper 连接后确认"
+            interactionStatus = shortcutPendingHelper()
             return
         }
         register(dictation: dictation, rewrite: rewrite, textEdit: textEdit)
@@ -259,10 +259,13 @@ final class WorkspaceModel: ObservableObject {
     private func register(dictation: ShortcutBinding, rewrite: ShortcutBinding,
                           textEdit: ShortcutBinding) -> Bool {
         guard let next = MacShortcutPlan(dictation: dictation, rewrite: rewrite, textEdit: textEdit) else {
-            interactionStatus = "快捷键冲突或不受 macOS 支持；原快捷键保持有效"
+            interactionStatus = shortcutPlanRejected()
             return false
         }
-        let label = "\(MacShortcut.display(dictation.normalized)) 听写；\(MacShortcut.display(textEdit.normalized)) 文本指令；\(MacShortcut.display(rewrite.normalized)) 语音修改选区"
+        let label = shortcutPlanLabel(
+            dictation: MacShortcut.display(dictation.normalized),
+            textEdit: MacShortcut.display(textEdit.normalized),
+            rewrite: MacShortcut.display(rewrite.normalized))
         do {
             if let registry = hotKeys {
                 try registry.replace(with: next.keyboard)
