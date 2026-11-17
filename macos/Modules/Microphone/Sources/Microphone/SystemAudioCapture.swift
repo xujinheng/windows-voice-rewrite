@@ -1,5 +1,6 @@
 #if os(macOS)
 import AVFoundation
+import AppKit
 import CoreAudio
 import CoreGraphics
 import CoreMedia
@@ -53,6 +54,7 @@ public final class SystemAudioCapture {
     private var receiver: SystemAudioReceiver?
     private var startGate = SystemAudioStartGate()
     private var pendingStop: Task<Void, Never>?
+    private var terminationObserver: NSObjectProtocol?
 
     public init() {}
 
@@ -168,12 +170,35 @@ public final class SystemAudioCapture {
             try? created.removeStreamOutput(receiver, type: .audio)
             throw SystemAudioError.startCanceled
         }
+        if sourceID != "system", let pid = Int32(sourceID) {
+            // A running app may disappear without a ScreenCaptureKit error.
+            // The notification is scoped to this stream, not the next meeting.
+            terminationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didTerminateApplicationNotification,
+                object: nil, queue: .main
+            ) { [weak self] notification in
+                guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                    as? NSRunningApplication, app.processIdentifier == pid else { return }
+                Task { @MainActor [weak self] in
+                    guard let self, self.stream === created else { return }
+                    onFailure(SystemAudioError.sourceGone.localizedDescription)
+                }
+            }
+            if NSRunningApplication(processIdentifier: pid) == nil {
+                cancel()
+                throw SystemAudioError.sourceGone
+            }
+        }
     }
 
     /// Immediately fence callbacks and in-flight discovery. Unlike scheduling
     /// an async stop from the UI, this cannot run after a newer meeting starts.
     public func cancel() {
         startGate.invalidate()
+        if let terminationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(terminationObserver)
+            self.terminationObserver = nil
+        }
         receiver?.invalidate()
         let oldStream = stream
         let oldReceiver = receiver
