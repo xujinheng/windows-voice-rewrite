@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -353,5 +354,25 @@ func TestProxyAbortsTruncatedUpstreamStream(t *testing.T) {
 	body, err := io.ReadAll(resp.Body)
 	if string(body) != "data: incomplete\n\n" || err == nil {
 		t.Fatalf("truncated stream must preserve bytes and report read failure: %q, %v", body, err)
+	}
+}
+
+
+// Runs in the existing Windows OneClick CI job as well as on Linux and macOS.
+// Cross-compilation proves Go source compatibility, not Metal hardware support.
+func TestOneClickGoBuildsForBothMacArchitectures(t *testing.T) {
+	for _, arch := range []string{"arm64", "amd64"} {
+		t.Run(arch, func(t *testing.T) {
+			file := filepath.Join(t.TempDir(), "oneclick-darwin-"+arch)
+			cmd := exec.Command("go", "build", "-trimpath", "-o", file, ".")
+			cmd.Env = append(os.Environ(), "GOOS=darwin", "GOARCH="+arch, "CGO_ENABLED=0")
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("macOS %s Go cross-build: %v\n%s", arch, err, out)
+			}
+			if info, err := os.Stat(file); err != nil || info.Size() == 0 {
+				t.Fatalf("macOS %s Go binary missing/empty: %v", arch, err)
+			}
+		})
 	}
 }
