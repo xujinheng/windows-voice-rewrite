@@ -606,7 +606,7 @@ func settingsMaps() (bindings, actions, status map[string]string) {
 		"probe_llm": "model.checkLLMService()",
 		"save":      "model.saveSettings()",
 		"advanced":  "showAdvanced.toggle()",
-		"close":     "NSApp.keyWindow?.close()",
+		"close":     "if let onClose { onClose() } else { dismiss() }",
 	}
 	status = map[string]string{
 		"probe_asr_status": "model.asrProbeStatus",
@@ -619,7 +619,7 @@ func emitSettings() (string, error) {
 	bindings, actions, status := settingsMaps()
 	var b strings.Builder
 	b.WriteString(sourceNote("voice-rewrite/internal/contract"))
-	b.WriteString("import SwiftUI\nimport AppKit\nimport VoiceRewriteStorage\nimport Microphone\n\nstruct SettingsView: View {\n    @ObservedObject var model: WorkspaceModel\n    @State private var selectedPage = \"speech\"\n    @State private var showAdvanced = false\n    @State private var captureTarget: String?\n    @State private var captureStatus = \"\"\n    @State private var captureMonitor: Any?\n\n    var body: some View {\n        VStack(spacing: 0) {\n            HStack(spacing: 0) {\n                VStack(alignment: .leading, spacing: 12) {\n                    Text(\"VoiceRewrite\").font(.title3.bold())\n                    Text(\"设置分类\").font(.caption).foregroundStyle(.secondary)\n")
+	b.WriteString("import SwiftUI\nimport AppKit\nimport VoiceRewriteStorage\nimport Microphone\n\nstruct SettingsView: View {\n    @Environment(\\.dismiss) private var dismiss\n    @ObservedObject var model: WorkspaceModel\n    var onClose: (() -> Void)? = nil\n    @State private var selectedPage = \"speech\"\n    @State private var showAdvanced = false\n    @State private var captureTarget: String?\n    @State private var captureStatus = \"\"\n    @State private var captureMonitor: Any?\n\n    var body: some View {\n        VStack(spacing: 0) {\n            HStack(spacing: 0) {\n                VStack(alignment: .leading, spacing: 12) {\n                    Text(\"VoiceRewrite\").font(.title3.bold())\n                    Text(\"设置分类\").font(.caption).foregroundStyle(.secondary)\n")
 	for _, page := range contract.Pages() {
 		b.WriteString("                    Button(" + strconv.Quote(page.Title) + ") { selectPage(" + strconv.Quote(page.ID) + ") }\n")
 		b.WriteString("                        .buttonStyle(.plain)\n")
@@ -698,7 +698,7 @@ func emitSettings() (string, error) {
 		}
 		b.WriteString("                            } \n")
 	}
-	b.WriteString("                        }\n                        .frame(maxWidth: .infinity, alignment: .leading)\n                        .padding(24)\n                    }\n                }\n                .frame(maxWidth: .infinity, maxHeight: .infinity)\n            }\n            Divider()\n            HStack(spacing: 12) {\n                Button(\"保存设置\") { model.saveSettings() }\n                    .buttonStyle(.borderedProminent)\n                    .accessibilityIdentifier(\"save\")\n                Button(\"高级配置\") {\n                    selectPage(\"input\")\n                    showAdvanced.toggle()\n                }\n                .accessibilityIdentifier(\"advanced\")\n                Spacer()\n                Button(\"关闭\") { NSApp.keyWindow?.close() }\n                    .accessibilityIdentifier(\"close\")\n            }\n            .padding(.horizontal, 20)\n            .padding(.top, 12)\n            Text(model.settingsStatus)\n                .font(.footnote)\n                .foregroundStyle(.secondary)\n                .textSelection(.enabled)\n                .frame(maxWidth: .infinity, alignment: .leading)\n                .padding(.horizontal, 20)\n")
+	b.WriteString("                        }\n                        .frame(maxWidth: .infinity, alignment: .leading)\n                        .padding(24)\n                    }\n                }\n                .frame(maxWidth: .infinity, maxHeight: .infinity)\n            }\n            Divider()\n            HStack(spacing: 12) {\n                Button(\"保存设置\") { model.saveSettings() }\n                    .buttonStyle(.borderedProminent)\n                    .accessibilityIdentifier(\"save\")\n                Button(\"高级配置\") {\n                    selectPage(\"input\")\n                    showAdvanced.toggle()\n                }\n                .accessibilityIdentifier(\"advanced\")\n                Spacer()\n                Button(\"关闭\") { if let onClose { onClose() } else { dismiss() } }\n                    .accessibilityIdentifier(\"close\")\n            }\n            .padding(.horizontal, 20)\n            .padding(.top, 12)\n            Text(model.settingsStatus)\n                .font(.footnote)\n                .foregroundStyle(.secondary)\n                .textSelection(.enabled)\n                .frame(maxWidth: .infinity, alignment: .leading)\n                .padding(.horizontal, 20)\n")
 	save, ok := contract.Find("save")
 	if !ok {
 		return "", fmt.Errorf("missing save")
