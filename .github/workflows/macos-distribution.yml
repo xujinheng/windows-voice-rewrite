@@ -87,7 +87,7 @@ jobs:
           xcrun stapler staple "$dmg"
           xcrun stapler validate "$dmg"
           # Stapling changes the container bytes; refresh the verification checksum.
-          shasum -a 256 "$dmg" > "$dmg.sha256"
+          (cd "$RUNNER_TEMP" && shasum -a 256 "$(basename "$dmg")" > "$(basename "$dmg").sha256")
           security delete-keychain "$keychain"
       - name: Upload signed and notarized application
         uses: actions/upload-artifact@v4
