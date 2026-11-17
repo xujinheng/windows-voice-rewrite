@@ -306,23 +306,43 @@ final class WorkspaceModel: ObservableObject {
             }
         }
         bridge = client
-        do { try client.start() }
-        catch {
-            applyHelperConnection(.startFailed)
-            return
-        }
-        client.send(operation: "hello") { [weak self] response in
-            Task { @MainActor [weak self] in
-                guard let self, self.helloGeneration.accepts(token) else { return }
-                switch response {
-                case .success(let reply):
-                    guard helperHelloAccepted(ok: reply.ok, name: reply.result?["name"]?.string, version: reply.result?["protocol"]?.int) else {
-                        self.applyHelperConnection(.protocolRejected)
-                        return
+        // Process.run() can synchronously block AppKit for hundreds of
+        // milliseconds on a cold launch. Spawn off-main; fence stale connects.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let started: Bool
+            do {
+                try client.start()
+                started = true
+            } catch {
+                started = false
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.helloGeneration.accepts(token),
+                      self.bridge === client else {
+                    client.stop()
+                    return
+                }
+                guard started else {
+                    self.applyHelperConnection(.startFailed)
+                    return
+                }
+                client.send(operation: "hello") { [weak self] response in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.helloGeneration.accepts(token) else { return }
+                        switch response {
+                        case .success(let reply):
+                            guard helperHelloAccepted(
+                                ok: reply.ok, name: reply.result?["name"]?.string,
+                                version: reply.result?["protocol"]?.int
+                            ) else {
+                                self.applyHelperConnection(.protocolRejected)
+                                return
+                            }
+                            self.applyHelperConnection(.connected)
+                        case .failure:
+                            self.applyHelperConnection(.handshakeFailed)
+                        }
                     }
-                    self.applyHelperConnection(.connected)
-                case .failure:
-                    self.applyHelperConnection(.handshakeFailed)
                 }
             }
         }
@@ -2135,6 +2155,9 @@ final class WorkspaceModel: ObservableObject {
         let token = resultGeneration.begin()
         isStarting = true
         recordingStatus = dictationRequestingMicrophone()
+        // A pending pill must not wait for AX focus probes or AVAudioEngine start.
+        // It becomes an active recording indicator only after the engine starts.
+        showIndicator(phase: .recording, mode: "听写", pending: true)
         Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.refreshMicrophonePermission() }
@@ -2241,9 +2264,8 @@ final class WorkspaceModel: ObservableObject {
                     activeVoiceSelection = (snapshot, generation)
                     let config = try requestConfig(for: .spokenSelectedTask)
                     guard let bridge else { throw BridgeFailure.notRunning }
-                    let id = bridge.send(operation: "selected_voice_task", fields: [
+                    let id = bridge.sendPCM(operation: "selected_voice_task", pcm: pcm, fields: [
                         "config": config,
-                        "pcm_base64": .string(pcm.base64EncodedString()),
                         "selected_text": .string(snapshot.originalSelectedText),
                     ]) { [weak self] reply in
                         Task { @MainActor [weak self] in
@@ -2257,9 +2279,8 @@ final class WorkspaceModel: ObservableObject {
                 }
                 let config = try requestConfig(for: .transcribe)
                 guard let bridge else { throw BridgeFailure.notRunning }
-                let id = bridge.send(operation: "transcribe", fields: [
+                let id = bridge.sendPCM(operation: "transcribe", pcm: pcm, fields: [
                     "config": config,
-                    "pcm_base64": .string(pcm.base64EncodedString()),
                 ]) { [weak self] reply in
                     Task { @MainActor [weak self] in
                         guard let self, self.resultGeneration.accepts(token) else { return }
