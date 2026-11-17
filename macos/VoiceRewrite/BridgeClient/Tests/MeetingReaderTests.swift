@@ -2,6 +2,35 @@ import XCTest
 @testable import VoiceRewrite
 
 final class MeetingReaderTests: XCTestCase {
+    func testStructuredMeetingProfileRoundTripAndLegacyPreservation() {
+        var fields = MeetingProfileFields(background: "existing project notes",
+                                          terms: "p99 = latency")
+        XCTAssertEqual(fields.project, "existing project notes")
+        XCTAssertEqual(fields.bilingualTerms, "p99 = latency")
+        fields.role = "Infrastructure lead"
+        fields.experience = "Five years"
+        fields.goal = "Review p99"
+        fields.constraints = "No deployment today"
+        fields.properNouns = "Aster"
+        fields.acronyms = "SLO = service level objective"
+        let saved = MeetingProfileFields(background: fields.backgroundText,
+                                         terms: fields.termsText)
+        XCTAssertEqual(saved.role, fields.role)
+        XCTAssertEqual(saved.experience, fields.experience)
+        XCTAssertEqual(saved.project, fields.project)
+        XCTAssertEqual(saved.goal, fields.goal)
+        XCTAssertEqual(saved.constraints, fields.constraints)
+        XCTAssertEqual(saved.properNouns, fields.properNouns)
+        XCTAssertEqual(saved.acronyms, fields.acronyms)
+        XCTAssertEqual(saved.bilingualTerms, fields.bilingualTerms)
+    }
+
+    func testMeetingProfileUnicodeScalarBudgetsAreExplicit() {
+        let background = MeetingProfileFields(background: "项目资料", terms: "")
+        XCTAssertLessThanOrEqual(background.backgroundText.unicodeScalars.count, 4000)
+        XCTAssertEqual(MeetingProfileFields().termsText, "")
+    }
+
     func testDefaultSixPaneOrderMatchesWindows() {
         XCTAssertEqual(MeetingReaderLayout.visible(captionsOnly: false, expanded: false),
                        [0, 1, 2, 3, 4, 5])
