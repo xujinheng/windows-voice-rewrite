@@ -158,6 +158,13 @@ final class BridgeClientTests: XCTestCase {
         wait(for: [hello, error], timeout: 10)
     }
 
+    @MainActor
+    func testAudioDeadlineAlwaysFinishesAndScalesWithDuration() {
+        XCTAssertEqual(WorkspaceModel.asrDeadline(for: Data(repeating: 0, count: 32000)), 80)
+        XCTAssertEqual(WorkspaceModel.asrDeadline(for: Data(repeating: 0, count: 960000)), 120)
+        XCTAssertEqual(WorkspaceModel.asrDeadline(for: Data(repeating: 0, count: 32000 * 180)), 235)
+    }
+
     func testQueuedPCMFramesAndLocalEncodingFailureDoNotKillBridge() throws {
         let client = BridgeClient(executableURL: try bundledHelper())
         try client.start()
