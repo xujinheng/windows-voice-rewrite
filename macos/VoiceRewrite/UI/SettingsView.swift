@@ -90,10 +90,22 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 14) {
                             if selectedPage == "speech" {
                                 Text("连接配置").font(.headline)
-                TextField("API 地址", text: $model.settings.asrBaseURL)
-                    .accessibilityIdentifier("asr_base_url")
-                TextField("模型 ID", text: $model.settings.asrModel)
-                    .accessibilityIdentifier("asr_model")
+                HStack(spacing: 12) {
+                    Text("API 地址")
+                        .font(.system(size: 13))
+                        .frame(width: 112, alignment: .leading)
+                    TextField("API 地址", text: $model.settings.asrBaseURL)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("asr_base_url")
+                }
+                HStack(spacing: 12) {
+                    Text("模型 ID")
+                        .font(.system(size: 13))
+                        .frame(width: 112, alignment: .leading)
+                    TextField("模型 ID", text: $model.settings.asrModel)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("asr_model")
+                }
                 HStack {
                     Button("发现模型") { model.discoverModels(for: .transcribe) }
                         .disabled(model.isDiscoveringASRModels)
@@ -110,9 +122,15 @@ struct SettingsView: View {
                     Text(model.asrModelDiscoveryStatus).font(.footnote).foregroundStyle(.secondary)
                         .accessibilityIdentifier("asr_models_status")
                 }
-                SecureField("ASR API Key（本地服务可留空；留空保留旧值）", text: $model.asrKeyInput)
-                    .accessibilityLabel("API Key")
-                    .accessibilityIdentifier("asr_api_key")
+                HStack(spacing: 12) {
+                    Text("API Key")
+                        .font(.system(size: 13))
+                        .frame(width: 112, alignment: .leading)
+                    SecureField("ASR API Key（本地服务可留空；留空保留旧值）", text: $model.asrKeyInput)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel("API Key")
+                        .accessibilityIdentifier("asr_api_key")
+                }
                 Button("测试连接") { model.checkASRService() }
                     .disabled(model.isCheckingServices)
                     .accessibilityIdentifier("probe_asr")
@@ -122,10 +140,22 @@ struct SettingsView: View {
                             } 
                             else if selectedPage == "writing" {
                                 Text("模型配置").font(.headline)
-                TextField("API 地址", text: $model.settings.llmBaseURL)
-                    .accessibilityIdentifier("llm_base_url")
-                TextField("模型 ID", text: $model.settings.textModel)
-                    .accessibilityIdentifier("text_model")
+                HStack(spacing: 12) {
+                    Text("API 地址")
+                        .font(.system(size: 13))
+                        .frame(width: 112, alignment: .leading)
+                    TextField("API 地址", text: $model.settings.llmBaseURL)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("llm_base_url")
+                }
+                HStack(spacing: 12) {
+                    Text("模型 ID")
+                        .font(.system(size: 13))
+                        .frame(width: 112, alignment: .leading)
+                    TextField("模型 ID", text: $model.settings.textModel)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("text_model")
+                }
                 HStack {
                     Button("发现模型") { model.discoverModels(for: .selectedTask) }
                         .disabled(model.isDiscoveringLLMModels)
@@ -142,9 +172,15 @@ struct SettingsView: View {
                     Text(model.llmModelDiscoveryStatus).font(.footnote).foregroundStyle(.secondary)
                         .accessibilityIdentifier("llm_models_status")
                 }
-                SecureField("LLM API Key（本地服务可留空；留空保留旧值）", text: $model.llmKeyInput)
-                    .accessibilityLabel("API Key")
-                    .accessibilityIdentifier("llm_api_key")
+                HStack(spacing: 12) {
+                    Text("API Key")
+                        .font(.system(size: 13))
+                        .frame(width: 112, alignment: .leading)
+                    SecureField("LLM API Key（本地服务可留空；留空保留旧值）", text: $model.llmKeyInput)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel("API Key")
+                        .accessibilityIdentifier("llm_api_key")
+                }
                 Button("测试连接") { model.checkLLMService() }
                     .disabled(model.isCheckingServices)
                     .accessibilityIdentifier("probe_llm")
@@ -155,14 +191,26 @@ struct SettingsView: View {
                             else if selectedPage == "input" {
                                 Text("输入偏好").font(.headline)
                                 HStack(spacing: 12) {
-                TextField("语音指令", text: $model.settings.rewriteShortcut)
-                    .accessibilityIdentifier("rewrite_shortcut")
+                HStack(spacing: 12) {
+                    Text("语音指令")
+                        .font(.system(size: 13))
+                        .frame(width: 112, alignment: .leading)
+                    TextField("语音指令", text: $model.settings.rewriteShortcut)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("rewrite_shortcut")
+                }
                 Button(captureTarget == "rewrite_shortcut" ? "等待按键…" : "录入按键") { beginCapture("rewrite_shortcut") }
                     .accessibilityIdentifier("capture_rewrite")
                                 }
                                 HStack(spacing: 12) {
-                TextField("听写快捷键", text: $model.settings.dictationShortcut)
-                    .accessibilityIdentifier("dictation_shortcut")
+                HStack(spacing: 12) {
+                    Text("听写快捷键")
+                        .font(.system(size: 13))
+                        .frame(width: 112, alignment: .leading)
+                    TextField("听写快捷键", text: $model.settings.dictationShortcut)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("dictation_shortcut")
+                }
                 Button(captureTarget == "dictation_shortcut" ? "等待按键…" : "录入按键") { beginCapture("dictation_shortcut") }
                     .accessibilityIdentifier("capture_dictation")
                                 }
@@ -188,8 +236,14 @@ struct SettingsView: View {
                 }
                 .accessibilityIdentifier("record_mode")
                                 HStack(spacing: 12) {
-                TextField("全局退出快捷键（不是语音操作）", text: $model.settings.exitShortcut)
-                    .accessibilityIdentifier("exit_shortcut")
+                HStack(spacing: 12) {
+                    Text("全局退出快捷键（不是语音操作）")
+                        .font(.system(size: 13))
+                        .frame(width: 112, alignment: .leading)
+                    TextField("全局退出快捷键（不是语音操作）", text: $model.settings.exitShortcut)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("exit_shortcut")
+                }
                 Button(captureTarget == "exit_shortcut" ? "等待按键…" : "录入按键") { beginCapture("exit_shortcut") }
                     .accessibilityIdentifier("capture_exit")
                                 }
