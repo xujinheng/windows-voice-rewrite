@@ -141,6 +141,25 @@ final class MacShortcutTests: XCTestCase {
         XCTAssertEqual(ShortcutBinding(canonical: "rightalt")?.normalized, "RightOption")
     }
 
+    func testSameModifierOnSeparatePhysicalKeyboardsCanBeAssignedToDifferentActions() throws {
+        let key = try XCTUnwrap(ShortcutBinding(canonical: "RightOption"))
+        XCTAssertNil(MacShortcutPlan(dictation: key, rewrite: key))
+        XCTAssertNil(MacShortcutPlan(dictation: key, rewrite: key,
+                                      dictationDeviceID: "builtin:1:2:0"))
+        XCTAssertNil(MacShortcutPlan(dictation: key, rewrite: key,
+                                      dictationDeviceID: "device-A", rewriteDeviceID: "device-A"))
+        let separated = try XCTUnwrap(MacShortcutPlan(
+            dictation: key, rewrite: key,
+            dictationDeviceID: "builtin:1:2:0", rewriteDeviceID: "port:1:2:3"))
+        XCTAssertEqual(separated.modifierDictation, .rightOption)
+        XCTAssertEqual(separated.modifierRewrite, .rightOption)
+        XCTAssertEqual(separated.sideButtons.action(for: 3), .dictation)
+        XCTAssertEqual(separated.sideButtons.action(for: 4), .rewrite)
+        XCTAssertNil(MacShortcutPlan(
+            dictation: try XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+R")),
+            rewrite: key, dictationDeviceID: "port:1:2:3"))
+    }
+
     @MainActor
     func testShortcutSaveTransactionSkipsPersistenceWhenRegistrationFails() throws {
         var operations: [String] = []
