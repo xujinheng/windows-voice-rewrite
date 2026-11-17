@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"voicerewrite/internal/contract"
+	"voicerewrite/internal/core/settingsform"
 	coreconfig "voicerewrite/internal/core/config"
 )
 
@@ -647,8 +648,10 @@ func settingsMaps() (bindings, actions, status map[string]string) {
 func emitSettings() (string, error) {
 	bindings, actions, status := settingsMaps()
 	var b strings.Builder
-	b.WriteString(sourceNote("voice-rewrite/internal/contract"))
-	b.WriteString("import SwiftUI\nimport AppKit\nimport VoiceRewriteStorage\nimport Microphone\n\nstruct SettingsView: View {\n    @Environment(\\.dismiss) private var dismiss\n    @ObservedObject var model: WorkspaceModel\n    var onClose: (() -> Void)? = nil\n    @State private var selectedPage = \"speech\"\n    @State private var showAdvanced = false\n    @State private var captureTarget: String?\n    @State private var captureStatus = \"\"\n    @State private var captureMonitor: Any?\n\n    init(model: WorkspaceModel, onClose: (() -> Void)? = nil, initialPage: String = \"speech\") {\n        self.model = model\n        self.onClose = onClose\n        self._selectedPage = State(initialValue: [\"speech\", \"writing\", \"input\"].contains(initialPage) ? initialPage : \"speech\")\n    }\n\n    var body: some View {\n        VStack(spacing: 0) {\n            HStack(spacing: 0) {\n                VStack(alignment: .leading, spacing: 12) {\n                    Text(\"VoiceRewrite\").font(.title3.bold())\n                    Text(\"设置分类\").font(.caption).foregroundStyle(.secondary)\n")
+	b.WriteString(sourceNote("voice-rewrite/internal/contract and voice-rewrite/internal/core/settingsform"))
+	b.WriteString("import SwiftUI\nimport AppKit\nimport VoiceRewriteStorage\nimport Microphone\n\n")
+	b.WriteString(fmt.Sprintf("enum SettingsWindowMetrics {\n    static let width: CGFloat = %d\n    static let height: CGFloat = %d\n    static let minimumSize = NSSize(width: %d, height: %d)\n}\n\n", settingsform.WindowWidth, settingsform.WindowHeight, settingsform.MinWidth, settingsform.MinHeight))
+	b.WriteString("struct SettingsView: View {\n    @Environment(\\.dismiss) private var dismiss\n    @ObservedObject var model: WorkspaceModel\n    var onClose: (() -> Void)? = nil\n    @State private var selectedPage = \"speech\"\n    @State private var showAdvanced = false\n    @State private var captureTarget: String?\n    @State private var captureStatus = \"\"\n    @State private var captureMonitor: Any?\n\n    init(model: WorkspaceModel, onClose: (() -> Void)? = nil, initialPage: String = \"speech\") {\n        self.model = model\n        self.onClose = onClose\n        self._selectedPage = State(initialValue: [\"speech\", \"writing\", \"input\"].contains(initialPage) ? initialPage : \"speech\")\n    }\n\n    var body: some View {\n        VStack(spacing: 0) {\n            HStack(spacing: 0) {\n                VStack(alignment: .leading, spacing: 12) {\n                    Text(\"VoiceRewrite\").font(.title3.bold())\n                    Text(\"设置分类\").font(.caption).foregroundStyle(.secondary)\n")
 	for _, page := range contract.Pages() {
 		b.WriteString("                    Button(" + strconv.Quote(page.Title) + ") { selectPage(" + strconv.Quote(page.ID) + ") }\n")
 		b.WriteString("                        .buttonStyle(.plain)\n")
