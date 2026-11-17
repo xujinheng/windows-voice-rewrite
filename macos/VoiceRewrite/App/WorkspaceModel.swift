@@ -25,6 +25,12 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var asrProbeStatus = ServiceProbeCopy.idle
     @Published private(set) var llmProbeStatus = ServiceProbeCopy.idle
     @Published private(set) var isCheckingServices = false
+    @Published private(set) var asrAvailableModels: [String] = []
+    @Published private(set) var llmAvailableModels: [String] = []
+    @Published private(set) var asrModelDiscoveryStatus = ""
+    @Published private(set) var llmModelDiscoveryStatus = ""
+    @Published private(set) var isDiscoveringASRModels = false
+    @Published private(set) var isDiscoveringLLMModels = false
     @Published private(set) var interactionStatus = shortcutsUnregistered()
     @Published private(set) var sideMouseStatus = sideMouseUnchecked()
     @Published private(set) var settingsStatus = ""
@@ -56,6 +62,9 @@ final class WorkspaceModel: ObservableObject {
     private var helloGeneration = ResultGeneration()
     private var resultGeneration = ResultGeneration()
     private var probeGeneration = ResultGeneration()
+    private var modelQueryCounter: UInt64 = 0
+    private var modelQueryTokens: [String: UInt64] = [:]
+    private var activeModelQueryIDs: [String: String] = [:]
     private var activeProbeIDs: [String: String] = [:]
     private var activeRequestID: String?
     private var activeInsert: MacDictationTarget?
@@ -98,6 +107,8 @@ final class WorkspaceModel: ObservableObject {
     func connect() {
         let token = helloGeneration.begin()
         cancelProbes()
+        invalidateDiscoveredModels(.transcribe)
+        invalidateDiscoveredModels(.selectedTask)
         asrProbeStatus = ServiceProbeCopy.idle
         llmProbeStatus = ServiceProbeCopy.idle
         bridge?.stop()
@@ -177,6 +188,8 @@ final class WorkspaceModel: ObservableObject {
             try saveCredential(llmKeyInput, account: .llm)
             settingsStatus = settingsSaved()
             DiagnosticLog.note(settingsSavedLog())
+            invalidateDiscoveredModels(.transcribe)
+            invalidateDiscoveredModels(.selectedTask)
             cancelProbes()
             checkServices()
             refreshShortcutsFromCore()
@@ -470,6 +483,89 @@ final class WorkspaceModel: ObservableObject {
     func markConnectionProbeStale(_ operation: HelperOperation) {
         cancelProbes()
         setProbeStatus(ServiceProbeCopy.stale, for: operation)
+    }
+
+    private func modelKind(_ operation: HelperOperation) -> String? {
+        switch operation {
+        case .transcribe: return "asr"
+        case .selectedTask: return "llm"
+        case .spokenSelectedTask: return nil
+        }
+    }
+
+    // Provider URL or credential edits invalidate outstanding query results.
+    // Selecting a model leaves the choices visible.
+    func invalidateDiscoveredModels(_ operation: HelperOperation) {
+        guard let kind = modelKind(operation) else { return }
+        modelQueryCounter &+= 1
+        modelQueryTokens[kind] = modelQueryCounter
+        if let id = activeModelQueryIDs.removeValue(forKey: kind) {
+            bridge?.cancel(id: id)
+        }
+        if kind == "asr" {
+            asrAvailableModels = []
+            asrModelDiscoveryStatus = ""
+            isDiscoveringASRModels = false
+        } else {
+            llmAvailableModels = []
+            llmModelDiscoveryStatus = ""
+            isDiscoveringLLMModels = false
+        }
+    }
+
+    func discoverModels(for operation: HelperOperation) {
+        guard let kind = modelKind(operation) else { return }
+        invalidateDiscoveredModels(operation)
+        let token = modelQueryTokens[kind]
+        guard let bridge, case .connected = connection else {
+            setModelList(kind, models: nil, status: "请先连接 Go Helper")
+            return
+        }
+        let config: JSONValue
+        do {
+            config = try requestConfig(for: operation)
+        } catch {
+            setModelList(kind, models: nil, status: "请先保存有效的服务地址与 API Key")
+            return
+        }
+        setModelList(kind, models: nil, status: "正在读取模型列表…", loading: true)
+        let id = bridge.send(operation: "list_\(kind)_models", fields: ["config": config]) { [weak self] reply in
+            Task { @MainActor [weak self] in
+                guard let self, self.modelQueryTokens[kind] == token else { return }
+                self.activeModelQueryIDs.removeValue(forKey: kind)
+                switch reply {
+                case .failure(let failure):
+                    self.setModelList(kind, models: nil, status: failure.localizedDescription)
+                case .success(let response) where response.ok:
+                    guard case .array(let values)? = response.result?["models"],
+                          values.allSatisfy({ $0.string != nil }) else {
+                        self.setModelList(kind, models: nil, status: "模型列表响应无效")
+                        return
+                    }
+                    let models = values.compactMap(\.string)
+                    self.setModelList(kind, models: models, status: models.isEmpty
+                        ? "服务未列出模型，可继续手动输入模型 ID"
+                        : "已发现 \(models.count) 个模型；选择后仍需保存设置")
+                case .success(let response):
+                    self.setModelList(kind, models: nil,
+                        status: response.error?.userText ?? "读取模型列表失败")
+                }
+            }
+        }
+        activeModelQueryIDs[kind] = id
+    }
+
+    private func setModelList(_ kind: String, models: [String]?, status: String,
+                              loading: Bool = false) {
+        if kind == "asr" {
+            if let models { asrAvailableModels = models }
+            asrModelDiscoveryStatus = status
+            isDiscoveringASRModels = loading
+        } else {
+            if let models { llmAvailableModels = models }
+            llmModelDiscoveryStatus = status
+            isDiscoveringLLMModels = loading
+        }
     }
 
     private func cancelProbes() {
@@ -945,6 +1041,8 @@ final class WorkspaceModel: ObservableObject {
         }
         if effect.invalidatePending {
             invalidatePending()
+            invalidateDiscoveredModels(.transcribe)
+            invalidateDiscoveredModels(.selectedTask)
         }
         if effect.logServiceStatus {
             DiagnosticLog.note(serviceStatus)
