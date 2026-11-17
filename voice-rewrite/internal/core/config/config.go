@@ -38,6 +38,15 @@ const (
 	RecordSecondsMax        = 180
 	DefaultRecordSeconds    = 60
 	DefaultMaxSelectedRunes = 12000
+	MinResponseTokens = 128
+	MaxResponseTokens = 4096
+	MaxSelectedRunes = 100000
+	MinCopyAttempts = 1
+	MaxCopyAttempts = 5
+	DefaultCopyAttempts = 2
+	MinCopyTimeoutMS = 500
+	MaxCopyTimeoutMS = 5000
+	DefaultCopyTimeoutMS = 750
 	// MeetingASRMultipart and MeetingASRLlamaPrefix are the only persisted
 	// meeting recognizer names. MeetingASRModes is the settings list order.
 	MeetingASRMultipart   = "multipart"
@@ -105,8 +114,8 @@ func Defaults() Config {
 		MaxRecordSeconds:       DefaultRecordSeconds,
 		MaxSelectedRunes:       DefaultMaxSelectedRunes,
 		MaxResponseTokens:      1200,
-		SelectionCopyAttempts:  2,
-		SelectionCopyTimeoutMS: 750,
+		SelectionCopyAttempts:  DefaultCopyAttempts,
+		SelectionCopyTimeoutMS: DefaultCopyTimeoutMS,
 	}
 }
 
@@ -165,19 +174,19 @@ func Normalize(cfg Config) (Config, error) {
 	if cfg.AudioDeviceID < -1 || cfg.AudioDeviceID > 255 {
 		return cfg, fmt.Errorf("录音设备编号无效：%d", cfg.AudioDeviceID)
 	}
-	if cfg.MaxResponseTokens < 128 || cfg.MaxResponseTokens > 4096 {
+	if cfg.MaxResponseTokens < MinResponseTokens || cfg.MaxResponseTokens > MaxResponseTokens {
 		cfg.MaxResponseTokens = defaults.MaxResponseTokens
 	}
 	if cfg.MaxRecordSeconds < RecordSecondsMin || cfg.MaxRecordSeconds > RecordSecondsMax {
 		cfg.MaxRecordSeconds = DefaultRecordSeconds
 	}
-	if cfg.MaxSelectedRunes <= 0 || cfg.MaxSelectedRunes > 100000 {
+	if cfg.MaxSelectedRunes <= 0 || cfg.MaxSelectedRunes > MaxSelectedRunes {
 		cfg.MaxSelectedRunes = DefaultMaxSelectedRunes
 	}
-	if cfg.SelectionCopyAttempts < 1 || cfg.SelectionCopyAttempts > 5 {
+	if cfg.SelectionCopyAttempts < MinCopyAttempts || cfg.SelectionCopyAttempts > MaxCopyAttempts {
 		cfg.SelectionCopyAttempts = 3
 	}
-	if cfg.SelectionCopyTimeoutMS < 500 || cfg.SelectionCopyTimeoutMS > 5000 {
+	if cfg.SelectionCopyTimeoutMS < MinCopyTimeoutMS || cfg.SelectionCopyTimeoutMS > MaxCopyTimeoutMS {
 		cfg.SelectionCopyTimeoutMS = 1800
 	}
 	cfg.ASRBaseURL = strings.TrimSpace(cfg.ASRBaseURL)
