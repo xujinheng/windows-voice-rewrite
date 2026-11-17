@@ -4,6 +4,11 @@ import CoreGraphics
 import Foundation
 import IOKit.hid
 
+// IOKit's HID API expects a CFString, while modern Swift SDKs expose the
+// CoreFoundation run-loop mode constant through a distinct CFRunLoopMode type.
+private let hidCommonRunLoopMode: CFString = CFStringCreateWithCString(
+    kCFAllocatorDefault, "kCFRunLoopCommonModes", CFStringBuiltInEncodings.UTF8.rawValue)!
+
 /// An actual HID keyboard, not a virtual "any keyboard" shortcut.
 public struct MacKeyboardDevice: Identifiable, Equatable, Sendable {
     public let id: String
@@ -137,7 +142,7 @@ public final class MacKeyboardHIDMonitor {
         IOHIDManagerRegisterDeviceMatchingCallback(newManager, hidDeviceAdded, ptr)
         IOHIDManagerRegisterDeviceRemovalCallback(newManager, hidDeviceRemoved, ptr)
         IOHIDManagerRegisterInputValueCallback(newManager, hidInputChanged, ptr)
-        IOHIDManagerScheduleWithRunLoop(newManager, CFRunLoopGetMain(), kCFRunLoopCommonModes!)
+        IOHIDManagerScheduleWithRunLoop(newManager, CFRunLoopGetMain(), hidCommonRunLoopMode)
         let result = IOHIDManagerOpen(newManager, 0)
         guard result == kIOReturnSuccess else {
             IOHIDManagerUnscheduleFromRunLoop(newManager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
