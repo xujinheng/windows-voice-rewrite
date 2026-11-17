@@ -167,215 +167,57 @@ struct MainView: View {
     }
 }
 
- 
 private struct MeetingView: View {
     @ObservedObject var model: WorkspaceModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("会议助手").font(.title2.bold())
-                Spacer()
-                Button("刷新音频来源") { model.refreshMeetingSources() }
+        ScrollView([.horizontal, .vertical]) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("会议助手").font(.title2.bold())
+                    Spacer()
+                    Button("打开独立阅读窗口") {
+                        MeetingReaderWindowController.shared.open(model: model)
+                    }
+                    .accessibilityIdentifier("meeting_open_reader")
+                    Button("刷新音频来源") { model.refreshMeetingSources() }
+                        .disabled(model.meetingStarting || model.meetingActive)
+                        .accessibilityIdentifier("meeting_refresh_sources")
+                }
+                HStack(spacing: 12) {
+                    Picker("音频来源", selection: $model.meetingSourceID) {
+                        ForEach(model.meetingSources) { source in
+                            Text(source.name).tag(source.id)
+                        }
+                    }
                     .disabled(model.meetingStarting || model.meetingActive)
-                    .accessibilityIdentifier("meeting_refresh_sources")
-            }
-            HStack {
-                Picker("音频来源", selection: $model.meetingSourceID) {
-                    ForEach(model.meetingSources) { source in
-                        Text(source.name).tag(source.id)
+                    .accessibilityIdentifier("meeting_audio_source")
+                    Picker("会议识别模式", selection: $model.settings.meetingASRMode) {
+                        Text(ContractLimits.meetingASRMultipartTitle)
+                            .tag(ContractLimits.meetingASRMultipart)
+                        Text(ContractLimits.meetingASRLlamaPrefixTitle)
+                            .tag(ContractLimits.meetingASRLlamaPrefix)
                     }
-                }
-                .disabled(model.meetingStarting || model.meetingActive)
-                .accessibilityIdentifier("meeting_audio_source")
-                Spacer()
-                if model.meetingActive || model.meetingStarting {
-                    Button("停止会议") { model.stopMeeting() }
-                } else {
-                    Button("开始会议") { model.startMeeting() }
-                        .disabled(!model.meetingSources.contains(where: {
-                            $0.id == model.meetingSourceID
-                        }))
-                }
-            }
-            Picker("会议识别模式", selection: $model.settings.meetingASRMode) {
-                Text(ContractLimits.meetingASRMultipartTitle)
-                    .tag(ContractLimits.meetingASRMultipart)
-                Text(ContractLimits.meetingASRLlamaPrefixTitle)
-                    .tag(ContractLimits.meetingASRLlamaPrefix)
-            }
-            .disabled(model.meetingStarting || model.meetingActive)
-            .accessibilityIdentifier("meeting_asr_mode")
-            Text("更改识别模式后，请在设置中保存。前缀续写需要 ASR 服务支持该模式。")
-                .font(.caption).foregroundStyle(.secondary)
-            Text(model.meetingStatus)
-                .font(.footnote).foregroundStyle(.secondary)
-                .accessibilityIdentifier("meeting_status")
-            HStack {
-                Button(model.meetingCaptionsOnly
-                    ? ContractLimits.meetingCaptionsFullTitle : ContractLimits.meetingCaptionsFocusTitle) {
-                    model.toggleMeetingCaptionsOnly()
-                }
-                .disabled(!model.meetingActive || model.meetingBusy)
-                .accessibilityIdentifier("meeting_focus_captions")
-                Button(model.meetingExpressionExpanded
-                    ? ContractLimits.meetingExpressionCollapseTitle : ContractLimits.meetingExpressionExpandTitle) {
-                    model.toggleMeetingExpressionExpanded()
-                }
-                .disabled(!model.meetingActive || model.meetingBusy || model.meetingCaptionsOnly)
-                .accessibilityIdentifier("meeting_expand_expression")
-                Spacer()
-            }
-            HSplitView {
-                GroupBox("实时对话与历史字幕") {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 10) {
-                            if let latest = model.meetingCaptions.last {
-                                Text(latest.source.isEmpty ? "等待发言…" : latest.source)
-                                    .font(.title3).textSelection(.enabled)
-                                Divider()
-                                Text(latest.chinese.isEmpty ? "正在准备中文释义…" : latest.chinese)
-                                    .textSelection(.enabled)
-                                if !latest.final {
-                                    Text("识别中 · 原文仍可能调整")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                            } else {
-                                Text("等待所选应用发言…").foregroundStyle(.secondary)
-                            }
-                            Divider()
-                            Text("历史字幕").font(.headline)
-                            ForEach(model.meetingCaptions.filter { $0.final }) { row in
-                                Text(row.source).textSelection(.enabled)
-                                if !row.chinese.isEmpty {
-                                    Text(row.chinese).foregroundStyle(.secondary).textSelection(.enabled)
-                                }
-                                Divider()
-                            }
+                    .disabled(model.meetingStarting || model.meetingActive)
+                    .accessibilityIdentifier("meeting_asr_mode")
+                    Button(model.meetingActive || model.meetingStarting ? "停止会议" : "开始会议") {
+                        if model.meetingActive || model.meetingStarting {
+                            model.stopMeeting()
+                        } else {
+                            model.startMeeting()
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
                     }
+                    .disabled(!model.meetingActive && !model.meetingStarting &&
+                              !model.meetingSources.contains(where: { $0.id == model.meetingSourceID }))
+                    .accessibilityIdentifier("meeting_start_stop")
                 }
-                .frame(minWidth: 210)
-                if !model.meetingCaptionsOnly {
-                    VSplitView {
-                        if !model.meetingExpressionExpanded {
-                            GroupBox("英语回复建议") {
-                                VStack(alignment: .leading, spacing: 7) {
-                                    HStack {
-                                        Button("重新生成") { model.requestMeetingReplies() }
-                                            .disabled(!model.meetingActive || model.meetingBusy || model.meetingVoiceRecording)
-                                        if model.meetingReplyPending {
-                                            Button("查看新建议") { model.acceptMeetingReplies() }
-                                                .disabled(model.meetingBusy || model.meetingCancelPending)
-                                        }
-                                        Spacer()
-                                        Button("取消") { model.cancelMeetingWork() }
-                                            .disabled(!model.meetingActive || model.meetingCancelPending)
-                                    }
-                                    Text(model.meetingReplyStatus.isEmpty ? "最新完整发言生成最多三条建议" : model.meetingReplyStatus)
-                                        .font(.caption).foregroundStyle(.secondary)
-                                    if !model.meetingReplySource.isEmpty {
-                                        Text(model.meetingReplySource).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                                    }
-                                    if !model.meetingReplyTip.isEmpty {
-                                        Text("提示 · " + model.meetingReplyTip)
-                                            .font(.caption).foregroundStyle(.secondary)
-                                            .textSelection(.enabled)
-                                            .accessibilityIdentifier("meeting_reply_tip")
-                                    }
-                                    ScrollView {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            ForEach(model.meetingReplies) { reply in
-                                                if !reply.english.isEmpty && reply.complete {
-                                                    Button {
-                                                        model.meetingSelectedIndex = reply.id
-                                                    } label: {
-                                                        VStack(alignment: .leading, spacing: 4) {
-                                                            HStack {
-                                                                Image(systemName: model.meetingSelectedIndex == reply.id
-                                                                    ? "largecircle.fill.circle" : "circle")
-                                                                Text(reply.english).font(.body).multilineTextAlignment(.leading)
-                                                            }
-                                                            Text(reply.chinese)
-                                                                .font(.caption).foregroundStyle(.secondary)
-                                                                .multilineTextAlignment(.leading)
-                                                        }
-                                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                                    }
-                                                    .buttonStyle(.plain)
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Button("复制选中英文") { model.copyMeetingReply() }
-                                        .disabled(!model.meetingReplies.contains(where: {
-                                            $0.id == model.meetingSelectedIndex && $0.complete && !$0.english.isEmpty
-                                        }))
-                                    TextField("追加要求（例如：更简短、更礼貌）", text: $model.meetingRefineInput)
-                                        .accessibilityIdentifier("meeting_refine_input")
-                                    Button("微调选中回复") { model.refineMeetingReply() }
-                                        .disabled(!model.meetingActive || model.meetingBusy ||
-                                            model.meetingRefineInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                                            !model.meetingReplies.contains(where: {
-                                                $0.id == model.meetingSelectedIndex && $0.complete && !$0.english.isEmpty
-                                            }))
-                                        .accessibilityIdentifier("meeting_refine")
-                                }.padding(8)
-                            }
-                            .frame(minHeight: 225)
-                        }
-                        GroupBox("我的主动表达") {
-                            VStack(alignment: .leading, spacing: 8) {
-                                TextEditor(text: $model.meetingInput)
-                                    .frame(minHeight: 65)
-                                    .accessibilityIdentifier("meeting_expression_input")
-                                HStack {
-                                    Button("生成可直接说的英语") { model.composeMeetingText() }
-                                        .disabled(!model.meetingActive || model.meetingBusy ||
-                                            model.meetingInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                                    Button(model.meetingVoiceRecording ? "结束语音并生成" : "语音输入") {
-                                        model.toggleMeetingVoice()
-                                    }
-                                    .disabled(!model.meetingActive || model.meetingVoiceStarting ||
-                                        (model.meetingBusy && !model.meetingVoiceRecording) ||
-                                        model.isRecording || model.isStarting || model.isProcessing)
-                                    Spacer()
-                                }
-                                Text(model.meetingExpressionStatus)
-                                    .font(.caption).foregroundStyle(.secondary)
-                                ScrollView {
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        Text(model.meetingExpression.isEmpty
-                                            ? "可以主动提问、陈述、要数据或寻求建议，不必等待对方提问。"
-                                            : model.meetingExpression)
-                                            .textSelection(.enabled)
-                                        if !model.meetingExpressionChinese.isEmpty {
-                                            Text(model.meetingExpressionChinese)
-                                                .foregroundStyle(.secondary).textSelection(.enabled)
-                                        }
-                                    }.frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                Button("复制英文表达") { model.copyMeetingExpression() }
-                                    .disabled(model.meetingExpression.isEmpty)
-                                    .accessibilityIdentifier("meeting_copy_expression")
-                            }.padding(8)
-                        }
-                        .frame(minHeight: 190)
-                    }
-                    .frame(minWidth: 290)
-                }
-            }
-            if !model.meetingCopyStatus.isEmpty {
-                Text(model.meetingCopyStatus)
+                Text("识别模式需在设置中保存。前缀续写要求 ASR 服务支持。")
                     .font(.caption).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("meeting_copy_status")
+                MeetingReaderView(model: model, embedded: true)
+                    .frame(height: 690)
             }
-            Text("选择系统或应用音频后开始字幕；建议由最新完整发言触发。拖动分隔线调整区域大小。实际权限和录音效果仍需在 Mac 上验收。")
-                .font(.footnote).foregroundStyle(.secondary)
+            .padding(.horizontal, 4)
         }
-        .frame(minHeight: 490)
         .onAppear { model.refreshMeetingSources() }
     }
 }
