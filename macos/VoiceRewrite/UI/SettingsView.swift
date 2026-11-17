@@ -59,12 +59,14 @@ struct SettingsView: View {
                                 Text("语音识别").font(.title2.bold())
                                 Text("连接语音识别服务，将录音转换为文字。").font(.subheadline).foregroundStyle(.secondary)
                             }
-                        }                         else if selectedPage == "writing" {
+                        } 
+                        else if selectedPage == "writing" {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("AI 写作").font(.title2.bold())
                                 Text("配置用于改写、翻译与问答的文本模型。").font(.subheadline).foregroundStyle(.secondary)
                             }
-                        }                         else if selectedPage == "input" {
+                        } 
+                        else if selectedPage == "input" {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("快捷键与设备").font(.title2.bold())
                                 Text("录入语音指令、听写快捷键，并选择麦克风。").font(.subheadline).foregroundStyle(.secondary)
