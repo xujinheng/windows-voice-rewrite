@@ -143,7 +143,7 @@ final class BridgeClient {
                                     session: session, id: id)
             } catch {
                 let failure = (error as? BridgeFailure)
-                self?.state.async { [weak self] in
+                self.state.async { [weak self] in
                     guard let self, self.epoch == session else { return }
                     if let failure {
                         self.replies.fail(id: id, reason: failure)
@@ -283,7 +283,6 @@ final class BridgeClient {
     private func failSession(_ session: UInt64, reason: BridgeFailure) {
         guard session == epoch else { return }
         epoch &+= 1
-        writingID = nil
         let child = process
         let oldInput = input
         process = nil
