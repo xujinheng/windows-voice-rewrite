@@ -605,6 +605,8 @@ func settingsMaps() (bindings, actions, status map[string]string) {
 		"probe_asr": "model.checkASRService()",
 		"probe_llm": "model.checkLLMService()",
 		"save":      "model.saveSettings()",
+		"advanced":  "showAdvanced.toggle()",
+		"close":     "NSApp.keyWindow?.close()",
 	}
 	status = map[string]string{
 		"probe_asr_status": "model.asrProbeStatus",
