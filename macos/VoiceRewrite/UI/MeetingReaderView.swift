@@ -59,6 +59,21 @@ enum MeetingReaderLayout {
         return unread + max(max(0, current - previous), newTail)
     }
 
+    // Preserve the screen with the greatest overlap, including displays
+    // positioned at negative desktop coordinates. A disconnected monitor's
+    // autosaved frame is instead brought back inside the primary work area.
+    static func restoredFrame(_ frame: NSRect, displays: [NSRect]) -> NSRect {
+        guard let area = displays.max(by: {
+            $0.intersection(frame).width * $0.intersection(frame).height <
+            $1.intersection(frame).width * $1.intersection(frame).height
+        }) else { return frame }
+        let width = min(frame.width, area.width)
+        let height = min(frame.height, area.height)
+        return NSRect(x: min(max(frame.minX, area.minX), area.maxX - width),
+                      y: min(max(frame.minY, area.minY), area.maxY - height),
+                      width: width, height: height)
+    }
+
     // A completed current turn remains fixed until the next utterance arrives.
     // Interim ASR text must never appear in the independently scrolled history.
     static func split(_ captions: [MeetingCaptionRow]) -> (current: MeetingCaptionRow?, history: [MeetingCaptionRow]) {
@@ -674,21 +689,9 @@ final class MeetingReaderWindowController: NSObject, NSWindowDelegate {
         if !panel.setFrameUsingName("VoiceRewriteMeetingReader") {
             panel.center()
         }
-        // Saved coordinates may point at a disconnected external monitor.
-        // Keep a usable window on an attached display without discarding the
-        // last chosen dimensions when the screen can accommodate them.
-        let frame = panel.frame
-        if !NSScreen.screens.contains(where: {
-            $0.visibleFrame.intersection(frame).width >= 120 &&
-            $0.visibleFrame.intersection(frame).height >= 100
-        }), let screen = NSScreen.main ?? NSScreen.screens.first {
-            let area = screen.visibleFrame
-            let width = min(frame.width, area.width)
-            let height = min(frame.height, area.height)
-            panel.setFrame(NSRect(x: area.midX - width / 2,
-                                  y: area.midY - height / 2,
-                                  width: width, height: height), display: false)
-        }
+        let safeFrame = MeetingReaderLayout.restoredFrame(panel.frame,
+            displays: NSScreen.screens.map(\.visibleFrame))
+        if safeFrame != panel.frame { panel.setFrame(safeFrame, display: false) }
         panel.setFrameAutosaveName("VoiceRewriteMeetingReader")
         self.panel = panel
         panel.makeKeyAndOrderFront(nil)
