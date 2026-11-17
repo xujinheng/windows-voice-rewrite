@@ -117,7 +117,8 @@ enum InitialSetup {
 enum MenuBarStatus {
     static func title(paused: Bool, recording: Bool, starting: Bool,
                       processing: Bool, meetingActive: Bool,
-                      phase: IndicatorPhase? = nil, mode: String = "听写") -> String {
+                      phase: IndicatorPhase? = nil, mode: String = "听写",
+                      connectionFailed: Bool = false) -> String {
         switch phase {
         case .success: return "语音任务完成"
         case .answer: return "已显示 AI 结果"
@@ -133,7 +134,8 @@ enum MenuBarStatus {
         if starting { return "正在启动录音" }
         if meetingActive && paused { return "会议进行中 · 普通语音已暂停" }
         if meetingActive { return "会议进行中" }
-        return paused ? "普通语音已暂停" : "待命"
+        if paused { return "普通语音已暂停" }
+        return connectionFailed ? "服务连接失败 · 查看诊断" : "待命"
     }
 
     static func symbol(paused: Bool, recording: Bool, starting: Bool,
@@ -165,9 +167,13 @@ private struct MenuBarControlCenter: View {
     @Environment(\.openWindow) private var openWindow
 
     private var busy: Bool { model.isRecording || model.isStarting || model.isProcessing }
+    private var connectionFailed: Bool {
+        if case .failed = model.connection { return true }
+        return false
+    }
 
     var body: some View {
-        Text("状态：\(MenuBarStatus.title(paused: model.voicePaused, recording: model.isRecording, starting: model.isStarting, processing: model.isProcessing, meetingActive: model.meetingActive, phase: model.menuIndicatorPhase, mode: model.menuIndicatorMode))")
+        Text("状态：\(MenuBarStatus.title(paused: model.voicePaused, recording: model.isRecording, starting: model.isStarting, processing: model.isProcessing, meetingActive: model.meetingActive, phase: model.menuIndicatorPhase, mode: model.menuIndicatorMode, connectionFailed: connectionFailed))")
         if InitialSetup.required {
             Text("首次使用：请先在设置中配置 ASR / LLM 服务")
         }
@@ -219,6 +225,12 @@ private struct MenuBarControlCenter: View {
         Divider()
         Button("最近错误与解决方法…") { showRecentError() }
         Button("查看诊断日志") { DiagnosticLog.reveal() }
+        Menu("权限与故障恢复") {
+            Button("重新检测辅助功能权限") { model.refreshSideMouse() }
+            Button("请求辅助功能权限…") { model.requestAccessibility() }
+            Button("打开麦克风权限设置…") { model.openMicrophonePrivacySettings() }
+            Button("重新检测麦克风权限") { model.refreshMicrophonePermission() }
+        }
         Button("检查更新…") { model.checkForUpdate() }
             .disabled(model.isCheckingUpdate)
         if model.isCheckingUpdate || model.updatePage != nil {
