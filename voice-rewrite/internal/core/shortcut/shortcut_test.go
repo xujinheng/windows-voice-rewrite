@@ -177,14 +177,14 @@ func TestCaptureKeyIgnoresModifiersAndWindowsKey(t *testing.T) {
 
 func TestMacKeyboardDefaultsStayKeyboardShortcuts(t *testing.T) {
 	seen := map[string]bool{}
-	for _, raw := range []string{MacDictationShortcut, MacRewriteShortcut, MacTextEditShortcut} {
+	for _, raw := range []string{MacDictationShortcut, MacRewriteShortcut} {
 		binding, err := Bind(raw)
 		if err != nil || binding.Mouse || seen[binding.Key] {
 			t.Fatalf("%s %#v %v", raw, binding, err)
 		}
 		seen[binding.Key] = true
 	}
-	if MacDictationShortcut != "Ctrl+Alt+R" || MacRewriteShortcut != "Ctrl+Alt+E" || MacTextEditShortcut != "Ctrl+Alt+T" {
-		t.Fatalf("mac defaults %s %s %s", MacDictationShortcut, MacRewriteShortcut, MacTextEditShortcut)
+	if MacDictationShortcut != "Ctrl+Alt+R" || MacRewriteShortcut != "Ctrl+Alt+E" {
+		t.Fatalf("mac defaults %s %s", MacDictationShortcut, MacRewriteShortcut)
 	}
 }
