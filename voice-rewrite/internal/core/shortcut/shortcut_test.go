@@ -184,7 +184,24 @@ func TestMacKeyboardDefaultsStayKeyboardShortcuts(t *testing.T) {
 		}
 		seen[binding.Key] = true
 	}
-	if MacDictationShortcut != "Ctrl+Alt+R" || MacRewriteShortcut != "Ctrl+Alt+E" {
+	if MacDictationShortcut != "RightCtrl" || MacRewriteShortcut != "RightOption" {
 		t.Fatalf("mac defaults %s %s", MacDictationShortcut, MacRewriteShortcut)
+	}
+}
+
+func TestMacRightModifiersParseButWindowsRejectsTheirRegistration(t *testing.T) {
+	for _, tc := range []struct{ raw, canonical string }{
+		{"rightcontrol", "RightCtrl"}, {"rightalt", "RightOption"},
+	} {
+		value, err := Bind(tc.raw)
+		if err != nil || value.Normalized != tc.canonical || value.Key != tc.canonical || value.Mouse || value.Ctrl || value.Alt || value.Shift {
+			t.Fatalf("mac modifier binding %q: %#v %v", tc.raw, value, err)
+		}
+		if _, err := ValidateDictation(tc.raw, "Mouse5", "Ctrl+Alt+F10"); err == nil {
+			t.Fatalf("Windows must reject bare modifier %q", tc.raw)
+		}
+		if _, err := ValidateStartup("hold", tc.raw, "Mouse5", "Ctrl+Alt+F10"); err == nil {
+			t.Fatalf("Windows startup must reject bare modifier %q", tc.raw)
+		}
 	}
 }
