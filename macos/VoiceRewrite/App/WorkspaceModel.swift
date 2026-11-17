@@ -158,6 +158,7 @@ final class WorkspaceModel: ObservableObject {
     private var activeModelQueryIDs: [String: String] = [:]
     private var activeProbeIDs: [String: String] = [:]
     private var activeRequestID: String?
+    private var processingWatchdog: Task<Void, Never>?
     private var activeInsert: MacDictationTarget?
     private var activeVoiceSelection: (snapshot: SelectionSnapshot, generation: UInt64)?
     private var activeVoiceTargetPID: Int32?
@@ -2069,7 +2070,39 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    /// Shared upper bound for the native stop, AX and Helper stages. The Go
+    /// service timeout cannot protect a stalled local microphone/AX await.
+    static func asrDeadline(for pcm: Data) -> UInt64 {
+        let duration = (pcm.count + 31_999) / 32_000
+        return UInt64(min(220, max(65, 45 + 2 * duration)) + 15)
+    }
+
+    private func armProcessingWatchdog(token: UInt64, seconds: UInt64, stage: String) {
+        processingWatchdog?.cancel()
+        processingWatchdog = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: seconds * 1_000_000_000) }
+            catch { return }
+            guard let self, self.resultGeneration.accepts(token), self.isProcessing else { return }
+            DiagnosticLog.note("stage=voice_\(stage) status=timeout")
+            self.processingWatchdog = nil
+            self.invalidatePending()
+            self.microphone.cancel()
+            self.isRecording = false
+            self.isStarting = false
+            self.recordingStatus = "语音处理超时，已结束本次任务；请检查 ASR 服务后重试"
+            self.interactionStatus = self.recordingStatus
+            self.asrProbeStatus = "ASR：本次请求超时"
+            self.showIndicator(phase: .error, mode: self.indicatorSnapshot.mode, pending: false)
+        }
+    }
+
+    private func finishProcessingWatchdog() {
+        processingWatchdog?.cancel()
+        processingWatchdog = nil
+    }
+
     private func invalidatePending() {
+        finishProcessingWatchdog()
         _ = resultGeneration.begin()
         if let id = activeRequestID { bridge?.cancel(id: id) }
         activeRequestID = nil
@@ -2217,6 +2250,7 @@ final class WorkspaceModel: ObservableObject {
         isProcessing = true
         showIndicator(phase: .processing, mode: indicatorSnapshot.mode, pending: false)
         recordingStatus = dictationProcessing()
+        armProcessingWatchdog(token: resultGeneration.latest, seconds: 20, stage: "capture_stop")
         let token = resultGeneration.latest
         let insertion = activeInsert
         let voiceTargetPID = activeVoiceTargetPID
@@ -2228,6 +2262,9 @@ final class WorkspaceModel: ObservableObject {
             var selectionGeneration: UInt64?
             do {
                 let pcm = try await microphone.stop()
+                armProcessingWatchdog(token: token,
+                    seconds: voiceTargetPID == nil ? Self.asrDeadline(for: pcm) : 375,
+                    stage: voiceTargetPID == nil ? "asr" : "spoken_edit")
                 let route = recordingDispatch(tokenValid: resultGeneration.accepts(token), voiceSelection: voiceTargetPID != nil)
                 guard route.send else { return }
                 if route.cancelProbes { cancelProbes() }
@@ -2283,6 +2320,7 @@ final class WorkspaceModel: ObservableObject {
                     Task { @MainActor [weak self] in
                         guard let self, self.resultGeneration.accepts(token) else { return }
                         self.activeRequestID = nil
+                        self.finishProcessingWatchdog()
                         self.isProcessing = false
                         let response = try? reply.get()
                         let follow = dictationTranscriptFollowUp(
@@ -2301,7 +2339,10 @@ final class WorkspaceModel: ObservableObject {
             } catch {
                 let failed = recordingStopFailure(tokenValid: resultGeneration.accepts(token))
                 guard failed.apply else { return }
-                if failed.stopProcessing { isProcessing = false }
+                if failed.stopProcessing {
+                    finishProcessingWatchdog()
+                    isProcessing = false
+                }
                 applyTask(recordingStopFollowUp(detail: error.localizedDescription,
                     voiceSelection: voiceTargetPID != nil, mode: indicatorSnapshot.mode),
                     generation: selectionGeneration)
@@ -2338,6 +2379,7 @@ final class WorkspaceModel: ObservableObject {
         invalidatePending()
         let token = resultGeneration.begin()
         isProcessing = true
+        armProcessingWatchdog(token: token, seconds: 20, stage: "selection_capture")
         interactionStatus = rewriteCheckingSelection()
         showIndicator(phase: .selection, mode: "改写", pending: false)
         let instruction = taskInstruction
@@ -2359,6 +2401,7 @@ final class WorkspaceModel: ObservableObject {
                 llmProbeStatus = probeRewritingSelection()
                 showIndicator(phase: .rewriting, mode: "改写", pending: false)
                 let config = try requestConfig(for: .selectedTask)
+                armProcessingWatchdog(token: token, seconds: 165, stage: "selected_edit")
                 guard let bridge else { throw BridgeFailure.notRunning }
                 let id = bridge.send(operation: "selected_task", fields: [
                     "config": config,
@@ -2389,6 +2432,7 @@ final class WorkspaceModel: ObservableObject {
 
     private func presentSelectionCue(_ cue: SelectionCue) {
         if cue.stopProcessing {
+            finishProcessingWatchdog()
             isProcessing = false
         }
         if let status = cue.interactionStatus {
@@ -2412,6 +2456,7 @@ final class WorkspaceModel: ObservableObject {
             return
         }
         activeRequestID = nil
+        finishProcessingWatchdog()
         isProcessing = false
         let response = try? reply.get()
         let result = response?.result
