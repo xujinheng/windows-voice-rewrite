@@ -129,7 +129,7 @@ private let mouseTapCallback: CGEventTapCallBack = { _, type, event, userData in
 @MainActor
 public final class SideMouseButtonDriver {
     private let threshold: TimeInterval
-    private let onPress: @MainActor (SideMouseAction) -> Void
+    private let onPress: @MainActor (SideMouseAction, Int32?) -> Void
     private let onPreviewDismissed: @MainActor () -> Void
     private let onHold: @MainActor (SideMouseAction, Int32?) -> Void
     private let onRelease: @MainActor (SideMouseAction) -> Void
@@ -170,7 +170,7 @@ public final class SideMouseButtonDriver {
     public init(
         threshold: TimeInterval = SideHold.threshold,
         bindings: SideMouseBindings = SideMouseBindings(),
-        onPress: @escaping @MainActor (SideMouseAction) -> Void = { _ in },
+        onPress: @escaping @MainActor (SideMouseAction, Int32?) -> Void = { _, _ in },
         onPreviewDismissed: @escaping @MainActor () -> Void = {},
         onHold: @escaping @MainActor (SideMouseAction, Int32?) -> Void,
         onRelease: @escaping @MainActor (SideMouseAction) -> Void,
@@ -287,14 +287,15 @@ public final class SideMouseButtonDriver {
             guard let token = state.press(button) else { return nil }
             // A CGEventTap must return quickly. SwiftUI/AppKit panels are shown
             // after the callback, only if the same short-press is still pending.
+            let targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            downEvents[button] = event.copy()
+            targetPIDs[button] = targetPID
             DispatchQueue.main.async { [weak self] in
                 guard let self, !self.voicePaused,
                       let press = self.state.pressed[button],
                       press.token == token, !press.active else { return }
-                self.onPress(action)
+                self.onPress(action, targetPID)
             }
-            downEvents[button] = event.copy()
-            targetPIDs[button] = NSWorkspace.shared.frontmostApplication?.processIdentifier
             DispatchQueue.main.asyncAfter(deadline: .now() + threshold) { [weak self] in
                 guard let self, self.state.activate(button, token: token) else { return }
                 self.downEvents.removeValue(forKey: button)
