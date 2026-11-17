@@ -31,13 +31,24 @@ public final class SystemAudioCapture {
         for app in content.applications where app.processID != ProcessInfo.processInfo.processIdentifier {
             let name = app.applicationName.trimmingCharacters(in: .whitespacesAndNewlines)
             if !name.isEmpty {
+                // Display a visible window title when available, like the Windows
+                // process source picker. The process ID remains the stable source.
+                let windowTitle = content.windows.first {
+                    $0.owningApplication?.processID == app.processID &&
+                        $0.isOnScreen &&
+                        !($0.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }?.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let displayName = windowTitle.map { "\(name) · \($0)" } ?? name
                 sources.append(MeetingAudioSource(
-                    id: String(app.processID), name: name))
+                    id: String(app.processID), name: displayName))
             }
         }
         sources.sort { left, right in
             if left.id == "system" { return true }
             if right.id == "system" { return false }
+            let leftZoom = left.name.localizedLowercase.contains("zoom")
+            let rightZoom = right.name.localizedLowercase.contains("zoom")
+            if leftZoom != rightZoom { return leftZoom }
             return left.name.localizedStandardCompare(right.name) == .orderedAscending
         }
         return sources
