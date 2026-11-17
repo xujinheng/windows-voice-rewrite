@@ -20,6 +20,7 @@ final class SessionHistoryTests: XCTestCase {
         XCTAssertTrue(history.entries.isEmpty)
     }
 
+    @MainActor
     func testMainWindowCloseDoesNotTerminateAndLaunchRunsOnce() {
         let delegate = AppLifecycleDelegate()
         var launches = 0
@@ -97,6 +98,7 @@ final class SessionHistoryTests: XCTestCase {
         XCTAssertFalse(InitialSetup.required(settingsFile: path))
     }
 
+    @MainActor
     func testGlobalQuitIsIndependentOfBothVoiceHotkeys() {
         XCTAssertEqual(GlobalExitHotKey.defaultBinding, "Ctrl+Alt+F10")
         let exit = ShortcutBinding(canonical: GlobalExitHotKey.defaultBinding)
