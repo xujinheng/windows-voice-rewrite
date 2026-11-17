@@ -39,10 +39,14 @@ final class HostStatusTests: XCTestCase {
 
     func testDictationRecordingSentencesStayMacOnly() {
         XCTAssertEqual(recordingIdle(), "未录音")
-        XCTAssertEqual(dictationCaretLocked(), "已锁定原应用光标及选区；识别后将复核目标")
+        XCTAssertEqual(dictationCaretLocked(), "已记录原应用；识别后将尝试向其输入文字")
         XCTAssertTrue(dictationNoTarget().contains("未指定外部文本框"))
         XCTAssertEqual(dictationMicrophoneFailed("denied"), "无法启动麦克风：denied")
-        XCTAssertEqual(dictationInserted(), "已向原输入框发送文字")
+        XCTAssertEqual(dictationInserted(), "已发送输入指令；请以目标输入框实际内容为准")
+        let denied = insertionStatus(InteractionFailure.keyboardEventPermissionDenied,
+                                     rewrite: false, passwordRewrite: "改写", passwordDictation: "听写")
+        XCTAssertTrue(denied.contains("没有发送键盘事件"))
+        XCTAssertEqual(insertionDiagnosticCode(InteractionFailure.keyboardEventPermissionDenied), "permission_denied")
         XCTAssertEqual(insertionDiagnosticCode(InteractionFailure.focusChanged), "focus_changed")
         XCTAssertEqual(insertionDiagnosticCode(InteractionFailure.selectionChanged), "selection_changed")
         XCTAssertEqual(insertionDiagnosticCode(InteractionFailure.writeNotConfirmed), "write_attempted_unconfirmed")
