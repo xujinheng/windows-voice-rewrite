@@ -1307,10 +1307,9 @@ final class WorkspaceModel: ObservableObject {
         }
         meetingPendingPackets += 1
         let sentEpoch = meetingAudioEpoch
-        bridge.send(operation: "meeting_feed", fields: [
+        bridge.sendPCM(operation: "meeting_feed", pcm: bytes, fields: [
             "session_id": .string(id),
             "audio_epoch": .number(Double(meetingAudioEpoch)),
-            "pcm_base64": .string(bytes.base64EncodedString()),
         ]) { [weak self] reply in
             Task { @MainActor [weak self] in
                 guard let self, self.meetingSessionID == id,
@@ -1572,9 +1571,8 @@ final class WorkspaceModel: ObservableObject {
                           self.meetingVoiceGeneration.accepts(voiceToken),
                           self.meetingSessionID == id, let bridge = self.bridge else { return }
                     let config = try self.requestConfig(for: .transcribe)
-                    self.meetingVoiceASRID = bridge.send(operation: "transcribe", fields: [
+                    self.meetingVoiceASRID = bridge.sendPCM(operation: "transcribe", pcm: pcm, fields: [
                         "config": config,
-                        "pcm_base64": .string(pcm.base64EncodedString()),
                     ]) { [weak self] result in
                         Task { @MainActor [weak self] in
                             guard let self, self.meetingGeneration.accepts(token),
