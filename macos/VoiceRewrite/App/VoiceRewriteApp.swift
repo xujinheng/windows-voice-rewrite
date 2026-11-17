@@ -30,6 +30,16 @@ enum MenuBarStatus {
         if meetingActive { return "会议进行中" }
         return paused ? "普通语音已暂停" : "待命"
     }
+
+    static func symbol(paused: Bool, recording: Bool, starting: Bool,
+                       processing: Bool, meetingActive: Bool, connectionFailed: Bool) -> String {
+        if connectionFailed { return "exclamationmark.triangle.fill" }
+        if processing { return "ellipsis.circle.fill" }
+        if recording { return "mic.fill" }
+        if starting { return "mic.badge.plus" }
+        if meetingActive { return "person.2.wave.2.fill" }
+        return paused ? "pause.circle.fill" : "waveform"
+    }
 }
 
 private struct MenuBarControlCenter: View {
@@ -42,6 +52,18 @@ private struct MenuBarControlCenter: View {
         Text("状态：\(MenuBarStatus.title(paused: model.voicePaused, recording: model.isRecording, starting: model.isStarting, processing: model.isProcessing, meetingActive: model.meetingActive))")
         Button("打开 VoiceRewrite") { showWorkspace() }
         Button("会议助手（打开主窗口）") { showWorkspace() }
+        if !model.meetingActive && !model.meetingStarting {
+            Button("刷新会议音频来源") { model.refreshMeetingSources() }
+            Menu("从音频来源开始会议") {
+                ForEach(model.meetingSources) { source in
+                    Button(source.name) {
+                        model.meetingSourceID = source.id
+                        model.startMeeting()
+                    }
+                }
+            }
+            .disabled(model.meetingSources.isEmpty)
+        }
         if model.meetingActive || model.meetingStarting {
             Button("停止会议采集") { model.stopMeeting() }
         }
@@ -70,6 +92,7 @@ private struct MenuBarControlCenter: View {
                 }
             }
         }
+        Button("关闭当前 AI 结果窗") { ResultCardPanel.shared.dismiss() }
         Button(SessionHistory.clearSession) { model.clearSessionHistory() }
             .disabled(model.sessionHistory.isEmpty)
         Divider()
@@ -116,6 +139,16 @@ struct VoiceRewriteApp: App {
     @NSApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var lifecycle
     @StateObject private var workspace = WorkspaceModel()
 
+    private var menuSymbol: String {
+        let connectionFailed: Bool
+        if case .failed = workspace.connection { connectionFailed = true }
+        else { connectionFailed = false }
+        return MenuBarStatus.symbol(
+            paused: workspace.voicePaused, recording: workspace.isRecording,
+            starting: workspace.isStarting, processing: workspace.isProcessing,
+            meetingActive: workspace.meetingActive, connectionFailed: connectionFailed)
+    }
+
     var body: some Scene {
         WindowGroup("VoiceRewrite", id: "workspace") {
             MainView(model: workspace)
@@ -137,7 +170,7 @@ struct VoiceRewriteApp: App {
             }
         }
 
-        MenuBarExtra("VoiceRewrite", systemImage: "waveform") {
+        MenuBarExtra("VoiceRewrite", systemImage: menuSymbol) {
             MenuBarControlCenter(model: workspace)
         }
 
