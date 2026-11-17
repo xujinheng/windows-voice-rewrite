@@ -684,9 +684,18 @@ final class WorkspaceModel: ObservableObject {
                 case .success(let response) where response.ok:
                     self.applyMeetingSnapshot(response.result ?? [:])
                 case .success(let response):
-                    self.meetingExpressionStatus = response.error?.userText ?? "会议处理失败，请重试"
+                    let message = response.error?.userText ?? "会议处理失败，请重试"
+                    if operation == "meeting_replies" {
+                        self.meetingReplyStatus = message
+                    } else {
+                        self.meetingExpressionStatus = message
+                    }
                 case .failure:
-                    self.meetingExpressionStatus = "会议处理已取消或连接已断开"
+                    if operation == "meeting_replies" {
+                        self.meetingReplyStatus = "会议建议请求已取消或连接已断开"
+                    } else {
+                        self.meetingExpressionStatus = "会议处理已取消或连接已断开"
+                    }
                 }
             }
         }

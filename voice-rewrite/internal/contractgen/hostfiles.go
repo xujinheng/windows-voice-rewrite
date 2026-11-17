@@ -548,7 +548,7 @@ func settingsMaps() (bindings, actions, status map[string]string) {
 		"text_model":         "model.settings.textModel",
 		"llm_api_key":        "model.llmKeyInput",
 		"max_record_seconds": "model.settings.maxRecordSeconds",
-		"microphone":        "model.settings.microphoneUID",
+		"microphone":         "model.settings.microphoneUID",
 		"rewrite_shortcut":   "model.settings.rewriteShortcut",
 		"dictation_shortcut": "model.settings.dictationShortcut",
 		"text_edit_shortcut": "model.settings.textEditShortcut",
