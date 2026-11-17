@@ -156,29 +156,13 @@ public final class MacDictationDelivery {
         try await waitForModifierRelease(stillValid: stillValid)
         guard stillValid() else { throw InteractionFailure.cancelled }
         try revalidate(target)
-        // Only unavailable clipboard formats justify using a different input
-        // mechanism. A concurrent paste must wait for its existing lease.
-        // Never switch methods solely because another transcript is pending.
-        var acquiredLease: UUID?
-        let deadline = ProcessInfo.processInfo.systemUptime +
-            Double(PasteTiming.maxMilliseconds + PasteTiming.minimumMilliseconds) / 1000
-        while true {
-            guard stillValid() else { throw InteractionFailure.cancelled }
-            try revalidate(target)
-            do {
-                acquiredLease = try clipboard.beginTemporaryText(text)
-                break
-            } catch ClipboardFailure.busy {
-                guard ProcessInfo.processInfo.systemUptime < deadline else {
-                    throw ClipboardFailure.busy
-                }
-                try await Task.sleep(nanoseconds: 50_000_000)
-            } catch ClipboardFailure.snapshotUnavailable {
-                try typeUnicode(text, to: target, stillValid: stillValid)
-                return .sentUnverified
-            }
+        let lease: UUID
+        do {
+            lease = try await clipboard.beginWhenAvailable(text, stillValid: stillValid)
+        } catch ClipboardFailure.snapshotUnavailable {
+            try typeUnicode(text, to: target, stillValid: stillValid)
+            return .sentUnverified
         }
-        guard let lease = acquiredLease else { throw ClipboardFailure.busy }
         do {
             try revalidate(target)
             guard clipboard.isOwned(lease) else { throw ClipboardFailure.ownershipLost }
