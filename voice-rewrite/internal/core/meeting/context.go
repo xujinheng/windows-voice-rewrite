@@ -30,12 +30,14 @@ func PrepareQuery(cfg coreconfig.Config, q Query) Query {
 		q.Prior, q.Background = nil, ""
 		q.Terms = MatchingTerms(q.Terms, q.UserPoints)
 	case "compose":
+		spoken := q.UserPoints
 		if UsesConversationContext(q.UserPoints) {
 			q.Prior = RecentContext(q.Prior)
+			spoken += "\\n" + strings.Join(q.Prior, "\\n")
 		} else {
 			q.Prior, q.Background = nil, ""
 		}
-		q.Terms = MatchingTerms(q.Terms, q.UserPoints)
+		q.Terms = MatchingTerms(q.Terms, spoken)
 	case "replies", "refine":
 		q.Prior = RecentContext(q.Prior)
 	default:
