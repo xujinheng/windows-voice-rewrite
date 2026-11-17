@@ -3,10 +3,10 @@
 package main
 
 import (
-    "time"
+	"time"
 
-    "voicerewrite/internal/core/clipboard"
-    "voicerewrite/internal/core/ux"
+	"voicerewrite/internal/core/clipboard"
+	"voicerewrite/internal/core/ux"
 )
 
 // Native Windows delivery uses the same user-visible Mouse4 behavior.
