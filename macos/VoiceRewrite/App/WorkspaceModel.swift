@@ -1963,7 +1963,9 @@ final class WorkspaceModel: ObservableObject {
         if effect.logServiceStatus {
             DiagnosticLog.note(serviceStatus)
         }
-        if effect.checkServices {
+        // The --meeting-demo path must not run even background ASR/LLM
+        // endpoint probes. The bundled fixture is genuinely offline.
+        if effect.checkServices && !showStartupDemoOnConnect {
             checkServices()
         }
         if effect.refreshShortcuts {
