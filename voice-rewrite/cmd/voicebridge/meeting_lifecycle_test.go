@@ -139,8 +139,8 @@ func TestBridgeMeetingResumeRestartsSharedAudioStream(t *testing.T) {
 		t.Fatalf("start: %#v", start)
 	}
 	sid := object(t, start.Result)["session_id"].(string)
-	for _, action := range []string{"meeting_pause", "meeting_resume", "meeting_pause", "meeting_resume"} {
-		h.send(map[string]any{"v": 1, "id": fmt.Sprintf("%s-%d", action, time.Now().UnixNano()),
+	for n, action := range []string{"meeting_pause", "meeting_resume", "meeting_pause", "meeting_resume"} {
+		h.send(map[string]any{"v": 1, "id": fmt.Sprintf("%s-%d", action, n),
 			"op": action, "session_id": sid})
 		if got := h.receive(); !got.OK {
 			t.Fatalf("%s: %#v", action, got)
