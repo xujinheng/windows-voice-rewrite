@@ -5,6 +5,14 @@ public enum ContractLimits {
     public static let recordSecondsMin = 1
     public static let recordSecondsMax = 180
     public static let defaultRecordSeconds = 60
+    public static let maxSystemPromptBytes = 16384
+    public static let minResponseTokens = 128
+    public static let maxResponseTokens = 4096
+    public static let maxSelectedRunes = 100000
+    public static let minCopyAttempts = 1
+    public static let maxCopyAttempts = 5
+    public static let minCopyTimeoutMS = 500
+    public static let maxCopyTimeoutMS = 5000
     public static let maxEndpointBytes = 500
     public static let maxModelIDBytes = 150
     public static let maxCredentialBytes = 4000
@@ -18,6 +26,12 @@ public enum ContractLimits {
     public static let defaultMeetingASRMode = "llama-prefix"
     public static let meetingASRMultipartTitle = "分段音频识别"
     public static let meetingASRLlamaPrefixTitle = "累积音频 / 前缀续写"
+    public static let defaultMaxResponseTokens = 1200
+    public static let defaultMaxSelectedRunes = 12000
+    public static let defaultCopyAttempts = 2
+    public static let defaultCopyTimeoutMS = 750
+    public static let defaultRecordMode = "hold"
+    public static let defaultExitShortcut = "Ctrl+Alt+F10"
     public static let meetingASRModes = [meetingASRMultipart, meetingASRLlamaPrefix]
     public static let meetingButtonCaptions = 7101
     public static let meetingButtonExpression = 7115

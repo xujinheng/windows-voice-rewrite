@@ -54,16 +54,26 @@ struct ShortcutBinding {
 struct MacShortcutPlan: Equatable {
     let dictation: HotKeyShortcut?
     let rewrite: HotKeyShortcut?
+    let exit: HotKeyShortcut?
+    let recordMode: String
     let sideButtons: SideMouseBindings
 
-    init?(dictation: ShortcutBinding, rewrite: ShortcutBinding) {
+    init?(dictation: ShortcutBinding, rewrite: ShortcutBinding,
+          exit: ShortcutBinding? = nil, recordMode: String = "hold") {
+        guard recordMode == "hold" || recordMode == "toggle",
+              recordMode != "toggle" || (!dictation.mouse && !rewrite.mouse) else { return nil }
         let dictationKey = dictation.mouse ? nil : MacShortcut.hotKey(
             key: dictation.key, ctrl: dictation.ctrl, alt: dictation.alt, shift: dictation.shift)
         let rewriteKey = rewrite.mouse ? nil : MacShortcut.hotKey(
             key: rewrite.key, ctrl: rewrite.ctrl, alt: rewrite.alt, shift: rewrite.shift)
         guard (dictation.mouse || dictationKey != nil),
               (rewrite.mouse || rewriteKey != nil) else { return nil }
-        let keys = [dictationKey, rewriteKey].compactMap { $0 }
+        let exitKey = exit.flatMap { binding in
+            binding.mouse ? nil : MacShortcut.hotKey(key: binding.key, ctrl: binding.ctrl,
+                                                     alt: binding.alt, shift: binding.shift)
+        }
+        guard exit == nil || exitKey != nil else { return nil }
+        let keys = [dictationKey, rewriteKey, exitKey].compactMap { $0 }
         guard Set(keys).count == keys.count else { return nil }
 
         let explicitMouse = dictation.mouse || rewrite.mouse
@@ -77,17 +87,19 @@ struct MacShortcutPlan: Equatable {
         }
         let mouse = explicitMouse
             ? SideMouseBindings(dictationButton: button(dictation), rewriteButton: button(rewrite))
-            : SideMouseBindings()
+            : (recordMode == "hold" ? SideMouseBindings() : SideMouseBindings(dictationButton: nil, rewriteButton: nil))
         guard mouse.isValid,
               (!dictation.mouse || button(dictation) != nil),
               (!rewrite.mouse || button(rewrite) != nil) else { return nil }
         self.dictation = dictationKey
         self.rewrite = rewriteKey
+        self.exit = exitKey
+        self.recordMode = recordMode
         self.sideButtons = mouse
     }
 
     var keyboard: [HotKeyShortcut] {
-        [dictation, rewrite].compactMap { $0 }
+        [dictation, rewrite, exit].compactMap { $0 }
     }
 
 }

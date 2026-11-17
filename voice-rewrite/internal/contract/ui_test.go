@@ -36,7 +36,7 @@ func TestSettingsCatalogKeepsSharedPagesAndOrder(t *testing.T) {
 		t.Fatalf("macos input: %v", macInput)
 	}
 	for _, control := range Controls() {
-		if control.Platform == Both && control.Gap != "" || control.Platform != Both && control.Gap != "#61 #69" {
+		if control.Platform == Both && control.Gap != "" || control.Platform != Both && !strings.HasPrefix(control.Gap, "#") {
 			t.Fatalf("gap %s %q", control.ID, control.Gap)
 		}
 	}
@@ -47,6 +47,12 @@ func TestSettingsCatalogKeepsSharedPagesAndOrder(t *testing.T) {
 	}
 	if _, ok := Find("text_edit_shortcut"); ok {
 		t.Fatal("third global shortcut must not appear in settings")
+	}
+	for _, id := range []string{"record_mode", "exit_shortcut", "capture_exit", "system_prompt", "max_response_tokens", "max_selected_characters"} {
+		field, ok := Find(id)
+		if !ok || !field.VisibleOn(MacOS) || field.VisibleOn(Windows) {
+			t.Fatalf("macOS settings catalog missing %s", id)
+		}
 	}
 	if len(PageControls("speech", Windows)) != len(PageControls("speech", MacOS)) {
 		t.Fatal("speech page controls diverged")

@@ -128,8 +128,7 @@ final class WorkspaceModel: ObservableObject {
     private var keyboardHoldSequence: UInt64 = 0
     /// Keyboard defaults to Windows' hold-and-release operation. Toggle mode
     /// remains available as a native preference for a future Settings control.
-    @Published private(set) var keyboardHoldEnabled =
-        UserDefaults.standard.object(forKey: "VoiceRewriteKeyboardHold") as? Bool ?? true
+    @Published private(set) var keyboardHoldEnabled = true
     private struct SideDictationPreflight {
         let generation: UInt64
         let targetPID: Int32?
@@ -154,6 +153,7 @@ final class WorkspaceModel: ObservableObject {
     private var activeVoiceSelection: (snapshot: SelectionSnapshot, generation: UInt64)?
     private var activeVoiceTargetPID: Int32?
     private var hotKeyDriver: CarbonHotKeyDriver?
+    private var shortcutCaptureActive = false
     private var hotKeys: HotKeyRegistry?
     private var sideMouse: SideMouseButtonDriver?
 
@@ -295,7 +295,9 @@ final class WorkspaceModel: ObservableObject {
     private func acceptedShortcutPlan() -> (ShortcutBinding, ShortcutBinding)? {
         guard let dictation = ShortcutBinding(canonical: settings.dictationShortcut),
               let rewrite = ShortcutBinding(canonical: settings.rewriteShortcut),
-              MacShortcutPlan(dictation: dictation, rewrite: rewrite) != nil else {
+              let exit = ShortcutBinding(canonical: settings.exitShortcut),
+              MacShortcutPlan(dictation: dictation, rewrite: rewrite,
+                              exit: exit, recordMode: settings.recordMode) != nil else {
             return nil
         }
         return (dictation, rewrite)
@@ -371,7 +373,9 @@ final class WorkspaceModel: ObservableObject {
     /// Keep working global shortcuts registered until every new key succeeds.
     @discardableResult
     private func register(dictation: ShortcutBinding, rewrite: ShortcutBinding) -> Bool {
-        guard let next = MacShortcutPlan(dictation: dictation, rewrite: rewrite) else {
+        guard let exit = ShortcutBinding(canonical: settings.exitShortcut),
+              let next = MacShortcutPlan(dictation: dictation, rewrite: rewrite,
+                                         exit: exit, recordMode: settings.recordMode) else {
             interactionStatus = shortcutPlanRejected()
             return false
         }
@@ -387,7 +391,8 @@ final class WorkspaceModel: ObservableObject {
                 hotKeys = registry
             }
             activeShortcutPlan = next
-            sideMouse?.setBindings(next.sideButtons)
+            keyboardHoldEnabled = next.recordMode == "hold"
+            sideMouse?.setBindings(shortcutCaptureBindings())
             interactionStatus = label
             return true
         } catch {
@@ -402,14 +407,14 @@ final class WorkspaceModel: ObservableObject {
                 hotKeyDriver = restored.0
                 hotKeys = restored.1
                 activeShortcutPlan = previous
-                sideMouse?.setBindings(previous.sideButtons)
+                sideMouse?.setBindings(shortcutCaptureBindings())
             }
             return
         }
         do {
             try registry.replace(with: previous?.keyboard ?? [])
             activeShortcutPlan = previous
-            sideMouse?.setBindings(previous?.sideButtons ?? SideMouseBindings())
+            sideMouse?.setBindings(shortcutCaptureBindings())
         } catch {
             interactionStatus = "无法恢复原快捷键：\(error.localizedDescription)"
         }
@@ -418,6 +423,10 @@ final class WorkspaceModel: ObservableObject {
     private func createHotKeyRegistry(plan: MacShortcutPlan) throws -> (CarbonHotKeyDriver, HotKeyRegistry) {
         let driver = CarbonHotKeyDriver(onPressed: { [weak self] shortcut, pid in
             guard let self, let bound = self.activeShortcutPlan else { return }
+            if shortcut == bound.exit {
+                NSApp.terminate(nil)
+                return
+            }
             if shortcut == bound.dictation {
                 self.keyboardPressed(.dictation, targetPID: pid)
             } else if shortcut == bound.rewrite {
@@ -455,7 +464,7 @@ final class WorkspaceModel: ObservableObject {
         keyboardGate.clear()
         keyboardHoldSequence &+= 1
         keyboardHoldEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: "VoiceRewriteKeyboardHold")
+        settings.recordMode = enabled ? "hold" : "toggle"
     }
 
     private func keyboardPressed(_ action: SideMouseAction, targetPID: Int32?) {
@@ -535,6 +544,19 @@ final class WorkspaceModel: ObservableObject {
         meetingVoiceRecording = false
     }
 
+    /// Settings key learning passes Mouse4/Mouse5 through to its native window.
+    func setShortcutCaptureActive(_ active: Bool) {
+        guard shortcutCaptureActive != active else { return }
+        shortcutCaptureActive = active
+        sideMouse?.setBindings(shortcutCaptureBindings())
+    }
+
+    private func shortcutCaptureBindings() -> SideMouseBindings {
+        shortcutCaptureActive
+            ? SideMouseBindings(dictationButton: nil, rewriteButton: nil)
+            : (activeShortcutPlan?.sideButtons ?? SideMouseBindings())
+    }
+
     func refreshSideMouse() {
         accessibilityAuthorized = InteractionSession.accessibilityPermissionGranted()
         guard accessibilityAuthorized else {
@@ -545,7 +567,7 @@ final class WorkspaceModel: ObservableObject {
         }
         let isFreshStart = sideMouse == nil
         let driver = sideMouse ?? SideMouseButtonDriver(
-            bindings: activeShortcutPlan?.sideButtons ?? SideMouseBindings(),
+            bindings: shortcutCaptureBindings(),
             onPress: { [weak self] action, pid in
                 self?.previewIndicator(action)
                 self?.beginSideDictationPreflight(action: action, targetPID: pid)
@@ -577,7 +599,7 @@ final class WorkspaceModel: ObservableObject {
             }
         )
         do {
-            driver.setBindings(activeShortcutPlan?.sideButtons ?? SideMouseBindings())
+            driver.setBindings(shortcutCaptureBindings())
             try driver.start()
             sideMouse = driver
             driver.setVoicePaused(voicePaused)
@@ -1842,7 +1864,7 @@ final class WorkspaceModel: ObservableObject {
                         await interaction.cancelTask(generation: generation)
                         return
                     }
-                    if let tooLong = SelectionLimit.tooLongMessage(selected: snapshot.originalSelectedText) {
+                    if let tooLong = SelectionLimit.tooLongMessage(limit: settings.maxSelectedRunes, selected: snapshot.originalSelectedText) {
                         await interaction.cancelTask(generation: generation)
                         isProcessing = false
                         interactionStatus = tooLong
@@ -1941,7 +1963,7 @@ final class WorkspaceModel: ObservableObject {
                     generation: generation, intent: .replaceSelection)
                 let step = typedSelectionAfterCapture(
                     tokenValid: resultGeneration.accepts(token),
-                    tooLong: SelectionLimit.tooLongMessage(selected: snapshot.originalSelectedText))
+                    tooLong: SelectionLimit.tooLongMessage(limit: settings.maxSelectedRunes, selected: snapshot.originalSelectedText))
                 if step.cancelTask {
                     await cancelSelectionCue(step, generation: generation)
                 }
