@@ -280,7 +280,7 @@ func TestOneClickAttachLeavesExternalLlamaRunning(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	public := freeLocalPort(t)
 	if public == backend { public = freeLocalPort(t) }
-	cfgPath := fakeConfig(t, "", public, backend)
+	cfgPath := fakeConfig(t, fakeLlamaScript(t), public, backend)
 	cfg, err := loadConfig(cfgPath)
 	if err != nil { t.Fatal(err) }
 	cfg.AttachToExistingServer = true
