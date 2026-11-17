@@ -1809,7 +1809,20 @@ final class WorkspaceModel: ObservableObject {
             historyTitle: ResultCopy.historyTitle(intent: intent),
             cardTitle: ResultCopy.cardTitle(intent: intent),
             spokenHistoryTitle: ResultCopy.dictationHistory)
-        applyTask(follow, generation: generation, token: token, replacement: (snapshot, generation))
+        if !spoken, let body = follow.replaceText {
+            // An explicit typed edit is reviewed before its first write. Only a
+            // Go-approved replacement (never a preview/answer) receives Apply.
+            // Spoken edits preserve the Windows immediate-replacement workflow.
+            var review = follow
+            review.replaceText = nil
+            review.cardText = body
+            review.phase = .answer
+            applyTask(review, generation: generation, token: token,
+                      manualReplacement: (snapshot, generation, token))
+        } else {
+            applyTask(follow, generation: generation, token: token,
+                      replacement: (snapshot, generation))
+        }
     }
 
     private func applyHelperConnection(_ event: HelperConnection) {
@@ -1857,7 +1870,8 @@ final class WorkspaceModel: ObservableObject {
         generation: UInt64? = nil,
         token: UInt64? = nil,
         insertion: MacDictationTarget? = nil,
-        replacement: (snapshot: SelectionSnapshot, generation: UInt64)? = nil
+        replacement: (snapshot: SelectionSnapshot, generation: UInt64)? = nil,
+        manualReplacement: (snapshot: SelectionSnapshot, generation: UInt64, token: UInt64)? = nil
     ) {
         if let text = follow.transcription { transcription = text }
         if let text = follow.processedText { processedText = text }
@@ -1870,7 +1884,53 @@ final class WorkspaceModel: ObservableObject {
             showIndicator(phase: indicator, mode: follow.mode, pending: false)
         }
         if let title = follow.cardTitle, let text = follow.cardText {
-            ResultCardPanel.shared.present(title: title, text: text)
+            var action: ResultCardApplyAction?
+            if let manualReplacement, !follow.cancelTask,
+               follow.replaceText == nil, resultGeneration.accepts(manualReplacement.token) {
+                let snapshot = manualReplacement.snapshot
+                let generation = manualReplacement.generation
+                let token = manualReplacement.token
+                action = ResultCardApplyAction(
+                    isBusy: { [weak self] in
+                        guard let self else { return true }
+                        return self.isProcessing || self.isRecording || self.isStarting ||
+                               self.meetingBusy || self.meetingVoiceRecording || self.voicePaused
+                    },
+                    perform: { [weak self] in
+                        guard let self, self.resultGeneration.accepts(token) else {
+                            throw ResultCardApplyFailure.unsafe
+                        }
+                        guard NSRunningApplication(processIdentifier: snapshot.processID) != nil else {
+                            throw ResultCardApplyFailure.editorClosed
+                        }
+                        self.isProcessing = true
+                        defer {
+                            if self.resultGeneration.accepts(token) { self.isProcessing = false }
+                        }
+                        do {
+                            // InteractionSession consumes the captured authorization
+                            // *before* the synchronous native verification/write.
+                            try await self.interaction.replaceIfCurrent(
+                                snapshot, with: text, generation: generation)
+                            if self.resultGeneration.accepts(token) {
+                                self.interactionStatus = rewriteReplaced()
+                            }
+                        } catch {
+                            if self.resultGeneration.accepts(token) {
+                                self.interactionStatus = insertionStatus(
+                                    error, rewrite: true,
+                                    passwordRewrite: ResultCopy.passwordRewrite,
+                                    passwordDictation: ResultCopy.passwordDictation)
+                            }
+                            throw error
+                        }
+                    },
+                    cancel: { [weak self] in
+                        guard let self else { return }
+                        Task { await self.interaction.cancelTask(generation: generation) }
+                    })
+            }
+            ResultCardPanel.shared.present(title: title, text: text, applyAction: action)
         }
         if follow.cancelTask, let generation {
             Task { await interaction.cancelTask(generation: generation) }
