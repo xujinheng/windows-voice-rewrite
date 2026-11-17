@@ -122,7 +122,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func connect() {
-        stopMeeting()
+        if meetingActive || meetingStarting || meetingSessionID != nil { stopMeeting() }
         let token = helloGeneration.begin()
         cancelProbes()
         invalidateDiscoveredModels(.transcribe)
