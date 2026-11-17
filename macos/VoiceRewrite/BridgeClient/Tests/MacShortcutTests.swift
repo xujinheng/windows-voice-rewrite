@@ -76,7 +76,7 @@ final class MacShortcutTests: XCTestCase {
         XCTAssertNil(toggle.sideButtons.action(for: 3))
         XCTAssertNil(toggle.sideButtons.action(for: 4))
         XCTAssertNil(MacShortcutPlan(
-            dictation: XCTUnwrap(ShortcutBinding(canonical: "Mouse4")),
+            dictation: try XCTUnwrap(ShortcutBinding(canonical: "Mouse4")),
             rewrite: rewrite, exit: exit, recordMode: "toggle"))
     }
 
