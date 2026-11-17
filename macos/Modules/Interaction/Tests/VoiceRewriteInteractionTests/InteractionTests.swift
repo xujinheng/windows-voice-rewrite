@@ -59,6 +59,11 @@ final class NativeClipboardReceiptTests: XCTestCase {
         XCTAssertTrue(DictationTargetPolicy.sameWindow(captured: 42, current: nil))
         XCTAssertTrue(DictationTargetPolicy.sameWindow(captured: 42, current: 42))
         XCTAssertFalse(DictationTargetPolicy.sameWindow(captured: 42, current: 99))
+        XCTAssertFalse(DictationTargetPolicy.canConfirmReadback(
+            original: "same 😀", expected: "same 😀"),
+            "unchanged AXValue is not proof that Cmd+V reached the editor")
+        XCTAssertTrue(DictationTargetPolicy.canConfirmReadback(
+            original: "Before", expected: "Before听写"))
     }
 
     func testLazyPasteboardReportsActualTextRead() throws {

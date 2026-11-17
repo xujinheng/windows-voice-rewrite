@@ -30,6 +30,12 @@ public enum DictationTargetPolicy {
         guard let captured, let current else { return true }
         return captured == current
     }
+
+    /// A no-op replacement does not prove that a keyboard event was consumed.
+    /// Only an observable change to the original editor is a write receipt.
+    public static func canConfirmReadback(original: String, expected: String) -> Bool {
+        !TextWriteVerification.confirms(actual: original, expected: expected)
+    }
 }
 
 /// The only normal dictation writer. Selected-text edits retain the separate
@@ -136,9 +142,13 @@ public final class MacDictationDelivery {
         let textRange = TextRange(location: range.location, length: range.length)
         guard let selectedText = TextWriteVerification.selectedText(
             reported: selected, fullValue: original, range: textRange) else { return nil }
-        return TextWriteVerification.expectedValue(
+        guard let expected = TextWriteVerification.expectedValue(
             original: original, selectedText: selectedText,
-            range: textRange, replacement: text)
+            range: textRange, replacement: text),
+              DictationTargetPolicy.canConfirmReadback(original: original, expected: expected) else {
+            return nil
+        }
+        return expected
     }
 
     private func matchesReadback(_ expected: String, target: MacDictationTarget) -> Bool {
