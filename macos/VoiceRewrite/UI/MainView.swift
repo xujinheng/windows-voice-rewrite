@@ -193,7 +193,9 @@ private struct MeetingView: View {
                     Button("停止会议") { model.stopMeeting() }
                 } else {
                     Button("开始会议") { model.startMeeting() }
-                        .disabled(model.meetingSources.isEmpty)
+                        .disabled(!model.meetingSources.contains(where: {
+                            $0.id == model.meetingSourceID
+                        }))
                 }
             }
             Picker("会议识别模式", selection: $model.settings.meetingASRMode) {
@@ -249,10 +251,11 @@ private struct MeetingView: View {
                                     .disabled(!model.meetingActive || model.meetingBusy || model.meetingVoiceRecording)
                                 if model.meetingReplyPending {
                                     Button("查看新建议") { model.acceptMeetingReplies() }
+                                        .disabled(model.meetingBusy || model.meetingCancelPending)
                                 }
                                 Spacer()
                                 Button("取消") { model.cancelMeetingWork() }
-                                    .disabled(!model.meetingActive)
+                                    .disabled(!model.meetingActive || model.meetingCancelPending)
                             }
                             Text(model.meetingReplyStatus.isEmpty ? "最新完整发言生成最多三条建议" : model.meetingReplyStatus)
                                 .font(.caption).foregroundStyle(.secondary)

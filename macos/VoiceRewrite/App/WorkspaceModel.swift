@@ -76,6 +76,7 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var meetingExpressionChinese = ""
     @Published private(set) var meetingExpressionStatus = ""
     @Published private(set) var meetingBusy = false
+    @Published private(set) var meetingCancelPending = false
     @Published private(set) var meetingVoiceRecording = false
     @Published private(set) var meetingVoiceStarting = false
     @Published var meetingSelectedIndex = 0
@@ -87,6 +88,7 @@ final class WorkspaceModel: ObservableObject {
     private let microphone = MicrophoneRecorder()
     private let systemAudio = SystemAudioCapture()
     private var meetingGeneration = ResultGeneration()
+    private var meetingSourceGeneration = ResultGeneration()
     private var meetingActionGeneration = ResultGeneration()
     private var meetingVoiceGeneration = ResultGeneration()
     private var meetingPresentationRevision: UInt64 = 0
@@ -156,6 +158,10 @@ final class WorkspaceModel: ObservableObject {
     func connect() {
         if meetingActive || meetingStarting || meetingSessionID != nil { stopMeeting() }
         let token = helloGeneration.begin()
+        _ = updateCheck.begin()
+        isCheckingUpdate = false
+        updatePage = nil
+        updateStatus = updateNotChecked()
         cancelProbes()
         invalidateDiscoveredModels(.transcribe)
         invalidateDiscoveredModels(.selectedTask)
@@ -514,15 +520,21 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func refreshMeetingSources() {
+        guard !meetingStarting && !meetingActive else { return }
+        let token = meetingSourceGeneration.begin()
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 let available = try await self.systemAudio.sources()
+                guard self.meetingSourceGeneration.accepts(token),
+                      !self.meetingStarting && !self.meetingActive else { return }
                 self.meetingSources = available
                 if !available.contains(where: { $0.id == self.meetingSourceID }) {
-                    self.meetingSourceID = "system"
+                    self.meetingStatus = "所选音频来源已经退出；请重新选择或改用系统音频"
                 }
             } catch {
+                guard self.meetingSourceGeneration.accepts(token),
+                      !self.meetingStarting && !self.meetingActive else { return }
                 self.meetingStatus = "无法读取音频来源；请在系统设置中允许屏幕与系统音频录制后重试"
             }
         }
@@ -530,6 +542,11 @@ final class WorkspaceModel: ObservableObject {
 
     func startMeeting() {
         guard !meetingActive && !meetingStarting else { return }
+        guard meetingSources.contains(where: { $0.id == meetingSourceID }) else {
+            meetingStatus = "所选音频来源已不可用；请刷新后重新选择"
+            return
+        }
+        _ = meetingSourceGeneration.begin()
         guard let bridge, case .connected = connection else {
             meetingStatus = "请先连接 Go Helper"
             return
@@ -551,6 +568,7 @@ final class WorkspaceModel: ObservableObject {
         _ = meetingActionGeneration.begin()
         _ = meetingVoiceGeneration.begin()
         meetingPresentationRevision &+= 1
+        meetingCancelPending = false
         meetingStarting = true
         meetingStatus = "正在准备会议识别…"
         meetingCaptions = []
@@ -589,7 +607,9 @@ final class WorkspaceModel: ObservableObject {
                     self.meetingStatus = "正在监听所选应用音频"
                     self.pollMeeting(id: id, token: token)
                 } catch {
-                    self.stopMeeting(reason: "无法启动系统音频；请检查屏幕与系统音频录制权限及来源")
+                    let detail = (error as? SystemAudioError)?.localizedDescription
+                        ?? "无法启动系统音频；请检查屏幕与系统音频录制权限及来源"
+                    self.stopMeeting(reason: detail)
                 }
             }
         }
@@ -634,7 +654,8 @@ final class WorkspaceModel: ObservableObject {
                         guard let self, self.meetingSessionID == id,
                               self.meetingGeneration.accepts(token) else { return }
                         self.meetingSnapshotPending = false
-                        guard revision == self.meetingPresentationRevision else { return }
+                        guard revision == self.meetingPresentationRevision,
+                              !self.meetingCancelPending else { return }
                         guard case .success(let response) = reply, response.ok else {
                             self.stopMeeting(reason: "会议处理已断开")
                             return
@@ -677,7 +698,8 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func meetingAction(_ operation: String, fields: [String: JSONValue] = [:]) {
-        guard meetingActive, !meetingBusy, let id = meetingSessionID, let bridge else { return }
+        guard meetingActive, !meetingBusy, !meetingCancelPending,
+              let id = meetingSessionID, let bridge else { return }
         meetingBusy = true
         let actionToken = meetingActionGeneration.begin()
         meetingPresentationRevision &+= 1
@@ -718,7 +740,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func acceptMeetingReplies() {
-        guard meetingActive, !meetingBusy, meetingReplyPending,
+        guard meetingActive, !meetingBusy, !meetingCancelPending, meetingReplyPending,
               let id = meetingSessionID, let bridge else { return }
         let token = meetingGeneration.latest
         let actionToken = meetingActionGeneration.begin()
@@ -808,7 +830,7 @@ final class WorkspaceModel: ObservableObject {
             }
             return
         }
-        guard meetingActive, !meetingBusy, !meetingVoiceStarting,
+        guard meetingActive, !meetingBusy, !meetingCancelPending, !meetingVoiceStarting,
               !isRecording, !isStarting, !isProcessing else { return }
         meetingVoiceStarting = true
         meetingExpressionStatus = "正在启动麦克风…"
@@ -842,7 +864,10 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func cancelMeetingWork() {
-        _ = meetingActionGeneration.begin()
+        guard meetingActive, !meetingCancelPending,
+              let id = meetingSessionID, let bridge else { return }
+        let token = meetingGeneration.latest
+        let actionToken = meetingActionGeneration.begin()
         _ = meetingVoiceGeneration.begin()
         meetingPresentationRevision &+= 1
         if meetingVoiceRecording || meetingVoiceStarting {
@@ -850,14 +875,33 @@ final class WorkspaceModel: ObservableObject {
             meetingVoiceRecording = false
             meetingVoiceStarting = false
         }
-        if let id = meetingVoiceASRID { bridge?.cancel(id: id) }
+        if let requestID = meetingVoiceASRID { bridge.cancel(id: requestID) }
         meetingVoiceASRID = nil
-        if let id = meetingRequestID { bridge?.cancel(id: id) }
+        if let requestID = meetingRequestID { bridge.cancel(id: requestID) }
         meetingRequestID = nil
-        meetingBusy = false
-        guard let id = meetingSessionID else { return }
-        bridge?.send(operation: "meeting_cancel", fields: ["session_id": .string(id)]) { _ in }
-        meetingExpressionStatus = "处理已取消"
+        // Do not admit new work or apply a polled snapshot until the helper
+        // acknowledges cancellation. Otherwise a rapid regenerate can race
+        // with the previous cancel and revoke the fresh request.
+        meetingCancelPending = true
+        meetingBusy = true
+        meetingExpressionStatus = "正在取消处理…"
+        meetingRequestID = bridge.send(operation: "meeting_cancel",
+                                       fields: ["session_id": .string(id)]) { [weak self] result in
+            Task { @MainActor [weak self] in
+                guard let self, self.meetingSessionID == id,
+                      self.meetingGeneration.accepts(token),
+                      self.meetingActionGeneration.accepts(actionToken) else { return }
+                self.meetingRequestID = nil
+                self.meetingCancelPending = false
+                self.meetingBusy = false
+                self.meetingPresentationRevision &+= 1
+                if case .success(let response) = result, response.ok {
+                    self.applyMeetingSnapshot(response.result ?? [:])
+                } else {
+                    self.meetingExpressionStatus = "取消请求未确认；请检查 Helper 连接后重试"
+                }
+            }
+        }
     }
 
     func copyMeetingReply() {
@@ -886,6 +930,7 @@ final class WorkspaceModel: ObservableObject {
         if let id = meetingRequestID { bridge?.cancel(id: id) }
         meetingRequestID = nil
         meetingBusy = false
+        meetingCancelPending = false
         meetingSnapshotPending = false
         meetingStarting = false
         meetingActive = false
@@ -1023,6 +1068,7 @@ final class WorkspaceModel: ObservableObject {
     // Windows and macOS use the same Go Core probe semantics via voicebridge.
     // No user microphone input or selected text is sent by these operations.
     func checkForUpdate() {
+        guard !isCheckingUpdate else { return }
         guard let bridge, case .connected = connection else {
             updateStatus = helperRequired()
             updatePage = nil

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -261,5 +262,106 @@ func TestMeetingReplyCoalescesConcurrentRequestsAndAvoidsRepeatInference(t *test
 	}
 	if err := m.refine(context.Background(), -1, "shorter"); err == nil {
 		t.Fatal("invalid reply index was not rejected")
+	}
+}
+
+func TestMeetingAssistantRejectsInvalidRequestsBeforeInference(t *testing.T) {
+	h := startBridge(t, defaultOptions())
+	cfg := configFor("http://127.0.0.1:8080")
+	cfg["text_model"] = "chat-instruct"
+	h.send(map[string]any{"v": 1, "id": "start", "op": "meeting_start", "config": cfg})
+	start := h.receive()
+	if !start.OK {
+		t.Fatalf("meeting start: %#v", start)
+	}
+	sid := object(t, start.Result)["session_id"].(string)
+	cases := []struct {
+		id, op, instruction, message string
+		index                        int
+	}{
+		{"no-final", "meeting_replies", "", meetingcore.RepliesWait, 0},
+		{"blank-compose", "meeting_compose", "　 \t ", "2000", 0},
+		{"long-compose", "meeting_compose", strings.Repeat("字", 2001), "2000", 0},
+		{"blank-refine", "meeting_refine", " \t ", "2000", 0},
+		{"long-refine", "meeting_refine", strings.Repeat("a", 2001), "2000", 0},
+		{"no-selection", "meeting_refine", "make it shorter", "完整", 0},
+	}
+	for _, tc := range cases {
+		h.send(map[string]any{
+			"v": 1, "id": tc.id, "op": tc.op, "session_id": sid,
+			"instruction": tc.instruction, "reply_index": tc.index,
+		})
+		got := h.receive()
+		if got.OK || got.Error == nil || got.Error.Code != "invalid_request" ||
+			!strings.Contains(got.Error.Message, tc.message) {
+			t.Fatalf("%s: expected actionable request rejection, got %#v", tc.id, got)
+		}
+	}
+	h.send(map[string]any{"v": 1, "id": "stop", "op": "meeting_stop", "session_id": sid})
+	if got := h.receive(); !got.OK {
+		t.Fatalf("stop: %#v", got)
+	}
+	h.close()
+}
+
+func TestMeetingCancelDuringExpressionCannotOverwriteNewAnswer(t *testing.T) {
+	started := make(chan struct{})
+	var once sync.Once
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Messages) < 2 {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		var query meetingcore.Query
+		if json.Unmarshal([]byte(body.Messages[1].Content), &query) != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if query.UserPoints == "old" {
+			once.Do(func() { close(started) })
+			<-r.Context().Done()
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{map[string]any{
+				"message": map[string]string{"content": "New approved answer."},
+			}},
+		})
+	}))
+	defer srv.Close()
+	cfg := coreconfig.Defaults()
+	cfg.LLMBaseURL = srv.URL + "/v1"
+	cfg.TextModel = "test-model"
+	m, err := newBridgeMeeting(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.stop()
+	oldResult := make(chan error, 1)
+	go func() { oldResult <- m.compose(context.Background(), "old") }()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first expression never started")
+	}
+	m.cancelWork()
+	if err := m.compose(context.Background(), "new"); err != nil {
+		t.Fatal("replacement expression:", err)
+	}
+	select {
+	case <-oldResult:
+	case <-time.After(5 * time.Second):
+		t.Fatal("canceled expression did not exit")
+	}
+	snapshot := m.snapshot()
+	if snapshot["expression"] != "New approved answer." ||
+		snapshot["expression_status"] != "" {
+		t.Fatalf("stale expression corrupted the new answer: %#v", snapshot)
 	}
 }

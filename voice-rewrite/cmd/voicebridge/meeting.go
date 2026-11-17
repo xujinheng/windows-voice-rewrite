@@ -175,7 +175,11 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 	return m, nil
 }
 
-var errMeetingBusy = errors.New("meeting audio queue full")
+var (
+	errMeetingBusy         = errors.New("meeting audio queue full")
+	errMeetingNoFinalTurn  = errors.New("no completed meeting turn")
+	errMeetingInvalidReply = errors.New("selected reply is not complete")
+)
 
 func (m *bridgeMeeting) feed(pcm []byte) error {
 	if m.runtime.Context().Err() != nil {
@@ -210,6 +214,9 @@ func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64) 
 			m.replyStatus = status
 		}
 		m.mu.Unlock()
+		if !paused {
+			return errMeetingNoFinalTurn
+		}
 		return context.Canceled
 	}
 	turn := m.lastFinal
@@ -303,7 +310,7 @@ func (m *bridgeMeeting) refine(parent context.Context, index int, instruction st
 	m.mu.Unlock()
 	if !chosen.Complete || !meetingcore.RefineMayRun(chosen.English, false) ||
 		len([]rune(instruction)) > 2000 || strings.TrimSpace(instruction) == "" {
-		return errors.New("invalid reply refinement")
+		return errMeetingInvalidReply
 	}
 	return m.runExpression(parent, meetingcore.Query{Mode: "refine",
 		SelectedReply: chosen.English, UserPoints: instruction, Latest: source})
