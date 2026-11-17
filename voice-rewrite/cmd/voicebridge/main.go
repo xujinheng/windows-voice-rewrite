@@ -295,7 +295,8 @@ func (s *bridgeServer) meetingRequest(req request) response {
 			return failure(req.ID, "meeting_failed", "无法启动会议处理")
 		}
 		s.meeting = m
-		return success(req.ID, map[string]any{"session_id": m.id})
+		_, epoch, _ := m.runtime.Snapshot()
+		return success(req.ID, map[string]any{"session_id": m.id, "audio_epoch": epoch})
 	case "meeting_feed":
 		if req.SessionID == "" || len(req.PCMBase64) == 0 ||
 			len(req.PCMBase64) > base64.StdEncoding.EncodedLen(32_000) {
