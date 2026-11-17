@@ -518,6 +518,15 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				}
 			}
 			label, primary := contract.ButtonLabel(int(item.CtlID), p.capturingShortcut == uintptr(item.CtlID))
+			if item.CtlID == contract.DiscoverASRButton || item.CtlID == contract.DiscoverLLMButton {
+				slot := 0
+				if item.CtlID == contract.DiscoverLLMButton {
+					slot = 1
+				}
+				if p.modelChoicesReady(slot) {
+					label = "选择模型"
+				}
+			}
 			if label != "" && uiDrawActionButton(item, p.palette, p.font, label, primary) {
 				return 1
 			}
@@ -711,6 +720,16 @@ func (p *uxSettings) invalidateModels(slot int) {
 	p.modelSerial[slot] = uxModelRequestSequence.Add(1)
 	p.modelResults[slot] = uxModelDiscoveryResult{}
 	p.modelMu.Unlock()
+	if p.modelButtons[slot] != 0 {
+		refreshNativeWindow(p.modelButtons[slot])
+	}
+}
+
+func (p *uxSettings) modelChoicesReady(slot int) bool {
+	p.modelMu.Lock()
+	ready := len(p.modelResults[slot].models) > 0 && p.modelCancel[slot] == nil
+	p.modelMu.Unlock()
+	return ready
 }
 
 func (p *uxSettings) invalidateAllModels() {
@@ -729,6 +748,15 @@ func (p *uxSettings) discoverModels(kind string) {
 	}
 	slot, ok := contract.ProbeSlot(field)
 	if !ok || slot != p.page {
+		return
+	}
+	p.modelMu.Lock()
+	ready := len(p.modelResults[slot].models) > 0 && p.modelCancel[slot] == nil
+	choices := p.modelResults[slot].models
+	p.modelMu.Unlock()
+	if ready {
+		// Opening a menu is a direct user action, never a delayed network callback.
+		p.showModelMenu(slot, choices)
 		return
 	}
 	base, key := p.inputValue(baseField), p.inputValue(keyField)
@@ -775,7 +803,8 @@ func (p *uxSettings) completeModelDiscovery(slot int, token uint64) {
 		uxSetText(p.hint, "未发现可用模型，请检查 API 地址或手动输入模型 ID")
 		return
 	}
-	p.showModelMenu(slot, result.models)
+	uxSetText(p.hint, fmt.Sprintf("已发现 %d 个模型，点击“选择模型”查看", len(result.models)))
+	refreshNativeWindow(p.modelButtons[slot])
 }
 
 func (p *uxSettings) showModelMenu(slot int, models []string) {
