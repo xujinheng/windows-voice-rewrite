@@ -10,6 +10,9 @@ private let carbonHotKeyCallback: EventHandlerUPP = { _, event, userData in
                                    EventParamType(typeEventHotKeyID), nil,
                                    MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
     guard result == noErr else { return result }
+    // A separate AppKit owner registers the independent global Quit command.
+    // Never consume events with another signature; Carbon must pass them on.
+    guard hotKeyID.signature == OSType(0x5652_5752) else { return eventNotHandledErr }
     let driver = Unmanaged<CarbonHotKeyDriver>.fromOpaque(userData).takeUnretainedValue()
     let identifier = hotKeyID.id
     // Pin the foreground target when the OS delivers the hotkey, before any async work.
