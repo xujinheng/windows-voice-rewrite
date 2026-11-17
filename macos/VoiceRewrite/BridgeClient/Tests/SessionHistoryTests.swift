@@ -97,6 +97,20 @@ final class SessionHistoryTests: XCTestCase {
         XCTAssertFalse(InitialSetup.required(settingsFile: path))
     }
 
+    func testGlobalQuitIsIndependentOfBothVoiceHotkeys() {
+        XCTAssertEqual(GlobalExitHotKey.defaultBinding, "Ctrl+Alt+F10")
+        let exit = ShortcutBinding(canonical: GlobalExitHotKey.defaultBinding)
+        XCTAssertNotNil(exit)
+        XCTAssertFalse(exit?.mouse ?? true)
+        let native = MacShortcut.hotKey(key: exit!.key, ctrl: exit!.ctrl,
+                                       alt: exit!.alt, shift: exit!.shift)
+        XCTAssertNotNil(native)
+        let dictation = MacShortcut.hotKey(key: "R", ctrl: true, alt: true, shift: false)
+        let rewrite = MacShortcut.hotKey(key: "E", ctrl: true, alt: true, shift: false)
+        XCTAssertNotEqual(native, dictation)
+        XCTAssertNotEqual(native, rewrite)
+    }
+
     func testUpdatePageAllowsOnlyOfficialHTTPSReleaseURLs() {
         let valid = "https://github.com/xujinheng/windows-voice-rewrite/releases"
         XCTAssertEqual(UpdatePagePolicy.officialReleaseURL(valid)?.absoluteString, valid)
