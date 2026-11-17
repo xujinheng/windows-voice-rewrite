@@ -51,8 +51,7 @@ func TestBridgeMeetingPauseResumeAndSessionIsolation(t *testing.T) {
 		pauseState["epoch"].(float64) <= initialEpoch {
 		t.Fatalf("pause did not invalidate active audio epoch: %#v", pauseState)
 	}
-	if got := send("paused-feed", "meeting_feed", sid, map[string]any{"pcm_base64": pcm, "audio_epoch": initialEpoch});
-		!got.OK || object(t, got.Result)["accepted"] != false || object(t, got.Result)["paused"] != true {
+	if got := send("paused-feed", "meeting_feed", sid, map[string]any{"pcm_base64": pcm, "audio_epoch": initialEpoch}); !got.OK || object(t, got.Result)["accepted"] != false || object(t, got.Result)["paused"] != true {
 		t.Fatalf("paused PCM was not harmlessly dropped: %#v", got)
 	}
 	again := send("pause-again", "meeting_pause", sid, nil)
