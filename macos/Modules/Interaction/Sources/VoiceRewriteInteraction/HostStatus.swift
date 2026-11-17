@@ -5,8 +5,8 @@ public func captureStatus(_ error: Error, password: String) -> String {
         return "读取外部文本框失败：\(error.localizedDescription)"
     }
     switch failure {
-    case .accessibilityPermissionDenied:
-        return "缺少辅助功能权限；请授权当前 VoiceRewrite.app 并重新打开"
+    case .accessibilityPermissionDenied, .keyboardEventPermissionDenied:
+        return "缺少系统键盘操作权限；请在辅助功能中授权 VoiceRewrite 并重新打开"
     case .noFrontmostApplication, .noFocusedElement, .notEditable, .selectionUnavailable:
         return "未识别到可编辑文本框或光标；请先点击目标软件的输入框"
     case .invalidSelection:
@@ -51,8 +51,8 @@ public func insertionStatus(_ error: Error, rewrite: Bool, passwordRewrite: Stri
             return "请先松开听写快捷键再尝试输入"
         case .timedOut:
             return "录音或识别时间超过目标锁定期限；未插入，结果可复制"
-        case .accessibilityPermissionDenied:
-            return "缺少辅助功能权限；请重新授权当前 VoiceRewrite.app"
+        case .accessibilityPermissionDenied, .keyboardEventPermissionDenied:
+            return "没有发送键盘事件的系统权限；请在辅助功能中授权 VoiceRewrite 后重试"
         default:
             return "目标或选区验证失败；未发起写入，结果可复制"
         }
@@ -70,7 +70,7 @@ public func insertionDiagnosticCode(_ error: Error) -> String {
         case .applicationChanged, .focusChanged: return "focus_changed"
         case .selectionChanged: return "selection_changed"
         case .writeNotConfirmed: return "write_attempted_unconfirmed"
-        case .accessibilityPermissionDenied: return "permission_denied"
+        case .accessibilityPermissionDenied, .keyboardEventPermissionDenied: return "permission_denied"
         case .secureField: return "secure_field"
         case .timedOut, .cancelled, .staleGeneration, .staleSnapshot: return "task_inactive"
         default: return "capture_or_target_failed"
