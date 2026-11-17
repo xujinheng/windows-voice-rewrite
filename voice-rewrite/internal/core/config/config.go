@@ -38,6 +38,7 @@ const (
 	RecordSecondsMax        = 180
 	DefaultRecordSeconds    = 60
 	DefaultMaxSelectedRunes = 12000
+	MaxSystemPromptBytes = 16384
 	MinResponseTokens = 128
 	MaxResponseTokens = 4096
 	MaxSelectedRunes = 100000
@@ -164,6 +165,9 @@ func Normalize(cfg Config) (Config, error) {
 	}
 	if cfg.RecordMode == "" {
 		cfg.RecordMode = defaults.RecordMode
+	}
+	if len(cfg.SystemPrompt) > MaxSystemPromptBytes {
+		return cfg, errors.New("system_prompt 内容过长")
 	}
 	if cfg.RecordMode != "toggle" && cfg.RecordMode != "hold" {
 		return cfg, fmt.Errorf("invalid record_mode %q: use toggle or hold", cfg.RecordMode)
