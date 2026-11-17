@@ -5,6 +5,11 @@ import (
 	"strings"
 )
 
+const CaptionFocusTitle = "专注字幕"
+const CaptionFullTitle = "完整视图"
+const ExpressionExpandTitle = "放大英文"
+const ExpressionCollapseTitle = "收起英文"
+
 const (
 	SpeakerLabel      = "当前发言 · 中文优先"
 	HistoryTitle      = "之前的对话"
@@ -63,9 +68,9 @@ func ButtonFace(id int, view ButtonView) string {
 		return "冻结画面"
 	case ButtonCaptions:
 		if view.CaptionsOnly {
-			return "完整视图"
+			return CaptionFullTitle
 		}
-		return "专注字幕"
+		return CaptionFocusTitle
 	case ButtonSmallerText:
 		return "A−"
 	case ButtonLargerText:
@@ -102,9 +107,9 @@ func ButtonFace(id int, view ButtonView) string {
 		return "回到最新"
 	case ButtonExpression:
 		if view.ExpressionExpanded {
-			return "收起英文"
+			return ExpressionCollapseTitle
 		}
-		return "放大英文"
+		return ExpressionExpandTitle
 	case ButtonSaveProfile:
 		return "保存并应用"
 	case ButtonCloseProfile:
@@ -173,7 +178,7 @@ func ReplyBody(english, chinese, tip string, complete bool) string {
 		text += "\r\n正在生成…（完成后可复制或改写）"
 	}
 	if english == "" {
-		text = "听到提问后生成建议；新建议可点击“查看新建议”后阅读。"
+		text = "听到完整发言后生成建议；新建议可点击“查看新建议”后阅读。"
 	}
 	if tip != "" {
 		text += "\r\n提示 · " + tip

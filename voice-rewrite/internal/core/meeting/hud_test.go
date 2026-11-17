@@ -90,7 +90,7 @@ func TestHistoryReplyAndExpressionCopy(t *testing.T) {
 	if ReplyBody("en", "zh", "注意", false) != "en\r\nzh\r\n正在生成…（完成后可复制或改写）\r\n提示 · 注意" {
 		t.Fatal("streaming reply")
 	}
-	if ReplyBody("", "zh", "", false) != "听到提问后生成建议；新建议可点击“查看新建议”后阅读。" {
+	if ReplyBody("", "zh", "", false) != "听到完整发言后生成建议；新建议可点击“查看新建议”后阅读。" {
 		t.Fatal("empty reply")
 	}
 	if ExpressionShown("") == ExpressionShown("We can do that.") || !strings.Contains(ExpressionShown(""), "听写键") {

@@ -54,6 +54,7 @@ type request struct {
 	TargetID       string          `json:"target_id"`
 	SessionID      string          `json:"session_id"`
 	ReplyIndex     int             `json:"reply_index"`
+	ViewButton     int             `json:"button_id"`
 }
 
 type bridgeError struct {
@@ -215,7 +216,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "selected_voice_task" && req.Op != "probe_asr" && req.Op != "probe_llm" && req.Op != "list_asr_models" && req.Op != "list_llm_models" && req.Op != "check_update" && req.Op != "meeting_replies" && req.Op != "meeting_refine" && req.Op != "meeting_compose" {
 		s.mu.Unlock()
 		switch req.Op {
-		case "meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop", "meeting_accept", "meeting_cancel":
+		case "meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop", "meeting_accept", "meeting_cancel", "meeting_view":
 			s.send(s.meetingRequest(req))
 		case "hello":
 			s.send(success(req.ID, map[string]any{"name": jsonl.HelloName, "protocol": jsonl.Version}))
@@ -313,7 +314,7 @@ func (s *bridgeServer) meetingRequest(req request) response {
 			return failure(req.ID, "meeting_busy", "会议音频队列已满，已停止接收当前音频帧")
 		}
 		return success(req.ID, map[string]any{"accepted": true})
-	case "meeting_snapshot", "meeting_stop", "meeting_accept", "meeting_cancel":
+	case "meeting_snapshot", "meeting_stop", "meeting_accept", "meeting_cancel", "meeting_view":
 		s.mu.Lock()
 		m := s.meeting
 		if m == nil || req.SessionID == "" || req.SessionID != m.id {
@@ -331,6 +332,9 @@ func (s *bridgeServer) meetingRequest(req request) response {
 			if !m.acceptReplies() {
 				return failure(req.ID, "no_pending_reply", "没有可切换的新建议")
 			}
+		}
+		if req.Op == "meeting_view" && !m.applyViewButton(req.ViewButton) {
+			return failure(req.ID, "invalid_request", "不支持的会议视图操作")
 		}
 		if req.Op == "meeting_cancel" {
 			m.cancelWork()

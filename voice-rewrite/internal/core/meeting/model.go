@@ -314,6 +314,12 @@ func Complete(ctx context.Context, cfg coreconfig.Config, query Query, emit func
 			return errors.New("LLM 没有返回可用英文，请检查文本模型或切换到 Instruct 模型")
 		}
 	}
+	// Reply options are independent. TWO or THREE may be a valid, useful
+	// answer when the model omits ONE; avoid falsely reporting inference
+	// failure after publishing a completed suggestion.
+	if query.Mode == "replies" && (seen["ONE"] || seen["TWO"] || seen["THREE"]) {
+		return nil
+	}
 	if !seen[wanted] {
 		return errors.New("会议模型未返回预期格式")
 	}

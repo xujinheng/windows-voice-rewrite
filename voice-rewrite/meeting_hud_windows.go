@@ -478,6 +478,12 @@ func updateMeetingHUD(view meetingView) {
 
 func (p *meetingHUD) renderReply() {
 	reply := p.displayedReplies[p.selectedReply]
+	if !meetingcore.ReplyCopyEnabled(reply.Complete, reply.English) {
+		if ready := meetingcore.FirstReadyReply(p.displayedReplies); ready >= 0 {
+			p.selectedReply = ready
+			reply = p.displayedReplies[ready]
+		}
+	}
 	for i := 0; i < 3; i++ {
 		p.setText(p.buttons[9+i], meetingcore.ButtonFace(meetingcore.ButtonReplyFirst+i, meetingcore.ButtonView{SelectedReply: p.selectedReply}), false)
 	}

@@ -143,3 +143,55 @@ func TestReplyWorkCoalescesAutomaticAndManualAndAllowsExplicitRetry(t *testing.T
 		t.Fatal("cancellation left the reply state permanently busy")
 	}
 }
+
+func TestReplySecondOrThirdCanBeDisplayedAndAcceptedWithoutFirst(t *testing.T) {
+	var state ReplyState
+	first := state.StartTurn(7)
+	batch := ReplyBatch{Source: "first turn", Tip: "Verify the numbers"}
+	batch.Apply(Line{Kind: "TWO", English: "Could you clarify?", Chinese: "能再说明吗？", Complete: true})
+	if FirstReadyReply(batch.Lines) != 1 || !batch.HasReadyReply() {
+		t.Fatal("completed second reply was ignored")
+	}
+	if !state.Publish(first, batch) {
+		t.Fatal("initial batch rejected")
+	}
+	state.FinishTurn(first, true)
+	if state.Displayed.Lines[1].English != "Could you clarify?" || state.PendingAvailable {
+		t.Fatalf("first batch was not available: %+v", state)
+	}
+
+	second := state.StartTurn(8)
+	newBatch := ReplyBatch{Source: "second turn", Tip: "Check assumptions"}
+	newBatch.Apply(Line{Kind: "THREE", English: "I'll look into it.", Chinese: "我会查一下。", Complete: true})
+	if FirstReadyReply(newBatch.Lines) != 2 {
+		t.Fatal("completed third reply was not selected")
+	}
+	state.Publish(second, newBatch)
+	if !state.PendingAvailable || state.Displayed.Lines[1].English != "Could you clarify?" {
+		t.Fatal("new batch overwrote the previous completed choice or was not actionable")
+	}
+	state.DiscardPartial()
+	if !state.PendingAvailable || !state.AcceptPending() || state.PendingAvailable {
+		t.Fatal("completed third-only batch must remain acceptable after cleanup")
+	}
+	if state.Displayed.Lines[2].English != "I'll look into it." ||
+		state.Displayed.Tip != "Check assumptions" {
+		t.Fatalf("accepted reply lost a complete choice or tip: %+v", state.Displayed)
+	}
+}
+
+func TestReplyPartialOrTipDoesNotCountAsCopyable(t *testing.T) {
+	var state ReplyState
+	serial := state.StartTurn(5)
+	tipOnly := ReplyBatch{Tip: "Confirm the date"}
+	tipOnly.Apply(Line{Kind: "ONE", English: "Working...", Complete: false})
+	if tipOnly.HasReadyReply() || FirstReadyReply(tipOnly.Lines) != -1 {
+		t.Fatal("partial English or a hint is not a copyable reply")
+	}
+	state.Publish(serial, tipOnly)
+	state.DiscardPartial()
+	if state.PendingAvailable || state.AcceptPending() ||
+		FirstReadyReply(state.Displayed.Lines) != -1 {
+		t.Fatal("partial suggestions became actionable")
+	}
+}

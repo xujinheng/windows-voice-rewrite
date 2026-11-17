@@ -375,3 +375,134 @@ func TestMeetingCancelDuringExpressionCannotOverwriteNewAnswer(t *testing.T) {
 	}
 	h.close()
 }
+
+func TestMeetingReplyHandoffAllowsIncompleteFirstWithReadySecondAndTip(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		text := "ONE\tThe first option.\t第一条。"
+		switch n {
+		case 2:
+			text = "TWO\tCould you expand?\t能详细说说吗？\nTIP\t核对实际范围"
+		case 3:
+			text = "THREE\tLet me verify the numbers.\t我去核对数字。\nTIP\t检查时间区间"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{map[string]any{
+				"finish_reason": "stop",
+				"message":       map[string]string{"content": text},
+			}},
+		})
+	}))
+	defer srv.Close()
+
+	cfg := coreconfig.Defaults()
+	cfg.LLMBaseURL = srv.URL + "/v1"
+	cfg.TextModel = "test-model"
+	m, err := newBridgeMeeting(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.stop()
+	for turn := uint64(1); turn <= 3; turn++ {
+		m.mu.Lock()
+		m.captions = append(m.captions, meetingcore.Caption{
+			ID: turn, Source: "test speech", Final: true,
+		})
+		m.prior = meetingcore.RememberPrior(m.prior, "test speech")
+		m.lastFinal = turn
+		m.mu.Unlock()
+		if err := m.runReplies(context.Background(), turn); err != nil {
+			t.Fatalf("turn %d valid reply was rejected: %v", turn, err)
+		}
+		snapshot := m.snapshot()
+		if turn == 2 {
+			if snapshot["reply_pending"] != true {
+				t.Fatal("second-only batch is not switchable")
+			}
+			if snapshot["reply_first_ready"] != 0 {
+				t.Fatal("unaccepted batch should preserve the first displayed option")
+			}
+			if !m.acceptReplies() {
+				t.Fatal("could not accept second-only batch")
+			}
+			snapshot = m.snapshot()
+			if snapshot["reply_first_ready"] != 1 ||
+				snapshot["reply_tip"] != "核对实际范围" {
+				t.Fatalf("second-only reply lost index or hint: %#v", snapshot)
+			}
+		}
+		if turn == 3 {
+			if !m.acceptReplies() {
+				t.Fatal("third-only reply was not offered")
+			}
+			snapshot = m.snapshot()
+			if snapshot["reply_first_ready"] != 2 ||
+				snapshot["reply_tip"] != "检查时间区间" {
+				t.Fatalf("third-only batch was not preserved: %#v", snapshot)
+			}
+		}
+	}
+}
+
+func TestMeetingReplyServiceOutageKeepsReadableChoiceAndAllowsRetry(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		if n == 2 {
+			http.Error(w, "upstream temporarily offline", http.StatusServiceUnavailable)
+			return
+		}
+		text := "ONE\tPreviously accepted.\t之前的答案。"
+		if n == 3 {
+			text = "TWO\tCould we confirm the latest figure?\t能确认最新数字吗？"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{map[string]any{
+				"finish_reason": "stop",
+				"message":       map[string]string{"content": text},
+			}},
+		})
+	}))
+	defer srv.Close()
+
+	cfg := coreconfig.Defaults()
+	cfg.LLMBaseURL = srv.URL + "/v1"
+	cfg.TextModel = "test-model"
+	m, err := newBridgeMeeting(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.stop()
+	for turn := uint64(1); turn <= 2; turn++ {
+		m.mu.Lock()
+		m.captions = append(m.captions, meetingcore.Caption{ID: turn, Source: "spoken context", Final: true})
+		m.prior = meetingcore.RememberPrior(m.prior, "spoken context")
+		m.lastFinal = turn
+		m.mu.Unlock()
+		err = m.runReplies(context.Background(), turn)
+		if turn == 1 && err != nil || turn == 2 && err == nil {
+			t.Fatalf("unexpected reply outcome turn %d: %v", turn, err)
+		}
+	}
+	failed := m.snapshot()
+	if failed["reply_status"] != meetingcore.RepliesFailed ||
+		failed["reply_pending"] != false ||
+		failed["reply_first_ready"] != 0 {
+		t.Fatalf("outage corrupted the finished reply: %#v", failed)
+	}
+	if err := m.runReplies(context.Background(), 0); err != nil {
+		t.Fatal("manual retry after outage:", err)
+	}
+	if !m.acceptReplies() {
+		t.Fatal("recovered batch was not offered")
+	}
+	recovered := m.snapshot()
+	if recovered["reply_first_ready"] != 1 ||
+		recovered["reply_status"] != "" ||
+		calls.Load() != 3 {
+		t.Fatalf("service recovery did not publish a new complete reply: %#v, calls %d", recovered, calls.Load())
+	}
+}
