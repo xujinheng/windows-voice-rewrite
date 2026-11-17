@@ -17,10 +17,40 @@ public struct MeetingAudioSource: Identifiable, Equatable, Sendable {
 
 /// ScreenCaptureKit captures an actual application audio stream. Sample
 /// conversion is native; segmentation and inference remain in the Go core.
+/// Actor-confined, deterministic token guard for overlapping async starts.
+/// Stop invalidates a start even before ScreenCaptureKit creates a stream.
+public struct SystemAudioStartGate {
+    private(set) var generation: UInt64 = 0
+    private(set) var starting = false
+
+    public init() {}
+
+    public mutating func begin(streamExists: Bool) -> UInt64? {
+        guard !starting && !streamExists else { return nil }
+        generation &+= 1
+        starting = true
+        return generation
+    }
+
+    public func accepts(_ token: UInt64) -> Bool {
+        starting && generation == token
+    }
+
+    public mutating func finish(_ token: UInt64) {
+        if generation == token { starting = false }
+    }
+
+    public mutating func invalidate() {
+        generation &+= 1
+        starting = false
+    }
+}
+
 @MainActor
 public final class SystemAudioCapture {
     private var stream: SCStream?
     private var receiver: SystemAudioReceiver?
+    private var startGate = SystemAudioStartGate()
 
     public init() {}
 
@@ -56,9 +86,14 @@ public final class SystemAudioCapture {
 
     public func start(sourceID: String, onPCM: @escaping @MainActor (Data) -> Void,
                       onFailure: @escaping @MainActor (String) -> Void) async throws {
-        guard stream == nil else { throw SystemAudioError.alreadyRunning }
+        guard let token = startGate.begin(streamExists: stream != nil) else {
+            throw SystemAudioError.alreadyRunning
+        }
+        defer { startGate.finish(token) }
         let content = try await SCShareableContent.excludingDesktopWindows(
             false, onScreenWindowsOnly: false)
+        // The first suspension is above: stop() must cancel source discovery too.
+        guard startGate.accepts(token) else { throw SystemAudioError.startCanceled }
         guard let display = content.displays.first else {
             throw SystemAudioError.noDisplay
         }
@@ -105,9 +140,10 @@ public final class SystemAudioCapture {
                 self.receiver = nil
             }
             try? created.removeStreamOutput(receiver, type: .audio)
+            if !startGate.accepts(token) { throw SystemAudioError.startCanceled }
             throw error
         }
-        guard self.stream === created else {
+        guard startGate.accepts(token), self.stream === created else {
             receiver.invalidate()
             try? await created.stopCapture()
             throw SystemAudioError.startCanceled
@@ -115,6 +151,9 @@ public final class SystemAudioCapture {
     }
 
     public func stop() async {
+        // Invalidate before the first await, including when start() is still
+        // awaiting SCShareableContent and no SCStream exists yet.
+        startGate.invalidate()
         guard let stream else { return }
         receiver?.invalidate()
         self.stream = nil
@@ -147,6 +186,7 @@ private final class SystemAudioReceiver: NSObject, SCStreamOutput, SCStreamDeleg
     private let onFailure: @MainActor (String) -> Void
     private let stateLock = NSLock()
     private var active = true
+    private var canceled = false
     private var converter: NativeAudioConverter?
     private var currentFormat: AVAudioFormat?
     private var pending = Data()
@@ -160,7 +200,26 @@ private final class SystemAudioReceiver: NSObject, SCStreamOutput, SCStreamDeleg
     func invalidate() {
         stateLock.lock()
         active = false
+        canceled = true
         stateLock.unlock()
+    }
+
+    private var mayReportFailure: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return !canceled
+    }
+
+    private func fail(_ message: String) {
+        stateLock.lock()
+        let shouldSchedule = active && !canceled
+        active = false
+        stateLock.unlock()
+        guard shouldSchedule else { return }
+        Task { @MainActor [weak self] in
+            guard let self, self.mayReportFailure else { return }
+            self.onFailure(message)
+        }
     }
 
     private var isActive: Bool {
@@ -170,9 +229,7 @@ private final class SystemAudioReceiver: NSObject, SCStreamOutput, SCStreamDeleg
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
-        guard isActive else { return }
-        invalidate()
-        Task { @MainActor in onFailure("系统音频采集已中断；请检查屏幕与系统音频录制权限") }
+        fail("系统音频采集已中断；请检查屏幕与系统音频录制权限")
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
@@ -181,8 +238,7 @@ private final class SystemAudioReceiver: NSObject, SCStreamOutput, SCStreamDeleg
         do {
             try process(sampleBuffer)
         } catch {
-            invalidate()
-            Task { @MainActor in onFailure("无法转换系统音频；请重新启动会议采集") }
+            fail("无法转换系统音频；请重新启动会议采集")
         }
     }
 
