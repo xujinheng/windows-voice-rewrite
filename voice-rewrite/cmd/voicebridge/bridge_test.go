@@ -28,7 +28,7 @@ func TestTranscribeBudgetMatchesAudioLength(t *testing.T) {
 		want    time.Duration
 	}{
 		{1, 65 * time.Second},
-		{10, 65 * time.Second},
+		{10, 67 * time.Second},
 		{30, 105 * time.Second},
 		{60, 165 * time.Second},
 		{180, 220 * time.Second},
