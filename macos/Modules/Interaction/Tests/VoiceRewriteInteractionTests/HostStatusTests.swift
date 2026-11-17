@@ -2,6 +2,17 @@ import XCTest
 @testable import VoiceRewriteInteraction
 
 final class HostStatusTests: XCTestCase {
+    func testVoiceRewriteSelectionIsCapturedOnlyAgainstOriginalReleaseTarget() {
+        XCTAssertTrue(voiceSelectionReleaseMayCapture(
+            tokenValid: true, targetPID: 42, foregroundPID: 42))
+        XCTAssertFalse(voiceSelectionReleaseMayCapture(
+            tokenValid: false, targetPID: 42, foregroundPID: 42))
+        XCTAssertFalse(voiceSelectionReleaseMayCapture(
+            tokenValid: true, targetPID: 42, foregroundPID: 43))
+        XCTAssertFalse(voiceSelectionReleaseMayCapture(
+            tokenValid: true, targetPID: 42, foregroundPID: nil))
+    }
+
     func testInsertionFailureDistinguishesUncertainDeliveryFromChangedTarget() {
         let args = (rewrite: false, passwordRewrite: "密码改写", passwordDictation: "密码听写")
         let uncertain = insertionStatus(InteractionFailure.writeNotConfirmed,
@@ -140,15 +151,22 @@ final class HostStatusTests: XCTestCase {
         XCTAssertEqual(dropped.phase, .error)
         XCTAssertFalse(dropped.cancelTask)
 
-        let inserted = dictationInsertFollowUp(succeeded: true, status: "失败", manualTitle: "请复制", text: "你好")
-        XCTAssertEqual(inserted.phase, .success)
-        XCTAssertEqual(inserted.interactionStatus, dictationInserted())
-        XCTAssertNil(inserted.cardTitle)
+        let confirmed = dictationInsertFollowUp(outcome: .confirmed, status: "失败", manualTitle: "请复制", text: "你好")
+        XCTAssertEqual(confirmed.phase, .success)
+        XCTAssertEqual(confirmed.interactionStatus, dictationInserted())
+        XCTAssertNil(confirmed.cardTitle)
 
-        let manual = dictationInsertFollowUp(succeeded: false, status: "失败", manualTitle: "请复制", text: "你好")
-        XCTAssertEqual(manual.phase, .fallback)
-        XCTAssertEqual(manual.cardTitle, "请复制")
-        XCTAssertEqual(manual.cardText, "你好")
+        let posted = dictationInsertFollowUp(outcome: .sentUnverified, status: "失败", manualTitle: "请复制", text: "你好")
+        XCTAssertEqual(posted.phase, .answer, "posting Cmd+V is not confirmed insertion")
+        XCTAssertEqual(posted.interactionStatus, dictationInserted())
+        XCTAssertNil(posted.cardText, "do not encourage a second paste after an uncertain delivery")
+
+        for outcome in [DeliveryState.blocked, .uncertain] {
+            let manual = dictationInsertFollowUp(outcome: outcome, status: "失败", manualTitle: "请复制", text: "你好")
+            XCTAssertEqual(manual.phase, .fallback)
+            XCTAssertEqual(manual.cardTitle, "请复制")
+            XCTAssertEqual(manual.cardText, "你好")
+        }
     }
 
     func testSelectedTaskFollowUpKeepsPreviewAndWriteApart() {
@@ -273,56 +291,7 @@ final class HostStatusTests: XCTestCase {
         XCTAssertFalse(broken.cancelMicrophone)
     }
 
-    func testSpokenAndTypedSelectionCapturesStayDifferent() {
-        let staleVoice = rewriteVoiceAfterCapture(tokenValid: false, tooLong: "太长")
-        XCTAssertTrue(staleVoice.cancelTask)
-        XCTAssertTrue(staleVoice.leave)
-        XCTAssertFalse(staleVoice.startMicrophone)
-        XCTAssertNil(staleVoice.interactionStatus)
-        XCTAssertNil(staleVoice.recordingStatus)
-
-        let longVoice = rewriteVoiceAfterCapture(tokenValid: true, tooLong: "太长")
-        XCTAssertTrue(longVoice.cancelTask)
-        XCTAssertFalse(longVoice.leave)
-        XCTAssertFalse(longVoice.startMicrophone)
-        XCTAssertEqual(longVoice.interactionStatus, "太长")
-        XCTAssertEqual(longVoice.recordingStatus, recordingIdle())
-        XCTAssertTrue(longVoice.showError)
-        XCTAssertNil(longVoice.llmProbe)
-
-        let readyVoice = rewriteVoiceAfterCapture(tokenValid: true, tooLong: nil)
-        XCTAssertTrue(readyVoice.startMicrophone)
-        XCTAssertFalse(readyVoice.cancelTask)
-        XCTAssertFalse(readyVoice.leave)
-
-        let expired = rewriteVoiceMicrophoneReady(tokenValid: false)
-        XCTAssertTrue(expired.cancelMicrophone)
-        XCTAssertTrue(expired.cancelTask)
-        XCTAssertTrue(expired.leave)
-        XCTAssertFalse(expired.beginRecording)
-        XCTAssertNil(expired.recordingStatus)
-
-        let recording = rewriteVoiceMicrophoneReady(tokenValid: true)
-        XCTAssertTrue(recording.beginRecording)
-        XCTAssertFalse(recording.cancelMicrophone)
-        XCTAssertFalse(recording.leave)
-        XCTAssertEqual(recording.recordingStatus, rewriteRecording())
-        XCTAssertEqual(recording.interactionStatus, rewriteSelectionLocked())
-
-        let hidden = rewriteVoiceCaptureFailed(tokenValid: false, status: "密码")
-        XCTAssertTrue(hidden.cancelMicrophone)
-        XCTAssertTrue(hidden.cancelTask)
-        XCTAssertFalse(hidden.showError)
-        XCTAssertNil(hidden.interactionStatus)
-        XCTAssertFalse(hidden.leave)
-
-        let shown = rewriteVoiceCaptureFailed(tokenValid: true, status: "密码")
-        XCTAssertEqual(shown.interactionStatus, "密码")
-        XCTAssertEqual(shown.recordingStatus, recordingIdle())
-        XCTAssertTrue(shown.showError)
-        XCTAssertTrue(shown.cancelMicrophone)
-        XCTAssertTrue(shown.cancelTask)
-
+    func testTypedSelectionCaptureIsStrictAndSeparateFromVoiceRelease() {
         let staleTyped = typedSelectionAfterCapture(tokenValid: false, tooLong: "太长")
         XCTAssertTrue(staleTyped.cancelTask)
         XCTAssertTrue(staleTyped.leave)
@@ -337,8 +306,6 @@ final class HostStatusTests: XCTestCase {
         XCTAssertFalse(longTyped.sendTask)
         XCTAssertEqual(longTyped.interactionStatus, "太长")
         XCTAssertEqual(longTyped.llmProbe, probeTaskIncomplete())
-        XCTAssertNil(longTyped.recordingStatus)
-        XCTAssertFalse(longTyped.startMicrophone)
 
         let send = typedSelectionAfterCapture(tokenValid: true, tooLong: nil)
         XCTAssertTrue(send.sendTask)
@@ -348,13 +315,11 @@ final class HostStatusTests: XCTestCase {
 
         let ignored = typedSelectionStartFailed(tokenValid: false, detail: "断开")
         XCTAssertFalse(ignored.cancelTask)
-        XCTAssertFalse(ignored.cancelMicrophone)
         XCTAssertFalse(ignored.stopProcessing)
         XCTAssertNil(ignored.interactionStatus)
 
         let failed = typedSelectionStartFailed(tokenValid: true, detail: "断开")
         XCTAssertFalse(failed.cancelTask)
-        XCTAssertFalse(failed.cancelMicrophone)
         XCTAssertTrue(failed.stopProcessing)
         XCTAssertEqual(failed.interactionStatus, rewriteTaskNotStarted("断开"))
         XCTAssertEqual(failed.llmProbe, probeTaskIncomplete())
