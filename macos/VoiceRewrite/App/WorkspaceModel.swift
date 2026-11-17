@@ -867,7 +867,24 @@ final class WorkspaceModel: ObservableObject {
         if let paused = values["capture_paused"]?.boolValue, !meetingCaptureSwitching {
             meetingCapturePaused = paused
         }
-        if let status = values["status"]?.string { meetingStatus = status }
+        if let status = values["status"]?.string {
+            // The existing Meeting status line surfaces shared Go Core metrics
+            // without introducing another Swift-owned audio state machine.
+            var details: [String] = []
+            if case .object(let metrics)? = values["metrics"] {
+                let queued = (metrics["pending"]?.int ?? 0) + meetingPendingPackets
+                let dropped = metrics["dropped"]?.int ?? 0
+                if queued > 0 { details.append("音频负载队列 \(queued)") }
+                if dropped > 0 { details.append("丢弃 \(dropped) 段") }
+                if let ms = metrics["asr_done_ms"]?.int, ms > 0 {
+                    details.append("ASR \(ms)ms")
+                }
+                if let ms = metrics["translation_done_ms"]?.int, ms > 0 {
+                    details.append("翻译 \(ms)ms")
+                }
+            }
+            meetingStatus = details.isEmpty ? status : status + " · " + details.joined(separator: " · ")
+        }
         if let status = values["reply_status"]?.string { meetingReplyStatus = status }
         if let status = values["expression_status"]?.string { meetingExpressionStatus = status }
         if let value = values["expression"]?.string { meetingExpression = value }
