@@ -100,9 +100,13 @@ struct MainView: View {
                 GroupBox("选区改写") {
                     VStack(alignment: .leading, spacing: 8) {
                         TextField("输入改写/翻译指令，再切到其他应用选中文字", text: $model.taskInstruction)
+                        Toggle("使用文字指令改写（无需录音）", isOn: $model.useTypedRewriteInstruction)
+                            .accessibilityIdentifier("rewrite_typed_mode")
+                        Text("在目标应用选中文本后按 Ctrl+Option+E 或长按 Mouse5。默认是语音改写；开启此选项后改为执行上面填写的文字指令。")
+                            .font(.footnote).foregroundStyle(.secondary)
                         Text("侧键默认：Mouse4 听写、Mouse5 选区改写；在设置中调整后按新绑定执行。短按侧键保留正常导航。")
                             .font(.footnote).foregroundStyle(.secondary)
-                        Text("键盘默认：Ctrl+Option+R 听写、Ctrl+Option+E 语音改写、Ctrl+Option+T 文字指令；可在设置中更改。")
+                        Text("键盘默认：Ctrl+Option+R 听写、Ctrl+Option+E 选区改写；两种改写方式共用同一快捷键。")
                             .font(.footnote).foregroundStyle(.secondary)
                         Text("语音选区模式需要先在目标应用选中文字；录音中不得改变目标、焦点或选区，否则只保留预览。")
                             .font(.footnote).foregroundStyle(.secondary)
