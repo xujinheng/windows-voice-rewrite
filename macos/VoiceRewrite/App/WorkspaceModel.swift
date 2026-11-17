@@ -1380,7 +1380,7 @@ final class WorkspaceModel: ObservableObject {
                         }
                         self.applyMeetingSnapshot(response.result ?? [:])
                         if case .array(let values)? = response.result?["captions"] {
-                            self.meetingCaptions = values.compactMap { value in
+                            let incoming: [MeetingCaptionRow] = values.compactMap { value in
                                 guard case .object(let item) = value,
                                       let id = item["id"]?.int,
                                       let source = item["source"]?.string,
@@ -1388,6 +1388,10 @@ final class WorkspaceModel: ObservableObject {
                                 return MeetingCaptionRow(id: id, source: source,
                                     chinese: chinese, final: item["final"]?.boolValue == true)
                             }
+                            // 450ms snapshots often contain unchanged history.
+                            // Avoid invalidating all six SwiftUI reading panes
+                            // and their potentially long text layouts on no-op polls.
+                            if self.meetingCaptions != incoming { self.meetingCaptions = incoming }
                         }
                     }
                 }
@@ -1418,7 +1422,8 @@ final class WorkspaceModel: ObservableObject {
                     details.append("翻译 \(ms)ms")
                 }
             }
-            meetingStatus = details.isEmpty ? status : status + " · " + details.joined(separator: " · ")
+            let next = details.isEmpty ? status : status + " · " + details.joined(separator: " · ")
+            if meetingStatus != next { meetingStatus = next }
         }
         if let trimmed = values["history_trimmed"]?.int { meetingHistoryTrimmed = trimmed }
         if let status = values["reply_status"]?.string { meetingReplyStatus = status }
@@ -1436,13 +1441,14 @@ final class WorkspaceModel: ObservableObject {
             meetingExpressionExpanded = expanded
         }
         if case .array(let items)? = values["replies"] {
-            meetingReplies = items.enumerated().compactMap { index, value in
+            let incoming: [MeetingReplyRow] = items.enumerated().compactMap { index, value in
                 guard case .object(let row) = value,
                       let english = row["english"]?.string,
                       let chinese = row["chinese"]?.string else { return nil }
                 return MeetingReplyRow(id: index, english: english,
                     chinese: chinese, complete: row["complete"]?.boolValue == true)
             }
+            if meetingReplies != incoming { meetingReplies = incoming }
             // The core selects the first finished option, not necessarily ONE.
             // Preserve an explicit selection while it remains copyable.
             let selectedReady = meetingReplies.contains {
