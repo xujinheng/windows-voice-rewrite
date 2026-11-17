@@ -74,20 +74,20 @@ func Controls() []Control {
 		{ID: "probe_llm", Page: "writing", Label: "测试连接", Kind: Button},
 		{ID: "probe_llm_status", Page: "writing", Kind: Status},
 
-		{ID: "max_record_seconds", Page: "input", Label: "最长录音", Kind: Stepper, Platform: MacOS, Stacked: true, Gap: "#61 #69"},
-		{ID: "record_note", Page: "input", Label: "录音数据为 16 kHz 单声道 PCM16，最长 180 秒。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
 		{ID: "rewrite_shortcut", Page: "input", Label: "语音指令", Kind: Shortcut, Stacked: true},
-		{ID: "capture_rewrite", Page: "input", Label: "录入按键", Kind: Button, Platform: Windows, Gap: "#61 #69"},
+		{ID: "capture_rewrite", Page: "input", Label: "录入按键", Kind: Button},
 		{ID: "dictation_shortcut", Page: "input", Label: "听写快捷键", Kind: Shortcut, Stacked: true},
-		{ID: "capture_dictation", Page: "input", Label: "录入按键", Kind: Button, Platform: Windows, Gap: "#61 #69"},
-		{ID: "text_edit_shortcut", Page: "input", Label: "文字指令", Kind: Text, Platform: MacOS, Stacked: true, Gap: "#61 #69"},
+		{ID: "capture_dictation", Page: "input", Label: "录入按键", Kind: Button},
 		{ID: "microphone", Page: "input", Label: "麦克风", Kind: Choice, Stacked: true},
+		{ID: "max_record_seconds", Page: "input", Label: "最长录音", Kind: Stepper, Platform: MacOS, Gap: "#61 #69"},
+		{ID: "record_note", Page: "input", Label: "录音数据为 16 kHz 单声道 PCM16，最长 180 秒。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
+		{ID: "meeting_asr_mode", Page: "input", Label: "会议语音识别方式", Kind: Choice, Platform: MacOS, Gap: "#61 #69"},
 		{ID: "input_note_windows", Page: "input", Label: "语音指令用于改写/解释/问答；更换按键或设备后需重启软件。", Kind: Note, Platform: Windows, Gap: "#61 #69"},
-		{ID: "input_note_macos", Page: "input", Label: "与 Windows 使用同一套写法，例如 Ctrl+Alt+R、F8 或 Mouse4。Alt 在 macOS 上是 Option。未配置鼠标绑定时，Mouse4 默认听写、Mouse5 默认改写；显式配置鼠标键时仅拦截已分配的侧键。F21–F24 在 macOS 上不可用，三个功能不能绑定同一个按键。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
+		{ID: "input_note_macos", Page: "input", Label: "可用 Ctrl+Alt+R、F8 或 Mouse4。macOS 的 Alt 即 Option；Mouse4 默认听写，Mouse5 默认改写。仅监听已绑定侧键，F21–F24 不可用；听写与改写不能绑定同一个按键。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
 
 		{ID: "save", Page: "save", Label: "保存设置", Kind: Button},
-		{ID: "advanced", Page: "save", Label: "高级配置", Kind: Button, Platform: Windows, Gap: "#61 #69"},
-		{ID: "close", Page: "save", Label: "关闭", Kind: Button, Platform: Windows, Gap: "#61 #69"},
+		{ID: "advanced", Page: "save", Label: "高级配置", Kind: Button},
+		{ID: "close", Page: "save", Label: "关闭", Kind: Button},
 		{ID: "save_note", Page: "save", Label: "API Key 为可选项；需要认证时先保存再检测。连接检测共用 Windows 的 Go Core 规则：ASR 发送生成的静音 WAV，LLM 查询 /models，不发送用户录音或文本。密钥仅保存在 Keychain。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
 	}
 }

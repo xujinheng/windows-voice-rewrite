@@ -48,8 +48,31 @@ func TestGenerateHostFilesFromCore(t *testing.T) {
 		}
 	}
 	settings := first[filepath.Join(filepath.Dir(root), "macos/VoiceRewrite/UI/SettingsView.swift")]
-	if !strings.Contains(settings, "测试连接") || !strings.Contains(settings, "asr_base_url") {
-		t.Fatal("settings view is not driven by the catalog")
+	for _, piece := range []string{
+		"测试连接", "asr_base_url", "nav_speech", "nav_writing", "nav_input",
+		"capture_rewrite", "capture_dictation", "meeting_asr_mode",
+		"Text(model.settingsStatus)", "onDisappear { stopCapture() }",
+	} {
+		if !strings.Contains(settings, piece) {
+			t.Fatalf("generated settings missing %s", piece)
+		}
+	}
+	// A SettingsView embedded inside the workspace must never close the
+	// entire application window; its host supplies an explicit tab action.
+	for _, piece := range []string{
+		"@Environment(\\.dismiss) private var dismiss",
+		"var onClose: (() -> Void)? = nil",
+		"if let onClose { onClose() } else { dismiss() }",
+	} {
+		if !strings.Contains(settings, piece) {
+			t.Fatalf("generated settings lacks safe close contract %q", piece)
+		}
+	}
+	if strings.Contains(settings, "NSApp.keyWindow?.close()") {
+		t.Fatal("settings Close must not close the workspace window")
+	}
+	if strings.Contains(settings, "text_edit_shortcut") || strings.Contains(settings, "TextField(\"文字指令\"") {
+		t.Fatal("third global hotkey settings entry must be absent")
 	}
 	history := first[filepath.Join(filepath.Dir(root), "macos/VoiceRewrite/App/SessionHistory.swift")]
 	if !strings.Contains(history, "static func accept") || !strings.Contains(history, "语音结果") || strings.Contains(history, "trimmedTitle") {
