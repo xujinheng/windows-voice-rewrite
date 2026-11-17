@@ -59,23 +59,35 @@ public final class ClipboardProtector: @unchecked Sendable {
     public func beginTemporaryText(_ text: String) throws -> UUID {
         try synchronized {
             guard lease == nil else { throw ClipboardFailure.busy }
-            let before = try board.capture()
-            let id = UUID()
-            do {
-                let count = try board.installTemporaryText(text, owner: id, expectedChangeCount: before.changeCount)
-                guard ClipboardOwnership.mayRestore(hasOriginal: true, owned: count, current: board.ownedChangeCount(owner: id)) else {
-                    throw ClipboardFailure.ownershipLost
-                }
-                lease = (id, before, count)
-                return id
-            } catch {
-                // A partial write may only be undone while our marker proves ownership.
-                if board.ownedChangeCount(owner: id) != nil {
-                    do { try board.restore(before) }
-                    catch { throw ClipboardFailure.restoreFailed }
-                }
-                throw error
+            // Synchronous callers retain their existing complete transaction
+            // semantics; the async dictation path snapshots off-main instead.
+            return try installLocked(text, before: board.capture())
+        }
+    }
+
+    /// Must be called with the lease lock held. installTemporaryText checks
+    /// that the clipboard's changeCount still matches this exact snapshot,
+    /// including when another application replaces it during an async capture.
+    private func installLocked(_ text: String, before: ClipboardContents) throws -> UUID {
+        guard lease == nil else { throw ClipboardFailure.busy }
+        let id = UUID()
+        do {
+            let count = try board.installTemporaryText(text, owner: id,
+                                                       expectedChangeCount: before.changeCount)
+            guard ClipboardOwnership.mayRestore(
+                hasOriginal: true, owned: count,
+                current: board.ownedChangeCount(owner: id)
+            ) else {
+                throw ClipboardFailure.ownershipLost
             }
+            lease = (id, before, count)
+            return id
+        } catch {
+            if board.ownedChangeCount(owner: id) != nil {
+                do { try board.restore(before) }
+                catch { throw ClipboardFailure.restoreFailed }
+            }
+            throw error
         }
     }
 
@@ -91,7 +103,22 @@ public final class ClipboardProtector: @unchecked Sendable {
                 throw InteractionFailure.cancelled
             }
             do {
-                return try beginTemporaryText(text)
+                // Clipboard data can be lazily supplied by a different app.
+                // item.data(forType:) can block until that app responds; never
+                // hold our lease lock or the AppKit main actor while reading it.
+                guard !synchronized({ lease != nil }) else {
+                    throw ClipboardFailure.busy
+                }
+                let before = try await Task.detached(priority: .userInitiated) { [board] in
+                    try board.capture()
+                }.value
+                // Cancellation is checked on the caller's actor *after* the
+                // potentially slow background read and before any clipboard
+                // mutation. A late snapshot cannot publish an obsolete paste.
+                guard stillValid(), !Task<Never, Never>.isCancelled else {
+                    throw InteractionFailure.cancelled
+                }
+                return try synchronized { try installLocked(text, before: before) }
             } catch ClipboardFailure.busy {
                 guard ProcessInfo.processInfo.systemUptime < deadline else {
                     throw ClipboardFailure.busy
