@@ -342,6 +342,11 @@ private struct MeetingView: View {
                 }
                 .frame(minWidth: 290)
             }
+            if !model.meetingCopyStatus.isEmpty {
+                Text(model.meetingCopyStatus)
+                    .font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("meeting_copy_status")
+            }
             Text("选择系统或应用音频后开始字幕；建议由最新完整发言触发。拖动分隔线调整区域大小。实际权限和录音效果仍需在 Mac 上验收。")
                 .font(.footnote).foregroundStyle(.secondary)
         }

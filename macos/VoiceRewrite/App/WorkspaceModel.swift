@@ -75,6 +75,7 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var meetingExpression = ""
     @Published private(set) var meetingExpressionChinese = ""
     @Published private(set) var meetingExpressionStatus = ""
+    @Published private(set) var meetingCopyStatus = ""
     @Published private(set) var meetingBusy = false
     @Published private(set) var meetingCancelPending = false
     @Published private(set) var meetingVoiceRecording = false
@@ -578,6 +579,7 @@ final class WorkspaceModel: ObservableObject {
         meetingExpression = ""
         meetingExpressionChinese = ""
         meetingExpressionStatus = ""
+        meetingCopyStatus = ""
         meetingSelectedIndex = 0
         bridge.send(operation: "meeting_start", fields: ["config": config]) { [weak self] reply in
             Task { @MainActor [weak self] in
@@ -908,13 +910,15 @@ final class WorkspaceModel: ObservableObject {
         guard let row = meetingReplies.first(where: { $0.id == meetingSelectedIndex }),
               row.complete, !row.english.isEmpty else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(row.english, forType: .string)
+        let copied = NSPasteboard.general.setString(row.english, forType: .string)
+        meetingCopyStatus = copied ? ResultCopy.copySucceeded : ResultCopy.copyFailed
     }
 
     func copyMeetingExpression() {
         guard !meetingExpression.isEmpty else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(meetingExpression, forType: .string)
+        let copied = NSPasteboard.general.setString(meetingExpression, forType: .string)
+        meetingCopyStatus = copied ? ResultCopy.copySucceeded : ResultCopy.copyFailed
     }
 
     func stopMeeting(reason: String = "会议采集已停止") {
