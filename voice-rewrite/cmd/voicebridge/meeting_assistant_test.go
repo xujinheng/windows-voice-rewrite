@@ -192,11 +192,17 @@ func TestMeetingReplyCoalescesConcurrentRequestsAndAvoidsRepeatInference(t *test
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		select { case entered <- struct{}{}: default: }
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
 		select {
 		case <-release:
-			_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{
-				map[string]any{"message": map[string]string{"content": "ONE\tA good answer.\t一个好答案。"}}}})
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []any{map[string]any{
+					"message": map[string]string{"content": "ONE\tA good answer.\t一个好答案。"},
+				}},
+			})
 		case <-r.Context().Done():
 		}
 	}))
@@ -205,7 +211,9 @@ func TestMeetingReplyCoalescesConcurrentRequestsAndAvoidsRepeatInference(t *test
 	cfg.LLMBaseURL = srv.URL + "/v1"
 	cfg.TextModel = "test-model"
 	m, err := newBridgeMeeting(cfg)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer m.stop()
 	m.mu.Lock()
 	m.captions = []meetingcore.Caption{{ID: 5, Source: "latest", Final: true}}
@@ -216,7 +224,8 @@ func TestMeetingReplyCoalescesConcurrentRequestsAndAvoidsRepeatInference(t *test
 	go func() { done <- m.runReplies(context.Background(), 5) }()
 	select {
 	case <-entered:
-	case <-time.After(3 * time.Second): t.Fatal("first reply request never started")
+	case <-time.After(5 * time.Second):
+		t.Fatal("first reply request never started")
 	}
 	if err := m.runReplies(context.Background(), 0); err != nil {
 		t.Fatal("duplicate manual request:", err)
@@ -224,20 +233,31 @@ func TestMeetingReplyCoalescesConcurrentRequestsAndAvoidsRepeatInference(t *test
 	close(release)
 	select {
 	case err := <-done:
-		if err != nil { t.Fatal("initial reply:", err) }
-	case <-time.After(3 * time.Second): t.Fatal("reply did not finish")
+		if err != nil {
+			t.Fatal("initial reply:", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("reply did not finish")
 	}
-	if err := m.runReplies(context.Background(), 5); err != nil { t.Fatal(err) }
+	if err := m.runReplies(context.Background(), 5); err != nil {
+		t.Fatal(err)
+	}
 	if calls.Load() != 1 {
 		t.Fatalf("duplicate automatic turn inferred %d times", calls.Load())
 	}
-	if err := m.runReplies(context.Background(), 0); err != nil { t.Fatal(err) }
+	if err := m.runReplies(context.Background(), 0); err != nil {
+		t.Fatal(err)
+	}
 	if calls.Load() != 2 {
 		t.Fatalf("manual regeneration should be explicit, got %d calls", calls.Load())
 	}
 	m.cancelWork()
-	if err := m.runReplies(context.Background(), 0); err != nil { t.Fatal(err) }
-	if calls.Load() != 3 { t.Fatal("cancel left subsequent requests locked") }
+	if err := m.runReplies(context.Background(), 0); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 3 {
+		t.Fatal("cancel left subsequent requests locked")
+	}
 	if err := m.refine(context.Background(), -1, "shorter"); err == nil {
 		t.Fatal("invalid reply index was not rejected")
 	}

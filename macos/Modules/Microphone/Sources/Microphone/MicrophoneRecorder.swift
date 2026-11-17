@@ -86,7 +86,7 @@ public final class MicrophoneRecorder {
     }
 
     /// A missing explicit choice is never silently substituted with the system default.
-    public static func selectionUnavailable(_ uid: String, in devices: [MicrophoneInputDevice]) -> Bool {
+    public nonisolated static func selectionUnavailable(_ uid: String, in devices: [MicrophoneInputDevice]) -> Bool {
         !uid.isEmpty && !devices.contains(where: { $0.id == uid })
     }
 
