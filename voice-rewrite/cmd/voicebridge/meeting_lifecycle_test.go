@@ -49,8 +49,7 @@ func TestBridgeMeetingPauseResumeAndSessionIsolation(t *testing.T) {
 		pauseState["epoch"].(float64) <= initialEpoch {
 		t.Fatalf("pause did not invalidate active audio epoch: %#v", pauseState)
 	}
-	if got := send("paused-feed", "meeting_feed", sid, map[string]any{"pcm_base64": pcm});
-		got.OK || got.Error == nil || got.Error.Code != "meeting_paused" {
+	if got := send("paused-feed", "meeting_feed", sid, map[string]any{"pcm_base64": pcm}); got.OK || got.Error == nil || got.Error.Code != "meeting_paused" {
 		t.Fatalf("paused session accepted PCM: %#v", got)
 	}
 	again := send("pause-again", "meeting_pause", sid, nil)
@@ -79,8 +78,7 @@ func TestBridgeMeetingPauseResumeAndSessionIsolation(t *testing.T) {
 	if got := send("stop", "meeting_stop", sid, nil); !got.OK {
 		t.Fatalf("stop: %#v", got)
 	}
-	if got := send("old-pause", "meeting_pause", sid, nil);
-		got.OK || got.Error == nil || got.Error.Code != "stale_meeting" {
+	if got := send("old-pause", "meeting_pause", sid, nil); got.OK || got.Error == nil || got.Error.Code != "stale_meeting" {
 		t.Fatalf("stopped session was paused again: %#v", got)
 	}
 	next := send("next-start", "meeting_start", "", map[string]any{"config": cfg})
@@ -91,8 +89,7 @@ func TestBridgeMeetingPauseResumeAndSessionIsolation(t *testing.T) {
 	if nextID == sid {
 		t.Fatal("restart reused the previous session token")
 	}
-	if got := send("stale-resume", "meeting_resume", sid, nil);
-		got.OK || got.Error == nil || got.Error.Code != "stale_meeting" {
+	if got := send("stale-resume", "meeting_resume", sid, nil); got.OK || got.Error == nil || got.Error.Code != "stale_meeting" {
 		t.Fatalf("old resume touched new session: %#v", got)
 	}
 	fresh := send("next-snapshot", "meeting_snapshot", nextID, nil)
@@ -187,11 +184,17 @@ func TestBridgeMeetingRapidStopJoinsAudioConsumer(t *testing.T) {
 	cfg := configFor("http://127.0.0.1:8080")
 	// Exercise direct lifetime ownership without issuing requests to an ASR server.
 	data, err := json.Marshal(cfg)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	parsed, err := coreconfig.Parse(data)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	parsed, err = coreconfig.Normalize(parsed)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	for n := 0; n < 30; n++ {
 		m, err := newBridgeMeeting(parsed)
 		if err != nil {
