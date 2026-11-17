@@ -257,6 +257,7 @@ private final class SystemAudioReceiver: NSObject, SCStreamOutput, SCStreamDeleg
     private let stateLock = NSLock()
     private var active = true
     private var canceled = false
+    private var pendingDeliveries = 0
     private var converter: NativeAudioConverter?
     private var currentFormat: AVAudioFormat?
     private var pending = Data()
@@ -296,6 +297,20 @@ private final class SystemAudioReceiver: NSObject, SCStreamOutput, SCStreamDeleg
         stateLock.lock()
         defer { stateLock.unlock() }
         return active
+    }
+
+    private func reserveDelivery() -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard active, pendingDeliveries < 8 else { return false }
+        pendingDeliveries += 1
+        return true
+    }
+
+    private func completeDelivery() {
+        stateLock.lock()
+        pendingDeliveries = max(0, pendingDeliveries - 1)
+        stateLock.unlock()
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -364,10 +379,15 @@ private final class SystemAudioReceiver: NSObject, SCStreamOutput, SCStreamDeleg
         while pending.count >= 6_400 {
             let chunk = Data(pending.prefix(6_400))
             pending.removeFirst(6_400)
-            guard isActive else { return }
+            guard reserveDelivery() else {
+                fail("会议音频处理过载；请检查系统负载并重启采集")
+                return
+            }
             Task { @MainActor [weak self] in
-                guard self?.isActive == true else { return }
-                onPCM(chunk)
+                guard let self else { return }
+                self.completeDelivery()
+                guard self.isActive else { return }
+                self.onPCM(chunk)
             }
         }
     }
