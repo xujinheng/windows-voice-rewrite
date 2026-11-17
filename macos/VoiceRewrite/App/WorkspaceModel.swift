@@ -1764,11 +1764,7 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    /// The microphone is canceled before the Accessibility task.
     private func cancelSelectionCue(_ cue: SelectionCue, generation: UInt64?) async {
-        if cue.cancelMicrophone {
-            microphone.cancel()
-        }
         if cue.cancelTask, let generation {
             await interaction.cancelTask(generation: generation)
         }
@@ -1780,9 +1776,6 @@ final class WorkspaceModel: ObservableObject {
         }
         if let status = cue.interactionStatus {
             interactionStatus = status
-        }
-        if let status = cue.recordingStatus {
-            recordingStatus = status
         }
         if let probe = cue.llmProbe {
             llmProbeStatus = probe
