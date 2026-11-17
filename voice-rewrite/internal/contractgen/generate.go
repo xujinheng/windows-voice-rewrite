@@ -48,6 +48,11 @@ func Generate(moduleRoot string) (map[string]string, error) {
 		return nil, fmt.Errorf("hold: %w", err)
 	}
 	out[filepath.Join(repo, "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/SideHold.swift")] = hold
+	paste, err := emitPasteTiming(filepath.Join(core, "clipboard", "paste_receipt.go"))
+	if err != nil {
+		return nil, fmt.Errorf("paste timing: %w", err)
+	}
+	out[filepath.Join(repo, "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/PasteTiming.swift")] = paste
 	logPath := filepath.Join(repo, "macos/VoiceRewrite/App/DiagnosticLog.swift")
 	logText, err := emitDiagnosticLog(logPath, filepath.Join(core, "logfile", "rotate.go"))
 	if err != nil {
@@ -65,6 +70,28 @@ func Generate(moduleRoot string) (map[string]string, error) {
 	}
 	out[filepath.Join(repo, "macos/Modules/Storage/Tests/VoiceRewriteStorageTests/CanonicalEndpointVectors.swift")] = vectors
 	return out, nil
+}
+
+func emitPasteTiming(path string) (string, error) {
+	file, err := parseFile(path)
+	if err != nil {
+		return "", err
+	}
+	values := map[string]string{}
+	for _, spec := range constSpecs(file) {
+		values[spec.name] = spec.value
+	}
+	names := []string{"PasteReceiptQuietMilliseconds", "PasteReceiptMaxMilliseconds", "PasteReceiptPollMilliseconds"}
+	for _, name := range names {
+		if values[name] == "" {
+			return "", fmt.Errorf("missing %s", name)
+		}
+	}
+	return sourceNote("voice-rewrite/internal/core/clipboard") +
+		"import Foundation\\n\\npublic enum PasteTiming {\\n" +
+		"    public static let quietMilliseconds = " + values[names[0]] + "\\n" +
+		"    public static let maxMilliseconds = " + values[names[1]] + "\\n" +
+		"    public static let pollMilliseconds = " + values[names[2]] + "\\n}\\n", nil
 }
 
 func emitSideHold(path string) (string, error) {
