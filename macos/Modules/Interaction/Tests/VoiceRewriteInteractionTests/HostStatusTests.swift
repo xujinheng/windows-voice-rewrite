@@ -24,7 +24,7 @@ final class HostStatusTests: XCTestCase {
             "密码")
         XCTAssertEqual(
             captureStatus(InteractionFailure.invalidSelection, password: "密码"),
-            "听写需要空光标位置；如有选中文字，请先取消选择")
+            "原输入框的选区或光标位置无效；无法安全写入")
         XCTAssertEqual(
             captureStatus(InteractionFailure.systemError(7), password: "密码"),
             "读取目标文本框失败（Accessibility 错误 7）")
@@ -39,7 +39,7 @@ final class HostStatusTests: XCTestCase {
 
     func testDictationRecordingSentencesStayMacOnly() {
         XCTAssertEqual(recordingIdle(), "未录音")
-        XCTAssertEqual(dictationCaretLocked(), "已锁定原应用光标；识别后将验证并写入")
+        XCTAssertEqual(dictationCaretLocked(), "已锁定原应用光标及选区；识别后将复核目标")
         XCTAssertTrue(dictationNoTarget().contains("未指定外部文本框"))
         XCTAssertEqual(dictationMicrophoneFailed("denied"), "无法启动麦克风：denied")
         XCTAssertEqual(dictationInserted(), "已向原输入框发送文字")
