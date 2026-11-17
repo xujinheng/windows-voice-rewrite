@@ -10,7 +10,7 @@ public func captureStatus(_ error: Error, password: String) -> String {
     case .noFrontmostApplication, .noFocusedElement, .notEditable, .selectionUnavailable:
         return "未识别到可编辑文本框或光标；请先点击目标软件的输入框"
     case .invalidSelection:
-        return "听写需要空光标位置；如有选中文字，请先取消选择"
+        return "原输入框的选区或光标位置无效；无法安全写入"
     case .secureField:
         return password
     case .monitoringUnavailable:
@@ -59,6 +59,23 @@ public func insertionStatus(_ error: Error, rewrite: Bool, passwordRewrite: Stri
         return "安全剪贴板操作失败；写入状态可能不确定，请检查目标并复制结果"
     }
     return "原应用写入未完成；结果已保留，可手动复制"
+}
+
+/// Machine-readable delivery reason; never includes editor text or clipboard data.
+public func insertionDiagnosticCode(_ error: Error) -> String {
+    if let failure = error as? InteractionFailure {
+        switch failure {
+        case .applicationChanged, .focusChanged: return "focus_changed"
+        case .selectionChanged: return "selection_changed"
+        case .writeNotConfirmed: return "write_attempted_unconfirmed"
+        case .accessibilityPermissionDenied: return "permission_denied"
+        case .secureField: return "secure_field"
+        case .timedOut, .cancelled, .staleGeneration, .staleSnapshot: return "task_inactive"
+        default: return "capture_or_target_failed"
+        }
+    }
+    if error is ClipboardFailure { return "clipboard_failed" }
+    return "system_error"
 }
 
 public func sideMouseUnchecked() -> String {
@@ -156,7 +173,7 @@ public func recordingIdle() -> String { "未录音" }
 
 public func dictationRequestingMicrophone() -> String { "正在申请麦克风权限并启动录音" }
 
-public func dictationCaretLocked() -> String { "已锁定原应用光标；识别后将验证并写入" }
+public func dictationCaretLocked() -> String { "已锁定原应用光标及选区；识别后将复核目标" }
 
 public func dictationNoTarget() -> String {
     "未指定外部文本框；本次录音仅显示识别结果。请在目标软件中按配置的听写快捷键开始听写"
@@ -170,7 +187,7 @@ public func dictationProcessing() -> String { "正在处理语音" }
 
 public func dictationRecognized() -> String { "语音识别已完成" }
 
-public func dictationInserted() -> String { "已安全插入原目标" }
+public func dictationInserted() -> String { "已向原输入框发送文字" }
 
 public func dictationRecognizeFailed(_ detail: String) -> String { "识别失败：\(detail)" }
 
