@@ -124,13 +124,30 @@ public final class MacDictationDelivery {
                                    windowID: foregroundWindowID(for: processID))
     }
 
-    private func revalidate(_ target: MacDictationTarget) throws {
+    /// Perform the strict focus/window/secure-input checks around a remote AX
+    /// query without blocking the UI event loop. A focus switch during the AX
+    /// await is rejected again after returning to the main actor.
+    private func revalidate(_ target: MacDictationTarget) async throws {
+        let foreground = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let secureInput = IsSecureEventInputEnabled()
+        guard DictationTargetPolicy.maySend(
+            capturedPID: target.processID,
+            foregroundPID: foreground,
+            secureInput: secureInput) else {
+            throw InteractionFailure.applicationChanged
+        }
+        try await Task.detached(priority: .userInitiated) { [self] in
+            try revalidateRemote(target)
+        }.value
         guard DictationTargetPolicy.maySend(
             capturedPID: target.processID,
             foregroundPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
             secureInput: IsSecureEventInputEnabled()) else {
             throw InteractionFailure.applicationChanged
         }
+    }
+
+    private nonisolated func revalidateRemote(_ target: MacDictationTarget) throws {
         if !DictationTargetPolicy.sameWindow(
             captured: target.windowID, current: foregroundWindowID(for: target.processID)) {
             throw InteractionFailure.focusChanged
@@ -142,7 +159,6 @@ public final class MacDictationDelivery {
             }
         }
     }
-
 
     /// Best-effort readback evidence only. AX support must never become a
     /// prerequisite for ordinary dictation into Chrome, Electron or TextEdit.
@@ -250,7 +266,7 @@ public final class MacDictationDelivery {
     /// clipboard cannot be faithfully snapshotted or another lease is active.
     /// Never retry after a possibly delivered paste.
     private func typeUnicode(_ text: String, to target: MacDictationTarget,
-                             stillValid: () -> Bool) throws {
+                             stillValid: () -> Bool) async throws {
         try requireKeyboardEventPermission()
         guard let source = CGEventSource(stateID: .hidSystemState) else {
             throw InteractionFailure.unsupportedNativeWrite
@@ -261,7 +277,10 @@ public final class MacDictationDelivery {
         do {
         while offset < units.count {
             guard stillValid() else { throw InteractionFailure.cancelled }
-            try revalidate(target)
+            try await revalidate(target)
+            guard stillValid(), !Task<Never, Never>.isCancelled else {
+                throw InteractionFailure.cancelled
+            }
             var end = min(offset + 16, units.count)
             if end < units.count && end > offset &&
                 (0xD800...0xDBFF).contains(units[end - 1]) &&
@@ -280,6 +299,9 @@ public final class MacDictationDelivery {
             postedAny = true
             up.post(tap: .cgSessionEventTap)
             offset = end
+            // Other windows and the cancel button must remain responsive
+            // while a long Unicode fallback is being posted in many chunks.
+            await Task.yield()
         }
         } catch {
             // A cancellation or focus change after a chunk was posted can
@@ -306,18 +328,19 @@ public final class MacDictationDelivery {
         guard !text.isEmpty else { throw InteractionFailure.invalidSelection }
         try await waitForModifierRelease(stillValid: stillValid)
         guard stillValid() else { throw InteractionFailure.cancelled }
-        try revalidate(target)
+        try await revalidate(target)
+        guard stillValid() else { throw InteractionFailure.cancelled }
         let lease: UUID
         do {
             lease = try await clipboard.beginWhenAvailable(text, stillValid: stillValid)
         } catch ClipboardFailure.snapshotUnavailable {
             let expected = await expectedReadbackAsync(text, target: target)
-            try typeUnicode(text, to: target, stillValid: stillValid)
+            try await typeUnicode(text, to: target, stillValid: stillValid)
             return await outcomeAfterPosting(expected: expected, target: target, stillValid: stillValid)
         }
         let expected = await expectedReadbackAsync(text, target: target)
         do {
-            try revalidate(target)
+            try await revalidate(target)
             guard clipboard.isOwned(lease) else { throw ClipboardFailure.ownershipLost }
             guard stillValid() else { throw InteractionFailure.cancelled }
             // Start before posting: a fast editor may read the promised text
