@@ -47,8 +47,14 @@ final class VisualAcceptanceTests: XCTestCase {
 
         func store<V: View>(_ state: String, fixture: String, theme: String,
                              width: CGFloat, height: CGFloat, content: V) throws {
+            // SwiftUI must be hosted by an AppKit window for reliable CI painting.
             let view = NSHostingView(rootView: content)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = view
             view.frame = NSRect(x: 0, y: 0, width: width, height: height)
+            window.orderFrontRegardless()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.06))
             view.layoutSubtreeIfNeeded()
             view.displayIfNeeded()
             guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
@@ -60,6 +66,7 @@ final class VisualAcceptanceTests: XCTestCase {
                 XCTFail("Empty PNG for \(state)")
                 return
             }
+            window.orderOut(nil)
             let name = state.replacingOccurrences(of: ".", with: "-") + "-" + theme + ".png"
             try data.write(to: directory.appendingPathComponent(name), options: .atomic)
             let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.png")
@@ -70,9 +77,12 @@ final class VisualAcceptanceTests: XCTestCase {
         }
 
         let model = WorkspaceModel() // no launch(), mic, permissions or helper connection
-        try store("settings.speech", fixture: "default-settings-v1", theme: "light",
-                  width: 980, height: 700,
-                  content: SettingsView(model: model).environment(\.colorScheme, .light))
+        for page in ["speech", "writing", "input"] {
+            try store("settings.\(page)", fixture: "default-settings-v1", theme: "light",
+                      width: 860, height: 530,
+                      content: SettingsView(model: model, initialPage: page)
+                          .environment(\.colorScheme, .light))
+        }
 
         let started = Date(timeIntervalSince1970: 100)
         let phases: [(String, IndicatorPhase, Bool)] = [
@@ -99,10 +109,11 @@ final class VisualAcceptanceTests: XCTestCase {
         let text = "这是 VoiceRewrite 的真实结果卡片。\n\n使用本地模型可以完成：\n• 改写与润色\n• 翻译与总结\n• 对选中文本提问\n\n所有内容均为视觉验收用的固定示例文字。"
         for theme in ["light", "dark"] {
             let card = ResultCardActionSession(text: text)
+            let height = CGFloat(ResultCardMetrics.height(unicodeScalars: text.unicodeScalars.count))
             try store("result.copy", fixture: "result-v1", theme: theme,
-                      width: ResultCardMetrics.width, height: 340,
+                      width: ResultCardMetrics.width, height: height,
                       content: ResultCardView(title: "AI 回答", session: card,
-                          width: ResultCardMetrics.width, height: 340,
+                          width: ResultCardMetrics.width, height: height,
                           onCopy: {}, onApply: {}, onClose: {})
                       .environment(\.colorScheme, theme == "dark" ? .dark : .light))
         }
@@ -115,6 +126,6 @@ final class VisualAcceptanceTests: XCTestCase {
         let manifest = Manifest(platform: platform, captures: captures)
         try JSONEncoder().encode(manifest).write(
             to: directory.appendingPathComponent("manifest.json"), options: .atomic)
-        XCTAssertEqual(captures.count, 9)
+        XCTAssertEqual(captures.count, 11)
     }
 }
