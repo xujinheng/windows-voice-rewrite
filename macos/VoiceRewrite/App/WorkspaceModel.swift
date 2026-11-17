@@ -388,11 +388,7 @@ final class WorkspaceModel: ObservableObject {
             if shortcut == bound.dictation {
                 self.toggleRecording(from: pid)
             } else if shortcut == bound.rewrite {
-                if self.useTypedRewriteInstruction {
-                    self.processSelectedText(from: pid)
-                } else {
-                    self.toggleVoiceSelectedText(from: pid)
-                }
+                self.triggerSelectionRewrite(from: pid)
             }
         }
         let registry = HotKeyRegistry(driver: driver)
@@ -491,11 +487,7 @@ final class WorkspaceModel: ObservableObject {
         switch action {
         case .dictation: toggleRecording(from: targetPID)
         case .rewrite:
-            if useTypedRewriteInstruction {
-                processSelectedText(from: targetPID)
-            } else {
-                toggleVoiceSelectedText(from: targetPID)
-            }
+            triggerSelectionRewrite(from: targetPID)
         }
         // Starting a new task invalidates the previous task's input ownership.
         sideGate.began(action)
@@ -1435,6 +1427,14 @@ final class WorkspaceModel: ObservableObject {
                 if failed.stopProcessing { isProcessing = false }
                 applyTask(recordingStopFollowUp(detail: error.localizedDescription, voiceSelection: voiceSelection != nil, mode: indicatorSnapshot.mode), generation: voiceSelection?.generation)
             }
+        }
+    }
+
+    private func triggerSelectionRewrite(from targetPID: Int32?) {
+        if useTypedRewriteInstruction {
+            processSelectedText(from: targetPID)
+        } else {
+            toggleVoiceSelectedText(from: targetPID)
         }
     }
 
