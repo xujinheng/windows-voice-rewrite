@@ -32,6 +32,7 @@ final class WorkspaceModel: ObservableObject {
     @Published var asrKeyInput = ""
     @Published var llmKeyInput = ""
     @Published var taskInstruction = ""
+    @Published var useTypedRewriteInstruction = false
     @Published private(set) var connection: Connection = .disconnected
     @Published private(set) var recordingStatus = recordingIdle()
     @Published private(set) var microphonePermission: MicrophonePermissionStatus = .notDetermined
@@ -387,7 +388,11 @@ final class WorkspaceModel: ObservableObject {
             if shortcut == bound.dictation {
                 self.toggleRecording(from: pid)
             } else if shortcut == bound.rewrite {
-                self.toggleVoiceSelectedText(from: pid)
+                if self.useTypedRewriteInstruction {
+                    self.processSelectedText(from: pid)
+                } else {
+                    self.toggleVoiceSelectedText(from: pid)
+                }
             }
         }
         let registry = HotKeyRegistry(driver: driver)
@@ -485,7 +490,12 @@ final class WorkspaceModel: ObservableObject {
         sideMouseStatus = sideMouseHoldStarted(button: mappedButton)
         switch action {
         case .dictation: toggleRecording(from: targetPID)
-        case .rewrite: toggleVoiceSelectedText(from: targetPID)
+        case .rewrite:
+            if useTypedRewriteInstruction {
+                processSelectedText(from: targetPID)
+            } else {
+                toggleVoiceSelectedText(from: targetPID)
+            }
         }
         // Starting a new task invalidates the previous task's input ownership.
         sideGate.began(action)
