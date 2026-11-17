@@ -14,7 +14,7 @@ import (
 func TestMeetingPacketEpochRejectsLateNativeCallbacks(t *testing.T) {
 	m := &bridgeMeeting{
 		runtime: meetingcore.NewSessionRuntime(),
-		source: &meetingPacketSource{packets: make(chan []byte, 2)},
+		source:  &meetingPacketSource{packets: make(chan []byte, 2)},
 	}
 	defer m.runtime.Stop()
 	pcm := make([]byte, audio.FrameBytes)
@@ -62,7 +62,7 @@ func TestMeetingPacketEpochRejectsLateNativeCallbacks(t *testing.T) {
 func TestMeetingAudioOverloadMetricsAndLatencyReset(t *testing.T) {
 	m := &bridgeMeeting{
 		runtime: meetingcore.NewSessionRuntime(),
-		source: &meetingPacketSource{packets: make(chan []byte, 1)},
+		source:  &meetingPacketSource{packets: make(chan []byte, 1)},
 	}
 	defer m.runtime.Stop()
 	_, epoch, _ := m.runtime.Snapshot()
