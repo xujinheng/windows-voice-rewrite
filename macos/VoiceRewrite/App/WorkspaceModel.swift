@@ -104,6 +104,13 @@ final class WorkspaceModel: ObservableObject {
     private let recordingIndicator = RecordingIndicatorController()
     private var indicatorSnapshot = IndicatorSnapshot()
     private var sideGate = SideVoiceGate()
+    private struct SideDictationPreflight {
+        let generation: UInt64
+        let targetPID: Int32?
+        var held = false
+        var ready = false
+    }
+    private var sideDictationPreflight: SideDictationPreflight?
     private let credentials = KeychainCredentials()
     private let interaction = InteractionSession.macOS()
     private let dictationDelivery = MacDictationDelivery()
@@ -424,10 +431,12 @@ final class WorkspaceModel: ObservableObject {
         let isFreshStart = sideMouse == nil
         let driver = sideMouse ?? SideMouseButtonDriver(
             bindings: activeShortcutPlan?.sideButtons ?? SideMouseBindings(),
-            onPress: { [weak self] action in
+            onPress: { [weak self] action, pid in
                 self?.previewIndicator(action)
+                self?.beginSideDictationPreflight(action: action, targetPID: pid)
             },
             onPreviewDismissed: { [weak self] in
+                self?.cancelUnconfirmedSideDictation()
                 self?.dismissPreviewIndicator()
             },
             onHold: { [weak self] action, pid in
@@ -484,7 +493,9 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func sideMouseHeld(_ action: SideMouseAction, targetPID: Int32?) {
-        switch sideGate.hold(paused: voicePaused, busy: isRecording || isStarting || isProcessing) {
+        let promotingPreflight = action == .dictation && sideDictationPreflight != nil
+        switch sideGate.hold(paused: voicePaused,
+                             busy: isRecording || isProcessing || (isStarting && !promotingPreflight)) {
         case .dismissPreview:
             dismissPreviewIndicator()
             return
@@ -495,11 +506,19 @@ final class WorkspaceModel: ObservableObject {
         }
         let mappedButton = (activeShortcutPlan?.sideButtons ?? SideMouseBindings()).button(for: action)
         sideMouseStatus = sideMouseHoldStarted(button: mappedButton)
+        // A speculative microphone is already running or starting. Promotion
+        // keeps the first samples and does not issue a second mic start.
+        if action == .dictation, var preflight = sideDictationPreflight {
+            preflight.held = true
+            sideDictationPreflight = preflight
+            sideGate.began(action)
+            if preflight.ready { promoteSideDictation(preflight) }
+            return
+        }
         switch action {
         case .dictation: toggleRecording(from: targetPID)
         case .rewrite: toggleVoiceSelectedText(from: targetPID)
         }
-        // Starting a new task invalidates the previous task's input ownership.
         sideGate.began(action)
     }
 
@@ -521,6 +540,82 @@ final class WorkspaceModel: ObservableObject {
         case .none, .wait, .clear:
             break
         }
+    }
+
+    /// Begin native audio on mouse down; a short browser navigation never
+    /// reaches ASR. Do not prompt for mic permission on a short click.
+    private func beginSideDictationPreflight(action: SideMouseAction, targetPID: Int32?) {
+        guard action == .dictation, microphone.permissionStatus == .authorized,
+              !voicePaused, !meetingActive, !meetingStarting,
+              !meetingVoiceRecording, !meetingVoiceStarting,
+              !isRecording, !isStarting, !isProcessing,
+              sideGate.active == nil, sideDictationPreflight == nil else { return }
+        invalidatePending()
+        let generation = resultGeneration.begin()
+        sideDictationPreflight = SideDictationPreflight(generation: generation, targetPID: targetPID)
+        isStarting = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await self.microphone.start(deviceUID: self.settings.microphoneUID,
+                                                maximumSeconds: self.settings.maxRecordSeconds)
+                guard var current = self.sideDictationPreflight,
+                      current.generation == generation,
+                      self.resultGeneration.accepts(generation) else { return }
+                current.ready = true
+                self.sideDictationPreflight = current
+                if current.held { self.promoteSideDictation(current) }
+            } catch {
+                guard let current = self.sideDictationPreflight,
+                      current.generation == generation else { return }
+                self.sideDictationPreflight = nil
+                self.isStarting = false
+                if current.held {
+                    let failed = dictationMicrophoneReady(started: false, tokenValid: true,
+                                                         failure: error.localizedDescription)
+                    if let status = failed.recordingStatus { self.recordingStatus = status }
+                    self.showIndicator(phase: .error, mode: "听写", pending: false)
+                    self.stopWhenSideMouseReleased(.dictation)
+                }
+            }
+            self.refreshMicrophonePermission()
+        }
+    }
+
+    private func cancelUnconfirmedSideDictation() {
+        guard let current = sideDictationPreflight, !current.held else { return }
+        sideDictationPreflight = nil
+        _ = resultGeneration.begin()
+        microphone.cancel()
+        isStarting = false
+    }
+
+    private func promoteSideDictation(_ preflight: SideDictationPreflight) {
+        guard sideDictationPreflight?.generation == preflight.generation,
+              preflight.ready, preflight.held,
+              resultGeneration.accepts(preflight.generation) else { return }
+        sideDictationPreflight = nil
+        var snapshot: MacDictationTarget?
+        var failure: String?
+        if let pid = preflight.targetPID, pid > 0 {
+            do {
+                snapshot = try dictationDelivery.capture(processID: pid)
+            } catch {
+                DiagnosticLog.note("stage=dictation_capture status=failed code=\(insertionDiagnosticCode(error))")
+                failure = captureStatus(error, password: ResultCopy.passwordDictation)
+            }
+        }
+        let arm = dictationArm(hasTarget: (preflight.targetPID ?? 0) > 0,
+                              tokenValid: true, captured: snapshot != nil,
+                              captureFailure: failure)
+        if let status = arm.interactionStatus { interactionStatus = status }
+        if arm.keepInsert { activeInsert = snapshot }
+        let ready = dictationMicrophoneReady(started: true, tokenValid: true, failure: "")
+        isRecording = true
+        isStarting = false
+        showIndicator(phase: .recording, mode: "听写", pending: false)
+        if let status = ready.recordingStatus { recordingStatus = status }
+        stopWhenSideMouseReleased(.dictation)
     }
 
     func refreshMeetingSources() {
@@ -1685,6 +1780,7 @@ final class WorkspaceModel: ObservableObject {
 
     func cancelCurrent() {
         dismissIndicator()
+        sideDictationPreflight = nil
         invalidatePending()
         microphone.cancel()
         isRecording = false
@@ -1731,6 +1827,7 @@ final class WorkspaceModel: ObservableObject {
             switch IndicatorMath.cancelChoice(pending: self.indicatorSnapshot.pending, current: true, terminal: IndicatorMath.terminal(self.indicatorSnapshot.phase)) {
             case IndicatorMath.cancelPending:
                 self.sideGate.suppressNextHold()
+                self.cancelUnconfirmedSideDictation()
                 self.dismissIndicator()
             case IndicatorMath.cancelDismiss:
                 self.dismissIndicator()
