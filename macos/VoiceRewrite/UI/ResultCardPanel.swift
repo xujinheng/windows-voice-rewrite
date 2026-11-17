@@ -31,6 +31,7 @@ final class ResultCardActionSession: ObservableObject {
     let apply: ResultCardApply?
     @Published private(set) var note = ""
     @Published private(set) var isApplying = false
+    @Published private(set) var mayApply = true
     private(set) var isClosed = false
 
     init(text: String, apply: ResultCardApply? = nil) {
@@ -48,7 +49,7 @@ final class ResultCardActionSession: ObservableObject {
     }
 
     func applyIfAuthorized() async {
-        guard !isClosed, !isApplying, !Task.isCancelled, let apply else { return }
+        guard !isClosed, !isApplying, mayApply, !Task.isCancelled, let apply else { return }
         isApplying = true
         note = "正在核验原选区并应用…"
         defer { isApplying = false }
@@ -69,8 +70,10 @@ final class ResultCardActionSession: ObservableObject {
             guard !isClosed, !Task.isCancelled else { return }
             switch receipt {
             case .confirmedWrite:
+                mayApply = false
                 note = "已确认替换原选区"
             case .eventSent:
+                mayApply = false
                 note = "已发送粘贴指令 · 请确认是否写入"
             case .busy:
                 note = "任务尚未结束，请稍后点击应用"
@@ -127,7 +130,8 @@ final class ResultCardPanel {
     }
 
     private func apply() {
-        guard let session, session.apply != nil, !session.isApplying, applyTask == nil,
+        guard let session, session.apply != nil, !session.isApplying, session.mayApply,
+              applyTask == nil,
               panel?.isVisible == true else { return }
         applyTask = Task { @MainActor [weak self] in
             await session.applyIfAuthorized()
@@ -320,7 +324,7 @@ struct ResultCardView: View {
                         .foregroundStyle(palette.accentText)
                 }
                 .buttonStyle(.plain)
-                .disabled(session.isApplying)
+                .disabled(session.isApplying || !session.mayApply)
                 .position(x: CGFloat(copy.x - 124 + 58),
                           y: CGFloat(copy.y) + CGFloat(copy.h) / 2)
                 .accessibilityIdentifier("result-card-apply")
