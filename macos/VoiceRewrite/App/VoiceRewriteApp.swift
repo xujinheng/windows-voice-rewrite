@@ -144,11 +144,11 @@ final class InitialSetupWindowController {
             return
         }
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 860, height: 530),
+            contentRect: NSRect(x: 0, y: 0, width: SettingsWindowMetrics.width, height: SettingsWindowMetrics.height),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
         window.title = "VoiceRewrite · 连接设置"
-        window.minSize = NSSize(width: 480, height: 420)
+        window.minSize = SettingsWindowMetrics.minimumSize
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: SettingsView(
             model: model, onClose: { [weak self] in self?.window?.close() }))
@@ -361,7 +361,7 @@ struct VoiceRewriteApp: App {
 
         Settings {
             SettingsView(model: workspace)
-                .frame(width: 540)
+                .frame(width: SettingsWindowMetrics.width, height: SettingsWindowMetrics.height)
         }
     }
 }

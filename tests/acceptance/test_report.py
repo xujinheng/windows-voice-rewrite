@@ -5,7 +5,7 @@ from io import BytesIO
 from pathlib import Path
 
 from PIL import Image
-from report import generate, validate_manifest
+from report import REQUIRED_CAPTURE_STATES, generate, require_complete_matrix, validate_manifest
 
 image = Image.new("RGB", (64, 64))
 image.putdata([((i * 23) % 256, (i * 19) % 256, (i * 17) % 256)
@@ -55,6 +55,42 @@ class EvidenceTest(unittest.TestCase):
         a = self.make("windows")
         b = self.make("macos-x64", fixture="another-fixture", theme="light")
         self.assertEqual(generate([a, b], self.root / "report")["paired_review_states"], 0)
+
+    def test_incomplete_matrix_is_not_a_green_ci_result(self):
+        windows = self.make("windows")
+        macos = self.make("macos-arm64")
+        other = self.make("macos-x64")
+        result = generate([windows, macos, other], self.root / "report")
+        self.assertEqual(result["paired_review_states"], 2)
+        with self.assertRaisesRegex(ValueError, "missing required Windows/Mac state pairs"):
+            require_complete_matrix(result)
+
+    def test_a_missing_architecture_is_not_complete(self):
+        windows = self.make("windows")
+        macos = self.make("macos-arm64")
+        result = generate([windows, macos], self.root / "report")
+        with self.assertRaisesRegex(ValueError, "missing or unexpected capture platforms"):
+            require_complete_matrix(result)
+
+    def test_full_matrix_only_proves_captures_not_acceptance(self):
+        manifests = []
+        for platform in ["windows", "macos-arm64", "macos-x64"]:
+            manifest = self.make(platform)
+            entries = []
+            for index, (state, fixture, theme) in enumerate(REQUIRED_CAPTURE_STATES):
+                name = f"case-{index}.png"
+                (manifest.parent / name).write_bytes(PNG)
+                entries.append({"state": state, "fixture": fixture, "theme": theme,
+                                "locale": "zh-CN", "scale": "logical-1x", "image": name})
+            obj = json.loads(manifest.read_text())
+            obj["captures"] = entries
+            manifest.write_text(json.dumps(obj))
+            manifests.append(manifest)
+        result = generate(manifests, self.root / "report")
+        self.assertEqual(require_complete_matrix(result), 28)
+        self.assertEqual(result["paired_review_states"], 28)
+        self.assertEqual(result["acceptance"], "NOT_VERIFIED_ON_PHYSICAL_DEVICE")
+        self.assertTrue(all(row["status"] == "matched-for-review" for row in result["rows"]))
 
     def test_path_traversal_and_missing_image_are_rejected(self):
         path = self.make("windows")

@@ -186,7 +186,7 @@ jobs:
             acceptance-output/windows/manifest.json \
             acceptance-output/macos-arm64/manifest.json \
             acceptance-output/macos-x64/manifest.json \
-            --output acceptance-report
+            --output acceptance-report --require-complete-matrix
           cat acceptance-report/report.md >> "$GITHUB_STEP_SUMMARY"
       - name: Upload comparison evidence
         if: always()

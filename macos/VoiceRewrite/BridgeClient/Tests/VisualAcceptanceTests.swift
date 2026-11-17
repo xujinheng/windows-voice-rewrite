@@ -6,6 +6,13 @@ import XCTest
 // Off-screen renders of production AppKit/SwiftUI views. No hardware input,
 // third-party editor, ASR or meeting capture is involved.
 final class VisualAcceptanceTests: XCTestCase {
+    func testSettingsViewportMatchesStandardSettingsWindow() {
+        XCTAssertEqual(SettingsWindowMetrics.width, 860)
+        XCTAssertEqual(SettingsWindowMetrics.height, 530)
+        XCTAssertEqual(SettingsWindowMetrics.minimumSize.width, 480)
+        XCTAssertEqual(SettingsWindowMetrics.minimumSize.height, 420)
+    }
+
     struct Capture: Encodable {
         let state: String
         let fixture: String
@@ -79,7 +86,7 @@ final class VisualAcceptanceTests: XCTestCase {
         let model = WorkspaceModel() // no launch(), mic, permissions or helper connection
         for page in ["speech", "writing", "input"] {
             try store("settings.\(page)", fixture: "default-settings-v1", theme: "light",
-                      width: 860, height: 530,
+                      width: SettingsWindowMetrics.width, height: SettingsWindowMetrics.height,
                       content: SettingsView(model: model, initialPage: page)
                           .environment(\.colorScheme, .light))
         }
