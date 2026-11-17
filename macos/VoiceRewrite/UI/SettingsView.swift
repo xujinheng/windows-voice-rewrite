@@ -382,13 +382,14 @@ struct SettingsView: View {
             model.markConnectionProbeStale(.selectedTask)
             model.invalidateDiscoveredModels(.selectedTask)
         }
-        .onAppear { model.refreshMicrophoneDevices(); model.refreshKeyboardDevices() }
+        .onAppear { model.refreshMicrophoneDevices(); if selectedPage == "input" { model.refreshKeyboardDevices() } }
         .onDisappear { stopCapture() }
     }
 
     private func selectPage(_ id: String) {
         stopCapture()
         selectedPage = id
+        if id == "input" { model.refreshKeyboardDevices() }
     }
 
     private func beginCapture(_ id: String) {
