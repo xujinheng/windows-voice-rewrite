@@ -1,6 +1,9 @@
 import Foundation
 import XCTest
 import Darwin
+import AppKit
+import Microphone
+import VoiceRewriteInteraction
 @testable import VoiceRewrite
 
 final class BridgeClientTests: XCTestCase {
@@ -319,6 +322,170 @@ final class BridgeClientTests: XCTestCase {
         client.stop()
     }
 
+
+    /// This is the same keyboard state machine and presentation controller as
+    /// production, with only the external mic, ASR endpoint and OS paste
+    /// replaced by deterministic CI fixtures. It is NOT a real-hardware test.
+    @MainActor
+    func testOfflineKeyboardToVisibleTextLatency() async throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let directory = root.appendingPathComponent("performance-output", isDirectory: true)
+        guard FileManager.default.fileExists(atPath:
+            directory.appendingPathComponent(".enabled").path) else {
+            throw XCTSkip("User-perceived latency runs in the dedicated macOS CI job")
+        }
+
+        let fixture = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voice-rewrite-ci-asr-\(UUID().uuidString).sh")
+        // Local, deterministic JSONL Helper. No remote ASR, network or
+        // physical audio device; BridgeClient's real Process/Pipe code runs.
+        let script = """
+        #!/bin/sh
+        while IFS= read -r line; do
+          id="$(printf '%s' "$line" | /usr/bin/sed -n 's/.*"id":"\\([^"]*\\)".*/\\1/p')"
+          [ -n "$id" ] || continue
+          case "$line" in
+            *'"op":"hello"'*)
+              printf '{"v":1,"id":"%s","ok":true,"result":{"name":"VoiceRewrite","protocol":1}}\\n' "$id" ;;
+            *'"op":"transcribe"'*)
+              printf '{"v":1,"id":"%s","ok":true,"result":{"text":"CI latency test."}}\\n' "$id" ;;
+            *)
+              printf '{"v":1,"id":"%s","ok":false,"error":{"code":"unsupported_op","message":"test fixture"}}\\n' "$id" ;;
+          esac
+        done
+        """
+        try Data(script.utf8).write(to: fixture, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                               ofItemAtPath: fixture.path)
+        defer { try? FileManager.default.removeItem(at: fixture) }
+
+        let editor = NSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 100))
+        let mic = PerformanceFixtureMicrophone()
+        let writer = PerformanceFixtureWriter(editor: editor)
+        let model = WorkspaceModel(microphone: mic, dictationDelivery: writer,
+                                   helperExecutableURL: fixture)
+        // These values don't affect the deterministic helper but must satisfy
+        // the real request-configuration validation path.
+        model.settings.asrBaseURL = "http://127.0.0.1:49251/v1"
+        model.settings.asrModel = "CI-ASR"
+        model.setKeyboardHoldEnabled(true)
+        model.connect()
+        defer { model.shutdown() }
+
+        func waitUntil(_ description: String, timeout: Double = 5,
+                       _ condition: () -> Bool) async throws {
+            let expires = ProcessInfo.processInfo.systemUptime + timeout
+            while !condition() {
+                if ProcessInfo.processInfo.systemUptime >= expires {
+                    XCTFail("CI journey stuck waiting for \(description)")
+                    throw PerformanceFixtureFailure.timeout
+                }
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+        }
+
+        try await waitUntil("Helper hello", timeout: 10) {
+            if case .connected = model.connection { return true }
+            return false
+        }
+        let loopCount = 12
+        var indicatorTimes: [Double] = []
+        var microphoneTimes: [Double] = []
+        var insertionTimes: [Double] = []
+        let text = "CI latency test."
+        for cycle in 0..<loopCount {
+            let onset = ProcessInfo.processInfo.systemUptime
+            // Exactly the production keyboard-held entrance after the OS has
+            // delivered its hotkey callback, not a synthetic view-only render.
+            model.keyboardPressed(.dictation, targetPID: 4242)
+            let panel = NSApp.windows.first {
+                $0 is NSPanel && $0.isVisible && $0.level == .statusBar
+            }
+            guard let panel else {
+                XCTFail("No visible user recording indicator on key-down")
+                throw PerformanceFixtureFailure.timeout
+            }
+            panel.contentView?.layoutSubtreeIfNeeded()
+            panel.contentView?.displayIfNeeded()
+            let indicator = ProcessInfo.processInfo.systemUptime
+            indicatorTimes.append((indicator - onset) * 1000)
+
+            try await waitUntil("mic ready #\(cycle)") { model.isRecording }
+            let started = ProcessInfo.processInfo.systemUptime
+            microphoneTimes.append((started - onset) * 1000)
+            XCTAssertTrue(mic.recording)
+            XCTAssertFalse(model.isStarting)
+
+            let previous = editor.string.count
+            let release = ProcessInfo.processInfo.systemUptime
+            model.keyboardReleased(.dictation)
+            try await waitUntil("inserted text #\(cycle)") {
+                editor.string.count == previous + text.count && !model.isProcessing
+            }
+            insertionTimes.append(
+                (ProcessInfo.processInfo.systemUptime - release) * 1000)
+            XCTAssertEqual(editor.string, String(repeating: text, count: cycle + 1))
+            XCTAssertFalse(mic.recording)
+        }
+
+        func stats(_ samples: [Double]) -> [String: Double] {
+            let sorted = samples.sorted()
+            func percentile(_ p: Double) -> Double {
+                sorted[min(sorted.count - 1, max(0, Int(ceil(Double(sorted.count) * p)) - 1))]
+            }
+            return [
+                "p50_ms": percentile(0.50),
+                "p95_ms": percentile(0.95),
+                "max_ms": sorted.last ?? 0,
+                "mean_ms": samples.reduce(0, +) / Double(samples.count),
+                "samples": Double(samples.count),
+            ]
+        }
+        #if arch(arm64)
+        let architecture = "arm64"
+        #elseif arch(x86_64)
+        let architecture = "x64"
+        #else
+        let architecture = "unknown"
+        #endif
+        let report: [String: Any] = [
+            "schema_version": 1,
+            "test": "keyboard-hold-to-visible-text",
+            "environment": "CI; fake microphone, local JSONL ASR, in-process NSTextView",
+            "coverage": [
+                "real_production_keyboard_state_machine",
+                "real_AppKit_indicator_panel",
+                "real_Background_BridgeClient_IPC",
+                "real_WorkspaceModel_result_dispatch",
+                "synthetic_audio_and_target_editor",
+            ],
+            "excludes": [
+                "OS_HID_event_delivery", "hardware_microphone_start",
+                "cloud_ASR", "system_paste_and_cross_application_AX",
+            ],
+            "architecture": architecture,
+            "successful_cycles": loopCount,
+            "timeouts": 0,
+            "trigger_to_indicator_render": stats(indicatorTimes),
+            "trigger_to_recording_ready": stats(microphoneTimes),
+            "release_to_text_visible": stats(insertionTimes),
+        ]
+        let folder = directory.appendingPathComponent("macos-\(architecture)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let json = try JSONSerialization.data(withJSONObject: report,
+                                               options: [.prettyPrinted, .sortedKeys])
+        try json.write(to: folder.appendingPathComponent("journey.json"), options: .atomic)
+        print("VOICE_REWRITE_USER_LATENCY " + String(decoding: json, as: UTF8.self))
+        // Hard limits only catch pathological regressions in cloud runners.
+        // Compare P50/P95 as a trend, never claim these are physical-device SLOs.
+        XCTAssertLessThan(stats(indicatorTimes)["p95_ms"]!, 1000)
+        XCTAssertLessThan(stats(microphoneTimes)["p95_ms"]!, 2500)
+        XCTAssertLessThan(stats(insertionTimes)["p95_ms"]!, 5000)
+    }
+
     func testCancelAndRegistryProcessExitFailure() throws {
         let registry = ReplyRegistry()
         let canceled = expectation(description: "cancelled")
@@ -335,3 +502,46 @@ final class BridgeClientTests: XCTestCase {
         wait(for: [canceled, exited], timeout: 2)
     }
 }
+
+
+@MainActor
+private final class PerformanceFixtureMicrophone: VoiceRecordingDevice {
+    var permissionStatus: MicrophonePermissionStatus { .authorized }
+    var rmsLevel: Float { 0.1 }
+    private(set) var recording = false
+
+    func start(deviceUID: String, maximumSeconds: Int) async throws {
+        try await Task.sleep(nanoseconds: 40_000_000)
+        recording = true
+    }
+
+    func stop() async throws -> Data {
+        guard recording else { throw MicrophoneError.notRecording }
+        recording = false
+        try await Task.sleep(nanoseconds: 20_000_000)
+        return Data(repeating: 0, count: 32_000)
+    }
+
+    func cancel() { recording = false }
+}
+
+@MainActor
+private final class PerformanceFixtureWriter: DictationDelivering {
+    let editor: NSTextView
+
+    init(editor: NSTextView) { self.editor = editor }
+
+    func captureAsync(processID: Int32) async throws -> MacDictationTarget {
+        MacDictationTarget.performanceFixture(processID: processID)
+    }
+
+    func deliver(_ text: String, to target: MacDictationTarget,
+                 stillValid: () -> Bool) async throws -> DeliveryState {
+        guard stillValid() else { throw InteractionFailure.cancelled }
+        editor.string += text
+        editor.needsDisplay = true
+        return .confirmed
+    }
+}
+
+private enum PerformanceFixtureFailure: Error { case timeout }
