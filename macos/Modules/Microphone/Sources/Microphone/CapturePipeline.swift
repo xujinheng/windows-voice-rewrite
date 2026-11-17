@@ -45,6 +45,12 @@ final class CapturePipeline: @unchecked Sendable {
         now >= lastBufferAt && now - lastBufferAt >= threshold
     }
 
+    func markStarted() {
+        lock.lock()
+        lastCaptureAt = ProcessInfo.processInfo.systemUptime
+        lock.unlock()
+    }
+
     func hasStalled(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
         lock.lock()
         defer { lock.unlock() }
