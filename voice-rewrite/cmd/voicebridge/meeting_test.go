@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -77,7 +78,7 @@ func TestBridgeMeetingUsesSharedSegmentationAndASR(t *testing.T) {
 				// uploading. Windows reports a truncated multipart request as
 				// unexpected EOF even when the real final ASR succeeds later.
 				// Require a complete request for any successful transcript.
-				if err == io.ErrUnexpectedEOF || r.Context().Err() != nil {
+				if errors.Is(err, io.ErrUnexpectedEOF) || r.Context().Err() != nil {
 					return
 				}
 				t.Errorf("invalid ASR WAV: %v", err)
