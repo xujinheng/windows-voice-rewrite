@@ -101,8 +101,10 @@ final class RecordingIndicatorController {
         guard frame.snapshot.visible else { return }
         frame.tick &+= 1
         frame.now = Date()
-        smoothed = IndicatorMath.smoothedLevel(previous: smoothed, incoming: levelSource())
-        frame.level = smoothed
+        if frame.snapshot.phase == .recording {
+            smoothed = IndicatorMath.smoothedLevel(previous: smoothed, incoming: levelSource())
+            frame.level = smoothed
+        }
         let alpha = IndicatorMath.statusOpacity(
             started: frame.snapshot.started,
             changed: frame.snapshot.changed,
@@ -114,7 +116,10 @@ final class RecordingIndicatorController {
             onAutoDismiss()
             return
         }
-        renderFrame()
+        // On every present() the panel is positioned immediately. Monitor
+        // geometry rarely changes at waveform speed; avoid NSScreen.screens
+        // and mouse-geometry queries 14 times per second.
+        if frame.tick % 14 == 0 { renderFrame() }
     }
 
     private func renderFrame() {
