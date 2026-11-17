@@ -357,7 +357,6 @@ func emitLimits(moduleRoot string) (string, error) {
 	for _, item := range []struct{ goName, swift string }{
 		{"MacDictationShortcut", "macDictationShortcut"},
 		{"MacRewriteShortcut", "macRewriteShortcut"},
-		{"MacTextEditShortcut", "macTextEditShortcut"},
 	} {
 		value, ok := shortcutValues[item.goName]
 		if !ok {
