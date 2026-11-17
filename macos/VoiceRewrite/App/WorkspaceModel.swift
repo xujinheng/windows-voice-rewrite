@@ -28,6 +28,15 @@ final class WorkspaceModel: ObservableObject {
         case failed(String)
     }
 
+    private enum MeetingVoiceIntent {
+        case express
+        case compose
+
+        var operation: String {
+            self == .express ? "meeting_express" : "meeting_compose"
+        }
+    }
+
     @Published var settings: MacSettings = .defaults
     @Published var asrKeyInput = ""
     @Published var llmKeyInput = ""
@@ -102,6 +111,9 @@ final class WorkspaceModel: ObservableObject {
     private var meetingSnapshotPending = false
     private var meetingRequestID: String?
     private var meetingVoiceASRID: String?
+    private var meetingVoiceIntent: MeetingVoiceIntent = .compose
+    private var meetingSideAction: SideMouseAction?
+    private var meetingSideReleasedDuringStart = false
     private let recordingIndicator = RecordingIndicatorController()
     private var indicatorSnapshot = IndicatorSnapshot()
     private var sideGate = SideVoiceGate()
@@ -393,9 +405,17 @@ final class WorkspaceModel: ObservableObject {
         let driver = CarbonHotKeyDriver { [weak self] shortcut, pid in
             guard let self, let bound = self.activeShortcutPlan else { return }
             if shortcut == bound.dictation {
-                self.toggleRecording(from: pid)
+                if self.meetingActive {
+                    self.toggleMeetingVoice(intent: .express)
+                } else {
+                    self.toggleRecording(from: pid)
+                }
             } else if shortcut == bound.rewrite {
-                self.triggerSelectionRewrite(from: pid)
+                if self.meetingActive {
+                    self.toggleMeetingVoice(intent: .compose)
+                } else {
+                    self.triggerSelectionRewrite(from: pid)
+                }
             }
         }
         let registry = HotKeyRegistry(driver: driver)
@@ -482,6 +502,16 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func sideMouseHeld(_ action: SideMouseAction, targetPID: Int32?) {
+        if meetingActive {
+            dismissPreviewIndicator()
+            guard meetingSideAction == nil, !meetingBusy, !meetingCancelPending,
+                  !meetingVoiceRecording, !meetingVoiceStarting,
+                  !isRecording, !isStarting, !isProcessing else { return }
+            meetingSideAction = action
+            meetingSideReleasedDuringStart = false
+            toggleMeetingVoice(intent: action == .dictation ? .express : .compose)
+            return
+        }
         let promotingPreflight = action == .dictation && sideDictationPreflight != nil
         switch sideGate.hold(paused: voicePaused,
                              busy: isRecording || isProcessing || (isStarting && !promotingPreflight)) {
@@ -513,6 +543,15 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func sideMouseReleased(_ action: SideMouseAction) {
+        if meetingSideAction == action {
+            meetingSideAction = nil
+            if meetingVoiceStarting {
+                meetingSideReleasedDuringStart = true
+            } else if meetingVoiceRecording {
+                toggleMeetingVoice()
+            }
+            return
+        }
         switch sideGate.release(action, starting: isStarting, recording: isRecording) {
         case .none, .wait:
             return
@@ -909,12 +948,17 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func toggleMeetingVoice() {
+        toggleMeetingVoice(intent: .compose)
+    }
+
+    private func toggleMeetingVoice(intent: MeetingVoiceIntent) {
         if meetingVoiceRecording {
             meetingVoiceRecording = false
             meetingBusy = true
             let token = meetingGeneration.latest
             let voiceToken = meetingVoiceGeneration.latest
             let id = meetingSessionID
+            let operation = meetingVoiceIntent.operation
             meetingExpressionStatus = "正在识别你的语音…"
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -941,7 +985,7 @@ final class WorkspaceModel: ObservableObject {
                                 return
                             }
                             self.meetingInput = words
-                            self.composeMeetingText()
+                            self.meetingAction(operation, fields: ["instruction": .string(words)])
                         }
                     }
                 } catch {
@@ -957,6 +1001,7 @@ final class WorkspaceModel: ObservableObject {
         }
         guard meetingActive, !meetingBusy, !meetingCancelPending, !meetingVoiceStarting,
               !isRecording, !isStarting, !isProcessing else { return }
+        meetingVoiceIntent = intent
         meetingVoiceStarting = true
         meetingExpressionStatus = "正在启动麦克风…"
         let token = meetingGeneration.latest
@@ -973,7 +1018,13 @@ final class WorkspaceModel: ObservableObject {
                     return
                 }
                 self.meetingVoiceRecording = true
-                self.meetingExpressionStatus = "正在录制想表达的内容；再次点击结束"
+                self.meetingExpressionStatus = intent == .express
+                    ? "正在录制需要忠实翻译的中文；松开侧键结束"
+                    : "正在录制想表达的内容；松开侧键或再次点击结束"
+                if self.meetingSideReleasedDuringStart {
+                    self.meetingSideReleasedDuringStart = false
+                    self.toggleMeetingVoice()
+                }
             } catch {
                 if self.meetingGeneration.accepts(token),
                    self.meetingVoiceGeneration.accepts(voiceToken) {
@@ -982,6 +1033,10 @@ final class WorkspaceModel: ObservableObject {
                 }
             }
             if self.meetingVoiceGeneration.accepts(voiceToken) {
+                if !self.meetingVoiceRecording {
+                    self.meetingSideAction = nil
+                    self.meetingSideReleasedDuringStart = false
+                }
                 self.meetingVoiceStarting = false
                 self.refreshMicrophonePermission()
             }
@@ -1045,6 +1100,8 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func stopMeeting(reason: String = "会议采集已停止") {
+        meetingSideAction = nil
+        meetingSideReleasedDuringStart = false
         _ = meetingGeneration.begin()
         _ = meetingActionGeneration.begin()
         _ = meetingVoiceGeneration.begin()
