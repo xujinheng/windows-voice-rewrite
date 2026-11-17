@@ -89,13 +89,12 @@ public struct SelectionObservation: Sendable {
 public protocol AccessibilityClient: Sendable {
     func captureMonitoredSelection() throws -> SelectionObservation
     func currentSelection() throws -> SelectionObservation
-    func writeSelectedText(_ text: String, expected: SelectionObservation, intent: SelectionIntent) throws
+    func writeSelectedText(_ text: String, expected: SelectionObservation) throws
     func stopMonitoring()
 }
 
 public enum SelectionIntent: Equatable, Sendable {
     case replaceSelection
-    case dictation
 }
 
 /// Constructor intentionally internal: an LLM or caller cannot mint a valid snapshot.
@@ -112,7 +111,7 @@ public struct SelectionSnapshot: Sendable {
 
 /// A new generation invalidates all preceding snapshots, even if the app and text look identical.
 /// Never `await` a network operation inside this actor: capture, then perform ASR/LLM elsewhere,
-/// then call replaceIfCurrent/insertIfCurrent. AX validation and the AX write have no await gap.
+/// then call replaceIfCurrent. AX validation and the AX write have no await gap.
 public actor InteractionSession {
     private let client: any AccessibilityClient
     private let uptime: @Sendable () -> TimeInterval
@@ -168,7 +167,7 @@ public actor InteractionSession {
         }
     }
 
-    private func checkAllowed(_ reading: SelectionObservation, intent: SelectionIntent) throws {
+    private func checkAllowed(_ reading: SelectionObservation) throws {
         guard !reading.isSecure else { throw InteractionFailure.secureField }
         guard reading.isEditable else { throw InteractionFailure.notEditable }
         guard reading.processID > 0, reading.range.location >= 0,
@@ -177,13 +176,7 @@ public actor InteractionSession {
               reading.selectedText.utf16.count == reading.range.length else {
             throw InteractionFailure.invalidSelection
         }
-        switch intent {
-        case .replaceSelection:
-            guard reading.range.length > 0 else { throw InteractionFailure.invalidSelection }
-        case .dictation:
-            // Dictation inserts at the caret or replaces the existing selection.
-            break
-        }
+        guard reading.range.length > 0 else { throw InteractionFailure.invalidSelection }
     }
 
     public func captureSelection(generation token: UInt64,
@@ -195,7 +188,7 @@ public actor InteractionSession {
         do {
             try verifyGeneration(token)
             guard reading.processID == authorizedProcessID else { throw InteractionFailure.applicationChanged }
-            try checkAllowed(reading, intent: intent)
+            try checkAllowed(reading)
             let id = UUID()
             activeSnapshotID = id
             return SelectionSnapshot(id: id, generation: token,
@@ -215,12 +208,6 @@ public actor InteractionSession {
         try applyIfCurrent(snapshot, text: text, generation: token)
     }
 
-    public func insertIfCurrent(_ snapshot: SelectionSnapshot,
-                                text: String, generation token: UInt64) throws {
-        guard snapshot.intent == .dictation else { throw InteractionFailure.invalidSelection }
-        try applyIfCurrent(snapshot, text: text, generation: token)
-    }
-
     private func applyIfCurrent(_ snapshot: SelectionSnapshot,
                                 text: String, generation token: UInt64) throws {
         try verifyGeneration(token)
@@ -231,7 +218,7 @@ public actor InteractionSession {
         activeSnapshotID = nil
         defer { client.stopMonitoring() }
         let current = try client.currentSelection()
-        try checkAllowed(current, intent: snapshot.intent)
+        try checkAllowed(current)
         guard current.processID == snapshot.processID else { throw InteractionFailure.applicationChanged }
         guard snapshot.evidence.identity.isSameElement(as: current.identity) else {
             throw InteractionFailure.focusChanged
@@ -244,6 +231,6 @@ public actor InteractionSession {
         }
         // No suspension point before native revalidation and either AX or guarded paste.
         // An unconfirmed paste is single-use and never retried automatically.
-        try client.writeSelectedText(text, expected: current, intent: snapshot.intent)
+        try client.writeSelectedText(text, expected: current)
     }
 }
