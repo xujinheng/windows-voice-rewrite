@@ -227,7 +227,7 @@ final class WorkspaceModel: ObservableObject {
         case .ready:
             break
         }
-        guard let (dictation, rewrite, textEdit) = plan else { return }
+        guard let (dictation, rewrite) = plan else { return }
         _ = shortcutGeneration.begin()
         defer {
             asrKeyInput = ""
@@ -237,7 +237,7 @@ final class WorkspaceModel: ObservableObject {
             guard let store else { throw SettingsError.insecureStorage }
             let previous = activeShortcutPlan
             guard try ShortcutSaveTransaction.run(
-                activate: { self.register(dictation: dictation, rewrite: rewrite, textEdit: textEdit) },
+                activate: { self.register(dictation: dictation, rewrite: rewrite) },
                 persist: { try store.save(self.settings) },
                 restore: { self.restoreShortcutPlan(previous) }
             ) else {
@@ -258,14 +258,13 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func acceptedShortcutPlan() -> (ShortcutBinding, ShortcutBinding, ShortcutBinding)? {
+    private func acceptedShortcutPlan() -> (ShortcutBinding, ShortcutBinding)? {
         guard let dictation = ShortcutBinding(canonical: settings.dictationShortcut),
               let rewrite = ShortcutBinding(canonical: settings.rewriteShortcut),
-              let textEdit = ShortcutBinding(canonical: settings.textEditShortcut),
-              MacShortcutPlan(dictation: dictation, rewrite: rewrite, textEdit: textEdit) != nil else {
+              MacShortcutPlan(dictation: dictation, rewrite: rewrite) != nil else {
             return nil
         }
-        return (dictation, rewrite, textEdit)
+        return (dictation, rewrite)
     }
 
     private func saveCredential(_ value: String, account: CredentialAccount) throws {
@@ -287,34 +286,27 @@ final class WorkspaceModel: ObservableObject {
 
     private func registerHotKeys() {
         guard let dictation = ShortcutBinding(canonical: settings.dictationShortcut),
-              let rewrite = ShortcutBinding(canonical: settings.rewriteShortcut),
-              let textEdit = ShortcutBinding(canonical: settings.textEditShortcut) else {
+              let rewrite = ShortcutBinding(canonical: settings.rewriteShortcut) else {
             interactionStatus = shortcutPendingHelper()
             return
         }
-        register(dictation: dictation, rewrite: rewrite, textEdit: textEdit)
+        register(dictation: dictation, rewrite: rewrite)
     }
 
     private func refreshShortcutsFromCore() {
         guard let bridge, case .connected = connection else { return }
         let token = shortcutGeneration.begin()
         let values = (dictation: settings.dictationShortcut,
-                      rewrite: settings.rewriteShortcut,
-                      textEdit: settings.textEditShortcut)
+                      rewrite: settings.rewriteShortcut)
         parseShortcut(values.dictation) { [weak self] dictation in
             guard let self else { return }
-            guard shortcutRefresh(tokenValid: self.shortcutGeneration.accepts(token), parsed: dictation != nil, remaining: 2) == .parseNext, let dictation else { return }
+            guard shortcutRefresh(tokenValid: self.shortcutGeneration.accepts(token), parsed: dictation != nil, remaining: 1) == .parseNext, let dictation else { return }
             self.parseShortcut(values.rewrite) { [weak self] rewrite in
                 guard let self else { return }
-                guard shortcutRefresh(tokenValid: self.shortcutGeneration.accepts(token), parsed: rewrite != nil, remaining: 1) == .parseNext, let rewrite else { return }
-                self.parseShortcut(values.textEdit) { [weak self] textEdit in
-                    guard let self else { return }
-                    guard shortcutRefresh(tokenValid: self.shortcutGeneration.accepts(token), parsed: textEdit != nil, remaining: 0) == .register, let textEdit else { return }
-                    if shortcutRefreshStores(registered: self.register(dictation: dictation, rewrite: rewrite, textEdit: textEdit)) {
-                        self.settings.dictationShortcut = dictation.normalized
-                        self.settings.rewriteShortcut = rewrite.normalized
-                        self.settings.textEditShortcut = textEdit.normalized
-                    }
+                guard shortcutRefresh(tokenValid: self.shortcutGeneration.accepts(token), parsed: rewrite != nil, remaining: 0) == .register, let rewrite else { return }
+                if shortcutRefreshStores(registered: self.register(dictation: dictation, rewrite: rewrite)) {
+                    self.settings.dictationShortcut = dictation.normalized
+                    self.settings.rewriteShortcut = rewrite.normalized
                 }
             }
         }
@@ -344,15 +336,13 @@ final class WorkspaceModel: ObservableObject {
 
     /// Keep working global shortcuts registered until every new key succeeds.
     @discardableResult
-    private func register(dictation: ShortcutBinding, rewrite: ShortcutBinding,
-                          textEdit: ShortcutBinding) -> Bool {
-        guard let next = MacShortcutPlan(dictation: dictation, rewrite: rewrite, textEdit: textEdit) else {
+    private func register(dictation: ShortcutBinding, rewrite: ShortcutBinding) -> Bool {
+        guard let next = MacShortcutPlan(dictation: dictation, rewrite: rewrite) else {
             interactionStatus = shortcutPlanRejected()
             return false
         }
-        let label = shortcutPlanLabel(
+        let label = voiceShortcutPlanLabel(
             dictation: MacShortcut.display(dictation.normalized),
-            textEdit: MacShortcut.display(textEdit.normalized),
             rewrite: MacShortcut.display(rewrite.normalized))
         do {
             if let registry = hotKeys {
@@ -396,8 +386,6 @@ final class WorkspaceModel: ObservableObject {
             guard let self, let bound = self.activeShortcutPlan else { return }
             if shortcut == bound.dictation {
                 self.toggleRecording(from: pid)
-            } else if shortcut == bound.textEdit {
-                self.processSelectedText(from: pid)
             } else if shortcut == bound.rewrite {
                 self.toggleVoiceSelectedText(from: pid)
             }
