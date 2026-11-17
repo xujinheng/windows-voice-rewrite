@@ -37,7 +37,12 @@ it does not bypass microphone or Accessibility authorization.
 
 ## Menu bar and window lifecycle
 
-VoiceRewrite remains active in the macOS menu bar after its main window is closed.
+VoiceRewrite starts as a menu-bar utility without automatically raising the workspace
+over the foreground editor. On first use the menu indicates that ASR/LLM services
+need configuration; choose **设置…** to enter and save the service settings.
+Choose **打开 VoiceRewrite** to open the workspace explicitly. The Finder
+reopen action also brings an existing workspace window back. VoiceRewrite
+remains active in the macOS menu bar after its main window is closed.
 Closing the main window does **not** quit the app or clear the current-session history.
 Use the waveform menu bar icon to view voice/meeting status, pause or resume ordinary
 voice shortcuts, cancel an active voice task, reopen the workspace, open Settings,
@@ -48,11 +53,18 @@ restart shortcut listeners. Quit explicitly from the menu bar or app menu to
 stop background operations and discard in-memory history.
 
 Recent result menu labels show only the result type and time, never dictated
-or rewritten words. Restoring a result opens the existing result card. The
-Meeting entry opens the workspace; choose its Meeting tab to start or configure
-capture. Pausing ordinary voice shortcuts does not pause Meeting capture: use
-the explicit Stop Meeting action when a meeting is running. Update checks only
-show the release page when available; they do not install software.
+or rewritten words. Restoring a result opens the existing result card. The menu
+also opens the independent Meeting reader and lets you select an available audio
+source without first reopening the workspace. Pausing ordinary voice shortcuts
+does not pause Meeting capture: use the explicit Stop Meeting action when a
+meeting is running. The menu icon follows the same recording, recognition,
+rewrite, success and error phases as the floating indicator, returning to idle
+after its normal terminal phase expires. Recent errors can be viewed even when
+the log was rotated. An explicit update check displays a confirmation dialog
+for a newer release or an informational dialog otherwise; only the official
+HTTPS GitHub releases page can be opened. Update checks never install software.
+The separate configurable global exit binding is tracked with the settings
+shortcut work; the native app Quit action and menu-bar Quit always remain usable.
 
 ## Use
 
