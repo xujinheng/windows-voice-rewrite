@@ -18,6 +18,7 @@ public enum InteractionFailure: Error, Equatable, Sendable {
     case staleGeneration
     case staleSnapshot
     case cancelled
+    case modifiersHeld
     case timedOut
     case systemError(Int32)
 }
