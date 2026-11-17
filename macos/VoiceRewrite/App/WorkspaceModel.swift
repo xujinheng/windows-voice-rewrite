@@ -707,6 +707,7 @@ final class WorkspaceModel: ObservableObject {
                         generation: generation, intent: .dictation)
                     captured = true
                 } catch {
+                    DiagnosticLog.note("stage=dictation_capture status=failed code=\(insertionDiagnosticCode(error))")
                     failure = captureStatus(error, password: ResultCopy.passwordDictation)
                 }
             }
@@ -996,8 +997,10 @@ final class WorkspaceModel: ObservableObject {
                 guard let self, self.resultGeneration.accepts(token) else { return }
                 do {
                     try await self.interaction.insertIfCurrent(insertion.snapshot, text: text, generation: insertion.generation)
+                    DiagnosticLog.note("stage=dictation_delivery status=sent_unverified")
                     self.applyTask(dictationInsertFollowUp(succeeded: true, status: "", manualTitle: "", text: text))
                 } catch {
+                    DiagnosticLog.note("stage=dictation_delivery status=failed code=\(insertionDiagnosticCode(error))")
                     self.applyTask(dictationInsertFollowUp(
                         succeeded: false,
                         status: insertionStatus(error, rewrite: false, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation),
