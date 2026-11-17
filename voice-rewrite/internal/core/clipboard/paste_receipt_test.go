@@ -7,9 +7,9 @@ import (
 
 func TestRestoreReady(t *testing.T) {
 	tests := []struct {
-		name string
+		name                   string
 		elapsed, sinceLastRead time.Duration
-		hasRead, ready bool
+		hasRead, ready         bool
 	}{
 		{"no receipt", time.Second, 0, false, false},
 		{"early clipboard manager read", 250 * time.Millisecond, 200 * time.Millisecond, true, false},
