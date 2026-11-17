@@ -39,8 +39,8 @@ public enum ContractLimits {
     public static let meetingCaptionsFullTitle = "完整视图"
     public static let meetingExpressionExpandTitle = "放大英文"
     public static let meetingExpressionCollapseTitle = "收起英文"
-    public static let macDictationShortcut = "Ctrl+Alt+R"
-    public static let macRewriteShortcut = "Ctrl+Alt+E"
+    public static let macDictationShortcut = "RightCtrl"
+    public static let macRewriteShortcut = "RightOption"
     public static let protocolVersion = 1
     public static let maxRequestBytes = 8 << 20
     public static let maxRequestIDBytes = 128
