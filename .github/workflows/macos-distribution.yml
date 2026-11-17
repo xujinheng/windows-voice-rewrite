@@ -64,7 +64,7 @@ jobs:
           security set-keychain-settings -lut 21600 "$keychain"
           security unlock-keychain -p "$RUNNER_TEMP" "$keychain"
           security list-keychains -d user -s "$keychain"
-          printf '%s' "$CERT" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          printf '%s' "$CERT" | base64 -D > "$RUNNER_TEMP/developer-id.p12"
           security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -P "$CERT_PASSWORD" -T /usr/bin/codesign
           rm "$RUNNER_TEMP/developer-id.p12"
           security set-key-partition-list -S apple-tool:,apple: -s -k "$RUNNER_TEMP" "$keychain"
