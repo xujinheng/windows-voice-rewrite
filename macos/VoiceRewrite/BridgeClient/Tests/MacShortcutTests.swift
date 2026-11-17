@@ -30,8 +30,8 @@ final class MacShortcutTests: XCTestCase {
         let rewrite = try XCTUnwrap(ShortcutBinding(canonical: "RightOption"))
         let plan = try XCTUnwrap(MacShortcutPlan(dictation: dictation, rewrite: rewrite))
         XCTAssertEqual(plan.keyboard.count, 0)
-        XCTAssertEqual(plan.modifierDictation, .control)
-        XCTAssertEqual(plan.modifierRewrite, .option)
+        XCTAssertEqual(plan.modifierDictation, .rightControl)
+        XCTAssertEqual(plan.modifierRewrite, .rightOption)
         XCTAssertEqual(MacShortcut.display("RightCtrl"), "右 Control（长按）")
         XCTAssertEqual(MacShortcut.display("RightOption"), "右 Option（长按）")
         XCTAssertEqual(plan.sideButtons.action(for: 3), .dictation)
@@ -109,6 +109,36 @@ final class MacShortcutTests: XCTestCase {
         XCTAssertEqual(custom.keyboard.count, 2)
         XCTAssertNil(custom.modifierDictation)
         XCTAssertNil(custom.modifierRewrite)
+    }
+
+    func testAllSixModifierKeysCanBeRecordedForEitherVoiceAction() throws {
+        let choices = MacModifierKey.allCases
+        XCTAssertEqual(choices.count, 6)
+        for selected in choices {
+            let binding = try XCTUnwrap(ShortcutBinding(canonical: selected.rawValue))
+            XCTAssertEqual(binding.normalized, selected.rawValue)
+            XCTAssertEqual(binding.key, selected.rawValue)
+            XCTAssertEqual(MacShortcut.display(selected.rawValue), selected.displayName)
+            XCTAssertNil(MacShortcut.hotKey(
+                key: binding.key, ctrl: binding.ctrl, alt: binding.alt, shift: binding.shift))
+            let other = choices.first(where: { $0 != selected })!
+            let otherBinding = try XCTUnwrap(ShortcutBinding(canonical: other.rawValue))
+            let plan = try XCTUnwrap(MacShortcutPlan(dictation: binding, rewrite: otherBinding))
+            XCTAssertEqual(plan.modifierDictation, selected)
+            XCTAssertEqual(plan.modifierRewrite, other)
+            XCTAssertEqual(plan.sideButtons.action(for: 3), .dictation)
+            XCTAssertEqual(plan.sideButtons.action(for: 4), .rewrite)
+            XCTAssertNil(MacShortcutPlan(dictation: binding, rewrite: binding))
+            XCTAssertNil(MacShortcutPlan(dictation: binding, rewrite: otherBinding, exit: binding))
+            XCTAssertNil(MacShortcutPlan(dictation: binding, rewrite: otherBinding, recordMode: "toggle"))
+            XCTAssertNil(ShortcutBinding(canonical: "Ctrl+" + selected.rawValue))
+            XCTAssertNil(ShortcutBinding(canonical: selected.rawValue + "+R"))
+        }
+        XCTAssertNotNil(MacShortcutPlan(
+            dictation: try XCTUnwrap(ShortcutBinding(canonical: "LeftCommand")),
+            rewrite: try XCTUnwrap(ShortcutBinding(canonical: "RightCommand"))))
+        XCTAssertEqual(ShortcutBinding(canonical: "leftcmd")?.normalized, "LeftCommand")
+        XCTAssertEqual(ShortcutBinding(canonical: "rightalt")?.normalized, "RightOption")
     }
 
     @MainActor
