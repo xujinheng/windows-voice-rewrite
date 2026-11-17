@@ -251,10 +251,11 @@ func TestBridgeMeetingSnapshotKeepsSessionReadingAndExplicitExpressionFocus(t *t
 	m.captions, m.historyTrimmed = meetingcore.BoundCaptionHistory(m.captions)
 	m.view.CaptionsOnly = true
 	m.expression = meetingcore.Line{English: "We can move forward.", Complete: true}
+	m.expressionSource = "我们可以继续。"
 	m.mu.Unlock()
 	before := m.snapshot()
 	if len(before["captions"].([]map[string]any)) != 80 ||
-		before["history_trimmed"] != 0 {
+		before["history_trimmed"] != 0 || before["expression_source"] != "我们可以继续。" {
 		t.Fatalf("bridge truncated 80 meeting turns: %#v", before)
 	}
 	if m.applyViewButton(0) {
