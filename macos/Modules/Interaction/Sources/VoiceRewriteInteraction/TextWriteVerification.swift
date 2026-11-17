@@ -1,7 +1,8 @@
 import Foundation
 
 /// Verifies a replacement against the full AXValue using UTF-16 offsets.
-/// A clipboard paste is not considered successful merely because Cmd+V was posted.
+/// Exact verification is required for explicit selection rewrites. Ordinary dictation
+/// is delivered as a guarded single-shot paste even when the editor lacks AXValue.
 public enum TextWriteVerification {
     public static func expectedValue(
         original: String?, selectedText: String, range: TextRange, replacement: String
