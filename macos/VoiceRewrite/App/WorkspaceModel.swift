@@ -124,6 +124,8 @@ final class WorkspaceModel: ObservableObject {
     private var showStartupDemoOnConnect = false
     private var meetingPendingPackets = 0
     private var meetingSnapshotPending = false
+    private var meetingSnapshotRequestID: String?
+    private var meetingSnapshotStartedAt: TimeInterval = 0
     private var meetingRequestID: String?
     private var meetingCaptureSourceID = ""
     private var meetingVoiceASRID: String?
@@ -1355,23 +1357,40 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    static func meetingSnapshotExpired(startedAt: TimeInterval, now: TimeInterval) -> Bool {
+        startedAt > 0 && now - startedAt >= 12
+    }
+
     private func pollMeeting(id: String, token: UInt64) {
         Task { @MainActor [weak self] in
             while let self, self.meetingSessionID == id,
                   self.meetingGeneration.accepts(token), self.meetingActive {
                 guard !self.meetingSnapshotPending else {
+                    if Self.meetingSnapshotExpired(
+                        startedAt: self.meetingSnapshotStartedAt,
+                        now: ProcessInfo.processInfo.systemUptime) {
+                        self.stopMeeting(reason: "会议状态请求超时，已结束采集；请检查 Helper")
+                        break
+                    }
                     try? await Task.sleep(nanoseconds: 450_000_000)
                     continue
                 }
+                guard let bridge = self.bridge else {
+                    self.stopMeeting(reason: "会议 Helper 已断开")
+                    break
+                }
                 self.meetingSnapshotPending = true
+                self.meetingSnapshotStartedAt = ProcessInfo.processInfo.systemUptime
                 let revision = self.meetingPresentationRevision
-                self.bridge?.send(operation: "meeting_snapshot", fields: [
+                self.meetingSnapshotRequestID = bridge.send(operation: "meeting_snapshot", fields: [
                     "session_id": .string(id),
                 ]) { [weak self] reply in
                     Task { @MainActor [weak self] in
                         guard let self, self.meetingSessionID == id,
                               self.meetingGeneration.accepts(token) else { return }
                         self.meetingSnapshotPending = false
+                        self.meetingSnapshotRequestID = nil
+                        self.meetingSnapshotStartedAt = 0
                         guard revision == self.meetingPresentationRevision,
                               !self.meetingCancelPending else { return }
                         guard case .success(let response) = reply, response.ok else {
@@ -1861,6 +1880,9 @@ final class WorkspaceModel: ObservableObject {
         meetingRequestID = nil
         meetingBusy = false
         meetingCancelPending = false
+        if let snapshotID = meetingSnapshotRequestID { bridge?.cancel(id: snapshotID) }
+        meetingSnapshotRequestID = nil
+        meetingSnapshotStartedAt = 0
         meetingSnapshotPending = false
         meetingStarting = false
         meetingActive = false
