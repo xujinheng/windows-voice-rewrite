@@ -19,6 +19,7 @@ import (
 	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/jsonl"
+	"voicerewrite/internal/core/provider"
 	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/shortcut"
 	"voicerewrite/internal/core/speech"
@@ -203,7 +204,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	}
 	s.seen[req.ID] = struct{}{}
 
-	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "selected_voice_task" && req.Op != "probe_asr" && req.Op != "probe_llm" && req.Op != "check_update" {
+	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "selected_voice_task" && req.Op != "probe_asr" && req.Op != "probe_llm" && req.Op != "list_asr_models" && req.Op != "list_llm_models" && req.Op != "check_update" {
 		s.mu.Unlock()
 		switch req.Op {
 		case "hello":
@@ -236,6 +237,8 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	timeout := s.options.TranscribeTimeout
 	if req.Op == "check_update" {
 		timeout = 8 * time.Second
+	} else if req.Op == "list_asr_models" || req.Op == "list_llm_models" {
+		timeout = 12 * time.Second
 	}
 	if req.Op == "selected_task" {
 		timeout = s.options.SelectedTimeout
@@ -364,6 +367,19 @@ func processRequest(ctx context.Context, req request) response {
 		return contextFailure(req.ID, err)
 	}
 	switch req.Op {
+	case "list_asr_models", "list_llm_models":
+		base, key := cfg.ASRBaseURL, cfg.ASRAPIKey
+		if req.Op == "list_llm_models" {
+			base, key = cfg.LLMBaseURL, cfg.LLMAPIKey
+		}
+		models, err := provider.ListModels(ctx, base, key)
+		if err != nil {
+			if ctx.Err() != nil {
+				return contextFailure(req.ID, ctx.Err())
+			}
+			return providerFailure(req.ID, "model_list_failed", "无法读取模型列表；请检查服务地址和 API Key", err)
+		}
+		return success(req.ID, map[string]any{"models": models})
 	case "probe_asr":
 		message := serviceprobe.ProbeModel(ctx, "ASR", cfg.ASRBaseURL, cfg.ASRAPIKey, cfg.ASRModel)
 		return success(req.ID, map[string]string{"kind": "ASR", "message": message})
