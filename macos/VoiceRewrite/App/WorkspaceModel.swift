@@ -2300,6 +2300,7 @@ final class WorkspaceModel: ObservableObject {
                         throw InteractionFailure.applicationChanged
                     }
                     interactionStatus = rewriteCapturingSelection()
+                    armProcessingWatchdog(token: token, seconds: 20, stage: "selection_capture")
                     let generation = try await interaction.beginTask(targetProcessID: voiceTargetPID)
                     selectionGeneration = generation
                     activeSelectionGeneration = generation
@@ -2317,6 +2318,7 @@ final class WorkspaceModel: ObservableObject {
                         return
                     }
                     activeVoiceSelection = (snapshot, generation)
+                    armProcessingWatchdog(token: token, seconds: 375, stage: "spoken_edit")
                     let config = try requestConfig(for: .spokenSelectedTask)
                     guard let bridge else { throw BridgeFailure.notRunning }
                     let id = bridge.sendPCM(operation: "selected_voice_task", pcm: pcm, fields: [
