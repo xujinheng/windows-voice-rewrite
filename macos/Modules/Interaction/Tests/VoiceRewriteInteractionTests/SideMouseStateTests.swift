@@ -121,6 +121,26 @@ final class SideMouseStateTests: XCTestCase {
         XCTAssertEqual(state.release(4), .short)
     }
 
+    func testTapDisableMissingMouseUpEventuallyAllowsNewPress() {
+        var state = SideButtonHoldState()
+        let stale = state.press(3)!
+        XCTAssertFalse(state.reset())
+        XCTAssertNil(state.press(3))
+        XCTAssertEqual(state.expireCancelledReleases(), [3])
+        XCTAssertNotNil(state.press(3))
+        XCTAssertFalse(state.activate(3, token: stale))
+        XCTAssertEqual(state.release(3), .short)
+    }
+
+    func testTapRecoveryKeepsAnAlreadyDeliveredReleaseOutOfExpiry() {
+        var state = SideButtonHoldState()
+        _ = state.press(4)
+        XCTAssertFalse(state.reset())
+        XCTAssertEqual(state.takeCancelledRelease(4), .short)
+        XCTAssertTrue(state.expireCancelledReleases().isEmpty)
+        XCTAssertNotNil(state.press(4))
+    }
+
     func testDifferentButtonsHaveIndependentTokens() {
         var state = SideButtonHoldState()
         let a = state.press(3)!
