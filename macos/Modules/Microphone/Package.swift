@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Microphone",
-    platforms: [.macOS(.v12)],
+    platforms: [.macOS(.v14)],
     products: [.library(name: "Microphone", targets: ["Microphone"])],
     targets: [
         .target(name: "Microphone"),
