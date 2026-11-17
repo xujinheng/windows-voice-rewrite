@@ -9,6 +9,7 @@ struct OneClickConfiguration {
     let llamaServer: String
     let model: String
     let audioEncoder: String
+    let attachToExisting: Bool
     let publicPort: Int
     let backendPort: Int
     let gpuLayers: Int
@@ -19,11 +20,13 @@ struct OneClickConfiguration {
 
     func validate() throws {
         let fs = FileManager.default
+        if !attachToExisting {
         guard fs.isExecutableFile(atPath: llamaServer) else {
             throw LauncherError.message("请选择可执行的 llama-server 文件（macOS 对应架构）。")
         }
         guard fs.isReadableFile(atPath: model), fs.isReadableFile(atPath: audioEncoder) else {
             throw LauncherError.message("模型 GGUF 或音频编码器 mmproj 不存在或不可读。")
+        }
         }
         guard (1...65535).contains(publicPort), (1...65535).contains(backendPort),
               publicPort != backendPort else {
@@ -49,7 +52,7 @@ struct OneClickConfiguration {
             "gpu_layers": gpuLayers,
             "context_size": contextSize,
             "allow_cpu": allowCPU,
-            "attach_to_existing_server": false
+            "attach_to_existing_server": attachToExisting
         ]
         let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
         try data.write(to: path, options: .atomic)
@@ -286,6 +289,7 @@ private struct OneClickWindow: View {
     @AppStorage("oneclick.llamaServer") private var llamaServer = ""
     @AppStorage("oneclick.model") private var model = ""
     @AppStorage("oneclick.audioEncoder") private var audioEncoder = ""
+    @AppStorage("oneclick.attach") private var attach = false
     @AppStorage("oneclick.publicPort") private var publicPort = 8081
     @AppStorage("oneclick.backendPort") private var backendPort = 8080
     @AppStorage("oneclick.gpuLayers") private var gpuLayers = 99
@@ -294,7 +298,7 @@ private struct OneClickWindow: View {
 
     private var configuration: OneClickConfiguration {
         .init(llamaServer: llamaServer, model: model, audioEncoder: audioEncoder,
-              publicPort: publicPort, backendPort: backendPort,
+              attachToExisting: attach, publicPort: publicPort, backendPort: backendPort,
               gpuLayers: gpuLayers, contextSize: contextSize, allowCPU: allowCPU)
     }
 
@@ -307,9 +311,10 @@ private struct OneClickWindow: View {
 
             GroupBox("本地文件") {
                 VStack(alignment: .leading, spacing: 10) {
-                    FileField(title: "llama-server 可执行文件", path: $llamaServer)
-                    FileField(title: "语音模型 GGUF", path: $model)
-                    FileField(title: "音频编码器 mmproj GGUF", path: $audioEncoder)
+                    Toggle("连接已运行的本地 llama-server（仅管理 OneClick 代理）", isOn: $attach)
+                    FileField(title: "llama-server 可执行文件", path: $llamaServer).disabled(attach)
+                    FileField(title: "语音模型 GGUF", path: $model).disabled(attach)
+                    FileField(title: "音频编码器 mmproj GGUF", path: $audioEncoder).disabled(attach)
                 }
                 .padding(.vertical, 6)
             }
@@ -331,10 +336,10 @@ private struct OneClickWindow: View {
                         TextField("99", value: $gpuLayers, format: .number).frame(width: 75)
                         Text("上下文大小")
                         TextField("8192", value: $contextSize, format: .number).frame(width: 85)
-                        Toggle("允许 CPU 回退", isOn: $allowCPU)
+                        Toggle("跳过 GPU 预检", isOn: $allowCPU)
                         Spacer()
                     }
-                    Text("GPU 层数设为 0 可使用 CPU。Metal 加速取决于所选 llama-server 的构建与 Mac 硬件。")
+                    Text("纯 CPU 请设置 GPU 层数为 0；跳过 GPU 预检并不保证后端自动 CPU 回退。Metal 取决于 llama-server 与 Mac 硬件。")
                         .font(.caption).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
