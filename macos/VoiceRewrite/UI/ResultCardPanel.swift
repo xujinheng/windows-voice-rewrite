@@ -127,7 +127,8 @@ final class ResultCardPanel {
     }
 
     private func apply() {
-        guard let session, session.apply != nil, panel?.isVisible == true else { return }
+        guard let session, session.apply != nil, !session.isApplying, applyTask == nil,
+              panel?.isVisible == true else { return }
         applyTask = Task { @MainActor [weak self] in
             await session.applyIfAuthorized()
             if self?.session === session { self?.applyTask = nil }
