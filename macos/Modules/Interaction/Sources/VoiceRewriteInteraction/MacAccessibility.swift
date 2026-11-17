@@ -286,20 +286,22 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
             guard pasteboard.isOwned(lease) else { throw ClipboardFailure.ownershipLost }
             try postPaste(expected: expected)
 
-            // A normal dictation paste follows the Windows best-effort delivery
-            // contract: post once, keep the temporary board available while the
-            // target consumes Cmd+V, then restore without a second write.
-            // Explicit selection rewrites still require exact AX confirmation.
-            let confirmed: Bool
-            if confirmDelivery, let expectedValue {
-                confirmed = confirmWrite(target, expected: expected, expectedValue: expectedValue)
-            } else {
-                Thread.sleep(forTimeInterval: 0.35)
-                confirmed = false
+            // Dispatching Cmd+V only queues the event. Restore after the
+            // receiving app has had time to consume the clipboard, without
+            // blocking the interaction actor or re-sending the keystroke.
+            if !confirmDelivery {
+                let board = pasteboard
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1.0) {
+                    // A newer clipboard owner is never overwritten.
+                    try? board.finish(lease)
+                }
+                return
             }
+            guard let expectedValue else { throw InteractionFailure.unsupportedNativeWrite }
+            let confirmed = confirmWrite(target, expected: expected, expectedValue: expectedValue)
             // Never overwrite a user or clipboard manager's newer clipboard contents.
             try pasteboard.finish(lease)
-            if confirmDelivery && !confirmed { throw InteractionFailure.writeNotConfirmed }
+            if !confirmed { throw InteractionFailure.writeNotConfirmed }
         } catch {
             // A failed/uncertain paste may still have reached the target: never retry.
             try? pasteboard.finish(lease)
@@ -309,7 +311,13 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
 
     func writeSelectedText(_ text: String, expected: SelectionObservation, intent: SelectionIntent) throws {
         let target = try revalidate(expected)
-        let baseline = try wholeValue(target)
+        let baseline: String?
+        if intent == .dictation {
+            // Some monitored editors intermittently refuse AXValue reads.
+            baseline = try? wholeValue(target)
+        } else {
+            baseline = try wholeValue(target)
+        }
         let expectedValue = TextWriteVerification.expectedValue(
             original: baseline, selectedText: expected.selectedText,
             range: expected.range, replacement: text)
