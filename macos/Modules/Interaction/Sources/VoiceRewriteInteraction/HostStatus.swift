@@ -175,7 +175,7 @@ public func recordingIdle() -> String { "未录音" }
 
 public func dictationRequestingMicrophone() -> String { "正在申请麦克风权限并启动录音" }
 
-public func dictationCaretLocked() -> String { "已锁定原应用光标及选区；识别后将复核目标" }
+public func dictationCaretLocked() -> String { "已记录原应用；识别后将尝试向其输入文字" }
 
 public func dictationNoTarget() -> String {
     "未指定外部文本框；本次录音仅显示识别结果。请在目标软件中按配置的听写快捷键开始听写"
@@ -189,7 +189,7 @@ public func dictationProcessing() -> String { "正在处理语音" }
 
 public func dictationRecognized() -> String { "语音识别已完成" }
 
-public func dictationInserted() -> String { "已向原输入框发送文字" }
+public func dictationInserted() -> String { "已发送输入指令；请以目标输入框实际内容为准" }
 
 public func dictationRecognizeFailed(_ detail: String) -> String { "识别失败：\(detail)" }
 
