@@ -74,13 +74,18 @@ struct MacShortcutPlan: Equatable {
     let sideButtons: SideMouseBindings
 
     init?(dictation: ShortcutBinding, rewrite: ShortcutBinding,
-          exit: ShortcutBinding? = nil, recordMode: String = "hold") {
+          exit: ShortcutBinding? = nil, recordMode: String = "hold",
+          dictationDeviceID: String = "", rewriteDeviceID: String = "") {
         let modifierDictation = MacModifierKey(rawValue: dictation.key)
         let modifierRewrite = MacModifierKey(rawValue: rewrite.key)
         guard recordMode == "hold" || recordMode == "toggle",
               recordMode != "toggle" || (!dictation.mouse && !rewrite.mouse &&
                                          modifierDictation == nil && modifierRewrite == nil),
-              modifierDictation == nil || modifierDictation != modifierRewrite else { return nil }
+              (dictationDeviceID.isEmpty || modifierDictation != nil),
+              (rewriteDeviceID.isEmpty || modifierRewrite != nil),
+              (modifierDictation == nil || modifierDictation != modifierRewrite ||
+               (!dictationDeviceID.isEmpty && !rewriteDeviceID.isEmpty &&
+                dictationDeviceID != rewriteDeviceID)) else { return nil }
         let dictationKey = (dictation.mouse || modifierDictation != nil) ? nil : MacShortcut.hotKey(
             key: dictation.key, ctrl: dictation.ctrl, alt: dictation.alt, shift: dictation.shift)
         let rewriteKey = (rewrite.mouse || modifierRewrite != nil) ? nil : MacShortcut.hotKey(

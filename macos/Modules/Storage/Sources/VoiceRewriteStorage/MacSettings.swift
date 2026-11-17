@@ -14,6 +14,9 @@ public struct MacSettings: Codable, Equatable, Sendable {
     public var maxRecordSeconds: Int
     public var dictationShortcut: String
     public var rewriteShortcut: String
+    /// Empty means any keyboard; a nonempty HID identity is an exact source.
+    public var dictationKeyboardID: String
+    public var rewriteKeyboardID: String
     public var recordMode: String
     public var exitShortcut: String
     public var systemPrompt: String
@@ -34,6 +37,8 @@ public struct MacSettings: Codable, Equatable, Sendable {
         case maxRecordSeconds = "max_record_seconds"
         case dictationShortcut = "dictation_shortcut"
         case rewriteShortcut = "rewrite_shortcut"
+        case dictationKeyboardID = "dictation_keyboard_id"
+        case rewriteKeyboardID = "rewrite_keyboard_id"
         case recordMode = "record_mode"
         case exitShortcut = "hotkey_exit"
         case systemPrompt = "system_prompt"
@@ -55,6 +60,8 @@ public struct MacSettings: Codable, Equatable, Sendable {
         microphoneUID: String = "",
         dictationShortcut: String = ContractLimits.macDictationShortcut,
         rewriteShortcut: String = ContractLimits.macRewriteShortcut,
+        dictationKeyboardID: String = "",
+        rewriteKeyboardID: String = "",
         recordMode: String = ContractLimits.defaultRecordMode,
         exitShortcut: String = ContractLimits.defaultExitShortcut,
         systemPrompt: String = "",
@@ -74,6 +81,8 @@ public struct MacSettings: Codable, Equatable, Sendable {
         self.microphoneUID = microphoneUID
         self.dictationShortcut = dictationShortcut
         self.rewriteShortcut = rewriteShortcut
+        self.dictationKeyboardID = dictationKeyboardID
+        self.rewriteKeyboardID = rewriteKeyboardID
         self.recordMode = recordMode
         self.exitShortcut = exitShortcut
         self.systemPrompt = systemPrompt
@@ -124,6 +133,9 @@ public struct MacSettings: Codable, Equatable, Sendable {
         dictationShortcut = normalizedShortcut(dictationShortcut, fallback: ContractLimits.macDictationShortcut)
         rewriteShortcut = normalizedShortcut(rewriteShortcut, fallback: ContractLimits.macRewriteShortcut)
         exitShortcut = normalizedShortcut(exitShortcut, fallback: ContractLimits.defaultExitShortcut)
+        guard Self.validKeyboardID(dictationKeyboardID), Self.validKeyboardID(rewriteKeyboardID) else {
+            throw SettingsError.invalidValues
+        }
         guard recordMode == "hold" || recordMode == "toggle",
               systemPrompt.utf8.count <= ContractLimits.maxSystemPromptBytes else { throw SettingsError.invalidValues }
         if !(ContractLimits.minResponseTokens...ContractLimits.maxResponseTokens).contains(maxResponseTokens) {
@@ -138,6 +150,14 @@ public struct MacSettings: Codable, Equatable, Sendable {
         if !(ContractLimits.minCopyTimeoutMS...ContractLimits.maxCopyTimeoutMS).contains(selectionCopyTimeoutMS) {
             selectionCopyTimeoutMS = ContractLimits.defaultCopyTimeoutMS
         }
+    }
+
+    /// Restrict persisted device identities to small, non-control strings.
+    /// The host must also verify an actual, unambiguous connected HID device.
+    public static func validKeyboardID(_ id: String) -> Bool {
+        id.utf8.count <= 256 && !id.unicodeScalars.contains(where: {
+            CharacterSet.controlCharacters.contains($0)
+        })
     }
 
     private func normalizedShortcut(_ value: String, fallback: String) -> String {
@@ -157,6 +177,8 @@ public struct MacSettings: Codable, Equatable, Sendable {
             "rewrite_shortcut": ContractLimits.macRewriteShortcut,
         ]
         if values["microphone_uid"] == nil { values["microphone_uid"] = "" }
+        if values["dictation_keyboard_id"] == nil { values["dictation_keyboard_id"] = "" }
+        if values["rewrite_keyboard_id"] == nil { values["rewrite_keyboard_id"] = "" }
         if values["meeting_background"] == nil { values["meeting_background"] = "" }
         if values["meeting_terms"] == nil { values["meeting_terms"] = "" }
         if values["record_mode"] == nil { values["record_mode"] = ContractLimits.defaultRecordMode }

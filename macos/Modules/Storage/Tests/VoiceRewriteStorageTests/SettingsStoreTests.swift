@@ -36,7 +36,7 @@ final class SettingsStoreTests: XCTestCase {
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(Set(json.keys), [
             "asr_base_url", "llm_base_url", "asr_model", "text_model", "max_record_seconds",
-            "dictation_shortcut", "rewrite_shortcut", "microphone_uid",
+            "dictation_shortcut", "rewrite_shortcut", "dictation_keyboard_id", "rewrite_keyboard_id", "microphone_uid",
             "meeting_asr_mode", "meeting_background", "meeting_terms",
             "record_mode", "hotkey_exit", "system_prompt", "max_response_tokens",
             "max_selected_characters", "selection_copy_attempts", "selection_copy_timeout_ms",
@@ -47,6 +47,8 @@ final class SettingsStoreTests: XCTestCase {
         json.removeValue(forKey: "dictation_shortcut")
         json.removeValue(forKey: "rewrite_shortcut")
         json["text_edit_shortcut"] = "Ctrl+Alt+T" // Old saved field must not return as a hotkey.
+        json.removeValue(forKey: "dictation_keyboard_id")
+        json.removeValue(forKey: "rewrite_keyboard_id")
         json.removeValue(forKey: "meeting_asr_mode")
         json.removeValue(forKey: "meeting_background")
         json.removeValue(forKey: "meeting_terms")
@@ -70,6 +72,31 @@ final class SettingsStoreTests: XCTestCase {
         let saved = try XCTUnwrap(JSONSerialization.jsonObject(
             with: Data(contentsOf: file)) as? [String: Any])
         XCTAssertNil(saved["text_edit_shortcut"])
+    }
+
+    func testKeyboardSourceIDsPersistAndDecodeOldSettings() throws {
+        let dir = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir.deletingLastPathComponent()) }
+        let store = SettingsStore(directory: dir)
+        var value = MacSettings.defaults
+        value.dictationKeyboardID = "builtin:1452:123:0"
+        value.rewriteKeyboardID = "port:1111:2222:3040"
+        value.dictationShortcut = "RightCommand"
+        value.rewriteShortcut = "RightOption"
+        try store.save(value)
+        XCTAssertEqual(try store.load(), value)
+        let file = dir.appendingPathComponent("settings.json")
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: file)) as? [String: Any])
+        json.removeValue(forKey: "dictation_keyboard_id")
+        json.removeValue(forKey: "rewrite_keyboard_id")
+        let migrated = try MacSettings.decodeStrict(JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(migrated.dictationKeyboardID, "")
+        XCTAssertEqual(migrated.rewriteKeyboardID, "")
+        value.dictationKeyboardID = String(repeating: "x", count: 257)
+        XCTAssertThrowsError(try value.canonicalize())
+        value.dictationKeyboardID = "unsafe\nkeyboard"
+        XCTAssertThrowsError(try value.canonicalize())
     }
 
     func testOldMacDefaultPairUpgradesButUserCustomBindingsRemain() throws {

@@ -257,6 +257,42 @@ struct SettingsView: View {
                 Text("快捷键可直接录入左/右 Control、左/右 Option、左/右 Command 六个单键；单独按住 250ms 开始、松开结束，正常组合键不被拦截。Mouse4 听写、Mouse5 改写保留，亦可配置 Ctrl+Option 组合键。默认右 Control 听写、右 Option 改写；MacBook Pro/Air 内建键盘没有右 Control，可在这里改为右 Command 或左 Control。退出快捷键必须使用功能键或组合键。")
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("input_note_macos")
+                                HStack {
+                                    Picker("听写使用键盘", selection: $model.settings.dictationKeyboardID) {
+                                        Text("所有键盘（全局快捷键）").tag("")
+                                        ForEach(model.keyboardDevices) { keyboard in
+                                            Text(keyboard.title).tag(keyboard.id)
+                                                .disabled(!keyboard.selectable)
+                                        }
+                                        if !model.settings.dictationKeyboardID.isEmpty &&
+                                            !model.keyboardDevices.contains(where: { $0.id == model.settings.dictationKeyboardID }) {
+                                            Text("已保存的键盘当前未连接").tag(model.settings.dictationKeyboardID)
+                                        }
+                                    }
+                                    .accessibilityIdentifier("dictation_keyboard")
+                                }
+                                HStack {
+                                    Picker("改写使用键盘", selection: $model.settings.rewriteKeyboardID) {
+                                        Text("所有键盘（全局快捷键）").tag("")
+                                        ForEach(model.keyboardDevices) { keyboard in
+                                            Text(keyboard.title).tag(keyboard.id)
+                                                .disabled(!keyboard.selectable)
+                                        }
+                                        if !model.settings.rewriteKeyboardID.isEmpty &&
+                                            !model.keyboardDevices.contains(where: { $0.id == model.settings.rewriteKeyboardID }) {
+                                            Text("已保存的键盘当前未连接").tag(model.settings.rewriteKeyboardID)
+                                        }
+                                    }
+                                    .accessibilityIdentifier("rewrite_keyboard")
+                                    Button("刷新键盘") { model.refreshKeyboardDevices() }
+                                }
+                                Text("选定具体键盘时仅支持单键长按 Control / Option / Command；普通组合键和鼠标侧键继续使用“所有键盘”。设备未连接时不会自动改用其他键盘。")
+                                    .font(.footnote).foregroundStyle(.secondary)
+                                if !model.keyboardSourceStatus.isEmpty {
+                                    Text(model.keyboardSourceStatus)
+                                        .font(.footnote).foregroundStyle(.secondary)
+                                        .accessibilityIdentifier("keyboard_status")
+                                }
                                 if !captureStatus.isEmpty {
                                     Text(captureStatus).font(.footnote).foregroundStyle(.secondary)
                                         .accessibilityIdentifier("capture_status")
@@ -346,13 +382,14 @@ struct SettingsView: View {
             model.markConnectionProbeStale(.selectedTask)
             model.invalidateDiscoveredModels(.selectedTask)
         }
-        .onAppear { model.refreshMicrophoneDevices() }
+        .onAppear { model.refreshMicrophoneDevices(); if selectedPage == "input" { model.refreshKeyboardDevices() } }
         .onDisappear { stopCapture() }
     }
 
     private func selectPage(_ id: String) {
         stopCapture()
         selectedPage = id
+        if id == "input" { model.refreshKeyboardDevices() }
     }
 
     private func beginCapture(_ id: String) {
@@ -360,9 +397,18 @@ struct SettingsView: View {
         captureTarget = id
         captureStatus = "正在监听按键… 按 Esc 取消"
         model.setShortcutCaptureActive(true)
+        let selectedDevice = id == "dictation_shortcut" ? model.settings.dictationKeyboardID :
+            (id == "rewrite_shortcut" ? model.settings.rewriteKeyboardID : "")
+        if !selectedDevice.isEmpty {
+            model.captureKeyFromSelectedKeyboard(selectedDevice) { key in acceptCapture(key.rawValue) }
+        }
         captureMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .otherMouseDown, .flagsChanged]) { event in
             if event.type == .keyDown && event.isARepeat { return nil }
             if event.type == .flagsChanged {
+                if captureTarget == "dictation_shortcut" && !model.settings.dictationKeyboardID.isEmpty ||
+                   captureTarget == "rewrite_shortcut" && !model.settings.rewriteKeyboardID.isEmpty {
+                    return event // wait for the selected HID keyboard, not a global NSEvent
+                }
                 guard let key = MacModifierKey(keyCode: Int64(event.keyCode)) else { return event }
                 let families: NSEvent.ModifierFlags = [.control, .option, .command, .shift]
                 guard event.modifierFlags.intersection(families) == key.captureFlag,
@@ -396,6 +442,12 @@ struct SettingsView: View {
     }
 
     private func acceptCapture(_ candidate: String) {
+        let selectedDevice = captureTarget == "dictation_shortcut" ? model.settings.dictationKeyboardID :
+            (captureTarget == "rewrite_shortcut" ? model.settings.rewriteKeyboardID : "")
+        if !selectedDevice.isEmpty && MacModifierKey(canonical: candidate) == nil {
+            captureStatus = "指定键盘只能录入独立的 Control、Option 或 Command；组合键请使用“所有键盘”"
+            return
+        }
         let other = captureTarget == "dictation_shortcut"
             ? model.settings.rewriteShortcut : model.settings.dictationShortcut
         let exit = model.settings.exitShortcut
@@ -430,6 +482,7 @@ struct SettingsView: View {
     private func stopCapture() {
         if let captureMonitor { NSEvent.removeMonitor(captureMonitor) }
         captureMonitor = nil
+        model.stopKeyboardDeviceCapture()
         captureTarget = nil
         model.setShortcutCaptureActive(false)
     }
