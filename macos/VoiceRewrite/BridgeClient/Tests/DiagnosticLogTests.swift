@@ -31,6 +31,18 @@ final class DiagnosticLogTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: path + ".4"))
     }
 
+    func testLatestErrorSkipsNormalLinesAndBoundsDisplay() {
+        let log = """
+        2026-11-17T01:00:00Z 应用已启动
+        2026-11-17T01:01:00Z stage=dictation_delivery status=failed code=focus_lost
+        2026-11-17T01:02:00Z 设置已保存
+        """
+        XCTAssertEqual(DiagnosticLog.latestError(in: log),
+                       "2026-11-17T01:01:00Z stage=dictation_delivery status=failed code=focus_lost")
+        XCTAssertNil(DiagnosticLog.latestError(in: "应用已启动\n设置已保存"))
+        XCTAssertEqual(DiagnosticLog.latestError(in: String(repeating: "错误", count: 300))?.count, 400)
+    }
+
     func testSmallFileStaysInPlace() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("VoiceRewriteLog-\(UUID().uuidString)", isDirectory: true)
