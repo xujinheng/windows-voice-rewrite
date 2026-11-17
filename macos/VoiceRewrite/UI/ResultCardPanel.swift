@@ -216,7 +216,7 @@ final class ResultCardPanel {
     }
 }
 
-private struct ResultCardPalette {
+struct ResultCardPalette {
     let background: Color
     let surface: Color
     let text: Color
