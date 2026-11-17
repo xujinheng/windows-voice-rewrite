@@ -52,6 +52,9 @@ type ReplyState struct {
 	WorkTurn         uint64
 	CompletedTurn    uint64
 	WorkActive       bool
+	// AutomaticEnabled is opt-in. By default, both hosts request suggestions
+	// only when the user asks, so captions do not compete with GPU inference.
+	AutomaticEnabled bool
 }
 
 // Next starts a new generation; a superseded pending batch is no longer
@@ -68,6 +71,9 @@ func (s *ReplyState) Next() uint64 {
 // coalesces concurrent manual/automatic requests. Manual requests may explicitly
 // regenerate completed suggestions.
 func (s *ReplyState) MayStartTurn(turn uint64, automatic bool) bool {
+	if automatic && !s.AutomaticEnabled {
+		return false
+	}
 	return !(s.WorkActive && s.WorkTurn == turn) &&
 		!(automatic && s.CompletedTurn == turn)
 }
