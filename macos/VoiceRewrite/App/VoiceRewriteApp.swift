@@ -150,7 +150,7 @@ struct VoiceRewriteApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("VoiceRewrite", id: "workspace") {
+        Window("VoiceRewrite", id: "workspace") {
             MainView(model: workspace)
                 .frame(minWidth: 670, minHeight: 510)
                 .onAppear {
