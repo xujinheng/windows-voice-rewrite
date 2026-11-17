@@ -1733,7 +1733,7 @@ final class WorkspaceModel: ObservableObject {
                 let step = typedSelectionAfterCapture(
                     tokenValid: resultGeneration.accepts(token),
                     tooLong: SelectionLimit.tooLongMessage(selected: snapshot.originalSelectedText))
-                if step.cancelTask || step.cancelMicrophone {
+                if step.cancelTask {
                     await cancelSelectionCue(step, generation: generation)
                 }
                 presentSelectionCue(step)
