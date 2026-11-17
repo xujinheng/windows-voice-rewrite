@@ -1000,6 +1000,7 @@ final class WorkspaceModel: ObservableObject {
                         succeeded: !outcome.requiresManualResult,
                         status: "", manualTitle: ResultCopy.dictationWriteUnconfirmed, text: text))
                 } catch {
+                    guard self.resultGeneration.accepts(token) else { return }
                     DiagnosticLog.note("stage=dictation_delivery status=failed code=\(insertionDiagnosticCode(error))")
                     self.applyTask(dictationInsertFollowUp(
                         succeeded: false,
@@ -1016,8 +1017,10 @@ final class WorkspaceModel: ObservableObject {
                 guard let self, self.resultGeneration.accepts(token) else { return }
                 do {
                     try await self.interaction.replaceIfCurrent(replacement.snapshot, with: text, generation: replacement.generation)
+                    guard self.resultGeneration.accepts(token) else { return }
                     self.applyTask(selectedWriteFollowUp(succeeded: true, status: "", cardTitle: title, text: text))
                 } catch {
+                    guard self.resultGeneration.accepts(token) else { return }
                     self.applyTask(selectedWriteFollowUp(
                         succeeded: false,
                         status: insertionStatus(error, rewrite: true, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation),

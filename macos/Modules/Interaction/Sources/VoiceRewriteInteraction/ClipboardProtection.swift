@@ -30,7 +30,7 @@ public struct ClipboardContents: Sendable, Equatable {
 /// The board implementation must never discard unrepresentable types silently.
 public protocol ClipboardBoard: Sendable {
     func capture() throws -> ClipboardContents
-    func installTemporaryText(_ text: String, owner: UUID) throws -> Int
+    func installTemporaryText(_ text: String, owner: UUID, expectedChangeCount: Int) throws -> Int
     /// Returns its change count only if our marker is still present.
     func ownedChangeCount(owner: UUID) -> Int?
     func restore(_ previous: ClipboardContents) throws
@@ -62,7 +62,7 @@ public final class ClipboardProtector: @unchecked Sendable {
             let before = try board.capture()
             let id = UUID()
             do {
-                let count = try board.installTemporaryText(text, owner: id)
+                let count = try board.installTemporaryText(text, owner: id, expectedChangeCount: before.changeCount)
                 guard ClipboardOwnership.mayRestore(hasOriginal: true, owned: count, current: board.ownedChangeCount(owner: id)) else {
                     throw ClipboardFailure.ownershipLost
                 }
