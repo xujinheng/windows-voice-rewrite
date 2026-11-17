@@ -15,7 +15,7 @@ final class MeetingReaderTests: XCTestCase {
     }
 
     func testSavedSplitterWeightsRoundTripAndRejectCorruption() {
-        let values = [46.0, 32.0, 34.0, 36.0, 280.0, 28.0].map(CGFloat.init)
+        let values = [46.0, 32.0, 34.0, 36.0, 280.0, 28.0].map { CGFloat($0) }
         XCTAssertEqual(MeetingReaderLayout.decode(MeetingReaderLayout.encode(values)), values)
         XCTAssertEqual(MeetingReaderLayout.decode("1,2,3"), MeetingReaderLayout.defaults)
         XCTAssertEqual(MeetingReaderLayout.decode("-1,1,1,1,1,1"), MeetingReaderLayout.defaults)
