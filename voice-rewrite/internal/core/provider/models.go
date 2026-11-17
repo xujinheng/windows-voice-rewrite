@@ -47,7 +47,7 @@ func ListModels(ctx context.Context, baseURL, apiKey string) ([]string, error) {
 		return nil, fmt.Errorf("无效的模型列表 JSON: %w", err)
 	}
 	seen := make(map[string]struct{})
-	models := make([]string, 0, min(len(response.Data), 100))
+	models := make([]string, 0, len(response.Data))
 	for _, entry := range response.Data {
 		id := strings.TrimSpace(entry.ID)
 		if id == "" || len(id) > coreconfig.MaxModelIDBytes ||
@@ -59,9 +59,6 @@ func ListModels(ctx context.Context, baseURL, apiKey string) ([]string, error) {
 		}
 		seen[id] = struct{}{}
 		models = append(models, id)
-		if len(models) == 100 {
-			break
-		}
 	}
 	return models, nil
 }
