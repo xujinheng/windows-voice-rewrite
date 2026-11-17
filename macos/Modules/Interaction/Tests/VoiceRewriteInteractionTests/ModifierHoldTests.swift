@@ -1,4 +1,5 @@
 import XCTest
+import CoreGraphics
 @testable import VoiceRewriteInteraction
 
 #if os(macOS)
@@ -61,6 +62,27 @@ final class MacModifierHoldTests: XCTestCase {
         XCTAssertTrue(state.activate(.rightControl, token: second))
         XCTAssertEqual(state.clear(), .rightControl)
         XCTAssertNil(state.release(.rightControl))
+    }
+
+    func testLeftAndRightModifierCaptureFromFlagChanges() {
+        // The event's physical keycode identifies the side. Do not ask the
+        // asynchronous CGEventSource cache if the opposite key is down.
+        for key in MacModifierKey.allCases {
+            XCTAssertEqual(
+                MacModifierKey.captureCandidate(keyCode: key.keyCode, flags: key.groupFlag),
+                key, "must learn \(key.rawValue) from its own flagsChanged event")
+            XCTAssertNil(MacModifierKey.captureCandidate(keyCode: key.keyCode, flags: []))
+            XCTAssertNil(MacModifierKey.captureCandidate(
+                keyCode: key.keyCode, flags: key.groupFlag.union(.maskShift)))
+            XCTAssertNil(MacModifierKey.captureCandidate(
+                keyCode: key.keyCode, flags: key.groupFlag.union(
+                    key == .leftCommand || key == .rightCommand ? .maskAlternate : .maskCommand)))
+        }
+        XCTAssertNil(MacModifierKey.captureCandidate(keyCode: 0, flags: .maskControl))
+        XCTAssertNil(MacModifierKey.captureCandidate(keyCode: 56, flags: .maskShift))
+        XCTAssertEqual(MacModifierKey.captureCandidate(keyCode: 54, flags: .maskCommand), .rightCommand)
+        XCTAssertEqual(MacModifierKey.captureCandidate(keyCode: 61, flags: .maskAlternate), .rightOption)
+        XCTAssertEqual(MacModifierKey.captureCandidate(keyCode: 62, flags: .maskControl), .rightControl)
     }
 
     func testHIDUsageCodesAndKeyboardIdentityFailClosed() {
