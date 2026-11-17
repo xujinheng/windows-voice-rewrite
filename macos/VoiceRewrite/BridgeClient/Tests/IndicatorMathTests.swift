@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import XCTest
 @testable import VoiceRewrite
 
@@ -71,4 +73,42 @@ final class IndicatorMathTests: XCTestCase {
         XCTAssertEqual(IndicatorMath.durationText(started: started, now: started.addingTimeInterval(61)), "01:01")
         XCTAssertEqual(IndicatorMath.durationText(started: started, now: started.addingTimeInterval(-5)), "00:00")
     }
+    @MainActor
+    func testIndicatorSnapshotsCoverPreviewRecordingProcessingAndTerminalStates() {
+        let cases: [(String, IndicatorPhase, Bool)] = [
+            ("pending-rewrite", .recording, true),
+            ("dictation-recording", .recording, false),
+            ("processing", .processing, false),
+            ("selection", .selection, false),
+            ("success-event-sent", .success, false),
+            ("error", .error, false),
+            ("fallback-copy", .fallback, false),
+        ]
+        for (name, phase, pending) in cases {
+            let frame = IndicatorFrame()
+            let start = Date(timeIntervalSince1970: 100)
+            frame.snapshot = IndicatorSnapshot(
+                visible: true, pending: pending, phase: phase,
+                mode: pending ? "改写" : "听写", started: start, changed: start)
+            frame.now = start.addingTimeInterval(0.4)
+            frame.level = 0.6
+            frame.tick = 11
+            let width = CGFloat(IndicatorMath.width(phase))
+            let view = NSHostingView(rootView: RecordingIndicatorView(frame: frame, onCancel: {}))
+            view.frame = NSRect(x: 0, y: 0, width: width, height: CGFloat(IndicatorMath.height))
+            view.layoutSubtreeIfNeeded()
+            XCTAssertEqual(view.frame.width, width)
+            XCTAssertEqual(view.frame.height, 50)
+            if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                let image = NSImage(size: view.bounds.size)
+                image.addRepresentation(bitmap)
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "macOS-pill-" + name
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
 }

@@ -132,6 +132,7 @@ final class RecordingIndicatorController {
 
 struct RecordingIndicatorView: View {
     @ObservedObject var frame: IndicatorFrame
+    @State private var closeHovered = false
     let onCancel: () -> Void
 
     var body: some View {
@@ -139,6 +140,15 @@ struct RecordingIndicatorView: View {
         let width = CGFloat(IndicatorMath.width(snapshot.phase))
         let accent = accentColor(snapshot)
         ZStack(alignment: .topLeading) {
+            // Same layered 3/8 and 4/7 shadow offsets as the Win32 pill.
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.black.opacity(17.0 / 255))
+                .frame(width: width - 6, height: 40)
+                .position(x: width / 2, y: 28)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.black.opacity(34.0 / 255))
+                .frame(width: width - 8, height: 40)
+                .position(x: width / 2, y: 27)
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(Color(indicator: IndicatorMath.pill))
                 .padding(.horizontal, 5)
@@ -172,13 +182,21 @@ struct RecordingIndicatorView: View {
                         y: 25)
             }
             Button(action: onCancel) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color(indicator: IndicatorMath.closeGlyph))
-                    .frame(width: CGFloat(IndicatorMath.cancelWidth), height: CGFloat(IndicatorMath.height))
-                    .contentShape(Rectangle())
+                ZStack {
+                    if closeHovered {
+                        Circle()
+                            .fill(Color(indicator: IndicatorMath.closeHover))
+                            .frame(width: 28, height: 28)
+                    }
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color(indicator: IndicatorMath.closeGlyph))
+                }
+                .frame(width: CGFloat(IndicatorMath.cancelWidth), height: CGFloat(IndicatorMath.height))
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .onHover { closeHovered = $0 }
             .position(x: width - CGFloat(IndicatorMath.cancelWidth) / 2, y: CGFloat(IndicatorMath.height) / 2)
             .accessibilityLabel("取消")
         }

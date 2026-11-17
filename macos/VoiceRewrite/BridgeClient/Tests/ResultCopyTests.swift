@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import XCTest
 @testable import VoiceRewrite
 
@@ -36,4 +38,63 @@ final class ResultCopyTests: XCTestCase {
             FailureCopy.status(prefix: "ASR 请求失败：", message: ResultCopy.noSpeech + " sk-secret"),
             "ASR 请求失败：" + ResultCopy.noSpeech + " sk-secret")
     }
+    @MainActor
+    func testResultCardCopyIsLiveAndClosedCardIgnoresLateUpdates() {
+        let card = ResultCardActionSession(text: "改写正文")
+        XCTAssertEqual(card.text, "改写正文")
+        XCTAssertEqual(card.note, "")
+        card.copyCompleted(true)
+        XCTAssertEqual(card.note, ResultCopy.copySucceeded)
+        card.copyCompleted(false)
+        XCTAssertEqual(card.note, ResultCopy.copyFailed)
+        card.close()
+        card.copyCompleted(true)
+        XCTAssertEqual(card.note, ResultCopy.copyFailed)
+        XCTAssertTrue(card.isClosed)
+    }
+
+    @MainActor
+    func testResultCardLightDarkSnapshotsAndCopyOnlyControls() {
+        let light = ResultCardPalette(dark: false)
+        let dark = ResultCardPalette(dark: true)
+        let lightColor = NSColor(light.background).usingColorSpace(.deviceRGB)
+        let darkColor = NSColor(dark.background).usingColorSpace(.deviceRGB)
+        XCTAssertNotNil(lightColor)
+        XCTAssertNotNil(darkColor)
+        XCTAssertGreaterThan(lightColor?.redComponent ?? 0, darkColor?.redComponent ?? 1)
+        let card = ResultCardActionSession(text: String(repeating: "完整结果和滚动正文。", count: 90))
+        for darkMode in [false, true] {
+            let view = ResultCardView(
+                title: "改写预览", session: card,
+                width: ResultCardMetrics.width, height: 500,
+                onCopy: {}, onClose: {})
+                .environment(\.colorScheme, darkMode ? ColorScheme.dark : .light)
+            let hosted = NSHostingView(rootView: view)
+            hosted.frame = NSRect(x: 0, y: 0, width: 476, height: 500)
+            hosted.layoutSubtreeIfNeeded()
+            XCTAssertEqual(hosted.frame.width, 476)
+            XCTAssertEqual(hosted.frame.height, 500)
+            if let bitmap = hosted.bitmapImageRepForCachingDisplay(in: hosted.bounds) {
+                hosted.cacheDisplay(in: hosted.bounds, to: bitmap)
+                let image = NSImage(size: hosted.bounds.size)
+                image.addRepresentation(bitmap)
+                let attachment = XCTAttachment(image: image)
+                attachment.name = darkMode ? "macOS-result-card-dark-copy" : "macOS-result-card-light-copy"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
+    func testCopyButtonPreservesSharedPopupHitArea() {
+        let width: Int32 = 476
+        let height: Int32 = 258
+        let copy = ResultCardChrome.copyButton(width: width, height: height)
+        let window = ResultHitRect(left: 0, top: 0, right: width, bottom: height)
+        let editor = ResultCardChrome.editor(width: width, height: height).hit
+        XCTAssertFalse(ResultCardMetrics.clickDismisses(
+            x: copy.x + 4, y: copy.y + 4, window: window,
+            editor: editor, buttons: [copy.hit]))
+    }
+
 }
