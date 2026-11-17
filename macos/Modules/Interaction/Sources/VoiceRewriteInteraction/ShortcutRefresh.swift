@@ -2,7 +2,7 @@ import Foundation
 
 /// How far a shortcut refresh proceeds.
 /// A stale token or a failed parse stops the chain.
-/// Registration waits until dictation, rewrite, and the text command have all parsed.
+/// Registration waits until both voice shortcuts have parsed.
 public enum ShortcutRefresh: Equatable, Sendable {
     case stop
     case parseNext
