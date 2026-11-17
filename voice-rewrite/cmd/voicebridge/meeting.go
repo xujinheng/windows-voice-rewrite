@@ -56,22 +56,22 @@ type bridgeMeeting struct {
 	config    coreconfig.Config
 	scheduler *meetingcore.Scheduler
 
-	mu               sync.Mutex
-	captions         []meetingcore.Caption
-	prior            []string
-	status           string
-	level            int
-	lastFinal        uint64
-	dropped          int
-	asrFirstMS       int64
-	asrDoneMS        int64
+	mu                 sync.Mutex
+	captions           []meetingcore.Caption
+	prior              []string
+	status             string
+	level              int
+	lastFinal          uint64
+	dropped            int
+	asrFirstMS         int64
+	asrDoneMS          int64
 	translationFirstMS int64
 	translationDoneMS  int64
-	replies          meetingcore.ReplyState
-	view             meetingcore.HUDFlags
-	replyStatus      string
-	expression       meetingcore.Line
-	expressionStatus string
+	replies            meetingcore.ReplyState
+	view               meetingcore.HUDFlags
+	replyStatus        string
+	expression         meetingcore.Line
+	expressionStatus   string
 }
 
 func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
@@ -483,11 +483,11 @@ func (m *bridgeMeeting) snapshot() map[string]any {
 	return map[string]any{
 		"capture_paused": paused, "epoch": epoch,
 		"metrics": map[string]any{
-			"pending": m.pipeline.Pending() + m.scheduler.Pending(),
-			"dropped": m.dropped,
+			"pending":      m.pipeline.Pending() + m.scheduler.Pending(),
+			"dropped":      m.dropped,
 			"asr_first_ms": m.asrFirstMS, "asr_done_ms": m.asrDoneMS,
 			"translation_first_ms": m.translationFirstMS,
-			"translation_done_ms": m.translationDoneMS,
+			"translation_done_ms":  m.translationDoneMS,
 		},
 		"replies": lines, "reply_source": m.replies.Displayed.Source,
 		"reply_tip":         m.replies.Displayed.Tip,
