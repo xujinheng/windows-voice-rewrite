@@ -68,6 +68,19 @@ final class NativeAudioConverterTests: XCTestCase {
         XCTAssertTrue(MicrophoneRecorder.selectionUnavailable("mic-a", in: []))
     }
 
+    func testMicrophoneHeartbeatReportsAbsentCallbacksNotAcousticSilence() throws {
+        XCTAssertFalse(CapturePipeline.isStalled(lastBufferAt: 100, now: 107.9))
+        XCTAssertTrue(CapturePipeline.isStalled(lastBufferAt: 100, now: 108))
+        XCTAssertFalse(CapturePipeline.isStalled(lastBufferAt: 110, now: 100))
+        let fmt = format(48_000, channels: 1)
+        let processor = try CapturePipeline(id: UUID(), inputFormat: fmt) { _, _ in }
+        let silence = makeBuffer(format: fmt, frames: 1024, value: 0)
+        processor.enqueue(silence)
+        XCTAssertFalse(processor.hasStalled(),
+                       "Silent samples still prove that the CoreAudio callback is alive")
+        processor.cancel()
+    }
+
     func testStereoMixDownProducesAudio() throws {
         let fmt = format(48_000, channels: 2)
         let converter = try NativeAudioConverter(inputFormat: fmt)
