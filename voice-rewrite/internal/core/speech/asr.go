@@ -82,13 +82,19 @@ func EncodeWAV(pcm []byte) ([]byte, error) {
 
 // Transcribe sends the exact multipart request expected by Handy-compatible ASR.
 func Transcribe(ctx context.Context, cfg coreconfig.Config, pcm []byte) (string, error) {
+	return TranscribeWithPrompt(ctx, cfg, pcm, "")
+}
+
+// TranscribeWithPrompt is for Meeting-only vocabulary hints. Ordinary
+// dictation continues to send no Meeting profile to its ASR endpoint.
+func TranscribeWithPrompt(ctx context.Context, cfg coreconfig.Config, pcm []byte, prompt string) (string, error) {
 	chunks := audio.SplitPCMForASR(pcm)
 	results := make([]string, 0, len(chunks))
 	for i, chunk := range chunks {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		part, err := transcribeChunk(ctx, cfg, chunk)
+		part, err := transcribeChunk(ctx, cfg, chunk, prompt)
 		if err != nil {
 			if len(chunks) > 1 {
 				return "", fmt.Errorf("语音第 %d/%d 段识别失败: %w", i+1, len(chunks), err)
@@ -103,6 +109,10 @@ func Transcribe(ctx context.Context, cfg coreconfig.Config, pcm []byte) (string,
 // transcribeChunk is one HTTP request; the session epoch's cancellation propagates
 // through the request context to stop outstanding network I/O immediately.
 func NewASRRequest(ctx context.Context, cfg coreconfig.Config, pcm []byte) (*http.Request, error) {
+	return newASRRequestWithPrompt(ctx, cfg, pcm, "")
+}
+
+func newASRRequestWithPrompt(ctx context.Context, cfg coreconfig.Config, pcm []byte, prompt string) (*http.Request, error) {
 	wav, err := EncodeWAV(pcm)
 	if err != nil {
 		return nil, err
@@ -122,6 +132,9 @@ func NewASRRequest(ctx context.Context, cfg coreconfig.Config, pcm []byte) (*htt
 	if e = w.WriteField("response_format", "json"); e != nil {
 		return nil, e
 	}
+	if prompt != "" {
+		if e = w.WriteField("prompt", prompt); e != nil { return nil, e }
+	}
 	if e = w.Close(); e != nil {
 		return nil, e
 	}
@@ -136,8 +149,8 @@ func NewASRRequest(ctx context.Context, cfg coreconfig.Config, pcm []byte) (*htt
 	return req, nil
 }
 
-func transcribeChunk(ctx context.Context, cfg coreconfig.Config, pcm []byte) (string, error) {
-	req, err := NewASRRequest(ctx, cfg, pcm)
+func transcribeChunk(ctx context.Context, cfg coreconfig.Config, pcm []byte, prompt string) (string, error) {
+	req, err := newASRRequestWithPrompt(ctx, cfg, pcm, prompt)
 	if err != nil {
 		return "", err
 	}
