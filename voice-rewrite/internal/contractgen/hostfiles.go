@@ -548,6 +548,7 @@ func settingsMaps() (bindings, actions, status map[string]string) {
 		"text_model":         "model.settings.textModel",
 		"llm_api_key":        "model.llmKeyInput",
 		"max_record_seconds": "model.settings.maxRecordSeconds",
+		"microphone":        "model.settings.microphoneUID",
 		"rewrite_shortcut":   "model.settings.rewriteShortcut",
 		"dictation_shortcut": "model.settings.dictationShortcut",
 		"text_edit_shortcut": "model.settings.textEditShortcut",
@@ -608,6 +609,7 @@ func emitSettings() (string, error) {
 			b.WriteString("        .onChange(of: " + binding + ") { _, _ in model.markConnectionProbeStale(." + control.StaleProbe + ") }\n")
 		}
 	}
+	b.WriteString("        .onAppear { model.refreshMicrophoneDevices() }\n")
 	b.WriteString("        .formStyle(.grouped)\n    }\n}\n")
 	return b.String(), nil
 }
@@ -625,6 +627,29 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 			line += renderModelDiscovery(control.ID)
 		}
 		return line, nil
+	case contract.Choice:
+		if control.ID != "microphone" {
+			return "", fmt.Errorf("choice %s has no renderer", control.ID)
+		}
+		if _, err := requiredBinding(control, bindings); err != nil {
+			return "", err
+		}
+		return `                HStack {
+                    Picker("麦克风输入设备", selection: $model.settings.microphoneUID) {
+                        Text("系统默认麦克风").tag("")
+                        ForEach(model.microphoneDevices) { device in
+                            Text(device.name).tag(device.id)
+                        }
+                    }
+                    .accessibilityIdentifier("microphone_device")
+                    Button("刷新设备") { model.refreshMicrophoneDevices() }
+                }
+                if !model.settings.microphoneUID.isEmpty &&
+                   !model.microphoneDevices.contains(where: { $0.id == model.settings.microphoneUID }) {
+                    Text("已保存的麦克风不在当前设备列表中，录音会提示设备不可用。")
+                        .font(.footnote).foregroundStyle(.orange)
+                }
+`, nil
 	case contract.Secret:
 		binding, err := requiredBinding(control, bindings)
 		if err != nil {

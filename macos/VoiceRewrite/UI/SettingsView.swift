@@ -70,6 +70,18 @@ struct SettingsView: View {
                     .accessibilityIdentifier("probe_llm_status")
             }
             Section("快捷键与设备") {
+                Stepper("最长录音：\(model.settings.maxRecordSeconds) 秒",
+                        value: $model.settings.maxRecordSeconds, in: MacSettings.recordSeconds)
+                    .accessibilityIdentifier("max_record_seconds")
+                Text("录音数据为 16 kHz 单声道 PCM16，最长 180 秒。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("record_note")
+                TextField("语音指令", text: $model.settings.rewriteShortcut)
+                    .accessibilityIdentifier("rewrite_shortcut")
+                TextField("听写快捷键", text: $model.settings.dictationShortcut)
+                    .accessibilityIdentifier("dictation_shortcut")
+                TextField("文字指令", text: $model.settings.textEditShortcut)
+                    .accessibilityIdentifier("text_edit_shortcut")
                 HStack {
                     Picker("麦克风输入设备", selection: $model.settings.microphoneUID) {
                         Text("系统默认麦克风").tag("")
@@ -85,18 +97,6 @@ struct SettingsView: View {
                     Text("已保存的麦克风不在当前设备列表中，录音会提示设备不可用。")
                         .font(.footnote).foregroundStyle(.orange)
                 }
-                Stepper("最长录音：\(model.settings.maxRecordSeconds) 秒",
-                        value: $model.settings.maxRecordSeconds, in: MacSettings.recordSeconds)
-                    .accessibilityIdentifier("max_record_seconds")
-                Text("录音数据为 16 kHz 单声道 PCM16，最长 180 秒。")
-                    .font(.footnote).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("record_note")
-                TextField("语音指令", text: $model.settings.rewriteShortcut)
-                    .accessibilityIdentifier("rewrite_shortcut")
-                TextField("听写快捷键", text: $model.settings.dictationShortcut)
-                    .accessibilityIdentifier("dictation_shortcut")
-                TextField("文字指令", text: $model.settings.textEditShortcut)
-                    .accessibilityIdentifier("text_edit_shortcut")
                 Text("与 Windows 使用同一套写法，例如 Ctrl+Alt+R、F8 或 Mouse4。Alt 在 macOS 上是 Option。未配置鼠标绑定时，Mouse4 默认听写、Mouse5 默认改写；显式配置鼠标键时仅拦截已分配的侧键。F21–F24 在 macOS 上不可用，三个功能不能绑定同一个按键。")
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("input_note_macos")
