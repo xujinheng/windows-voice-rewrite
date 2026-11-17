@@ -144,6 +144,7 @@ final class WorkspaceModel: ObservableObject {
     private var activeVoiceSelection: (snapshot: SelectionSnapshot, generation: UInt64)?
     private var hotKeyDriver: CarbonHotKeyDriver?
     private var keyboardReleasedDuringStart: HotKeyShortcut?
+    private var shortcutCaptureActive = false
     private var hotKeys: HotKeyRegistry?
     private var sideMouse: SideMouseButtonDriver?
 
@@ -381,7 +382,7 @@ final class WorkspaceModel: ObservableObject {
                 hotKeys = registry
             }
             activeShortcutPlan = next
-            sideMouse?.setBindings(next.sideButtons)
+            sideMouse?.setBindings(shortcutCaptureBindings())
             interactionStatus = label
             return true
         } catch {
@@ -396,14 +397,14 @@ final class WorkspaceModel: ObservableObject {
                 hotKeyDriver = restored.0
                 hotKeys = restored.1
                 activeShortcutPlan = previous
-                sideMouse?.setBindings(previous.sideButtons)
+                sideMouse?.setBindings(shortcutCaptureBindings())
             }
             return
         }
         do {
             try registry.replace(with: previous?.keyboard ?? [])
             activeShortcutPlan = previous
-            sideMouse?.setBindings(previous?.sideButtons ?? SideMouseBindings())
+            sideMouse?.setBindings(shortcutCaptureBindings())
         } catch {
             interactionStatus = "无法恢复原快捷键：\(error.localizedDescription)"
         }
@@ -456,6 +457,20 @@ final class WorkspaceModel: ObservableObject {
         return (driver, registry)
     }
 
+    /// During settings key learning, let auxiliary mouse clicks reach the
+    /// foreground AppKit settings window instead of starting voice capture.
+    func setShortcutCaptureActive(_ active: Bool) {
+        guard shortcutCaptureActive != active else { return }
+        shortcutCaptureActive = active
+        sideMouse?.setBindings(shortcutCaptureBindings())
+    }
+
+    private func shortcutCaptureBindings() -> SideMouseBindings {
+        shortcutCaptureActive
+            ? SideMouseBindings(dictationButton: nil, rewriteButton: nil)
+            : (activeShortcutPlan?.sideButtons ?? SideMouseBindings())
+    }
+
     func refreshSideMouse() {
         accessibilityAuthorized = InteractionSession.accessibilityPermissionGranted()
         guard accessibilityAuthorized else {
@@ -466,7 +481,7 @@ final class WorkspaceModel: ObservableObject {
         }
         let isFreshStart = sideMouse == nil
         let driver = sideMouse ?? SideMouseButtonDriver(
-            bindings: activeShortcutPlan?.sideButtons ?? SideMouseBindings(),
+            bindings: shortcutCaptureBindings(),
             onPress: { [weak self] action, pid in
                 self?.previewIndicator(action)
                 self?.beginSideDictationPreflight(action: action, targetPID: pid)
@@ -490,7 +505,7 @@ final class WorkspaceModel: ObservableObject {
             }
         )
         do {
-            driver.setBindings(activeShortcutPlan?.sideButtons ?? SideMouseBindings())
+            driver.setBindings(shortcutCaptureBindings())
             try driver.start()
             sideMouse = driver
             driver.setVoicePaused(voicePaused)
