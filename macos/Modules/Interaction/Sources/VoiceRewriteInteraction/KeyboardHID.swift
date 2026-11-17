@@ -99,14 +99,14 @@ public final class MacKeyboardHIDMonitor {
     private var learn: (@MainActor (MacModifierKey) -> Void)?
     private let threshold: TimeInterval
     private let onDevices: @MainActor ([MacKeyboardDevice]) -> Void
-    private let onPress: @MainActor (MacModifierKey, Int32?) -> Void
-    private let onRelease: @MainActor (MacModifierKey) -> Void
+    private let onPress: @MainActor (MacModifierKey, String, Int32?) -> Void
+    private let onRelease: @MainActor (MacModifierKey, String) -> Void
     private let onCancel: @MainActor () -> Void
 
     public init(threshold: TimeInterval = SideHold.threshold,
                 onDevices: @escaping @MainActor ([MacKeyboardDevice]) -> Void,
-                onPress: @escaping @MainActor (MacModifierKey, Int32?) -> Void,
-                onRelease: @escaping @MainActor (MacModifierKey) -> Void,
+                onPress: @escaping @MainActor (MacModifierKey, String, Int32?) -> Void,
+                onRelease: @escaping @MainActor (MacModifierKey, String) -> Void,
                 onCancel: @escaping @MainActor () -> Void) {
         self.threshold = threshold
         self.onDevices = onDevices
@@ -135,7 +135,7 @@ public final class MacKeyboardHIDMonitor {
         IOHIDManagerRegisterDeviceMatchingCallback(newManager, hidDeviceAdded, ptr)
         IOHIDManagerRegisterDeviceRemovalCallback(newManager, hidDeviceRemoved, ptr)
         IOHIDManagerRegisterInputValueCallback(newManager, hidInputChanged, ptr)
-        IOHIDManagerScheduleWithRunLoop(newManager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
+        IOHIDManagerScheduleWithRunLoop(newManager, CFRunLoopGetMain(), kCFRunLoopCommonModes)
         let result = IOHIDManagerOpen(newManager, 0)
         guard result == kIOReturnSuccess else {
             IOHIDManagerUnscheduleFromRunLoop(newManager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
@@ -251,7 +251,7 @@ public final class MacKeyboardHIDMonitor {
             return
         }
         if !down, heldDevice == descriptor.id, state.held == key {
-            if let released = state.release(key) { onRelease(released) }
+            if let released = state.release(key) { onRelease(released, descriptor.id) }
             heldDevice = nil
             return
         }
@@ -270,7 +270,7 @@ public final class MacKeyboardHIDMonitor {
             guard let self, !self.paused, !self.suspended,
                   self.heldDevice == descriptor.id, self.pressed.count == 1,
                   self.state.activate(key, token: token) else { return }
-            self.onPress(key, target)
+            self.onPress(key, descriptor.id, target)
         }
     }
 
