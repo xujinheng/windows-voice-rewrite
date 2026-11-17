@@ -245,7 +245,7 @@ final class BridgeClientTests: XCTestCase {
     func testClosedStdoutWhileHelperStaysAliveDoesNotStrandCallbacks() throws {
         let script = FileManager.default.temporaryDirectory
             .appendingPathComponent("voicebridge-eof-\(UUID().uuidString).sh")
-        try Data("#!/bin/sh\\nexec 1>&-\\nsleep 10\\n".utf8).write(to: script)
+        try Data("#!/bin/sh\nexec 1>&-\nsleep 10\n".utf8).write(to: script)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
         defer { try? FileManager.default.removeItem(at: script) }
 
