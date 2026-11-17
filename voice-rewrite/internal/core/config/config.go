@@ -38,16 +38,16 @@ const (
 	RecordSecondsMax        = 180
 	DefaultRecordSeconds    = 60
 	DefaultMaxSelectedRunes = 12000
-	MaxSystemPromptBytes = 16384
-	MinResponseTokens = 128
-	MaxResponseTokens = 4096
-	MaxSelectedRunes = 100000
-	MinCopyAttempts = 1
-	MaxCopyAttempts = 5
-	DefaultCopyAttempts = 2
-	MinCopyTimeoutMS = 500
-	MaxCopyTimeoutMS = 5000
-	DefaultCopyTimeoutMS = 750
+	MaxSystemPromptBytes    = 16384
+	MinResponseTokens       = 128
+	MaxResponseTokens       = 4096
+	MaxSelectedRunes        = 100000
+	MinCopyAttempts         = 1
+	MaxCopyAttempts         = 5
+	DefaultCopyAttempts     = 2
+	MinCopyTimeoutMS        = 500
+	MaxCopyTimeoutMS        = 5000
+	DefaultCopyTimeoutMS    = 750
 	// MeetingASRMultipart and MeetingASRLlamaPrefix are the only persisted
 	// meeting recognizer names. MeetingASRModes is the settings list order.
 	MeetingASRMultipart   = "multipart"
