@@ -131,13 +131,13 @@ public final class MacKeyboardHIDMonitor {
         let newManager = IOHIDManagerCreate(kCFAllocatorDefault, 0)
         // Match keyboard collections (HID Generic Desktop / Keyboard).
         IOHIDManagerSetDeviceMatching(newManager, [
-            "PrimaryUsagePage": 1, "PrimaryUsage": 6
+            "DeviceUsagePage": 1, "DeviceUsage": 6
         ] as CFDictionary)
         let ptr = Unmanaged.passUnretained(self).toOpaque()
         IOHIDManagerRegisterDeviceMatchingCallback(newManager, hidDeviceAdded, ptr)
         IOHIDManagerRegisterDeviceRemovalCallback(newManager, hidDeviceRemoved, ptr)
         IOHIDManagerRegisterInputValueCallback(newManager, hidInputChanged, ptr)
-        IOHIDManagerScheduleWithRunLoop(newManager, CFRunLoopGetMain(), kCFRunLoopCommonModes)
+        IOHIDManagerScheduleWithRunLoop(newManager, CFRunLoopGetMain(), kCFRunLoopCommonModes!)
         let result = IOHIDManagerOpen(newManager, 0)
         guard result == kIOReturnSuccess else {
             IOHIDManagerUnscheduleFromRunLoop(newManager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
@@ -229,8 +229,8 @@ public final class MacKeyboardHIDMonitor {
     }
 
     fileprivate func handle(_ value: IOHIDValue) {
-        guard let device = IOHIDElementGetDevice(IOHIDValueGetElement(value)),
-              let descriptor = records[address(device)]?.descriptor else { return }
+        let device = IOHIDElementGetDevice(IOHIDValueGetElement(value))
+        guard let descriptor = records[address(device)]?.descriptor else { return }
         let element = IOHIDValueGetElement(value)
         guard IOHIDElementGetUsagePage(element) == 0x07 else { return }
         let usage = Int(IOHIDElementGetUsage(element))
