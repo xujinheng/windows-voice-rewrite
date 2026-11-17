@@ -46,17 +46,21 @@ public final class MacDictationDelivery {
 
     public init() {}
 
-    private func focusedElement(in pid: pid_t) -> AXUIElement? {
+    private nonisolated func focusedElement(in pid: pid_t) -> AXUIElement? {
         guard AXIsProcessTrusted() else { return nil }
         let application = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(application, 0.25)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(application, kAXFocusedUIElementAttribute as CFString, &value) == .success,
               let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        return value as! AXUIElement
+        let focused = value as! AXUIElement
+        // The other app is a separate process and can stop answering AX.
+        // The application timeout does not necessarily propagate to elements.
+        AXUIElementSetMessagingTimeout(focused, 0.25)
+        return focused
     }
 
-    private func foregroundWindowID(for pid: pid_t) -> CGWindowID? {
+    private nonisolated func foregroundWindowID(for pid: pid_t) -> CGWindowID? {
         guard let windows = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
             return nil
@@ -70,7 +74,7 @@ public final class MacDictationDelivery {
         return nil
     }
 
-    private func secureField(_ focused: AXUIElement) -> Bool {
+    private nonisolated func secureField(_ focused: AXUIElement) -> Bool {
         for key in [kAXRoleAttribute, kAXSubroleAttribute] {
             var value: CFTypeRef?
             if AXUIElementCopyAttributeValue(focused, key as CFString, &value) == .success,
@@ -88,10 +92,30 @@ public final class MacDictationDelivery {
     }
 
     public func capture(processID: Int32) throws -> MacDictationTarget {
+        try captureTarget(processID: processID,
+            foregroundPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            secureInput: IsSecureEventInputEnabled())
+    }
+
+    /// Capture remote AX metadata on a worker. The foreground identity and
+    /// secure-input flag are sampled on the main actor *before* the hop; an
+    /// unrelated app gaining focus in between is rejected on delivery.
+    public func captureAsync(processID: Int32) async throws -> MacDictationTarget {
+        let foreground = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let secure = IsSecureEventInputEnabled()
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            try captureTarget(processID: processID,
+                foregroundPID: foreground, secureInput: secure)
+        }.value
+    }
+
+    private nonisolated func captureTarget(
+        processID: Int32, foregroundPID: Int32?, secureInput: Bool
+    ) throws -> MacDictationTarget {
         guard DictationTargetPolicy.maySend(
             capturedPID: processID,
-            foregroundPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
-            secureInput: IsSecureEventInputEnabled()) else {
+            foregroundPID: foregroundPID,
+            secureInput: secureInput) else {
             throw InteractionFailure.applicationChanged
         }
         let focused = focusedElement(in: processID)
