@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"voicerewrite/internal/contract"
-	"voicerewrite/internal/core/settingsform"
 	coreconfig "voicerewrite/internal/core/config"
+	"voicerewrite/internal/core/settingsform"
 )
 
 func emitDesktop(core string) (string, error) {
