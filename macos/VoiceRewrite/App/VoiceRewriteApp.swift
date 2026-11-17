@@ -64,8 +64,14 @@ private struct MenuBarControlCenter: View {
             }
             .disabled(model.meetingSources.isEmpty)
         }
+        if !model.meetingActive && !model.meetingStarting {
+            Button("查看会议模式演示（离线数据）") {
+                model.startMeetingDemo()
+                MeetingReaderWindowController.shared.open(model: model)
+            }
+        }
         if model.meetingActive || model.meetingStarting {
-            Button("停止会议采集") { model.stopMeeting() }
+            Button(model.meetingDemoActive ? "退出离线演示" : "停止会议采集") { model.stopMeeting() }
         }
         Divider()
         Button(model.voicePaused ? "恢复普通语音" : "暂停普通语音") {
@@ -159,7 +165,9 @@ struct VoiceRewriteApp: App {
                         workspace?.refreshSideMouse()
                         workspace?.refreshMicrophonePermission()
                     }
-                    lifecycle.launchWorkspaceOnce { workspace.launch() }
+                    lifecycle.launchWorkspaceOnce {
+                        workspace.launch(demo: CommandLine.arguments.contains("--meeting-demo"))
+                    }
                 }
         }
         .defaultSize(width: 840, height: 600)
