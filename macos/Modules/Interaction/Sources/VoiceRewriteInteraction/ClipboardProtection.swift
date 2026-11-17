@@ -87,32 +87,33 @@ public final class ClipboardProtector: @unchecked Sendable {
         }
     }
 
-    /// Restore after the target has read the pasteboard and further reads have
-    /// gone quiet. If no read is observed, leave the text available until the
-    /// bounded timeout; the paste keystroke may still be queued.
-    public func restoreAfterPaste(_ id: UUID) {
-        let started = ProcessInfo.processInfo.systemUptime
-        pollRestore(id, started: started)
+    /// The timestamp is taken immediately before posting the key event.
+    /// Using an after-post timestamp loses a fast consumer's first and only
+    /// promised-data callback. Another clipboard reader can also fetch early,
+    /// so never restore before the minimum visibility interval.
+    public func restoreAfterPaste(_ id: UUID, postingStartedAt: TimeInterval) {
+        pollRestore(id, postingStartedAt: postingStartedAt)
     }
 
-    private func pollRestore(_ id: UUID, started: TimeInterval) {
+    private func pollRestore(_ id: UUID, postingStartedAt: TimeInterval) {
         let now = ProcessInfo.processInfo.systemUptime
         let status = synchronized { () -> (Bool, TimeInterval?) in
             guard let held = lease, held.id == id else { return (false, nil) }
             return (true, (board as? any ClipboardReadReceiptBoard)?.lastTextReadAt())
         }
         guard status.0 else { return }
-        let quiet = Double(PasteTiming.quietMilliseconds) / 1000
-        let timeout = Double(PasteTiming.maxMilliseconds) / 1000
-        // Ignore eager clipboard-manager reads that precede the paste event.
-        let postPasteRead = status.1 != nil && status.1! >= started
-        if (postPasteRead && now - status.1! >= quiet) || now - started >= timeout {
+        let receipt = status.1.flatMap { $0 >= postingStartedAt ? now - $0 : nil }
+        if PasteTiming.restoreReady(
+            elapsed: now - postingStartedAt,
+            sinceLastRead: receipt,
+            hasRead: receipt != nil) {
             try? finish(id)
             return
         }
-        DispatchQueue.global(qos: .utility).asyncAfter(
+        // NSPasteboard is AppKit-owned; polling and restoration run on main.
+        DispatchQueue.main.asyncAfter(
             deadline: .now() + Double(PasteTiming.pollMilliseconds) / 1000) { [self] in
-            pollRestore(id, started: started)
+            pollRestore(id, postingStartedAt: postingStartedAt)
         }
     }
 
