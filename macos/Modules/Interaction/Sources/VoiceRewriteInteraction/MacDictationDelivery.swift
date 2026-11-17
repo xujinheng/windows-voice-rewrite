@@ -146,7 +146,7 @@ public final class MacDictationDelivery {
 
     /// Best-effort readback evidence only. AX support must never become a
     /// prerequisite for ordinary dictation into Chrome, Electron or TextEdit.
-    private func expectedTextAfterPaste(_ text: String, target: MacDictationTarget) -> String? {
+    private nonisolated func expectedTextAfterPaste(_ text: String, target: MacDictationTarget) -> String? {
         guard let element = target.focusedElement else { return nil }
         AXUIElementSetMessagingTimeout(element, 0.25)
         var rawValue: CFTypeRef?
@@ -175,7 +175,7 @@ public final class MacDictationDelivery {
         return expected
     }
 
-    private func matchesReadback(_ expected: String, target: MacDictationTarget) -> Bool {
+    private nonisolated func matchesReadback(_ expected: String, target: MacDictationTarget) -> Bool {
         guard let original = target.focusedElement,
               DictationTargetPolicy.maySend(
                 capturedPID: target.processID,
@@ -193,6 +193,15 @@ public final class MacDictationDelivery {
         return TextWriteVerification.confirms(actual: actual, expected: expected)
     }
 
+    /// Optional AX text/readback is not a paste permission gate. Move remote
+    /// app attribute queries off the UI actor; a frozen editor must not also
+    /// freeze the VoiceRewrite indicator or block the user from cancelling.
+    private func expectedReadbackAsync(_ text: String, target: MacDictationTarget) async -> String? {
+        await Task.detached(priority: .utility) { [self] in
+            expectedTextAfterPaste(text, target: target)
+        }.value
+    }
+
     /// A posted event is never itself a success receipt. Check an exact AXValue
     /// when exposed by the same focused control, without making it a paste gate.
     private func outcomeAfterPosting(expected: String?, target: MacDictationTarget,
@@ -200,7 +209,10 @@ public final class MacDictationDelivery {
         guard let expected else { return .sentUnverified }
         for attempt in 0..<3 {
             guard stillValid(), !Task<Never, Never>.isCancelled else { return .sentUnverified }
-            if matchesReadback(expected, target: target) { return .confirmed }
+            let confirmed = await Task.detached(priority: .utility) { [self] in
+                matchesReadback(expected, target: target)
+            }.value
+            if confirmed { return .confirmed }
             if attempt < 2 {
                 do { try await Task.sleep(nanoseconds: 150_000_000) }
                 catch { return .sentUnverified }
@@ -293,11 +305,11 @@ public final class MacDictationDelivery {
         do {
             lease = try await clipboard.beginWhenAvailable(text, stillValid: stillValid)
         } catch ClipboardFailure.snapshotUnavailable {
-            let expected = expectedTextAfterPaste(text, target: target)
+            let expected = await expectedReadbackAsync(text, target: target)
             try typeUnicode(text, to: target, stillValid: stillValid)
             return await outcomeAfterPosting(expected: expected, target: target, stillValid: stillValid)
         }
-        let expected = expectedTextAfterPaste(text, target: target)
+        let expected = await expectedReadbackAsync(text, target: target)
         do {
             try revalidate(target)
             guard clipboard.isOwned(lease) else { throw ClipboardFailure.ownershipLost }
