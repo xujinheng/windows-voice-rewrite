@@ -22,6 +22,13 @@ final class SettingsStoreTests: XCTestCase {
         settings.meetingASRMode = ContractLimits.meetingASRMultipart
         settings.meetingBackground = "项目背景与目标"
         settings.meetingTerms = "ASR = 语音识别"
+        settings.recordMode = "toggle"
+        settings.exitShortcut = "Ctrl+Alt+F12"
+        settings.systemPrompt = "答复简洁"
+        settings.maxResponseTokens = 2048
+        settings.maxSelectedRunes = 6000
+        settings.selectionCopyAttempts = 4
+        settings.selectionCopyTimeoutMS = 1500
         try store.save(settings)
         XCTAssertEqual(try store.load(), settings)
         let file = dir.appendingPathComponent("settings.json")
@@ -31,6 +38,8 @@ final class SettingsStoreTests: XCTestCase {
             "asr_base_url", "llm_base_url", "asr_model", "text_model", "max_record_seconds",
             "dictation_shortcut", "rewrite_shortcut", "microphone_uid",
             "meeting_asr_mode", "meeting_background", "meeting_terms",
+            "record_mode", "hotkey_exit", "system_prompt", "max_response_tokens",
+            "max_selected_characters", "selection_copy_attempts", "selection_copy_timeout_ms",
         ])
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: dir.path)[.posixPermissions] as? NSNumber)?.intValue, 0o700)
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber)?.intValue, 0o600)
@@ -41,6 +50,10 @@ final class SettingsStoreTests: XCTestCase {
         json.removeValue(forKey: "meeting_asr_mode")
         json.removeValue(forKey: "meeting_background")
         json.removeValue(forKey: "meeting_terms")
+        for key in ["record_mode", "hotkey_exit", "system_prompt", "max_response_tokens",
+                    "max_selected_characters", "selection_copy_attempts", "selection_copy_timeout_ms"] {
+            json.removeValue(forKey: key)
+        }
         try JSONSerialization.data(withJSONObject: json).write(to: file)
         let migrated = try store.load()
         XCTAssertEqual(migrated.dictationShortcut, "Ctrl+Alt+R")
@@ -50,6 +63,9 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(migrated.meetingASRMode, ContractLimits.defaultMeetingASRMode)
         XCTAssertEqual(migrated.meetingBackground, "")
         XCTAssertEqual(migrated.meetingTerms, "")
+        XCTAssertEqual(migrated.recordMode, "hold")
+        XCTAssertEqual(migrated.exitShortcut, ContractLimits.defaultExitShortcut)
+        XCTAssertEqual(migrated.maxSelectedRunes, ContractLimits.defaultMaxSelectedRunes)
         try store.save(migrated)
         let saved = try XCTUnwrap(JSONSerialization.jsonObject(
             with: Data(contentsOf: file)) as? [String: Any])
@@ -114,6 +130,24 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.load()) {
             XCTAssertEqual($0 as? SettingsError, .invalidValues)
         }
+    }
+
+    func testAdvancedLimitsAndModeValidation() throws {
+        var settings = MacSettings.defaults
+        settings.recordMode = "unexpected"
+        XCTAssertThrowsError(try settings.canonicalize())
+        settings.recordMode = "hold"
+        settings.maxResponseTokens = 4097
+        settings.maxSelectedRunes = 100001
+        settings.selectionCopyAttempts = 6
+        settings.selectionCopyTimeoutMS = 5001
+        try settings.canonicalize()
+        XCTAssertEqual(settings.maxResponseTokens, ContractLimits.defaultMaxResponseTokens)
+        XCTAssertEqual(settings.maxSelectedRunes, ContractLimits.defaultMaxSelectedRunes)
+        XCTAssertEqual(settings.selectionCopyAttempts, ContractLimits.defaultCopyAttempts)
+        XCTAssertEqual(settings.selectionCopyTimeoutMS, ContractLimits.defaultCopyTimeoutMS)
+        settings.systemPrompt = String(repeating: "X", count: 16385)
+        XCTAssertThrowsError(try settings.canonicalize())
     }
 
     func testWriteFailureKeepsOldValidFileAndRemovesTemp() throws {
