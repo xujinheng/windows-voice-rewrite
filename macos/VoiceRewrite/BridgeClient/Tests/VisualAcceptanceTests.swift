@@ -120,7 +120,7 @@ final class VisualAcceptanceTests: XCTestCase {
 
         // The empty state is not a substitute for Windows's populated demo.
         try store("meeting.empty", fixture: "empty-meeting-v1", theme: "light",
-                  width: 850, height: 800,
+                  width: 640, height: 720,
                   content: MeetingReaderView(model: model, embedded: false)
                       .environment(\.colorScheme, .light))
 
@@ -154,7 +154,7 @@ final class VisualAcceptanceTests: XCTestCase {
         UserDefaults.standard.set(16, forKey: fontKey)
         func storeMeeting(_ state: String) throws {
             try store(state, fixture: "populated-demo-v1", theme: "light",
-                      width: 850, height: 800,
+                      width: 640, height: 720,
                       content: MeetingReaderView(model: model, embedded: false)
                           .environment(\.colorScheme, .light))
         }
