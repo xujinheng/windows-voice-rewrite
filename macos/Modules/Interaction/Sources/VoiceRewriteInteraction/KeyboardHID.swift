@@ -116,11 +116,13 @@ public final class MacKeyboardHIDMonitor {
     }
 
     public var devices: [MacKeyboardDevice] {
-        let entries = records.values.map(\.descriptor)
-        let counts = Dictionary(grouping: entries, by: \.id).mapValues(\.count)
-        return entries.map {
-            MacKeyboardDevice(id: $0.id, name: $0.name, builtIn: $0.builtIn,
-                              selectable: $0.selectable && counts[$0.id] == 1)
+        let groups = Dictionary(grouping: records.values.map(\.descriptor), by: \.id)
+        // Distinct SwiftUI identities: duplicate HID identities are one disabled
+        // choice rather than two indistinguishable ForEach rows.
+        return groups.compactMap { id, entries -> MacKeyboardDevice? in
+            guard let first = entries.first else { return nil }
+            return MacKeyboardDevice(id: id, name: first.name, builtIn: first.builtIn,
+                                     selectable: first.selectable && entries.count == 1)
         }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
 
