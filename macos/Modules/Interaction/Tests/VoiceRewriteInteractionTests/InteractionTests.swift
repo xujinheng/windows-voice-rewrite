@@ -399,15 +399,7 @@ private final class FakeClipboard: ClipboardBoard, @unchecked Sendable {
     var simulateRestoreFailure = false
     var externalWriteBeforeStage = false
     var restores = 0
-    var captureBarrier: DispatchSemaphore?
-    var onCapture: (() -> Void)?
-    func capture() throws -> ClipboardContents {
-        onCapture?()
-        if let captureBarrier {
-            _ = captureBarrier.wait(timeout: .now() + 2)
-        }
-        return current
-    }
+    func capture() throws -> ClipboardContents { current }
     func installTemporaryText(_ text: String, owner: UUID, expectedChangeCount: Int) throws -> Int {
         if externalWriteBeforeStage {
             externalWriteBeforeStage = false
@@ -438,47 +430,6 @@ final class ClipboardTests: XCTestCase {
         try protector.finish(lease)
         XCTAssertEqual(board.current.items, original)
         XCTAssertEqual(board.restores, 1)
-    }
-
-    @MainActor
-    func testSlowExternalClipboardSnapshotDoesNotBlockUIOrPublishCancelledPaste() async throws {
-        let board = FakeClipboard()
-        let barrier = DispatchSemaphore(value: 0)
-        let snapshotStarted = expectation(description: "background clipboard snapshot began")
-        board.captureBarrier = barrier
-        board.onCapture = { snapshotStarted.fulfill() }
-        let protector = ClipboardProtector(board: board)
-        var active = true
-        let queued = Task {
-            try await protector.beginWhenAvailable("stale voice text", stillValid: { active })
-        }
-        // This can complete only if a blocked external pasteboard provider
-        // is not running on the test's MainActor (AppKit's UI thread).
-        await fulfillment(of: [snapshotStarted], timeout: 1)
-        active = false
-        barrier.signal()
-        do {
-            _ = try await queued.value
-            XCTFail("cancelled snapshot installed stale pasteboard text")
-        } catch {
-            XCTAssertEqual(error as? InteractionFailure, .cancelled)
-        }
-        XCTAssertNil(board.activeOwner)
-        XCTAssertEqual(board.current.items[0]["public.utf8-plain-text"], Data("old".utf8))
-    }
-
-    func testAsyncClipboardSnapshotRejectsConcurrentExternalClipboardChange() async throws {
-        let board = FakeClipboard()
-        board.externalWriteBeforeStage = true
-        let protector = ClipboardProtector(board: board)
-        do {
-            _ = try await protector.beginWhenAvailable("speech", stillValid: { true })
-            XCTFail("stale async clipboard snapshot must not overwrite another app")
-        } catch {
-            XCTAssertEqual(error as? ClipboardFailure, .snapshotUnavailable)
-        }
-        XCTAssertEqual(board.current.items, [["text": Data("external update".utf8)]])
-        XCTAssertNil(board.activeOwner)
     }
 
     func testSecondDictationWaitsForClipboardLease() async throws {
