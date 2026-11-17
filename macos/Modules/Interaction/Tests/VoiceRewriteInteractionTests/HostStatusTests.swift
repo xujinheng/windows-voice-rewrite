@@ -2,6 +2,17 @@ import XCTest
 @testable import VoiceRewriteInteraction
 
 final class HostStatusTests: XCTestCase {
+    func testVoiceRewriteSelectionIsCapturedOnlyAgainstOriginalReleaseTarget() {
+        XCTAssertTrue(voiceSelectionReleaseMayCapture(
+            tokenValid: true, targetPID: 42, foregroundPID: 42))
+        XCTAssertFalse(voiceSelectionReleaseMayCapture(
+            tokenValid: false, targetPID: 42, foregroundPID: 42))
+        XCTAssertFalse(voiceSelectionReleaseMayCapture(
+            tokenValid: true, targetPID: 42, foregroundPID: 43))
+        XCTAssertFalse(voiceSelectionReleaseMayCapture(
+            tokenValid: true, targetPID: 42, foregroundPID: nil))
+    }
+
     func testInsertionFailureDistinguishesUncertainDeliveryFromChangedTarget() {
         let args = (rewrite: false, passwordRewrite: "密码改写", passwordDictation: "密码听写")
         let uncertain = insertionStatus(InteractionFailure.writeNotConfirmed,

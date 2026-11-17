@@ -36,7 +36,7 @@ try hotkeys.register(.init(keyCode: 15, modifiers: [.command, .shift]))
 
 **Ordinary dictation** uses `MacDictationDelivery`, which captures the foreground application's process ID (and an optional AX focus identity). It does not require Accessibility text attributes, selection ranges or editor notifications. The host stores the target until transcription finishes, then performs one native paste or, before any paste is attempted, a direct Unicode input fallback when the clipboard cannot be preserved.
 
-**Selected-text editing** uses `InteractionSession` with `intent: .replaceSelection`. It requires a stable and readable AX selection, rejects stale focus, and validates the original full value before rewriting. Go intent flags are not native write authorization.
+**Selected-text editing** uses `InteractionSession` with `intent: .replaceSelection`. Typed instructions capture the selection immediately. Spoken Hold/Toggle rewriting starts the microphone first, then captures the selection **on recording stop** (matching Windows) from the original foreground process, checks the 12,000-rune limit, and monitors that exact snapshot through model execution. It requires a stable and readable AX selection, rejects stale focus, and validates the original full value before rewriting. Go intent flags are not native write authorization.
 
 ### Cross-application insertion
 

@@ -118,3 +118,11 @@ public func typedSelectionStartFailed(tokenValid: Bool, detail: String) -> Selec
         interactionStatus: rewriteTaskNotStarted(detail),
         llmProbe: probeTaskIncomplete())
 }
+
+
+/// The voice rewrite source is bound to the application that started the hold.
+ /// Its selection is intentionally captured only when recording ends.
+public func voiceSelectionReleaseMayCapture(tokenValid: Bool, targetPID: Int32,
+                                            foregroundPID: Int32?) -> Bool {
+    tokenValid && targetPID > 0 && targetPID == foregroundPID
+}
