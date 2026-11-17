@@ -16,7 +16,8 @@ private let carbonHotKeyCallback: EventHandlerUPP = { _, event, userData in
     let foregroundPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
     // Never block Carbon's event callback; delivery is always on the main actor.
     DispatchQueue.main.async {
-        MainActor.assumeIsolated { driver.dispatch(identifier: identifier, foregroundPID: foregroundPID) }
+        MainActor.assumeIsolated { driver.dispatch(identifier: identifier, foregroundPID: foregroundPID,
+                                                  released: GetEventKind(event) == UInt32(kEventHotKeyReleased)) }
     }
     return noErr
 }
@@ -29,19 +30,24 @@ public final class CarbonHotKeyDriver: HotKeyDriver {
     private var registrations: [HotKeyToken: (shortcut: HotKeyShortcut, ref: EventHotKeyRef)] = [:]
     private var nextIdentifier: UInt32 = 1
     private let onPressed: @MainActor (HotKeyShortcut, Int32?) -> Void
+    private let onReleased: (@MainActor (HotKeyShortcut, Int32?) -> Void)?
 
-    public init(onPressed: @escaping @MainActor (HotKeyShortcut, Int32?) -> Void) {
+    public init(onPressed: @escaping @MainActor (HotKeyShortcut, Int32?) -> Void,
+                onReleased: (@MainActor (HotKeyShortcut, Int32?) -> Void)? = nil) {
         self.onPressed = onPressed
+        self.onReleased = onReleased
     }
 
     public func register(_ shortcut: HotKeyShortcut) throws -> HotKeyToken {
         guard nextIdentifier < UInt32.max else { throw HotKeyFailure.registrationFailed(-1) }
         if eventHandler == nil {
-            var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
-                                     eventKind: UInt32(kEventHotKeyPressed))
+            var specs = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
+                                       eventKind: UInt32(kEventHotKeyPressed)),
+                         EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
+                                       eventKind: UInt32(kEventHotKeyReleased))]
             var handler: EventHandlerRef?
             let result = InstallEventHandler(GetApplicationEventTarget(), carbonHotKeyCallback,
-                                             1, &spec, Unmanaged.passUnretained(self).toOpaque(),
+                                             UInt32(specs.count), &specs, Unmanaged.passUnretained(self).toOpaque(),
                                              &handler)
             guard result == noErr, let handler else {
                 throw HotKeyFailure.registrationFailed(result)
@@ -85,9 +91,10 @@ public final class CarbonHotKeyDriver: HotKeyDriver {
         eventHandler = nil
     }
 
-    fileprivate func dispatch(identifier: UInt32, foregroundPID: Int32?) {
+    fileprivate func dispatch(identifier: UInt32, foregroundPID: Int32?, released: Bool) {
         guard let registration = registrations[HotKeyToken(id: identifier)] else { return }
-        onPressed(registration.shortcut, foregroundPID)
+        if released { onReleased?(registration.shortcut, foregroundPID) }
+        else { onPressed(registration.shortcut, foregroundPID) }
     }
 
     deinit { MainActor.assumeIsolated { shutdown() } }
