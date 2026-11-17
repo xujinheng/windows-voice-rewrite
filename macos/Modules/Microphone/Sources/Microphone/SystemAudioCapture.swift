@@ -81,14 +81,26 @@ public final class SystemAudioCapture {
         let created = SCStream(filter: filter, configuration: configuration, delegate: receiver)
         try created.addStreamOutput(receiver, type: .audio,
                                     sampleHandlerQueue: receiver.queue)
+        // Retain the in-flight stream before suspending. A close/stop during
+        // startCapture must see and invalidate the pending native capture.
+        self.receiver = receiver
+        self.stream = created
         do {
             try await created.startCapture()
         } catch {
+            receiver.invalidate()
+            if self.stream === created {
+                self.stream = nil
+                self.receiver = nil
+            }
             try? created.removeStreamOutput(receiver, type: .audio)
             throw error
         }
-        self.receiver = receiver
-        self.stream = created
+        guard self.stream === created else {
+            receiver.invalidate()
+            try? await created.stopCapture()
+            throw SystemAudioError.startCanceled
+        }
     }
 
     public func stop() async {
@@ -104,12 +116,14 @@ public enum SystemAudioError: Error, LocalizedError {
     case alreadyRunning
     case noDisplay
     case sourceGone
+    case startCanceled
 
     public var errorDescription: String? {
         switch self {
         case .alreadyRunning: return "会议音频采集已经启动"
         case .noDisplay: return "未找到可采集的屏幕；请检查显示器连接"
         case .sourceGone: return "所选应用已经退出，请重新选择音频来源"
+        case .startCanceled: return "会议音频采集已停止"
         }
     }
 }
@@ -214,7 +228,10 @@ private final class SystemAudioReceiver: NSObject, SCStreamOutput, SCStreamDeleg
             let chunk = Data(pending.prefix(6_400))
             pending.removeFirst(6_400)
             guard isActive else { return }
-            Task { @MainActor in onPCM(chunk) }
+            Task { @MainActor [weak self] in
+                guard self?.isActive == true else { return }
+                onPCM(chunk)
+            }
         }
     }
 }
