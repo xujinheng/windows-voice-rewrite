@@ -57,6 +57,11 @@ func meetingAssistantServer(t *testing.T, calls *atomic.Int32) *httptest.Server 
 				t.Error("compose did not receive user request")
 			}
 			output = "India's 2011 census recorded approximately 129 million English speakers."
+		case "express":
+			if query.UserPoints != "我同意这个建议" {
+				t.Errorf("literal expression lost user's words: %q", query.UserPoints)
+			}
+			output = "SAY\tI agree with this proposal.\t我同意这个建议。"
 		default:
 			t.Errorf("unexpected inference mode %q", query.Mode)
 			w.WriteHeader(http.StatusBadRequest)
@@ -167,6 +172,18 @@ func TestMeetingAssistantBridgeSessionAndValidation(t *testing.T) {
 	}
 	if !strings.Contains(object(t, result.Result)["expression"].(string), "129 million") {
 		t.Fatalf("missing generated expression: %#v", result)
+	}
+	h.send(map[string]any{"v": 1, "id": "express", "op": "meeting_express",
+		"session_id": sid, "instruction": "我同意这个建议"})
+	result = h.receive()
+	if !result.OK || !strings.Contains(object(t, result.Result)["expression"].(string), "I agree with this proposal") {
+		t.Fatalf("literal expression via voicebridge failed: %#v", result)
+	}
+	h.send(map[string]any{"v": 1, "id": "express-empty", "op": "meeting_express",
+		"session_id": sid, "instruction": "  "})
+	result = h.receive()
+	if result.OK || result.Error == nil || result.Error.Code != "invalid_request" {
+		t.Fatalf("invalid literal expression accepted: %#v", result)
 	}
 	h.send(map[string]any{"v": 1, "id": "refine-bad", "op": "meeting_refine",
 		"session_id": sid, "reply_index": 99, "instruction": "shorter"})
