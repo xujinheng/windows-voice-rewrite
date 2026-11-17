@@ -357,7 +357,7 @@ func TestProxyAbortsTruncatedUpstreamStream(t *testing.T) {
 	}
 }
 
- 
+
 // Runs in the existing Windows OneClick CI job as well as on Linux and macOS.
 // Cross-compilation proves Go source compatibility, not Metal hardware support.
 func TestOneClickGoBuildsForBothMacArchitectures(t *testing.T) {
