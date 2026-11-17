@@ -2,5 +2,5 @@
 import Foundation
 
 public enum SideHold {
-    public static let threshold: TimeInterval = 0.280
+    public static let threshold: TimeInterval = 0.250
 }
