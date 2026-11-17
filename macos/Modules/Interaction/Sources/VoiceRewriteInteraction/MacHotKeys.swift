@@ -50,7 +50,7 @@ public final class CarbonHotKeyDriver: HotKeyDriver {
                                        eventKind: UInt32(kEventHotKeyReleased))]
             var handler: EventHandlerRef?
             let result = InstallEventHandler(GetApplicationEventTarget(), carbonHotKeyCallback,
-                                             UInt32(specs.count), &specs, Unmanaged.passUnretained(self).toOpaque(),
+                                             specs.count, &specs, Unmanaged.passUnretained(self).toOpaque(),
                                              &handler)
             guard result == noErr, let handler else {
                 throw HotKeyFailure.registrationFailed(result)
