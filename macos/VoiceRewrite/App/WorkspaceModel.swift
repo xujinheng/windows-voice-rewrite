@@ -545,11 +545,12 @@ final class WorkspaceModel: ObservableObject {
     /// Begin native audio on mouse down; a short browser navigation never
     /// reaches ASR. Do not prompt for mic permission on a short click.
     private func beginSideDictationPreflight(action: SideMouseAction, targetPID: Int32?) {
-        guard action == .dictation, microphone.permissionStatus == .authorized,
-              !voicePaused, !meetingActive, !meetingStarting,
-              !meetingVoiceRecording, !meetingVoiceStarting,
-              !isRecording, !isStarting, !isProcessing,
-              sideGate.active == nil, sideDictationPreflight == nil else { return }
+        guard shouldPreCaptureDictation(
+            action: action, authorized: microphone.permissionStatus == .authorized,
+            paused: voicePaused, meetingRunning: meetingActive || meetingStarting,
+            busy: isRecording || isStarting || isProcessing ||
+                meetingVoiceRecording || meetingVoiceStarting ||
+                sideGate.active != nil || sideDictationPreflight != nil) else { return }
         invalidatePending()
         let generation = resultGeneration.begin()
         sideDictationPreflight = SideDictationPreflight(generation: generation, targetPID: targetPID)
