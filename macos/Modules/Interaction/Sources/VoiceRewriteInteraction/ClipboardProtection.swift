@@ -79,6 +79,28 @@ public final class ClipboardProtector: @unchecked Sendable {
         }
     }
 
+    /// Keep one input method when two dictations finish close together.
+    /// The previous paste must release its clipboard lease before a new
+    /// transcript is published. Cancellation interrupts the queue.
+    public func beginWhenAvailable(_ text: String,
+                                   stillValid: () -> Bool) async throws -> UUID {
+        let deadline = ProcessInfo.processInfo.systemUptime +
+            Double(PasteTiming.maxMilliseconds + PasteTiming.minimumMilliseconds) / 1000
+        while true {
+            guard stillValid(), !Task<Never, Never>.isCancelled else {
+                throw InteractionFailure.cancelled
+            }
+            do {
+                return try beginTemporaryText(text)
+            } catch ClipboardFailure.busy {
+                guard ProcessInfo.processInfo.systemUptime < deadline else {
+                    throw ClipboardFailure.busy
+                }
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
+    }
+
     public func isOwned(_ id: UUID) -> Bool {
         synchronized {
             guard let held = lease, held.id == id else { return false }
