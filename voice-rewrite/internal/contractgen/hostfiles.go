@@ -627,7 +627,7 @@ func emitSettings() (string, error) {
 		b.WriteString("                        .padding(.vertical, 9)\n                        .padding(.horizontal, 12)\n                        .frame(maxWidth: .infinity, alignment: .leading)\n")
 		b.WriteString("                        .background(selectedPage == " + strconv.Quote(page.ID) + " ? Color.accentColor.opacity(0.12) : Color.clear)\n")
 		b.WriteString("                        .clipShape(RoundedRectangle(cornerRadius: 9))\n")
-		b.WriteString("                        .accessibilityIdentifier(" + strconv.Quote("nav_" + page.ID) + ")\n")
+		b.WriteString("                        .accessibilityIdentifier(" + strconv.Quote("nav_"+page.ID) + ")\n")
 	}
 	b.WriteString("                    Spacer(minLength: 0)\n                }\n                .frame(width: 160, alignment: .leading)\n                .padding(16)\n                .frame(maxHeight: .infinity)\n                .background(Color(nsColor: .controlBackgroundColor))\n                Divider()\n                VStack(alignment: .leading, spacing: 0) {\n                    Group {\n")
 	for i, page := range contract.Pages() {
@@ -682,7 +682,7 @@ func emitSettings() (string, error) {
 			}
 		}
 		if page.ID == "input" {
-		b.WriteString("                                if !captureStatus.isEmpty {\n                                    Text(captureStatus).font(.footnote).foregroundStyle(.secondary)\n                                        .accessibilityIdentifier(\"capture_status\")\n                                }\n                                if showAdvanced {\n                                    Divider()\n                                    Text(\"高级配置\").font(.headline)\n")
+			b.WriteString("                                if !captureStatus.isEmpty {\n                                    Text(captureStatus).font(.footnote).foregroundStyle(.secondary)\n                                        .accessibilityIdentifier(\"capture_status\")\n                                }\n                                if showAdvanced {\n                                    Divider()\n                                    Text(\"高级配置\").font(.headline)\n")
 			for _, id := range []string{"max_record_seconds", "record_note", "meeting_asr_mode"} {
 				control, ok := contract.Find(id)
 				if !ok || !control.VisibleOn(contract.MacOS) {
