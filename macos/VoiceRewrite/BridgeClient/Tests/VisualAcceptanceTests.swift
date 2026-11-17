@@ -22,7 +22,7 @@ final class VisualAcceptanceTests: XCTestCase {
     }
 
     @MainActor
-    func testProductionViewStateScreenshots() throws {
+    func testProductionViewStateScreenshots() async throws {
         let environment = ProcessInfo.processInfo.environment
         // Xcode does not reliably forward the parent process environment to its
         // XCTest runner. A repository-local sentinel scopes capture to this CI job.
@@ -118,14 +118,61 @@ final class VisualAcceptanceTests: XCTestCase {
                       .environment(\.colorScheme, theme == "dark" ? .dark : .light))
         }
 
-        // Empty Meeting is not equivalent to the populated Windows demo.
+        // The empty state is not a substitute for Windows's populated demo.
         try store("meeting.empty", fixture: "empty-meeting-v1", theme: "light",
                   width: 850, height: 800,
                   content: MeetingReaderView(model: model, embedded: false)
                       .environment(\.colorScheme, .light))
+
+        // Exercise the actual Go Core offline fixture through bundled voicebridge.
+        // No microphone, ScreenCaptureKit or cloud model calls are made.
+        model.connect()
+        defer { model.shutdown() }
+        for _ in 0..<80 {
+            if case .connected = model.connection { break }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        guard case .connected = model.connection else {
+            XCTFail("Go voicebridge is unavailable for populated Meeting screenshots")
+            return
+        }
+        model.startMeetingDemo()
+        for _ in 0..<80 {
+            if model.meetingDemoActive { break }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        guard model.meetingDemoActive, !model.meetingCaptions.isEmpty else {
+            XCTFail("Go Core did not return the populated Meeting demo fixture")
+            return
+        }
+        let fontKey = "meeting.reader.fontSize"
+        let previousFont = UserDefaults.standard.object(forKey: fontKey)
+        defer {
+            if let previousFont { UserDefaults.standard.set(previousFont, forKey: fontKey) }
+            else { UserDefaults.standard.removeObject(forKey: fontKey) }
+        }
+        UserDefaults.standard.set(16, forKey: fontKey)
+        func storeMeeting(_ state: String) throws {
+            try store(state, fixture: "populated-demo-v1", theme: "light",
+                      width: 850, height: 800,
+                      content: MeetingReaderView(model: model, embedded: false)
+                          .environment(\.colorScheme, .light))
+        }
+        try storeMeeting("meeting.full")
+        model.toggleMeetingCaptionsOnly()
+        XCTAssertTrue(model.meetingCaptionsOnly)
+        try storeMeeting("meeting.focus")
+        model.toggleMeetingCaptionsOnly()
+        model.toggleMeetingExpressionExpanded()
+        XCTAssertTrue(model.meetingExpressionExpanded)
+        try storeMeeting("meeting.expanded")
+        model.toggleMeetingExpressionExpanded()
+        UserDefaults.standard.set(22, forKey: fontKey)
+        try storeMeeting("meeting.large-type")
+
         let manifest = Manifest(platform: platform, captures: captures)
         try JSONEncoder().encode(manifest).write(
             to: directory.appendingPathComponent("manifest.json"), options: .atomic)
-        XCTAssertEqual(captures.count, 11)
+        XCTAssertEqual(captures.count, 15)
     }
 }
