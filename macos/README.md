@@ -63,8 +63,10 @@ after its normal terminal phase expires. Recent errors can be viewed even when
 the log was rotated. An explicit update check displays a confirmation dialog
 for a newer release or an informational dialog otherwise; only the official
 HTTPS GitHub releases page can be opened. Update checks never install software.
-The separate configurable global exit binding is tracked with the settings
-shortcut work; the native app Quit action and menu-bar Quit always remain usable.
+The independent global **Ctrl+Option+F10** shortcut quits the app without
+running a voice action; the two voice shortcut registrations remain unchanged.
+Configuring a different exit binding through Settings is tracked with the settings
+shortcut-contract work. Native app Quit and menu-bar Quit always remain usable.
 
 ## Use
 
