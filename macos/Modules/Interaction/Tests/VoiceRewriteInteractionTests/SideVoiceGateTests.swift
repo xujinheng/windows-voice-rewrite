@@ -2,6 +2,30 @@ import XCTest
 @testable import VoiceRewriteInteraction
 
 final class SideVoiceGateTests: XCTestCase {
+    func testEarlyMicrophoneOnlyStartsForAuthorizedIdleDictation() {
+        XCTAssertTrue(shouldPreCaptureDictation(action: .dictation, authorized: true,
+                                                paused: false, meetingRunning: false, busy: false))
+        XCTAssertFalse(shouldPreCaptureDictation(action: .rewrite, authorized: true,
+                                                 paused: false, meetingRunning: false, busy: false))
+        XCTAssertFalse(shouldPreCaptureDictation(action: .dictation, authorized: false,
+                                                 paused: false, meetingRunning: false, busy: false))
+        XCTAssertFalse(shouldPreCaptureDictation(action: .dictation, authorized: true,
+                                                 paused: true, meetingRunning: false, busy: false))
+        XCTAssertFalse(shouldPreCaptureDictation(action: .dictation, authorized: true,
+                                                 paused: false, meetingRunning: true, busy: false))
+        XCTAssertFalse(shouldPreCaptureDictation(action: .dictation, authorized: true,
+                                                 paused: false, meetingRunning: false, busy: true))
+    }
+
+    func testSideReleaseDuringEarlyMicrophoneStartMustWaitForPromotion() {
+        var gate = SideVoiceGate()
+        gate.began(.dictation)
+        XCTAssertEqual(gate.release(.dictation, starting: true, recording: false), .wait)
+        XCTAssertEqual(gate.finishStart(.dictation, recording: true), .stop)
+        gate.clear()
+        XCTAssertEqual(gate.finishStart(.dictation, recording: true), .none)
+    }
+
     func testHoldStartsOnlyWhenIdle() {
         var gate = SideVoiceGate()
         XCTAssertEqual(gate.hold(paused: true, busy: false), .dismissPreview)
