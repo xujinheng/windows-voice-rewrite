@@ -35,6 +35,25 @@ Without those credentials only the ad-hoc signed CI developer builds are availab
 A signed/notarized build keeps a stable app identity for macOS permission prompts;
 it does not bypass microphone or Accessibility authorization.
 
+## Menu bar and window lifecycle
+
+VoiceRewrite remains active in the macOS menu bar after its main window is closed.
+Closing the main window does **not** quit the app or clear the current-session history.
+Use the waveform menu bar icon to view voice/meeting status, pause or resume ordinary
+voice shortcuts, cancel an active voice task, reopen the workspace, open Settings,
+restore a recent result, clear the current-session history, inspect recent errors
+or the diagnostic log, check GitHub releases, stop a running Meeting session,
+or quit VoiceRewrite. Reopening the window does not reconnect the helper or
+restart shortcut listeners. Quit explicitly from the menu bar or app menu to
+stop background operations and discard in-memory history.
+
+Recent result menu labels show only the result type and time, never dictated
+or rewritten words. Restoring a result opens the existing result card. The
+Meeting entry opens the workspace; choose its Meeting tab to start or configure
+capture. Pausing ordinary voice shortcuts does not pause Meeting capture: use
+the explicit Stop Meeting action when a meeting is running. Update checks only
+show the release page when available; they do not install software.
+
 ## Use
 
 1. In Settings, enter **base** URLs for ASR and LLM services, e.g. `http://127.0.0.1:8080/v1` and `http://127.0.0.1:1234/v1`, and their model names. API keys are optional for local services that support unauthenticated HTTP requests. If required by your provider, enter its ASR or LLM key in the corresponding secure field and click Save. Keys are persisted only in Keychain; nonsecret settings are stored in a private Application Support JSON file. Each operation accesses only its own provider's key. A missing key is sent as an empty string (no Bearer header); a locked or inaccessible Keychain produces a visible error rather than an unprotected fallback.
