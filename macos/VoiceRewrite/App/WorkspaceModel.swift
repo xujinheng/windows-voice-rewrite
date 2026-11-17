@@ -5,6 +5,13 @@ import Microphone
 import VoiceRewriteInteraction
 import VoiceRewriteStorage
 
+struct MeetingCaptionRow: Identifiable, Equatable {
+    let id: Int
+    let source: String
+    let chinese: String
+    let final: Bool
+}
+
 @MainActor
 final class WorkspaceModel: ObservableObject {
     enum Connection: Equatable {
@@ -47,10 +54,20 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var updateStatus = updateNotChecked()
     @Published private(set) var updatePage: String?
     @Published private(set) var isCheckingUpdate = false
+    @Published private(set) var meetingSources: [MeetingAudioSource] = []
+    @Published var meetingSourceID = "system"
+    @Published private(set) var meetingStatus = "选择音频来源后启动会议"
+    @Published private(set) var meetingCaptions: [MeetingCaptionRow] = []
+    @Published private(set) var meetingStarting = false
+    @Published private(set) var meetingActive = false
     private var historyStore = SessionHistory()
     private var updateCheck = ResultGeneration()
 
     private let microphone = MicrophoneRecorder()
+    private let systemAudio = SystemAudioCapture()
+    private var meetingGeneration = ResultGeneration()
+    private var meetingSessionID: String?
+    private var meetingPendingPackets = 0
     private let recordingIndicator = RecordingIndicatorController()
     private var indicatorSnapshot = IndicatorSnapshot()
     private var sideGate = SideVoiceGate()
@@ -105,6 +122,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func connect() {
+        stopMeeting()
         let token = helloGeneration.begin()
         cancelProbes()
         invalidateDiscoveredModels(.transcribe)
@@ -460,6 +478,150 @@ final class WorkspaceModel: ObservableObject {
             stopRecording()
         case .none, .wait, .clear:
             break
+        }
+    }
+
+    func refreshMeetingSources() {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let available = try await self.systemAudio.sources()
+                self.meetingSources = available
+                if !available.contains(where: { $0.id == self.meetingSourceID }) {
+                    self.meetingSourceID = "system"
+                }
+            } catch {
+                self.meetingStatus = "无法读取音频来源；请在系统设置中允许屏幕与系统音频录制后重试"
+            }
+        }
+    }
+
+    func startMeeting() {
+        guard !meetingActive && !meetingStarting else { return }
+        guard let bridge, case .connected = connection else {
+            meetingStatus = "请先连接 Go Helper"
+            return
+        }
+        let config: JSONValue
+        do {
+            guard case .object(var fields) = try requestConfig(for: .spokenSelectedTask) else {
+                throw BridgeFailure.invalidRequest
+            }
+            // Multipart is the portable OpenAI-compatible meeting ASR mode;
+            // the shared Go Meeting pipeline owns segmentation and inference.
+            fields["meeting_asr_mode"] = .string("multipart")
+            config = .object(fields)
+        } catch {
+            meetingStatus = "请保存有效的 ASR/LLM 设置后重试"
+            return
+        }
+        let token = meetingGeneration.begin()
+        meetingStarting = true
+        meetingStatus = "正在准备会议识别…"
+        meetingCaptions = []
+        bridge.send(operation: "meeting_start", fields: ["config": config]) { [weak self] reply in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let result = try? reply.get()
+                guard result?.ok == true, let id = result?.result?["session_id"]?.string else {
+                    guard self.meetingGeneration.accepts(token) else { return }
+                    self.meetingStarting = false
+                    self.meetingStatus = "无法启动会议处理，请检查本地 Helper"
+                    return
+                }
+                guard self.meetingGeneration.accepts(token) else {
+                    bridge.send(operation: "meeting_stop", fields: ["session_id": .string(id)]) { _ in }
+                    return
+                }
+                self.meetingSessionID = id
+                do {
+                    try await self.systemAudio.start(sourceID: self.meetingSourceID,
+                        onPCM: { [weak self] bytes in self?.feedMeeting(bytes, sessionID: id) },
+                        onFailure: { [weak self] detail in self?.stopMeeting(reason: detail) })
+                    guard self.meetingGeneration.accepts(token) else {
+                        await self.systemAudio.stop()
+                        return
+                    }
+                    self.meetingStarting = false
+                    self.meetingActive = true
+                    self.meetingStatus = "正在监听所选应用音频"
+                    self.pollMeeting(id: id, token: token)
+                } catch {
+                    self.stopMeeting(reason: "无法启动系统音频；请检查屏幕与系统音频录制权限及来源")
+                }
+            }
+        }
+    }
+
+    private func feedMeeting(_ bytes: Data, sessionID id: String) {
+        guard meetingSessionID == id, meetingActive, let bridge else { return }
+        guard meetingPendingPackets < 8 else {
+            stopMeeting(reason: "会议音频处理过载，采集已停止；请检查电脑负载")
+            return
+        }
+        meetingPendingPackets += 1
+        bridge.send(operation: "meeting_feed", fields: [
+            "session_id": .string(id),
+            "pcm_base64": .string(bytes.base64EncodedString()),
+        ]) { [weak self] reply in
+            Task { @MainActor [weak self] in
+                guard let self, self.meetingSessionID == id else { return }
+                self.meetingPendingPackets = max(0, self.meetingPendingPackets - 1)
+                guard case .success(let response) = reply, response.ok else {
+                    self.stopMeeting(reason: "会议音频传输中断，已停止采集")
+                    return
+                }
+            }
+        }
+    }
+
+    private func pollMeeting(id: String, token: UInt64) {
+        Task { @MainActor [weak self] in
+            while let self, self.meetingSessionID == id,
+                  self.meetingGeneration.accepts(token), self.meetingActive {
+                self.bridge?.send(operation: "meeting_snapshot", fields: [
+                    "session_id": .string(id),
+                ]) { [weak self] reply in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.meetingSessionID == id,
+                              self.meetingGeneration.accepts(token) else { return }
+                        guard case .success(let response) = reply, response.ok else {
+                            self.stopMeeting(reason: "会议处理已断开")
+                            return
+                        }
+                        if let status = response.result?["status"]?.string {
+                            self.meetingStatus = status
+                        }
+                        if case .array(let values)? = response.result?["captions"] {
+                            self.meetingCaptions = values.compactMap { value in
+                                guard case .object(let item) = value,
+                                      let id = item["id"]?.int,
+                                      let source = item["source"]?.string,
+                                      let chinese = item["chinese"]?.string else { return nil }
+                                return MeetingCaptionRow(id: id, source: source,
+                                    chinese: chinese, final: item["final"]?.boolValue == true)
+                            }
+                        }
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 450_000_000)
+            }
+        }
+    }
+
+    func stopMeeting(reason: String = "会议采集已停止") {
+        _ = meetingGeneration.begin()
+        meetingStarting = false
+        meetingActive = false
+        meetingPendingPackets = 0
+        meetingStatus = reason
+        let id = meetingSessionID
+        meetingSessionID = nil
+        Task { await systemAudio.stop() }
+        if let id {
+            bridge?.send(operation: "meeting_stop", fields: [
+                "session_id": .string(id),
+            ]) { _ in }
         }
     }
 
