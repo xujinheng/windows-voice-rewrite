@@ -821,7 +821,8 @@ final class WorkspaceModel: ObservableObject {
                                                maximumSeconds: self.settings.maxRecordSeconds)
                 guard self.meetingGeneration.accepts(token),
                       self.meetingVoiceGeneration.accepts(voiceToken), self.meetingActive else {
-                    self.microphone.cancel()
+                    // Stop/cancel already revoked this capture. A late start
+                    // completion must not cancel a newer recording.
                     return
                 }
                 self.meetingVoiceRecording = true
