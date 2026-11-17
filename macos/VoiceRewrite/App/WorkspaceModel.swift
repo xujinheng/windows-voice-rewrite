@@ -104,6 +104,8 @@ final class WorkspaceModel: ObservableObject {
     private let microphone = MicrophoneRecorder()
     private let systemAudio = SystemAudioCapture()
     private var meetingGeneration = ResultGeneration()
+    private var meetingCaptureGeneration = ResultGeneration()
+    private var meetingAudioEpoch = 0
     private var meetingSourceGeneration = ResultGeneration()
     private var meetingActionGeneration = ResultGeneration()
     private var meetingVoiceGeneration = ResultGeneration()
@@ -670,7 +672,8 @@ final class WorkspaceModel: ObservableObject {
             } catch {
                 guard self.meetingSourceGeneration.accepts(token),
                       !self.meetingStarting && !self.meetingActive else { return }
-                self.meetingStatus = "无法读取音频来源；请在系统设置中允许屏幕与系统音频录制后重试"
+                self.meetingStatus = (error as? SystemAudioError)?.localizedDescription
+                    ?? "无法读取音频来源；请在系统设置中允许屏幕与系统音频录制后重试"
             }
         }
     }
@@ -727,6 +730,8 @@ final class WorkspaceModel: ObservableObject {
         meetingCapturePaused = false
         meetingCaptureSwitching = false
         meetingCaptureSourceID = meetingSourceID
+        meetingAudioEpoch = 0
+        meetingPendingPackets = 0
         meetingStarting = true
         meetingStatus = "正在准备会议识别…"
         meetingCaptions = []
@@ -756,20 +761,33 @@ final class WorkspaceModel: ObservableObject {
                     bridge.send(operation: "meeting_stop", fields: ["session_id": .string(id)]) { _ in }
                     return
                 }
+                guard let epoch = result?.result?["audio_epoch"]?.int, epoch > 0 else {
+                    bridge.send(operation: "meeting_stop", fields: ["session_id": .string(id)]) { _ in }
+                    self.stopMeeting(reason: "会议处理未返回音频代际，请更新 Helper")
+                    return
+                }
                 self.meetingSessionID = id
+                self.meetingAudioEpoch = epoch
+                let capture = self.meetingCaptureGeneration.begin()
                 do {
-                    try await self.systemAudio.start(sourceID: self.meetingSourceID,
-                        onPCM: { [weak self] bytes in self?.feedMeeting(bytes, sessionID: id) },
-                        onFailure: { [weak self] detail in self?.stopMeeting(reason: detail) })
-                    guard self.meetingGeneration.accepts(token) else {
-                        await self.systemAudio.stop()
-                        return
-                    }
+                    try await self.systemAudio.start(sourceID: self.meetingCaptureSourceID,
+                        onPCM: { [weak self] bytes in
+                            self?.feedMeeting(bytes, sessionID: id, capture: capture)
+                        },
+                        onFailure: { [weak self] detail in
+                            guard let self, self.meetingSessionID == id,
+                                  self.meetingCaptureGeneration.accepts(capture) else { return }
+                            self.stopMeeting(reason: detail)
+                        })
+                    guard self.meetingGeneration.accepts(token),
+                          self.meetingCaptureGeneration.accepts(capture) else { return }
                     self.meetingStarting = false
                     self.meetingActive = true
                     self.meetingStatus = "正在监听所选应用音频"
                     self.pollMeeting(id: id, token: token)
                 } catch {
+                    guard self.meetingGeneration.accepts(token),
+                          self.meetingCaptureGeneration.accepts(capture) else { return }
                     let detail = (error as? SystemAudioError)?.localizedDescription
                         ?? "无法启动系统音频；请检查屏幕与系统音频录制权限及来源"
                     self.stopMeeting(reason: detail)
@@ -778,8 +796,9 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func feedMeeting(_ bytes: Data, sessionID id: String) {
-        guard meetingSessionID == id, meetingActive, !meetingCapturePaused,
+    private func feedMeeting(_ bytes: Data, sessionID id: String, capture: UInt64) {
+        guard meetingSessionID == id, meetingCaptureGeneration.accepts(capture),
+              meetingAudioEpoch > 0, meetingActive, !meetingCapturePaused,
               !meetingCaptureSwitching, let bridge else { return }
         guard meetingPendingPackets < 8 else {
             stopMeeting(reason: "会议音频处理过载，采集已停止；请检查电脑负载")
@@ -788,10 +807,12 @@ final class WorkspaceModel: ObservableObject {
         meetingPendingPackets += 1
         bridge.send(operation: "meeting_feed", fields: [
             "session_id": .string(id),
+            "audio_epoch": .number(Double(meetingAudioEpoch)),
             "pcm_base64": .string(bytes.base64EncodedString()),
         ]) { [weak self] reply in
             Task { @MainActor [weak self] in
-                guard let self, self.meetingSessionID == id else { return }
+                guard let self, self.meetingSessionID == id,
+                      self.meetingCaptureGeneration.accepts(capture) else { return }
                 self.meetingPendingPackets = max(0, self.meetingPendingPackets - 1)
                 guard case .success(let response) = reply, response.ok else {
                     if self.meetingCapturePaused || self.meetingCaptureSwitching { return }
@@ -847,7 +868,24 @@ final class WorkspaceModel: ObservableObject {
         if let paused = values["capture_paused"]?.boolValue, !meetingCaptureSwitching {
             meetingCapturePaused = paused
         }
-        if let status = values["status"]?.string { meetingStatus = status }
+        if let status = values["status"]?.string {
+            // The existing Meeting status line surfaces shared Go Core metrics
+            // without introducing another Swift-owned audio state machine.
+            var details: [String] = []
+            if case .object(let metrics)? = values["metrics"] {
+                let queued = (metrics["pending"]?.int ?? 0) + meetingPendingPackets
+                let dropped = metrics["dropped"]?.int ?? 0
+                if queued > 0 { details.append("音频负载队列 \(queued)") }
+                if dropped > 0 { details.append("丢弃 \(dropped) 段") }
+                if let ms = metrics["asr_done_ms"]?.int, ms > 0 {
+                    details.append("ASR \(ms)ms")
+                }
+                if let ms = metrics["translation_done_ms"]?.int, ms > 0 {
+                    details.append("翻译 \(ms)ms")
+                }
+            }
+            meetingStatus = details.isEmpty ? status : status + " · " + details.joined(separator: " · ")
+        }
         if let status = values["reply_status"]?.string { meetingReplyStatus = status }
         if let status = values["expression_status"]?.string { meetingExpressionStatus = status }
         if let value = values["expression"]?.string { meetingExpression = value }
@@ -1144,10 +1182,14 @@ final class WorkspaceModel: ObservableObject {
         meetingPresentationRevision &+= 1
         if !meetingCapturePaused {
             meetingCapturePaused = true
+            meetingAudioEpoch = 0
+            meetingPendingPackets = 0
+            _ = meetingCaptureGeneration.begin()
+            systemAudio.cancel()
             meetingStatus = "正在暂停会议音频…"
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                await self.systemAudio.stop()
+                await self.systemAudio.waitForStop()
                 guard self.meetingSessionID == session,
                       self.meetingGeneration.accepts(token), self.meetingActive else { return }
                 bridge.send(operation: "meeting_pause", fields: [
@@ -1178,21 +1220,37 @@ final class WorkspaceModel: ObservableObject {
                         self.stopMeeting(reason: "恢复会议处理失败，已停止采集")
                         return
                     }
+                    guard let epoch = reply.result?["epoch"]?.int, epoch > 0 else {
+                        self.stopMeeting(reason: "恢复会议处理失败：音频代际无效")
+                        return
+                    }
+                    self.meetingAudioEpoch = epoch
+                    self.meetingPendingPackets = 0
+                    let capture = self.meetingCaptureGeneration.begin()
                     do {
                         try await self.systemAudio.start(sourceID: self.meetingCaptureSourceID,
-                            onPCM: { [weak self] bytes in self?.feedMeeting(bytes, sessionID: session) },
-                            onFailure: { [weak self] detail in self?.stopMeeting(reason: detail) })
+                            onPCM: { [weak self] bytes in
+                                self?.feedMeeting(bytes, sessionID: session, capture: capture)
+                            },
+                            onFailure: { [weak self] detail in
+                                guard let self, self.meetingSessionID == session,
+                                      self.meetingCaptureGeneration.accepts(capture) else { return }
+                                self.stopMeeting(reason: detail)
+                            })
                         guard self.meetingSessionID == session,
-                              self.meetingGeneration.accepts(token), self.meetingActive else {
-                            await self.systemAudio.stop()
-                            return
-                        }
+                              self.meetingCaptureGeneration.accepts(capture),
+                              self.meetingGeneration.accepts(token), self.meetingActive else { return }
                         self.meetingCaptureSwitching = false
                         self.meetingCapturePaused = false
                         self.applyMeetingSnapshot(reply.result ?? [:])
                         self.meetingStatus = "正在监听所选应用音频"
                     } catch {
-                        self.stopMeeting(reason: "恢复系统音频失败；请重新选择音频来源")
+                        guard self.meetingSessionID == session,
+                              self.meetingCaptureGeneration.accepts(capture),
+                              self.meetingGeneration.accepts(token) else { return }
+                        let detail = (error as? SystemAudioError)?.localizedDescription
+                            ?? "恢复系统音频失败；请检查录制权限并重新选择音频来源"
+                        self.stopMeeting(reason: detail)
                     }
                 }
             }
@@ -1200,6 +1258,10 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func stopMeeting(reason: String = "会议采集已停止") {
+        // Fence native callbacks synchronously, before a new meeting can start.
+        systemAudio.cancel()
+        _ = meetingCaptureGeneration.begin()
+        meetingAudioEpoch = 0
         meetingCapturePaused = false
         meetingCaptureSwitching = false
         meetingCaptureSourceID = ""
@@ -1225,7 +1287,6 @@ final class WorkspaceModel: ObservableObject {
         meetingStatus = reason
         let id = meetingSessionID
         meetingSessionID = nil
-        Task { await systemAudio.stop() }
         if let id {
             bridge?.send(operation: "meeting_stop", fields: [
                 "session_id": .string(id),
@@ -2073,6 +2134,13 @@ final class WorkspaceModel: ObservableObject {
     func shutdown() {
         _ = helloGeneration.begin()
         _ = shortcutGeneration.begin()
+        // Tear down Meeting before closing the Helper; native ScreenCaptureKit
+        // callbacks must not outlive the app's session and IPC ownership.
+        if meetingActive || meetingStarting || meetingSessionID != nil {
+            stopMeeting()
+        } else {
+            systemAudio.cancel()
+        }
         cancelProbes()
         cancelCurrent()
         sideMouse?.shutdown()
