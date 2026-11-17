@@ -10,6 +10,7 @@ private let carbonHotKeyCallback: EventHandlerUPP = { _, event, userData in
                                    EventParamType(typeEventHotKeyID), nil,
                                    MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
     guard result == noErr else { return result }
+    guard hotKeyID.signature == OSType(0x5652_5752) else { return OSStatus(eventNotHandledErr) }
     let driver = Unmanaged<CarbonHotKeyDriver>.fromOpaque(userData).takeUnretainedValue()
     let identifier = hotKeyID.id
     let pressed = GetEventKind(event) == UInt32(kEventHotKeyPressed)

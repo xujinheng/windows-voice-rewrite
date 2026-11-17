@@ -54,4 +54,20 @@ final class DiagnosticLogTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: path + ".1"))
         XCTAssertEqual(try String(contentsOf: URL(fileURLWithPath: path), encoding: .utf8), "kept")
     }
+    func testRecentErrorSurvivesRotationAndPrefersActiveLog() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoiceRewriteRotatedError-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let active = directory.appendingPathComponent("VoiceRewrite.log")
+        try Data("应用已启动\n".utf8).write(to: active)
+        try Data("2026-11-17 status=failed code=permission_denied\n".utf8)
+            .write(to: URL(fileURLWithPath: active.path + ".1"))
+        XCTAssertEqual(DiagnosticLog.latestError(at: active, backupCount: 3),
+                       "2026-11-17 status=failed code=permission_denied")
+        try Data("2026-11-17 status=error code=asr_failed\n".utf8).write(to: active)
+        XCTAssertEqual(DiagnosticLog.latestError(at: active, backupCount: 3),
+                       "2026-11-17 status=error code=asr_failed")
+    }
+
 }

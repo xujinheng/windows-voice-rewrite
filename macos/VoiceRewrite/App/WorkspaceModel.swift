@@ -72,6 +72,9 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var updateStatus = updateNotChecked()
     @Published private(set) var updatePage: String?
     @Published private(set) var isCheckingUpdate = false
+    @Published private(set) var menuIndicatorPhase: IndicatorPhase?
+    @Published private(set) var menuIndicatorMode = "听写"
+    var onUpdateCheckCompleted: ((String, String?) -> Void)?
     @Published private(set) var meetingSources: [MeetingAudioSource] = []
     @Published var meetingSourceID = "system"
     @Published private(set) var meetingStatus = "选择音频来源后启动会议"
@@ -1740,13 +1743,14 @@ final class WorkspaceModel: ObservableObject {
                 self.updateStatus = follow.status
                 self.updatePage = follow.page
                 DiagnosticLog.note(self.updateStatus)
+                self.onUpdateCheckCompleted?(follow.status, follow.page)
             }
         }
     }
 
     func openUpdatePage() {
-        guard let updatePage, let url = URL(string: updatePage) else { return }
-        NSWorkspace.shared.open(url)
+        guard let updatePage, let url = UpdatePagePolicy.officialReleaseURL(updatePage) else { return }
+        if !NSWorkspace.shared.open(url) { DiagnosticLog.note("无法打开官方发布页面") }
     }
 
     func checkServices() {
@@ -2418,6 +2422,10 @@ final class WorkspaceModel: ObservableObject {
         indicatorSnapshot.pending = pending
         indicatorSnapshot.phase = phase
         indicatorSnapshot.mode = mode
+        if !pending {
+            menuIndicatorPhase = phase
+            menuIndicatorMode = mode
+        }
         recordingIndicator.present(indicatorSnapshot, levelSource: { [weak self] in
             IndicatorMath.normalizeMicrophoneLevel(Double(self?.microphone.rmsLevel ?? 0))
         }, onCancel: { [weak self] in
@@ -2437,10 +2445,12 @@ final class WorkspaceModel: ObservableObject {
         }, onAutoDismiss: { [weak self] in
             self?.indicatorSnapshot.visible = false
             self?.indicatorSnapshot.pending = false
+            self?.menuIndicatorPhase = nil
         })
     }
 
     private func dismissIndicator() {
+        menuIndicatorPhase = nil
         indicatorSnapshot.visible = false
         indicatorSnapshot.pending = false
         recordingIndicator.dismiss()
