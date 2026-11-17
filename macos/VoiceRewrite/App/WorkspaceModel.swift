@@ -691,7 +691,6 @@ final class WorkspaceModel: ObservableObject {
             completion(false, "请先完成当前会议切换或语音处理")
             return
         }
-        let updated: MacSettings
         do {
             guard let store else { throw SettingsError.insecureStorage }
             var next = settings
@@ -701,7 +700,6 @@ final class WorkspaceModel: ObservableObject {
             try next.canonicalize()
             try store.save(next)
             settings = next
-            updated = next
         } catch {
             let message = settingsSaveFailed(error.localizedDescription)
             settingsStatus = message
@@ -756,7 +754,6 @@ final class WorkspaceModel: ObservableObject {
                 }
             }
         }
-        _ = updated
     }
 
     /// Preview data comes entirely from the bundled Go Core fixture. This does
