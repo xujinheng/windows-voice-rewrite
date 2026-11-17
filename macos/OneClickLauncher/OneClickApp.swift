@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 import SwiftUI
 
@@ -75,6 +76,7 @@ final class OneClickController: ObservableObject {
     @Published private(set) var phase = "未启动"
     @Published private(set) var logText = ""
     @Published private(set) var modelID = ""
+    @Published private(set) var activeBaseURL = ""
     @Published private(set) var ready = false
     @Published private(set) var isRunning = false
 
@@ -116,6 +118,7 @@ final class OneClickController: ObservableObject {
             isRunning = true
             ready = false
             modelID = ""
+            activeBaseURL = config.baseURL
             phase = "正在启动并加载模型…"
             generation = UUID()
             appendLog("启动共享 OneClick 代理；接口：\(config.baseURL)\n")
@@ -148,8 +151,15 @@ final class OneClickController: ObservableObject {
         healthTask = nil
         if let process, process.isRunning {
             process.terminate()
-            // The Go helper traps SIGTERM and kills only its own llama child.
-            // Never signal a PID not currently owned by this Process instance.
+            // On application termination, allow the Go helper a bounded grace
+            // period to reap its own llama child before the native host exits.
+            let deadline = Date().addingTimeInterval(2)
+            while process.isRunning && Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.03)
+            }
+            if process.isRunning {
+                _ = Darwin.kill(process.processIdentifier, SIGKILL)
+            }
         }
     }
 
@@ -170,8 +180,7 @@ final class OneClickController: ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self, weak child] in
                 guard let self, let child, self.process === child, child.isRunning else { return }
                 self.appendLog("Go 服务未在 6 秒内退出，强制停止所属进程。\n")
-                child.interrupt()
-                if child.isRunning { child.terminate() }
+                _ = Darwin.kill(child.processIdentifier, SIGKILL)
             }
         }
     }
@@ -186,6 +195,7 @@ final class OneClickController: ObservableObject {
         isRunning = false
         ready = false
         modelID = ""
+        activeBaseURL = ""
         let restart = pendingRestart
         pendingRestart = nil
         if let restart {
@@ -218,7 +228,7 @@ final class OneClickController: ObservableObject {
                     self.ready = true
                     self.phase = "服务已就绪"
                     self.appendLog("健康检查通过；这只证明 HTTP 模拟/真实服务就绪，不代表 GPU 推理已验证。\n")
-                    await self.loadModelID(port: port)
+                    await self.loadModelID(port: port, generation: generation)
                     return
                 }
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
@@ -229,7 +239,7 @@ final class OneClickController: ObservableObject {
         }
     }
 
-    private func loadModelID(port: Int) async {
+    private func loadModelID(port: Int, generation: UUID) async {
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/models")!)
         request.timeoutInterval = 3
         guard let (data, response) = try? await URLSession.shared.data(for: request),
@@ -238,6 +248,7 @@ final class OneClickController: ObservableObject {
             appendLog("模型发现失败：可在 VoiceRewrite 设置中输入服务实际报告的模型 ID。\n")
             return
         }
+        guard self.generation == generation, ready, process != nil else { return }
         modelID = models.data.first?.id ?? ""
     }
 }
@@ -338,7 +349,7 @@ private struct OneClickWindow: View {
                 Button("重启") { controller.restart(configuration) }
                 Spacer()
                 Text(controller.phase)
-                    .foregroundStyle(controller.ready ? .green : .secondary)
+                    .foregroundStyle(controller.ready ? Color.green : Color.secondary)
                     .lineLimit(2)
             }
 
@@ -346,9 +357,12 @@ private struct OneClickWindow: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("在 VoiceRewrite → 设置 → ASR 服务中填写以下基础 URL；启动完成后使用“检测 ASR 连接”。")
                     HStack {
-                        Text(configuration.baseURL).font(.system(.body, design: .monospaced))
+                        Text(controller.isRunning ? controller.activeBaseURL : configuration.baseURL)
+                            .font(.system(.body, design: .monospaced))
                             .textSelection(.enabled)
-                        Button("复制 URL") { controller.copy(configuration.baseURL) }
+                        Button("复制 URL") {
+                            controller.copy(controller.isRunning ? controller.activeBaseURL : configuration.baseURL)
+                        }
                     }
                     if !controller.modelID.isEmpty {
                         HStack {
