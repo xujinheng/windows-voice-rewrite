@@ -1,3 +1,4 @@
+import VoiceRewriteStorage
 import XCTest
 @testable import VoiceRewrite
 
@@ -100,8 +101,8 @@ final class SessionHistoryTests: XCTestCase {
 
     @MainActor
     func testGlobalQuitIsIndependentOfBothVoiceHotkeys() {
-        XCTAssertEqual(GlobalExitHotKey.defaultBinding, "Ctrl+Alt+F10")
-        let exit = ShortcutBinding(canonical: GlobalExitHotKey.defaultBinding)
+        XCTAssertEqual(MacSettings.defaults.exitShortcut, "Ctrl+Alt+F10")
+        let exit = ShortcutBinding(canonical: MacSettings.defaults.exitShortcut)
         XCTAssertNotNil(exit)
         XCTAssertFalse(exit?.mouse ?? true)
         let native = MacShortcut.hotKey(key: exit!.key, ctrl: exit!.ctrl,
