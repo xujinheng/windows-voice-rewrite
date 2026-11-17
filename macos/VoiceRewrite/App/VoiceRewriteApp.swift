@@ -1,9 +1,16 @@
 import SwiftUI
 import AppKit
 
+/// The model is owned by the application, not by an optional workspace window.
+@MainActor
+private final class VoiceRewriteRuntime {
+    static let shared = VoiceRewriteRuntime()
+    let model = WorkspaceModel()
+}
+
+/// The menu bar is the primary application surface; windows are optional.
+@MainActor
 final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
-    var onTerminate: (() -> Void)?
-    var onActivate: (() -> Void)?
     private(set) var didLaunchWorkspace = false
 
     func launchWorkspaceOnce(_ launch: () -> Void) {
@@ -12,17 +19,115 @@ final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
         launch()
     }
 
-    func applicationDidBecomeActive(_ notification: Notification) { onActivate?() }
-    func applicationWillTerminate(_ notification: Notification) { onTerminate?() }
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // A normal launch must not activate an empty dashboard over the editor.
+        NSApp.setActivationPolicy(.accessory)
+    }
 
-    // Closing the workspace must not stop global shortcuts or the menu bar controller.
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        launchWorkspaceOnce {
+            let model = VoiceRewriteRuntime.shared.model
+            model.onUpdateCheckCompleted = { [weak self] status, page in
+                self?.presentUpdateCheck(status: status, page: page)
+            }
+            model.launch()
+        }
+        // macOS 14 automatically constructs a SwiftUI Window scene on launch.
+        // Order it out; an explicit menu click or Finder reopen shows it again.
+        DispatchQueue.main.async {
+            for window in NSApp.windows where window.title == "VoiceRewrite" && !(window is NSPanel) {
+                window.orderOut(nil)
+            }
+        }
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        let model = VoiceRewriteRuntime.shared.model
+        model.refreshSideMouse()
+        model.refreshMicrophonePermission()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        VoiceRewriteRuntime.shared.model.shutdown()
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool { true }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        guard !hasVisibleWindows,
+              let window = sender.windows.first(where: { $0.title == "VoiceRewrite" && !($0 is NSPanel) }) else {
+            return true
+        }
+        sender.setActivationPolicy(.regular)
+        window.makeKeyAndOrderFront(nil)
+        sender.activate(ignoringOtherApps: true)
+        return false
+    }
+
+    private func presentUpdateCheck(status: String, page: String?) {
+        // Completion may arrive after the user closes the menu or workspace.
+        // Only user-initiated checks reach this callback.
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = page == nil ? "检查更新结果" : "发现新版本"
+            alert.informativeText = status
+            if page != nil {
+                alert.addButton(withTitle: "打开官方发布页面")
+                alert.addButton(withTitle: "取消")
+            } else {
+                alert.addButton(withTitle: "确定")
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() == .alertFirstButtonReturn && page != nil {
+                VoiceRewriteRuntime.shared.model.openUpdatePage()
+            }
+        }
+    }
+}
+
+/// Never open arbitrary URLs returned by a helper process.
+enum UpdatePagePolicy {
+    static func officialReleaseURL(_ value: String) -> URL? {
+        guard let url = URLComponents(string: value),
+              url.scheme == "https",
+              url.host == "github.com",
+              url.user == nil, url.password == nil, url.port == nil,
+              url.query == nil, url.fragment == nil,
+              (url.path == "/xujinheng/windows-voice-rewrite/releases" ||
+               url.path.hasPrefix("/xujinheng/windows-voice-rewrite/releases/")),
+              let result = url.url else { return nil }
+        return result
+    }
+}
+
+/// A missing settings.json means the user has not completed initial setup.
+/// Checking it does not create a second settings source of truth.
+enum InitialSetup {
+    static func required(settingsFile: URL) -> Bool {
+        !FileManager.default.fileExists(atPath: settingsFile.path)
+    }
+
+    static var required: Bool {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return required(settingsFile: support.appendingPathComponent("VoiceRewrite/settings.json"))
+    }
 }
 
 enum MenuBarStatus {
     static func title(paused: Bool, recording: Bool, starting: Bool,
-                      processing: Bool, meetingActive: Bool) -> String {
+                      processing: Bool, meetingActive: Bool,
+                      phase: IndicatorPhase? = nil, mode: String = "听写") -> String {
+        switch phase {
+        case .success: return "语音任务完成"
+        case .answer: return "已显示 AI 结果"
+        case .fallback: return "结果已保留 · 可复制"
+        case .error: return "语音任务失败"
+        case .rewriting, .applying: return "正在改写"
+        case .selection: return "正在读取选区"
+        case .processing: return mode == "改写" ? "正在识别指令" : "正在识别"
+        default: break
+        }
         if processing { return "正在处理语音" }
         if recording { return "正在录音" }
         if starting { return "正在启动录音" }
@@ -32,7 +137,20 @@ enum MenuBarStatus {
     }
 
     static func symbol(paused: Bool, recording: Bool, starting: Bool,
-                       processing: Bool, meetingActive: Bool, connectionFailed: Bool) -> String {
+                       processing: Bool, meetingActive: Bool, connectionFailed: Bool,
+                       phase: IndicatorPhase? = nil) -> String {
+        switch phase {
+        case .success, .answer: return "checkmark.circle.fill"
+        case .fallback: return "doc.on.doc.fill"
+        case .error: return "xmark.octagon.fill"
+        case .rewriting, .applying: return "arrow.triangle.2.circlepath.circle.fill"
+        case .processing, .selection: return "ellipsis.circle.fill"
+        default: break
+        }
+        if recording { return "mic.fill" }
+        if starting { return "mic.badge.plus" }
+        if processing { return "ellipsis.circle.fill" }
+        if paused { return "pause.circle.fill" }
         if connectionFailed { return "exclamationmark.triangle.fill" }
         if processing { return "ellipsis.circle.fill" }
         if recording { return "mic.fill" }
@@ -49,9 +167,12 @@ private struct MenuBarControlCenter: View {
     private var busy: Bool { model.isRecording || model.isStarting || model.isProcessing }
 
     var body: some View {
-        Text("状态：\(MenuBarStatus.title(paused: model.voicePaused, recording: model.isRecording, starting: model.isStarting, processing: model.isProcessing, meetingActive: model.meetingActive))")
+        Text("状态：\(MenuBarStatus.title(paused: model.voicePaused, recording: model.isRecording, starting: model.isStarting, processing: model.isProcessing, meetingActive: model.meetingActive, phase: model.menuIndicatorPhase, mode: model.menuIndicatorMode))")
+        if InitialSetup.required {
+            Text("首次使用：请先在设置中配置 ASR / LLM 服务")
+        }
         Button("打开 VoiceRewrite") { showWorkspace() }
-        Button("会议助手（打开主窗口）") { showWorkspace() }
+        Button("打开会议阅读窗口") { MeetingReaderWindowController.shared.open(model: model) }
         if !model.meetingActive && !model.meetingStarting {
             Button("刷新会议音频来源") { model.refreshMeetingSources() }
             Menu("从音频来源开始会议") {
@@ -112,6 +233,7 @@ private struct MenuBarControlCenter: View {
     }
 
     private func showWorkspace() {
+        NSApp.setActivationPolicy(.regular)
         openWindow(id: "workspace")
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -137,7 +259,7 @@ private struct MenuBarControlCenter: View {
 @main
 struct VoiceRewriteApp: App {
     @NSApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var lifecycle
-    @StateObject private var workspace = WorkspaceModel()
+    @StateObject private var workspace = VoiceRewriteRuntime.shared.model
 
     private var menuSymbol: String {
         let connectionFailed: Bool
@@ -146,21 +268,14 @@ struct VoiceRewriteApp: App {
         return MenuBarStatus.symbol(
             paused: workspace.voicePaused, recording: workspace.isRecording,
             starting: workspace.isStarting, processing: workspace.isProcessing,
-            meetingActive: workspace.meetingActive, connectionFailed: connectionFailed)
+            meetingActive: workspace.meetingActive, connectionFailed: connectionFailed,
+            phase: workspace.menuIndicatorPhase)
     }
 
     var body: some Scene {
         Window("VoiceRewrite", id: "workspace") {
             MainView(model: workspace)
                 .frame(minWidth: 670, minHeight: 510)
-                .onAppear {
-                    lifecycle.onTerminate = { [weak workspace] in workspace?.shutdown() }
-                    lifecycle.onActivate = { [weak workspace] in
-                        workspace?.refreshSideMouse()
-                        workspace?.refreshMicrophonePermission()
-                    }
-                    lifecycle.launchWorkspaceOnce { workspace.launch() }
-                }
         }
         .defaultSize(width: 840, height: 600)
         .commands {
