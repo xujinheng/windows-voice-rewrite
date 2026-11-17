@@ -55,9 +55,10 @@ struct PCM16Buffer {
 
     private enum State { case active, finished, cancelled }
 
-    init() {
-        // Reserve the maximum possible payload once, avoiding repeated unbounded growth.
-        bytes.reserveCapacity(Self.maximumBytes)
+    init(reserveFrames: Int = maximumFrames) {
+        // Short system-audio packets must not reserve a full minute of memory
+        // for every callback; microphone recording still reserves its limit.
+        bytes.reserveCapacity(min(Self.maximumFrames, max(0, reserveFrames)) * 2)
     }
 
     mutating func append(_ samples: UnsafeBufferPointer<Float>) throws {

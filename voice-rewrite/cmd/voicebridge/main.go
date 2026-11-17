@@ -51,6 +51,7 @@ type request struct {
 	CurrentVersion string          `json:"current_version"`
 	Shortcut       string          `json:"shortcut"`
 	TargetID       string          `json:"target_id"`
+	SessionID      string          `json:"session_id"`
 }
 
 type bridgeError struct {
@@ -88,6 +89,7 @@ type bridgeServer struct {
 	seen    map[string]struct{}
 	wg      sync.WaitGroup
 	options bridgeOptions
+	meeting *bridgeMeeting
 
 	input    io.Reader
 	output   io.Writer
@@ -141,6 +143,10 @@ func readFrame(r *bufio.Reader) ([]byte, error) {
 func (s *bridgeServer) shutdown() {
 	s.stopOnce.Do(func() {
 		s.mu.Lock()
+		if s.meeting != nil {
+			s.meeting.stop()
+			s.meeting = nil
+		}
 		for _, task := range s.active {
 			task.canceled = true
 			task.cancel()
@@ -207,6 +213,8 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "selected_voice_task" && req.Op != "probe_asr" && req.Op != "probe_llm" && req.Op != "list_asr_models" && req.Op != "list_llm_models" && req.Op != "check_update" {
 		s.mu.Unlock()
 		switch req.Op {
+		case "meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop":
+			s.send(s.meetingRequest(req))
 		case "hello":
 			s.send(success(req.ID, map[string]any{"name": jsonl.HelloName, "protocol": jsonl.Version}))
 		case "parse_shortcut":
@@ -251,6 +259,69 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	s.wg.Add(1)
 	s.mu.Unlock()
 	go s.runTask(ctx, task, req)
+}
+
+func (s *bridgeServer) meetingRequest(req request) response {
+	switch req.Op {
+	case "meeting_start":
+		if len(req.Config) == 0 {
+			return failure(req.ID, "invalid_config", msgInvalidConfig)
+		}
+		cfg, err := coreconfig.Parse(req.Config)
+		if err != nil {
+			return failure(req.ID, "invalid_config", msgInvalidConfig)
+		}
+		cfg, err = coreconfig.Normalize(cfg)
+		if err != nil {
+			return failure(req.ID, "invalid_config", msgInvalidConfig)
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.meeting != nil {
+			return failure(req.ID, "meeting_active", "请先停止当前会议采集")
+		}
+		m, err := newBridgeMeeting(cfg)
+		if err != nil {
+			return failure(req.ID, "meeting_failed", "无法启动会议处理")
+		}
+		s.meeting = m
+		return success(req.ID, map[string]any{"session_id": m.id})
+	case "meeting_feed":
+		if req.SessionID == "" || len(req.PCMBase64) == 0 ||
+			len(req.PCMBase64) > base64.StdEncoding.EncodedLen(32_000) {
+			return failure(req.ID, "invalid_pcm", "会议音频帧大小无效")
+		}
+		pcm, err := base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
+		if err != nil || len(pcm) == 0 || len(pcm) > 32_000 || len(pcm)%audio.FrameBytes != 0 {
+			return failure(req.ID, "invalid_pcm", "会议音频必须是 20ms 对齐的 16kHz 单声道 PCM16")
+		}
+		s.mu.Lock()
+		m := s.meeting
+		s.mu.Unlock()
+		if m == nil || m.id != req.SessionID {
+			return failure(req.ID, "stale_meeting", "会议已停止或更换")
+		}
+		if err := m.feed(pcm); err != nil {
+			return failure(req.ID, "meeting_busy", "会议音频队列已满，已停止接收当前音频帧")
+		}
+		return success(req.ID, map[string]any{"accepted": true})
+	case "meeting_snapshot", "meeting_stop":
+		s.mu.Lock()
+		m := s.meeting
+		if m == nil || req.SessionID == "" || req.SessionID != m.id {
+			s.mu.Unlock()
+			return failure(req.ID, "stale_meeting", "会议已停止或更换")
+		}
+		if req.Op == "meeting_stop" {
+			s.meeting = nil
+			m.stop()
+			s.mu.Unlock()
+			return success(req.ID, map[string]any{"stopped": true})
+		}
+		s.mu.Unlock()
+		return success(req.ID, m.snapshot())
+	}
+	return failure(req.ID, "unsupported_op", msgUnsupported)
 }
 
 func (s *bridgeServer) runTask(ctx context.Context, task *bridgeTask, req request) {
