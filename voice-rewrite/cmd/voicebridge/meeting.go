@@ -52,6 +52,7 @@ type bridgeMeeting struct {
 	runtime   *meetingcore.SessionRuntime
 	pipeline  *meetingcore.Pipeline
 	source    *meetingPacketSource
+	audioDone chan struct{}
 	config    coreconfig.Config
 	scheduler *meetingcore.Scheduler
 
@@ -82,6 +83,7 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 		id:        hex.EncodeToString(key[:]),
 		runtime:   meetingcore.NewSessionRuntime(),
 		source:    &meetingPacketSource{packets: make(chan []byte, 12)},
+		audioDone: make(chan struct{}),
 		status:    meetingcore.ListeningPrompt,
 		config:    cfg,
 		scheduler: &meetingcore.Scheduler{},
@@ -189,6 +191,7 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 // runAudio restarts the shared segmenter for every active epoch. Pausing or
 // resuming cannot accidentally revive buffered packets from an older turn.
 func (m *bridgeMeeting) runAudio() {
+	defer close(m.audioDone)
 	for m.runtime.Context().Err() == nil {
 		work, epoch, paused := m.runtime.Snapshot()
 		if paused {
@@ -284,10 +287,12 @@ func (m *bridgeMeeting) setPaused(paused bool) error {
 
 func (m *bridgeMeeting) stop() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.runtime.Stop()
 	m.discardPacketsLocked()
 	m.level = 0
+	m.mu.Unlock()
+	// Do not leave the capture consumer alive after a session is closed.
+	<-m.audioDone
 }
 
 func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64) error {
