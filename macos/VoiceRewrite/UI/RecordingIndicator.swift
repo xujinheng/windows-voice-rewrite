@@ -85,7 +85,9 @@ final class RecordingIndicatorController {
     private func startTimer() {
         guard timer == nil else { return }
         let timer = Timer(timeInterval: 0.07, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
+            // This timer is installed on RunLoop.main. Avoid enqueueing a new
+            // actor task every 70ms when the main queue is under load.
+            MainActor.assumeIsolated { self?.tick() }
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
@@ -125,8 +127,14 @@ final class RecordingIndicatorController {
         let rawX = Int32((visible.midX - width / 2).rounded())
         let rawY = Int32((visible.minY + 5).rounded())
         let (x, y) = area.clamp(x: rawX, y: rawY, width: Int32(width), height: Int32(IndicatorMath.height))
-        panel.setFrame(NSRect(x: CGFloat(x), y: CGFloat(y), width: width, height: CGFloat(IndicatorMath.height)), display: true)
-        panel.contentView?.frame = NSRect(x: 0, y: 0, width: width, height: CGFloat(IndicatorMath.height))
+        let next = NSRect(x: CGFloat(x), y: CGFloat(y),
+                          width: width, height: CGFloat(IndicatorMath.height))
+        // Repeated setFrame(display: true) forces AppKit layout/repaint on every
+        // wave-meter tick. Only move/resize when the target geometry changes.
+        if panel.frame != next {
+            panel.setFrame(next, display: true)
+            panel.contentView?.frame = NSRect(origin: .zero, size: next.size)
+        }
     }
 }
 
