@@ -586,3 +586,56 @@ private struct HistoryReaderText: NSViewRepresentable {
         }
     }
 }
+
+
+/// Single native, floating reader window. Unlike SwiftUI openWindow(id:),
+/// this does not depend on a scene registered by another feature PR and
+/// survives activation of Zoom/Teams without covering the editor itself.
+@MainActor
+final class MeetingReaderWindowController: NSObject, NSWindowDelegate {
+    static let shared = MeetingReaderWindowController()
+
+    private var panel: NSPanel?
+    private weak var meeting: WorkspaceModel?
+
+    func open(model: WorkspaceModel) {
+        if let panel {
+            panel.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        meeting = model
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 780, height: 840),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false)
+        panel.title = "VoiceRewrite · 会议阅读"
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.minSize = NSSize(width: 680, height: 510)
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.contentView = NSHostingView(rootView:
+            MeetingReaderView(model: model, embedded: false))
+        panel.delegate = self
+        if !panel.setFrameUsingName("VoiceRewriteMeetingReader") {
+            panel.center()
+        }
+        panel.setFrameAutosaveName("VoiceRewriteMeetingReader")
+        self.panel = panel
+        panel.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        panel = nil
+        // Do not leave the microphone/system capture running invisibly
+        // when the user explicitly closes the independent Meeting reader.
+        if let meeting, meeting.meetingActive || meeting.meetingStarting {
+            meeting.stopMeeting()
+        }
+        meeting = nil
+    }
+}
