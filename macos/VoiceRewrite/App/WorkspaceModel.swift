@@ -50,6 +50,7 @@ final class WorkspaceModel: ObservableObject {
     private var sideGate = SideVoiceGate()
     private let credentials = KeychainCredentials()
     private let interaction = InteractionSession.macOS()
+    private let dictationDelivery = MacDictationDelivery()
     private var store: SettingsStore?
     private var bridge: BridgeClient?
     private var helloGeneration = ResultGeneration()
@@ -57,7 +58,7 @@ final class WorkspaceModel: ObservableObject {
     private var probeGeneration = ResultGeneration()
     private var activeProbeIDs: [String: String] = [:]
     private var activeRequestID: String?
-    private var activeInsert: (snapshot: SelectionSnapshot, generation: UInt64)?
+    private var activeInsert: MacDictationTarget?
     private var activeVoiceSelection: (snapshot: SelectionSnapshot, generation: UInt64)?
     private var hotKeyDriver: CarbonHotKeyDriver?
     private var hotKeys: HotKeyRegistry?
@@ -592,9 +593,6 @@ final class WorkspaceModel: ObservableObject {
         _ = resultGeneration.begin()
         if let id = activeRequestID { bridge?.cancel(id: id) }
         activeRequestID = nil
-        if let old = activeInsert {
-            Task { await interaction.cancelTask(generation: old.generation) }
-        }
         activeInsert = nil
         if let old = activeVoiceSelection {
             Task { await interaction.cancelTask(generation: old.generation) }
@@ -698,13 +696,10 @@ final class WorkspaceModel: ObservableObject {
             defer { self.refreshMicrophonePermission() }
             var captured = false
             var failure: String?
-            var snapshot: SelectionSnapshot?
-            var generation: UInt64 = 0
+            var snapshot: MacDictationTarget?
             if let pid = targetPID, pid > 0 {
                 do {
-                    generation = try await interaction.beginTask(targetProcessID: pid)
-                    snapshot = try await interaction.captureSelection(
-                        generation: generation, intent: .dictation)
+                    snapshot = try dictationDelivery.capture(processID: pid)
                     captured = true
                 } catch {
                     DiagnosticLog.note("stage=dictation_capture status=failed code=\(insertionDiagnosticCode(error))")
@@ -714,7 +709,7 @@ final class WorkspaceModel: ObservableObject {
             let arm = dictationArm(hasTarget: (targetPID ?? 0) > 0, tokenValid: resultGeneration.accepts(token), captured: captured, captureFailure: failure)
             if let status = arm.interactionStatus { interactionStatus = status }
             if arm.keepInsert, let snapshot {
-                activeInsert = (snapshot, generation)
+                activeInsert = snapshot
             }
             guard arm.startMicrophone else { return }
             do {
@@ -973,7 +968,7 @@ final class WorkspaceModel: ObservableObject {
         _ follow: TaskFollowUp,
         generation: UInt64? = nil,
         token: UInt64? = nil,
-        insertion: (snapshot: SelectionSnapshot, generation: UInt64)? = nil,
+        insertion: MacDictationTarget? = nil,
         replacement: (snapshot: SelectionSnapshot, generation: UInt64)? = nil
     ) {
         if let text = follow.transcription { transcription = text }
@@ -996,7 +991,7 @@ final class WorkspaceModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self, self.resultGeneration.accepts(token) else { return }
                 do {
-                    try await self.interaction.insertIfCurrent(insertion.snapshot, text: text, generation: insertion.generation)
+                    try self.dictationDelivery.deliver(text, to: insertion)
                     DiagnosticLog.note("stage=dictation_delivery status=sent_unverified")
                     self.applyTask(dictationInsertFollowUp(succeeded: true, status: "", manualTitle: "", text: text))
                 } catch {
