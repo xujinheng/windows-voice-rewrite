@@ -64,7 +64,9 @@ public final class MacClipboardBoard: ClipboardReadReceiptBoard, @unchecked Send
         return ClipboardContents(items: snapshots, changeCount: count)
     }
 
-    public func installTemporaryText(_ text: String, owner: UUID) throws -> Int {
+    public func installTemporaryText(_ text: String, owner: UUID, expectedChangeCount: Int) throws -> Int {
+        // Never overwrite a newer clipboard owner with a previously captured snapshot.
+        guard board.changeCount == expectedChangeCount else { throw ClipboardFailure.snapshotUnavailable }
         let item = NSPasteboardItem()
         // Convention-based hints to clipboard history apps; not a security boundary.
         let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
@@ -76,6 +78,9 @@ public final class MacClipboardBoard: ClipboardReadReceiptBoard, @unchecked Send
               item.setData(Data(), forType: transient) else {
             throw ClipboardFailure.writeFailed
         }
+        // Building a pasteboard item can invoke other code. Recheck immediately
+        // before replacing the clipboard; NSPasteboard has no atomic CAS API.
+        guard board.changeCount == expectedChangeCount else { throw ClipboardFailure.snapshotUnavailable }
         board.clearContents()
         guard board.writeObjects([item]) else { throw ClipboardFailure.writeFailed }
         providerLock.lock()
