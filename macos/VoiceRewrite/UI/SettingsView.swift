@@ -176,7 +176,6 @@ struct SettingsView: View {
                     Text("已保存的麦克风不在当前设备列表中，录音会提示设备不可用。")
                         .font(.footnote).foregroundStyle(.orange)
                 }
-
                 Picker("录音模式", selection: $model.settings.recordMode) {
                     Text("按住录音（Hold）").tag("hold")
                     Text("再按停止（Toggle）").tag("toggle")
@@ -209,7 +208,6 @@ struct SettingsView: View {
                     Text(ContractLimits.meetingASRLlamaPrefixTitle).tag(ContractLimits.meetingASRLlamaPrefix)
                 }
                 .accessibilityIdentifier("meeting_asr_mode")
-
                 Text("System Prompt").font(.subheadline)
                 TextEditor(text: $model.settings.systemPrompt)
                     .frame(minHeight: 96)
