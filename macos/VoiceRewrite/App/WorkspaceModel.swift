@@ -431,8 +431,7 @@ final class WorkspaceModel: ObservableObject {
                 }
             }
         }, onReleased: { [weak self] shortcut, _ in
-            guard let self, self.settings.recordMode == "hold",
-                  let bound = self.activeShortcutPlan,
+            guard let self, let bound = self.activeShortcutPlan, bound.recordMode == "hold",
                   shortcut == bound.dictation || shortcut == bound.rewrite else { return }
             if self.meetingActive {
                 if self.meetingVoiceStarting { self.meetingSideReleasedDuringStart = true }
