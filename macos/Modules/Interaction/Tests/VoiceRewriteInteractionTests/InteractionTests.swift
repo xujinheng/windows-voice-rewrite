@@ -392,7 +392,7 @@ final class ClipboardTests: XCTestCase {
 }
 
 final class TextWriteVerificationTests: XCTestCase {
-    func testUnverifiableAXValueCannotAuthorizeAnyWrite() {
+    func testMissingAXValueCannotConfirmRewrite() {
         XCTAssertNil(TextWriteVerification.expectedValue(
             original: nil, selectedText: "",
             range: .init(location: 0, length: 0), replacement: "dictation"))
