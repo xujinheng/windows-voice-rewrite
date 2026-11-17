@@ -254,7 +254,7 @@ struct SettingsView: View {
                 Button(captureTarget == "exit_shortcut" ? "等待按键…" : "录入按键") { beginCapture("exit_shortcut") }
                     .accessibilityIdentifier("capture_exit")
                                 }
-                Text("Mac 默认长按右 Control 听写、长按右 Option 改写；松开结束。Mouse4 听写、Mouse5 改写保持不变。也可自行配置 Ctrl+Alt+R/E 或 F8。右侧单键需要辅助功能/输入监控权限，单独按住 250ms 才会触发；组合键不触发录音。注意：MacBook Pro 内建键盘通常没有右 Control，右 Control 需要外接键盘。")
+                Text("快捷键可直接录入左/右 Control、左/右 Option、左/右 Command 六个单键；单独按住 250ms 开始、松开结束，正常组合键不被拦截。Mouse4 听写、Mouse5 改写保留，亦可配置 Ctrl+Option 组合键。默认右 Control 听写、右 Option 改写；MacBook Pro/Air 内建键盘没有右 Control，可在这里改为右 Command 或左 Control。退出快捷键必须使用功能键或组合键。")
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("input_note_macos")
                                 if !captureStatus.isEmpty {
