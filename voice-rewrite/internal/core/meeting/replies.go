@@ -70,10 +70,14 @@ func (s *ReplyState) Next() uint64 {
 // MayStartTurn avoids duplicate automatic inference for a finished turn and
 // coalesces concurrent manual/automatic requests. Manual requests may explicitly
 // regenerate completed suggestions.
+// AllowsRequest is the user-facing admission policy. Call it before
+// MayStartTurn: the latter handles duplicate in-flight turn work only.
+// Automatic suggestions are off until the host explicitly enables them.
+func (s *ReplyState) AllowsRequest(automatic bool) bool {
+	return !automatic || s.AutomaticEnabled
+}
+
 func (s *ReplyState) MayStartTurn(turn uint64, automatic bool) bool {
-	if automatic && !s.AutomaticEnabled {
-		return false
-	}
 	return !(s.WorkActive && s.WorkTurn == turn) &&
 		!(automatic && s.CompletedTurn == turn)
 }

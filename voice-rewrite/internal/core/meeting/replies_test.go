@@ -115,10 +115,13 @@ func TestReplyBatchAppliesKnownProtocolLines(t *testing.T) {
 
 func TestReplyWorkCoalescesAutomaticAndManualAndAllowsExplicitRetry(t *testing.T) {
 	var state ReplyState
-	if state.MayStartTurn(17, true) || !state.MayStartTurn(17, false) {
-		t.Fatal("suggestions must be manual by default")
+	if state.AllowsRequest(true) || !state.AllowsRequest(false) {
+		t.Fatal("automatic requests must be opt-in; manual requests always allowed")
 	}
 	state.AutomaticEnabled = true
+	if !state.AllowsRequest(true) {
+		t.Fatal("explicit opt-in did not enable automatic requests")
+	}
 	if !state.MayStartTurn(17, true) {
 		t.Fatal("first automatic turn rejected")
 	}
