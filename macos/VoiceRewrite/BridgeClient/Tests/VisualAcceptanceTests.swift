@@ -24,12 +24,25 @@ final class VisualAcceptanceTests: XCTestCase {
     @MainActor
     func testProductionViewStateScreenshots() throws {
         let environment = ProcessInfo.processInfo.environment
-        guard let root = environment["VOICEREWRITE_ACCEPTANCE_DIR"] else {
+        // Xcode does not reliably forward the parent process environment to its
+        // XCTest runner. A repository-local sentinel scopes capture to this CI job.
+        let repository = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        guard FileManager.default.fileExists(atPath:
+            repository.appendingPathComponent("acceptance-output/.enabled").path) else {
             throw XCTSkip("visual evidence capture is enabled only in the acceptance workflow")
         }
-        let directory = URL(fileURLWithPath: root, isDirectory: true)
+        #if arch(arm64)
+        let nativePlatform = "macos-arm64"
+        #else
+        let nativePlatform = "macos-x64"
+        #endif
+        let platform = environment["VOICEREWRITE_ACCEPTANCE_PLATFORM"] ?? nativePlatform
+        let directory = repository.appendingPathComponent("acceptance-output/\\(platform)",
+            isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let platform = environment["VOICEREWRITE_ACCEPTANCE_PLATFORM"] ?? "macos-arm64"
         var captures: [Capture] = []
 
         func store<V: View>(_ state: String, fixture: String, theme: String,
@@ -90,7 +103,7 @@ final class VisualAcceptanceTests: XCTestCase {
                       width: ResultCardMetrics.width, height: 340,
                       content: ResultCardView(title: "AI 回答", session: card,
                           width: ResultCardMetrics.width, height: 340,
-                          onCopy: {}, onClose: {})
+                          onCopy: {}, onApply: {}, onClose: {})
                       .environment(\.colorScheme, theme == "dark" ? .dark : .light))
         }
 
