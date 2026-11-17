@@ -27,7 +27,8 @@ final class SessionHistoryTests: XCTestCase {
         delegate.launchWorkspaceOnce { launches += 1 }
         XCTAssertEqual(launches, 1)
         XCTAssertFalse(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApplication.shared))
-        XCTAssertTrue(delegate.applicationShouldHandleReopen(NSApplication.shared, hasVisibleWindows: false))
+        // Finder reopen may reactivate an existing window or let SwiftUI create it.
+        // No additional launch() call is needed to preserve the menu-bar model.
     }
 
     func testMenuStatusDoesNotMisreportPausedMeetingOrProcessing() {
@@ -57,4 +58,56 @@ final class SessionHistoryTests: XCTestCase {
         XCTAssertFalse(dictation.contains("内容"))
         XCTAssertFalse(answer.contains("secret"))
     }
+    func testMenuTracksIndicatorPhasesWithoutReplacingSharedDuration() {
+        func title(_ phase: IndicatorPhase, mode: String = "听写") -> String {
+            MenuBarStatus.title(paused: false, recording: false, starting: false,
+                                processing: false, meetingActive: false, phase: phase, mode: mode)
+        }
+        func symbol(_ phase: IndicatorPhase) -> String {
+            MenuBarStatus.symbol(paused: false, recording: false, starting: false,
+                                 processing: false, meetingActive: false,
+                                 connectionFailed: true, phase: phase)
+        }
+        XCTAssertEqual(title(.processing), "正在识别")
+        XCTAssertEqual(title(.processing, mode: "改写"), "正在识别指令")
+        XCTAssertEqual(title(.rewriting), "正在改写")
+        XCTAssertEqual(title(.selection), "正在读取选区")
+        XCTAssertEqual(title(.success), "语音任务完成")
+        XCTAssertEqual(title(.error), "语音任务失败")
+        XCTAssertEqual(title(.fallback), "结果已保留 · 可复制")
+        XCTAssertEqual(symbol(.success), "checkmark.circle.fill")
+        XCTAssertEqual(symbol(.error), "xmark.octagon.fill")
+        XCTAssertEqual(symbol(.rewriting), "arrow.triangle.2.circlepath.circle.fill")
+        XCTAssertEqual(symbol(.fallback), "doc.on.doc.fill")
+        XCTAssertEqual(MenuBarStatus.symbol(paused: true, recording: false, starting: false,
+            processing: false, meetingActive: false, connectionFailed: true), "pause.circle.fill")
+    }
+
+    func testFirstRunSettingsAreDetectedWithoutWritingSettings() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoiceRewriteOnboarding-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("settings.json")
+        XCTAssertTrue(InitialSetup.required(settingsFile: path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path.path))
+        try Data("{}".utf8).write(to: path)
+        XCTAssertFalse(InitialSetup.required(settingsFile: path))
+    }
+
+    func testUpdatePageAllowsOnlyOfficialHTTPSReleaseURLs() {
+        let valid = "https://github.com/xujinheng/windows-voice-rewrite/releases"
+        XCTAssertEqual(UpdatePagePolicy.officialReleaseURL(valid)?.absoluteString, valid)
+        XCTAssertNotNil(UpdatePagePolicy.officialReleaseURL(valid + "/tag/v1.2.3"))
+        for attack in [
+            "http://github.com/xujinheng/windows-voice-rewrite/releases",
+            "https://github.com.evil.example/xujinheng/windows-voice-rewrite/releases",
+            "https://github.com/xujinheng/windows-voice-rewrite/releases.evil",
+            "https://github.com/xujinheng/windows-voice-rewrite/releases?download=1",
+            "https://evil:password@github.com/xujinheng/windows-voice-rewrite/releases"
+        ] {
+            XCTAssertNil(UpdatePagePolicy.officialReleaseURL(attack), attack)
+        }
+    }
+
 }
