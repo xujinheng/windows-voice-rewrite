@@ -7,16 +7,20 @@ final class BridgeClient {
     typealias Completion = ReplyRegistry.Completion
     private let executableURL: URL
     private let onExit: (BridgeFailure) -> Void
+    private let writeTimeout: TimeInterval
     private let state = DispatchQueue(label: "com.xujinheng.VoiceRewrite.bridge.state")
     private let writer = DispatchQueue(label: "com.xujinheng.VoiceRewrite.bridge.writer")
     private let replies = ReplyRegistry()
     private var process: Process?
     private var launching = false
+    private var writingID: String?
     private var input: Pipe?
     private var epoch: UInt64 = 0
 
-    init(executableURL: URL, onExit: @escaping (BridgeFailure) -> Void = { _ in }) {
+    init(executableURL: URL, writeTimeout: TimeInterval = 10,
+         onExit: @escaping (BridgeFailure) -> Void = { _ in }) {
         self.executableURL = executableURL
+        self.writeTimeout = writeTimeout
         self.onExit = onExit
     }
 
@@ -119,10 +123,30 @@ final class BridgeClient {
                 let line = try BridgeRequest(id: id, operation: operation, fields: payload).line()
                 // Cancellation/reconnect may have happened while encoding.
                 guard self?.state.sync(execute: {
-                    guard let self else { return false }
-                    return self.epoch == session && self.replies.contains(id: id)
+                    guard let self, self.epoch == session,
+                          self.replies.contains(id: id) else { return false }
+                    self.writingID = id
+                    return true
                 }) == true else { return }
+                // The Helper may stop consuming stdin without closing it.
+                // An indefinitely blocked pipe writer would prevent all later
+                // requests/cancellations. Recycle the session after a finite
+                // *transport* stall; model inference is not on this deadline.
+                DispatchQueue.global(qos: .utility).asyncAfter(
+                    deadline: .now() + (self?.writeTimeout ?? 10)
+                ) { [weak self] in
+                    self?.state.async { [weak self] in
+                        guard let self, self.epoch == session,
+                              self.writingID == id else { return }
+                        self.failSession(session, reason: .writeFailed)
+                    }
+                }
                 try stdin.fileHandleForWriting.write(contentsOf: line)
+                self?.state.async { [weak self] in
+                    guard let self, self.epoch == session,
+                          self.writingID == id else { return }
+                    self.writingID = nil
+                }
             } catch {
                 let failure = (error as? BridgeFailure)
                 self?.state.async { [weak self] in
@@ -154,6 +178,7 @@ final class BridgeClient {
         let previous: (Process?, Pipe?) = state.sync {
             epoch &+= 1
             launching = false
+            writingID = nil
             let previous = (process, input)
             process = nil
             input = nil
@@ -206,6 +231,7 @@ final class BridgeClient {
     private func failSession(_ session: UInt64, reason: BridgeFailure) {
         guard session == epoch else { return }
         epoch &+= 1
+        writingID = nil
         let child = process
         let oldInput = input
         process = nil
