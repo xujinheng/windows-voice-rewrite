@@ -5,7 +5,7 @@ import VoiceRewriteStorage
 // Windows Meeting HUD: Chinese, English, history, replies, expression, source.
 enum MeetingReaderLayout {
     static let minimums: [CGFloat] = [46, 32, 34, 36, 62, 28]
-    static let defaults: [CGFloat] = [85, 50, 85, 300, 110, 40]
+    static let defaults: [CGFloat] = [85, 50, 85, 65, 230, 40]
 
     static func visible(captionsOnly: Bool, expanded: Bool) -> [Int] {
         if captionsOnly { return [0, 1, 2] }
@@ -120,7 +120,7 @@ struct MeetingReaderView: View {
     let embedded: Bool
 
     @AppStorage("meeting.reader.fontSize") private var fontSize = 16
-    @AppStorage("meeting.reader.paneWeights") private var savedWeights = "85,50,85,300,110,40"
+    @AppStorage("meeting.reader.paneWeights") private var savedWeights = "85,50,85,65,230,40"
     @AppStorage("meeting.reader.captionsFocus") private var savedCaptionsFocus = false
     @State private var weights = MeetingReaderLayout.defaults
     @State private var dragBase: [CGFloat]?
