@@ -271,4 +271,3 @@ private final class CardEditorBackend: AccessibilityClient, @unchecked Sendable 
     }
     func stopMonitoring() {}
 }
-}
