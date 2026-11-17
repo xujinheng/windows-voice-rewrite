@@ -40,7 +40,7 @@ A `SelectionSnapshot` is a single-use capability bound to a generation, foregrou
 
 ### Cross-application insertion
 
-Ordinary dictation uses one guarded Cmd+V paste, at the captured caret or selected range. The current process, focused AX element, selected UTF-16 range, protected-field state, task generation, and any available original AXValue are revalidated before staging and posting. The temporary clipboard remains available for 350 ms before safe restoration; a posted event is best-effort delivery, not proof that the editor accepted it. The write is never retried automatically. When the editor does not expose AXValue, a supported AX text-change notification is required to authorize capture.
+Ordinary dictation uses one guarded Cmd+V paste, at the captured caret or selected range. The current process, focused AX element, selected UTF-16 range, protected-field state, task generation, and any available original AXValue are revalidated before staging and posting. The temporary clipboard is restored on a background queue approximately one second after Cmd+V, only if VoiceRewrite still owns it. Sending the event returns immediately; this is best-effort delivery, not proof that the editor accepted it. The write is never retried automatically. When the editor does not expose AXValue, a supported AX text-change notification is required to authorize capture.
 
 Explicit selection rewriting retains its stronger contract: use native AX selected-text writing when supported; otherwise allow guarded paste only with a readable complete AXValue and exact UTF-16 baseline. Read back the complete value to confirm replacement, and report uncertainty if the editor cannot confirm it. This avoids presenting an unverified replacement as definite.
 
