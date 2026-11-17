@@ -685,7 +685,7 @@ func emitSettings() (string, error) {
 		b.WriteString(strconv.Quote(page.ID) + " {\n")
 		b.WriteString("                                Text(" + strconv.Quote(page.Section) + ").font(.headline)\n")
 		for _, control := range contract.PageControls(page.ID, contract.MacOS) {
-			if strings.HasPrefix(control.ID, "capture_") || control.ID == "max_record_seconds" || control.ID == "record_note" || control.ID == "meeting_asr_mode" || control.ID == "system_prompt" || control.ID == "max_response_tokens" || control.ID == "max_selected_characters" || control.ID == "selection_copy_attempts" || control.ID == "selection_copy_timeout_ms" {
+			if strings.HasPrefix(control.ID, "capture_") || control.ID == "discover_asr_models" || control.ID == "discover_llm_models" || control.ID == "max_record_seconds" || control.ID == "record_note" || control.ID == "meeting_asr_mode" || control.ID == "system_prompt" || control.ID == "max_response_tokens" || control.ID == "max_selected_characters" || control.ID == "selection_copy_attempts" || control.ID == "selection_copy_timeout_ms" {
 				continue
 			}
 			if control.Kind == contract.Shortcut {
