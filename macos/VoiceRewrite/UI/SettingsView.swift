@@ -291,6 +291,7 @@ struct SettingsView: View {
         stopCapture()
         captureTarget = id
         captureStatus = "正在监听按键… 按 Esc 取消"
+        model.setShortcutCaptureActive(true)
         captureMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .otherMouseDown]) { event in
             if event.type == .keyDown && event.isARepeat { return nil }
             if event.type == .otherMouseDown {
@@ -346,6 +347,7 @@ struct SettingsView: View {
         if let captureMonitor { NSEvent.removeMonitor(captureMonitor) }
         captureMonitor = nil
         captureTarget = nil
+        model.setShortcutCaptureActive(false)
     }
 
     private static func shortcutFromKey(_ event: NSEvent) -> String? {
