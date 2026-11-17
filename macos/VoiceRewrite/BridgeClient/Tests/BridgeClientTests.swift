@@ -242,6 +242,30 @@ final class BridgeClientTests: XCTestCase {
         wait(for: [failed, survived], timeout: 3)
     }
 
+    func testHelperThatNeverReadsStdinCannotBlockLaterIPCForever() throws {
+        let script = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voicebridge-unread-\(UUID().uuidString).sh")
+        try Data("#!/bin/sh\nexec sleep 8\n".utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+        defer { try? FileManager.default.removeItem(at: script) }
+
+        let terminated = expectation(description: "stuck Helper transport terminated")
+        let client = BridgeClient(executableURL: script, writeTimeout: 0.5) { failure in
+            XCTAssertEqual(failure, .writeFailed)
+            terminated.fulfill()
+        }
+        try client.start()
+        defer { client.stop() }
+
+        let rejected = expectation(description: "large pending PCM retired")
+        client.sendPCM(operation: "transcribe", pcm: Data(repeating: 0, count: 2 << 20)) { result in
+            if case .failure(.writeFailed) = result { /* expected */ }
+            else { XCTFail("blocked pipe did not fail: \(result)") }
+            rejected.fulfill()
+        }
+        wait(for: [rejected, terminated], timeout: 5)
+    }
+
     func testClosedStdoutWhileHelperStaysAliveDoesNotStrandCallbacks() throws {
         let script = FileManager.default.temporaryDirectory
             .appendingPathComponent("voicebridge-eof-\(UUID().uuidString).sh")
