@@ -24,6 +24,28 @@ final class SideMouseStateTests: XCTestCase {
         XCTAssertNil(SideMouseAction(rawValue: 5))
     }
 
+    func testPressReleasedBeforeThresholdDiscardedButNavigationIsShort() {
+        var state = SideButtonHoldState()
+        let token = state.press(3)!
+        XCTAssertTrue(state.hasPendingPress)
+        // The native microphone may already be recording; the input state
+        // must still classify release as short and reject the delayed timer.
+        XCTAssertEqual(state.release(3), .short)
+        XCTAssertFalse(state.activate(3, token: token))
+        XCTAssertFalse(state.hasPendingPress)
+        XCTAssertNotNil(state.press(3))
+        XCTAssertEqual(state.release(3), .short)
+    }
+
+    func testReleaseImmediatelyAfterPromotionKeepsHoldClassification() {
+        var state = SideButtonHoldState()
+        let token = state.press(3)!
+        XCTAssertTrue(state.activate(3, token: token))
+        XCTAssertEqual(state.release(3), .held)
+        XCTAssertFalse(state.activate(3, token: token))
+        XCTAssertEqual(state.release(3), .ignored)
+    }
+
     func testShortPressReplaysAndExpiredTimerCannotActivate() {
         var state = SideButtonHoldState()
         let token = state.press(3)
