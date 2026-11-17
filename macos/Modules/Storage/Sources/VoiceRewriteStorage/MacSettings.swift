@@ -172,6 +172,14 @@ public struct MacSettings: Codable, Equatable, Sendable {
         for (key, value) in shortcutDefaults where values[key] == nil {
             values[key] = value
         }
+        // Upgrade only the old untouched default pair. Custom shortcuts, or
+        // an explicitly chosen Toggle mode, are not silently overwritten.
+        if values["dictation_shortcut"] as? String == "Ctrl+Alt+R",
+           values["rewrite_shortcut"] as? String == "Ctrl+Alt+E",
+           values["record_mode"] as? String == "hold" {
+            values["dictation_shortcut"] = ContractLimits.macDictationShortcut
+            values["rewrite_shortcut"] = ContractLimits.macRewriteShortcut
+        }
         guard Set(values.keys) == Set(CodingKeys.allCases.map(\.rawValue)),
               let encoded = try? JSONSerialization.data(withJSONObject: values),
               var settings = try? JSONDecoder().decode(MacSettings.self, from: encoded) else {
