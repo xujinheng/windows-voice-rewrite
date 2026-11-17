@@ -42,21 +42,21 @@ const (
 var errFrameTooLarge = errors.New("frame exceeds limit")
 
 type request struct {
-	Version        int             `json:"v"`
-	ID             string          `json:"id"`
-	Op             string          `json:"op"`
-	Config         json.RawMessage `json:"config"`
-	PCMBase64      string          `json:"pcm_base64"`
-	SelectedText   string          `json:"selected_text"`
-	Instruction    string          `json:"instruction"`
-	CurrentVersion string          `json:"current_version"`
-	Shortcut       string          `json:"shortcut"`
-	TargetID       string          `json:"target_id"`
-	SessionID      string          `json:"session_id"`
-	AudioEpoch     uint64          `json:"audio_epoch"`
-	ReplyIndex     int             `json:"reply_index"`
-	ViewButton     int             `json:"button_id"`
-	FocusExpression bool           `json:"focus_expression"`
+	Version         int             `json:"v"`
+	ID              string          `json:"id"`
+	Op              string          `json:"op"`
+	Config          json.RawMessage `json:"config"`
+	PCMBase64       string          `json:"pcm_base64"`
+	SelectedText    string          `json:"selected_text"`
+	Instruction     string          `json:"instruction"`
+	CurrentVersion  string          `json:"current_version"`
+	Shortcut        string          `json:"shortcut"`
+	TargetID        string          `json:"target_id"`
+	SessionID       string          `json:"session_id"`
+	AudioEpoch      uint64          `json:"audio_epoch"`
+	ReplyIndex      int             `json:"reply_index"`
+	ViewButton      int             `json:"button_id"`
+	FocusExpression bool            `json:"focus_expression"`
 }
 
 type bridgeError struct {
