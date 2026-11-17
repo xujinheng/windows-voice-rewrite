@@ -543,9 +543,16 @@ final class WorkspaceModel: ObservableObject {
                         return
                     }
                     let models = values.compactMap(\.string)
-                    self.setModelList(kind, models: models, status: models.isEmpty
-                        ? "服务未列出模型，可继续手动输入模型 ID"
-                        : "已发现 \(models.count) 个模型；选择后仍需保存设置")
+                    let truncated = response.result?["truncated"]?.boolValue == true
+                    let status: String
+                    if models.isEmpty {
+                        status = "服务未列出模型，可继续手动输入模型 ID"
+                    } else if truncated {
+                        status = "显示前 \(models.count) 个模型；其他 ID 可手填，选择后需保存设置"
+                    } else {
+                        status = "已发现 \(models.count) 个模型；选择后仍需保存设置"
+                    }
+                    self.setModelList(kind, models: models, status: status)
                 case .success(let response):
                     self.setModelList(kind, models: nil,
                         status: response.error?.userText ?? "读取模型列表失败")
