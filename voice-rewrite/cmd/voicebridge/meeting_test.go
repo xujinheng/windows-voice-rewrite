@@ -81,7 +81,7 @@ func TestBridgeMeetingUsesSharedSegmentationAndASR(t *testing.T) {
 				t.Error("meeting caption did not use configured LLM key")
 			}
 			w.Header().Set("Content-Type", "text/event-stream")
-			_, _ = io.WriteString(w, "data: "+`{"choices":[{"delta":{"content":"ZH\\t会议你好\\n"}}]}`+"\n\n")
+			_, _ = io.WriteString(w, "data: "+`{"choices":[{"delta":{"content":"ZH\t会议你好\n"}}]}`+"\n\n")
 			_, _ = io.WriteString(w, "data: [DONE]\n\n")
 		default:
 			t.Errorf("unexpected provider call %s", r.URL.Path)
