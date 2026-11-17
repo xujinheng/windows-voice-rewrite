@@ -202,6 +202,8 @@ public struct HelperConfigFactory {
             "asr_model": settings.asrModel,
             "text_model": settings.textModel,
             "max_record_seconds": settings.maxRecordSeconds,
+            "meeting_background": settings.meetingBackground,
+            "meeting_terms": settings.meetingTerms,
             "asr_api_key": asr,
             "llm_api_key": llm,
         ])
