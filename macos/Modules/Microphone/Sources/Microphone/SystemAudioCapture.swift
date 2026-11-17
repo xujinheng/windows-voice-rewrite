@@ -1,6 +1,7 @@
 #if os(macOS)
 import AVFoundation
 import CoreAudio
+import CoreGraphics
 import CoreMedia
 import Foundation
 import ScreenCaptureKit
@@ -55,9 +56,20 @@ public final class SystemAudioCapture {
 
     public init() {}
 
+    private func shareableContent() async throws -> SCShareableContent {
+        do {
+            return try await SCShareableContent.excludingDesktopWindows(
+                false, onScreenWindowsOnly: false)
+        } catch {
+            if !CGPreflightScreenCaptureAccess() {
+                throw SystemAudioError.permissionDenied
+            }
+            throw SystemAudioError.sourceDiscoveryFailed
+        }
+    }
+
     public func sources() async throws -> [MeetingAudioSource] {
-        let content = try await SCShareableContent.excludingDesktopWindows(
-            false, onScreenWindowsOnly: false)
+        let content = try await shareableContent()
         var sources = [MeetingAudioSource(id: "system", name: "系统音频（不含 VoiceRewrite）")]
         for app in content.applications where app.processID != ProcessInfo.processInfo.processIdentifier {
             let name = app.applicationName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -95,8 +107,7 @@ public final class SystemAudioCapture {
         // finished tearing down. A canceled discovery still checks its token.
         await pendingStop?.value
         guard startGate.accepts(token) else { throw SystemAudioError.startCanceled }
-        let content = try await SCShareableContent.excludingDesktopWindows(
-            false, onScreenWindowsOnly: false)
+        let content = try await shareableContent()
         // The first suspension is above: stop() must cancel source discovery too.
         guard startGate.accepts(token) else { throw SystemAudioError.startCanceled }
         guard let display = content.displays.first else {
@@ -146,7 +157,10 @@ public final class SystemAudioCapture {
             }
             try? created.removeStreamOutput(receiver, type: .audio)
             if !startGate.accepts(token) { throw SystemAudioError.startCanceled }
-            throw error
+            if !CGPreflightScreenCaptureAccess() {
+                throw SystemAudioError.permissionDenied
+            }
+            throw SystemAudioError.captureFailed
         }
         guard startGate.accepts(token), self.stream === created else {
             receiver.invalidate()
@@ -192,6 +206,9 @@ public enum SystemAudioError: Error, LocalizedError {
     case noDisplay
     case sourceGone
     case startCanceled
+    case permissionDenied
+    case sourceDiscoveryFailed
+    case captureFailed
 
     public var errorDescription: String? {
         switch self {
@@ -199,6 +216,9 @@ public enum SystemAudioError: Error, LocalizedError {
         case .noDisplay: return "未找到可采集的屏幕；请检查显示器连接"
         case .sourceGone: return "所选应用已经退出，请重新选择音频来源"
         case .startCanceled: return "会议音频采集已停止"
+        case .permissionDenied: return "屏幕与系统音频录制权限未授权；请在系统设置 → 隐私与安全性中允许 VoiceRewrite"
+        case .sourceDiscoveryFailed: return "读取会议音频来源失败；请检查屏幕共享及系统音频权限"
+        case .captureFailed: return "启动会议音频失败；请重新选择来源并检查屏幕与系统音频录制权限"
         }
     }
 }
