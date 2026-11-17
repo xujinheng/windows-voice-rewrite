@@ -129,6 +129,7 @@ final class WorkspaceModel: ObservableObject {
     private var meetingRequestID: String?
     private var meetingCaptureSourceID = ""
     private var meetingVoiceASRID: String?
+    private var meetingVoiceWatchdog: Task<Void, Never>?
     private var meetingVoiceIntent: MeetingVoiceIntent = .compose
     private var meetingSideAction: SideMouseAction?
     private var meetingSideReleasedDuringStart = false
@@ -904,6 +905,7 @@ final class WorkspaceModel: ObservableObject {
 
     private func cancelMeetingSideHold() {
         guard meetingSideAction != nil else { return }
+        clearMeetingVoiceWatchdog()
         meetingSideAction = nil
         meetingSideReleasedDuringStart = false
         _ = meetingVoiceGeneration.begin()
@@ -1604,6 +1606,36 @@ final class WorkspaceModel: ObservableObject {
         meetingAction("meeting_compose", fields: ["instruction": .string(input)])
     }
 
+    private func clearMeetingVoiceWatchdog() {
+        meetingVoiceWatchdog?.cancel()
+        meetingVoiceWatchdog = nil
+    }
+
+    private func armMeetingVoiceWatchdog(meetingToken: UInt64, voiceToken: UInt64,
+                                         seconds: UInt64, stage: String) {
+        clearMeetingVoiceWatchdog()
+        meetingVoiceWatchdog = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: seconds * 1_000_000_000) }
+            catch { return }
+            guard let self, self.meetingGeneration.accepts(meetingToken),
+                  self.meetingVoiceGeneration.accepts(voiceToken),
+                  self.meetingBusy || self.meetingVoiceStarting else { return }
+            DiagnosticLog.note("stage=meeting_voice_\(stage) status=timeout")
+            self.meetingVoiceWatchdog = nil
+            _ = self.meetingVoiceGeneration.begin()
+            if let id = self.meetingVoiceASRID { self.bridge?.cancel(id: id) }
+            self.meetingVoiceASRID = nil
+            self.microphone.cancel()
+            self.meetingVoiceStarting = false
+            self.meetingVoiceRecording = false
+            self.meetingBusy = false
+            self.meetingSideAction = nil
+            self.meetingSideReleasedDuringStart = false
+            self.keyboardGate.clear()
+            self.meetingExpressionStatus = "会议语音\(stage == "asr" ? "识别" : "采集")超时，已取消，请重试"
+        }
+    }
+
     func toggleMeetingVoice() {
         toggleMeetingVoice(intent: .compose)
     }
@@ -1618,6 +1650,8 @@ final class WorkspaceModel: ObservableObject {
             let voiceToken = meetingVoiceGeneration.latest
             let id = meetingSessionID
             let operation = meetingVoiceIntent.operation
+            armMeetingVoiceWatchdog(meetingToken: token, voiceToken: voiceToken,
+                                    seconds: 20, stage: "microphone_stop")
             meetingExpressionStatus = "正在识别你的语音…"
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -1626,7 +1660,10 @@ final class WorkspaceModel: ObservableObject {
                     guard self.meetingGeneration.accepts(token),
                           self.meetingVoiceGeneration.accepts(voiceToken),
                           self.meetingSessionID == id, let bridge = self.bridge else { return }
+                    self.clearMeetingVoiceWatchdog()
                     let config = try self.requestConfig(for: .transcribe)
+                    self.armMeetingVoiceWatchdog(meetingToken: token, voiceToken: voiceToken,
+                                                 seconds: Self.asrDeadline(for: pcm), stage: "asr")
                     self.meetingVoiceASRID = bridge.sendPCM(operation: "transcribe", pcm: pcm, fields: [
                         "config": config,
                     ]) { [weak self] result in
@@ -1634,6 +1671,7 @@ final class WorkspaceModel: ObservableObject {
                             guard let self, self.meetingGeneration.accepts(token),
                                   self.meetingVoiceGeneration.accepts(voiceToken),
                                   self.meetingSessionID == id else { return }
+                            self.clearMeetingVoiceWatchdog()
                             self.meetingVoiceASRID = nil
                             self.meetingBusy = false
                             guard case .success(let response) = result, response.ok,
@@ -1650,6 +1688,7 @@ final class WorkspaceModel: ObservableObject {
                     guard self.meetingGeneration.accepts(token),
                           self.meetingVoiceGeneration.accepts(voiceToken),
                           self.meetingSessionID == id else { return }
+                    self.clearMeetingVoiceWatchdog()
                     self.meetingBusy = false
                     self.meetingExpressionStatus = (error as? MicrophoneError)?.localizedDescription
                         ?? "麦克风录音失败，请检查输入设备与权限"
@@ -1664,6 +1703,8 @@ final class WorkspaceModel: ObservableObject {
         meetingExpressionStatus = "正在启动麦克风…"
         let token = meetingGeneration.latest
         let voiceToken = meetingVoiceGeneration.begin()
+        armMeetingVoiceWatchdog(meetingToken: token, voiceToken: voiceToken,
+                                seconds: 30, stage: "microphone_start")
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -1675,6 +1716,7 @@ final class WorkspaceModel: ObservableObject {
                     // completion must not cancel a newer recording.
                     return
                 }
+                self.clearMeetingVoiceWatchdog()
                 self.meetingVoiceRecording = true
                 self.meetingExpressionStatus = intent == .express
                     ? "正在录制需要忠实翻译的中文；松开侧键结束"
@@ -1693,6 +1735,7 @@ final class WorkspaceModel: ObservableObject {
                 }
             }
             if self.meetingVoiceGeneration.accepts(voiceToken) {
+                self.clearMeetingVoiceWatchdog()
                 if !self.meetingVoiceRecording {
                     self.meetingSideAction = nil
                     self.meetingSideReleasedDuringStart = false
@@ -1709,6 +1752,7 @@ final class WorkspaceModel: ObservableObject {
               let id = meetingSessionID, let bridge else { return }
         let token = meetingGeneration.latest
         let actionToken = meetingActionGeneration.begin()
+        clearMeetingVoiceWatchdog()
         _ = meetingVoiceGeneration.begin()
         meetingPresentationRevision &+= 1
         if meetingVoiceRecording || meetingVoiceStarting {
@@ -1847,6 +1891,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func stopMeeting(reason: String = "会议采集已停止") {
+        clearMeetingVoiceWatchdog()
         let wasDemo = meetingDemoActive
         meetingDemoActive = false
         meetingProfileUpdating = false
