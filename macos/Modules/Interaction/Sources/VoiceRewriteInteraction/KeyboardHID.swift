@@ -243,13 +243,15 @@ public final class MacKeyboardHIDMonitor {
             if down { cancel() } // another character, including on another keyboard
             return
         }
-        guard !suspended, !paused else { return }
+        // Settings suspends voice recording but must still receive physical
+        // HID key learning from the selected device.
         if down, let learn, let learnDeviceID,
            descriptor.id == learnDeviceID, devices.contains(where: { $0.id == descriptor.id && $0.selectable }),
            pressed.count == 1 {
             learn(key)
             return
         }
+        guard !suspended, !paused else { return }
         if !down, heldDevice == descriptor.id, state.held == key {
             if let released = state.release(key) { onRelease(released, descriptor.id) }
             heldDevice = nil
