@@ -95,23 +95,28 @@ jobs:
       - name: Package Apple Silicon macOS developer app
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         run: |
+          set -euo pipefail
           app="$RUNNER_TEMP/voicerewrite-derived/Build/Products/Debug/VoiceRewrite.app"
-          test -d "$app"
-          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/VoiceRewrite-macOS-arm64-Dev.zip"
-          cd "$RUNNER_TEMP"
-          shasum -a 256 VoiceRewrite-macOS-arm64-Dev.zip > VoiceRewrite-macOS-arm64-Dev.zip.sha256
-          cd "$GITHUB_WORKSPACE"
-          bash scripts/package-macos-dmg.sh "$app" "$RUNNER_TEMP/VoiceRewrite-macOS-arm64-Dev.dmg" arm64
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+          base="VoiceRewrite-$version-macOS-arm64-Dev"
+          zip="$RUNNER_TEMP/$base.zip"
+          dmg="$RUNNER_TEMP/$base.dmg"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
+          (cd "$RUNNER_TEMP" && shasum -a 256 "$base.zip" > "$base.zip.sha256")
+          bash scripts/package-macos-dmg.sh "$app" "$dmg" arm64
+          bash scripts/verify-macos-package.sh zip "$zip" arm64 "$version" dev
+          bash scripts/verify-macos-package.sh dmg "$dmg" arm64 "$version" dev
+          bash scripts/test-macos-package-verifier.sh "$app" arm64 "$version"
       - name: Upload Apple Silicon macOS developer app
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         uses: actions/upload-artifact@v4
         with:
           name: VoiceRewrite-macOS-arm64-Dev
           path: |
-            ${{ runner.temp }}/VoiceRewrite-macOS-arm64-Dev.zip
-            ${{ runner.temp }}/VoiceRewrite-macOS-arm64-Dev.zip.sha256
-            ${{ runner.temp }}/VoiceRewrite-macOS-arm64-Dev.dmg
-            ${{ runner.temp }}/VoiceRewrite-macOS-arm64-Dev.dmg.sha256
+            ${{ runner.temp }}/VoiceRewrite-*-macOS-arm64-Dev.zip
+            ${{ runner.temp }}/VoiceRewrite-*-macOS-arm64-Dev.zip.sha256
+            ${{ runner.temp }}/VoiceRewrite-*-macOS-arm64-Dev.dmg
+            ${{ runner.temp }}/VoiceRewrite-*-macOS-arm64-Dev.dmg.sha256
           retention-days: 7
           if-no-files-found: error
       - name: Verify Swift-to-Go local process handshake on macOS
@@ -149,22 +154,28 @@ jobs:
       - name: Package Intel macOS developer app
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         run: |
+          set -euo pipefail
           app="$RUNNER_TEMP/voicerewrite-intel-derived/Build/Products/Debug/VoiceRewrite.app"
-          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/VoiceRewrite-macOS-x64-Dev.zip"
-          cd "$RUNNER_TEMP"
-          shasum -a 256 VoiceRewrite-macOS-x64-Dev.zip > VoiceRewrite-macOS-x64-Dev.zip.sha256
-          cd "$GITHUB_WORKSPACE"
-          bash scripts/package-macos-dmg.sh "$app" "$RUNNER_TEMP/VoiceRewrite-macOS-x64-Dev.dmg" x86_64
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+          base="VoiceRewrite-$version-macOS-x64-Dev"
+          zip="$RUNNER_TEMP/$base.zip"
+          dmg="$RUNNER_TEMP/$base.dmg"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
+          (cd "$RUNNER_TEMP" && shasum -a 256 "$base.zip" > "$base.zip.sha256")
+          bash scripts/package-macos-dmg.sh "$app" "$dmg" x86_64
+          bash scripts/verify-macos-package.sh zip "$zip" x86_64 "$version" dev
+          bash scripts/verify-macos-package.sh dmg "$dmg" x86_64 "$version" dev
+          bash scripts/test-macos-package-verifier.sh "$app" x86_64 "$version"
       - name: Upload Intel macOS developer app
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         uses: actions/upload-artifact@v4
         with:
           name: VoiceRewrite-macOS-x64-Dev
           path: |
-            ${{ runner.temp }}/VoiceRewrite-macOS-x64-Dev.zip
-            ${{ runner.temp }}/VoiceRewrite-macOS-x64-Dev.zip.sha256
-            ${{ runner.temp }}/VoiceRewrite-macOS-x64-Dev.dmg
-            ${{ runner.temp }}/VoiceRewrite-macOS-x64-Dev.dmg.sha256
+            ${{ runner.temp }}/VoiceRewrite-*-macOS-x64-Dev.zip
+            ${{ runner.temp }}/VoiceRewrite-*-macOS-x64-Dev.zip.sha256
+            ${{ runner.temp }}/VoiceRewrite-*-macOS-x64-Dev.dmg
+            ${{ runner.temp }}/VoiceRewrite-*-macOS-x64-Dev.dmg.sha256
           retention-days: 7
           if-no-files-found: error
   build:
