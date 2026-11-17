@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import XCTest
 @testable import VoiceRewrite
 
@@ -89,7 +91,7 @@ final class ResultCopyTests: XCTestCase {
 
     @MainActor
     func testClosedEditorAndBusySessionDoNotReplace() async {
-        for result: ResultApplyAuthorization in [.editorClosed, .busy] {
+        for result in [ResultApplyAuthorization.editorClosed, .busy] {
             var writes = 0
             let card = ResultCardActionSession(text: "正文", apply: ResultCardApply(
                 revalidate: { result },
@@ -151,6 +153,43 @@ final class ResultCopyTests: XCTestCase {
         XCTAssertFalse(ResultCardMetrics.clickDismisses(
             x: apply.left + 4, y: apply.top + 4, window: window,
             editor: editor, buttons: [apply, copy.hit]))
+    }
+
+    @MainActor
+    func testResultCardLightDarkVisualSurfacesAndAttachedSnapshots() {
+        let light = ResultCardPalette(dark: false)
+        let dark = ResultCardPalette(dark: true)
+        let lightColor = NSColor(light.background).usingColorSpace(.deviceRGB)
+        let darkColor = NSColor(dark.background).usingColorSpace(.deviceRGB)
+        XCTAssertNotNil(lightColor)
+        XCTAssertNotNil(darkColor)
+        XCTAssertGreaterThan(lightColor?.redComponent ?? 0, darkColor?.redComponent ?? 1)
+        let original = ResultCardActionSession(text: String(repeating: "完整结果和滚动正文。", count: 90),
+            apply: ResultCardApply(revalidate: { .authorized }, replace: { _ in .eventSent }))
+        let preview = ResultCardActionSession(text: "只读 AI 回答，不应显示应用按钮")
+        XCTAssertNotNil(original.apply)
+        XCTAssertNil(preview.apply)
+        for darkMode in [false, true] {
+            let view = ResultCardView(
+                title: "改写预览", session: original,
+                width: ResultCardMetrics.width, height: 500,
+                onCopy: {}, onApply: {}, onClose: {})
+                .environment(\.colorScheme, darkMode ? ColorScheme.dark : .light)
+            let hosted = NSHostingView(rootView: view)
+            hosted.frame = NSRect(x: 0, y: 0, width: 476, height: 500)
+            hosted.layoutSubtreeIfNeeded()
+            XCTAssertEqual(hosted.frame.width, 476)
+            XCTAssertEqual(hosted.frame.height, 500)
+            if let bitmap = hosted.bitmapImageRepForCachingDisplay(in: hosted.bounds) {
+                hosted.cacheDisplay(in: hosted.bounds, to: bitmap)
+                let image = NSImage(size: hosted.bounds.size)
+                image.addRepresentation(bitmap)
+                let attachment = XCTAttachment(image: image)
+                attachment.name = darkMode ? "macOS-result-card-dark-apply" : "macOS-result-card-light-apply"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
     }
 
 }
