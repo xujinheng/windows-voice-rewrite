@@ -19,19 +19,19 @@ open -R "$APP"
 
 Double-click VoiceRewrite.app in Finder, or use `open "$APP"`. The bundled Helper is built to the active Debug architecture and signed ad hoc. It launches directly via Foundation `Process` and `Pipe`, never a shell or an external network port.
 
-GitHub Actions runs `swift test` in Microphone, Storage and Interaction and `xcodebuild test` in the application project on macos-15. When the tests pass, CI uploads **two native developer builds**: `VoiceRewrite-macOS-arm64-Dev` for Apple Silicon (M1/M2/M3/M4 and newer M-series) and `VoiceRewrite-macOS-x64-Dev` for Intel Mac (x86_64). Each artifact contains a ZIP of `VoiceRewrite.app` plus its SHA-256 checksum. The app and bundled `voicebridge` are verified for the matching architecture on their respective macOS 15 runners. Choose the ZIP that matches your Mac's CPU; both are **ad-hoc signed developer builds**, not notarized releases.
+GitHub Actions runs `swift test` in Microphone, Storage and Interaction and `xcodebuild test` in the application project on macos-15. When the tests pass, CI uploads **two native developer builds**: `VoiceRewrite-macOS-arm64-Dev` for Apple Silicon (M1/M2/M3/M4 and newer M-series) and `VoiceRewrite-macOS-x64-Dev` for Intel Mac (x86_64). Each artifact contains both an app ZIP and a drag-to-Applications DMG, each with an independently verifiable SHA-256 checksum. The app and bundled `voicebridge` are verified for the matching architecture on their respective macOS 15 runners. Choose the ZIP or DMG matching your Mac's CPU. The DMG includes an Applications shortcut for Finder installation. These are **ad-hoc signed developer builds**, not notarized releases; macOS Gatekeeper may block launching a downloaded development build.
 
 ## Signed distribution
 
 The `macOS signed distribution` workflow builds separate Apple Silicon and Intel
 apps, signs the nested Go helper and native app with Developer ID Application,
 submits the signed ZIP for Apple notarization, staples the returned ticket, and
-uploads a checksum alongside each verified ZIP. Configure the repository secret
+uploads verifiable ZIP and DMG packages plus their checksums. The signed DMG is separately submitted for notarization and stapled. Configure the repository secret
 `MACOS_DEVELOPER_ID_P12_BASE64` (base64-encoded P12 certificate),
 `MACOS_DEVELOPER_ID_P12_PASSWORD`, `APPLE_NOTARY_APPLE_ID`,
 `APPLE_NOTARY_APP_PASSWORD`, and repository variables
 `MACOS_DEVELOPER_ID_IDENTITY` and `APPLE_TEAM_ID` before invoking that workflow.
-Without those credentials only the ad-hoc signed CI developer builds are available.
+Without those credentials only the ad-hoc signed CI developer builds are available. The signed distribution workflow is manually invoked; its availability does not prove that the required credentials are configured or notarization has succeeded.
 A signed/notarized build keeps a stable app identity for macOS permission prompts;
 it does not bypass microphone or Accessibility authorization.
 

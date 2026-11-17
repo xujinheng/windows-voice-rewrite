@@ -100,6 +100,8 @@ jobs:
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/VoiceRewrite-macOS-arm64-Dev.zip"
           cd "$RUNNER_TEMP"
           shasum -a 256 VoiceRewrite-macOS-arm64-Dev.zip > VoiceRewrite-macOS-arm64-Dev.zip.sha256
+          cd "$GITHUB_WORKSPACE"
+          bash scripts/package-macos-dmg.sh "$app" "$RUNNER_TEMP/VoiceRewrite-macOS-arm64-Dev.dmg" arm64
       - name: Upload Apple Silicon macOS developer app
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         uses: actions/upload-artifact@v4
@@ -108,6 +110,8 @@ jobs:
           path: |
             ${{ runner.temp }}/VoiceRewrite-macOS-arm64-Dev.zip
             ${{ runner.temp }}/VoiceRewrite-macOS-arm64-Dev.zip.sha256
+            ${{ runner.temp }}/VoiceRewrite-macOS-arm64-Dev.dmg
+            ${{ runner.temp }}/VoiceRewrite-macOS-arm64-Dev.dmg.sha256
           retention-days: 7
           if-no-files-found: error
       - name: Verify Swift-to-Go local process handshake on macOS
@@ -149,6 +153,8 @@ jobs:
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/VoiceRewrite-macOS-x64-Dev.zip"
           cd "$RUNNER_TEMP"
           shasum -a 256 VoiceRewrite-macOS-x64-Dev.zip > VoiceRewrite-macOS-x64-Dev.zip.sha256
+          cd "$GITHUB_WORKSPACE"
+          bash scripts/package-macos-dmg.sh "$app" "$RUNNER_TEMP/VoiceRewrite-macOS-x64-Dev.dmg" x86_64
       - name: Upload Intel macOS developer app
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         uses: actions/upload-artifact@v4
@@ -157,6 +163,8 @@ jobs:
           path: |
             ${{ runner.temp }}/VoiceRewrite-macOS-x64-Dev.zip
             ${{ runner.temp }}/VoiceRewrite-macOS-x64-Dev.zip.sha256
+            ${{ runner.temp }}/VoiceRewrite-macOS-x64-Dev.dmg
+            ${{ runner.temp }}/VoiceRewrite-macOS-x64-Dev.dmg.sha256
           retention-days: 7
           if-no-files-found: error
   build:
