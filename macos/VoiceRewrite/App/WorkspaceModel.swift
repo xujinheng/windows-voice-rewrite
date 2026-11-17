@@ -893,6 +893,10 @@ final class WorkspaceModel: ObservableObject {
                 self.meetingPresentationRevision &+= 1
                 switch result {
                 case .success(let reply) where reply.ok:
+                    // Old in-flight feed completions are fenced by audio_epoch below.
+                    // Rebase native backpressure to the new Go runtime epoch;
+                    // otherwise old pending feeds can falsely stop fresh capture.
+                    self.meetingPendingPackets = 0
                     self.applyMeetingSnapshot(reply.result ?? [:])
                     let message = "已应用到当前会议 · 版本 \(self.meetingProfileVersion)；旧识别任务已取消"
                     self.settingsStatus = message
@@ -1075,7 +1079,7 @@ final class WorkspaceModel: ObservableObject {
                       self.meetingAudioEpoch == sentEpoch else { return }
                 self.meetingPendingPackets = max(0, self.meetingPendingPackets - 1)
                 guard case .success(let response) = reply, response.ok else {
-                    if self.meetingCapturePaused || self.meetingCaptureSwitching { return }
+                    if self.meetingCapturePaused || self.meetingCaptureSwitching || self.meetingProfileUpdating { return }
                     self.stopMeeting(reason: "会议音频传输中断，已停止采集")
                     return
                 }
