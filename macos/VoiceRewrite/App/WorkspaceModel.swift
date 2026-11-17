@@ -136,6 +136,17 @@ final class WorkspaceModel: ObservableObject {
     private var meetingSideReleasedDuringStart = false
     private let recordingIndicator = RecordingIndicatorController()
     private var indicatorSnapshot = IndicatorSnapshot()
+
+    /// Production user-visible journey timings, independent of CoreAudio/ASR
+    /// implementations. Monotonic timestamps also cover real user hardware,
+    /// which a hosted CI runner cannot faithfully emulate.
+    private struct DictationJourney {
+        let triggeredAt: TimeInterval
+        var releasedAt: TimeInterval?
+        var indicatorLogged = false
+    }
+    private var dictationJourney: DictationJourney?
+
     private var sideGate = SideVoiceGate()
     private var keyboardGate = KeyboardHoldGate()
     private var keyboardHoldSequence: UInt64 = 0
@@ -2273,6 +2284,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func invalidatePending() {
+        dictationJourney = nil
         finishProcessingWatchdog()
         _ = resultGeneration.begin()
         if let id = activeRequestID { bridge?.cancel(id: id) }
@@ -2361,6 +2373,7 @@ final class WorkspaceModel: ObservableObject {
     private func startRecording(targetPID: Int32?) {
         guard !meetingVoiceRecording && !meetingVoiceStarting else { return }
         invalidatePending()
+        dictationJourney = DictationJourney(triggeredAt: ProcessInfo.processInfo.systemUptime)
         let token = resultGeneration.begin()
         isStarting = true
         armProcessingWatchdog(token: token, seconds: 30, stage: "microphone_start")
@@ -2409,6 +2422,9 @@ final class WorkspaceModel: ObservableObject {
                 }
                 finishProcessingWatchdog()
                 DiagnosticLog.note("stage=microphone_start status=done elapsed_ms=\(Self.elapsedMilliseconds(since: startupStarted))")
+                if let journey = dictationJourney {
+                    DiagnosticLog.note("journey=dictation event=recording_ready elapsed_ms=\(Self.elapsedMilliseconds(since: journey.triggeredAt))")
+                }
                 isRecording = true
                 showIndicator(phase: .recording, mode: "听写", pending: false)
                 if let status = ready.recordingStatus { recordingStatus = status }
@@ -2430,6 +2446,9 @@ final class WorkspaceModel: ObservableObject {
 
     func stopRecording() {
         guard isRecording else { return }
+        if dictationJourney != nil {
+            dictationJourney?.releasedAt = ProcessInfo.processInfo.systemUptime
+        }
         sideGate.clear()
         keyboardGate.clear()
         keyboardHoldSequence &+= 1
@@ -2837,6 +2856,10 @@ final class WorkspaceModel: ObservableObject {
                     self.finishProcessingWatchdog()
                     self.isProcessing = false
                     DiagnosticLog.note("stage=dictation_delivery status=\(outcome)")
+                    if let released = self.dictationJourney?.releasedAt {
+                        DiagnosticLog.note("journey=dictation event=delivery_returned elapsed_ms=\(Self.elapsedMilliseconds(since: released)) outcome=\(outcome)")
+                    }
+                    self.dictationJourney = nil
                     self.applyTask(dictationInsertFollowUp(
                         outcome: outcome,
                         status: insertionStatus(InteractionFailure.writeNotConfirmed, rewrite: false,
@@ -2848,6 +2871,10 @@ final class WorkspaceModel: ObservableObject {
                     self.finishProcessingWatchdog()
                     self.isProcessing = false
                     DiagnosticLog.note("stage=dictation_delivery status=failed code=\(insertionDiagnosticCode(error))")
+                    if let released = self.dictationJourney?.releasedAt {
+                        DiagnosticLog.note("journey=dictation event=delivery_failed elapsed_ms=\(Self.elapsedMilliseconds(since: released))")
+                    }
+                    self.dictationJourney = nil
                     self.applyTask(dictationInsertFollowUp(
                         outcome: (error as? InteractionFailure) == .writeNotConfirmed ? .uncertain : .blocked,
                         status: insertionStatus(error, rewrite: false, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation),
@@ -2902,6 +2929,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func cancelCurrent() {
+        dictationJourney = nil
         dismissIndicator()
         keyboardGate.clear()
         keyboardHoldSequence &+= 1
@@ -2970,6 +2998,14 @@ final class WorkspaceModel: ObservableObject {
             self?.indicatorSnapshot.pending = false
             self?.menuIndicatorPhase = nil
         })
+        // This is AppKit orderFront completion (not a physical photodiode
+        // measurement). The CI additionally calls displayIfNeeded on this view.
+        if phase == .recording, pending, var journey = dictationJourney,
+           !journey.indicatorLogged {
+            journey.indicatorLogged = true
+            dictationJourney = journey
+            DiagnosticLog.note("journey=dictation event=indicator_ordered elapsed_ms=\(Self.elapsedMilliseconds(since: journey.triggeredAt))")
+        }
     }
 
     private func dismissIndicator() {
