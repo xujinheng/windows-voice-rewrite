@@ -342,18 +342,22 @@ func (s *bridgeServer) meetingRequest(req request) response {
 		}
 		s.mu.Unlock()
 		if req.Op == "meeting_configure" {
-		if len(req.Config) == 0 {
-			return failure(req.ID, "invalid_config", msgInvalidConfig)
+			if len(req.Config) == 0 {
+				return failure(req.ID, "invalid_config", msgInvalidConfig)
+			}
+			cfg, err := coreconfig.Parse(req.Config)
+			if err != nil {
+				return failure(req.ID, "invalid_config", msgInvalidConfig)
+			}
+			cfg, err = coreconfig.Normalize(cfg)
+			if err != nil {
+				return failure(req.ID, "invalid_config", msgInvalidConfig)
+			}
+			if err := m.reconfigure(cfg); err != nil {
+				return failure(req.ID, "invalid_profile", "会议资料或识别模式无效；请检查内容长度和模式")
+			}
 		}
-		cfg, err := coreconfig.Parse(req.Config)
-		if err != nil { return failure(req.ID, "invalid_config", msgInvalidConfig) }
-		cfg, err = coreconfig.Normalize(cfg)
-		if err != nil { return failure(req.ID, "invalid_config", msgInvalidConfig) }
-		if err := m.reconfigure(cfg); err != nil {
-			return failure(req.ID, "invalid_profile", "会议资料或识别模式无效；请检查内容长度和模式")
-		}
-	}
-	if req.Op == "meeting_pause" || req.Op == "meeting_resume" {
+		if req.Op == "meeting_pause" || req.Op == "meeting_resume" {
 			if err := m.setPaused(req.Op == "meeting_pause"); err != nil {
 				return failure(req.ID, "stale_meeting", "会议已停止或更换")
 			}
