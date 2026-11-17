@@ -131,21 +131,15 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         guard AXValueGetValue(axValue, .cfRange, &range) else {
             throw InteractionFailure.selectionUnavailable
         }
-        // Some editable controls report no selected-text value for an empty caret.
-        // This is safe only when the independently read AX range is zero-length.
-        let selected = try optionalAttribute(focused, kAXSelectedTextAttribute)
-        let text: String
-        if let value = selected as? String {
-            text = value
-        } else if selected == nil && range.length == 0 {
-            text = ""
-        } else {
+        // Browser content editors may omit AXSelectedText while preserving
+        // AXValue and the UTF-16 selection. Derive and verify the exact slice.
+        let fullValue = (try? optionalAttribute(focused, kAXValueAttribute)) as? String
+        let selected = try optionalAttribute(focused, kAXSelectedTextAttribute) as? String
+        guard let text = TextWriteVerification.selectedText(
+            reported: selected, fullValue: fullValue,
+            range: TextRange(location: range.location, length: range.length)) else {
             throw InteractionFailure.selectionUnavailable
         }
-        // Browser location bars may support a readable value while omitting
-        // selected-text and value-change notifications. Capture the entire
-        // value so a changed URL/search query prevents later insertion.
-        let fullValue = (try? optionalAttribute(focused, kAXValueAttribute)) as? String
         return SelectionObservation(processID: pid,
                                     identity: AXFocusIdentity(element: focused),
                                     identityDescription: "AX(pid:\(pid),hash:\(CFHash(focused)))",
