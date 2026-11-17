@@ -55,6 +55,7 @@ struct MacShortcutPlan: Equatable {
     let dictation: HotKeyShortcut?
     let rewrite: HotKeyShortcut?
     let exit: HotKeyShortcut?
+    let recordMode: String
     let sideButtons: SideMouseBindings
 
     init?(dictation: ShortcutBinding, rewrite: ShortcutBinding,
@@ -93,6 +94,7 @@ struct MacShortcutPlan: Equatable {
         self.dictation = dictationKey
         self.rewrite = rewriteKey
         self.exit = exitKey
+        self.recordMode = recordMode
         self.sideButtons = mouse
     }
 
