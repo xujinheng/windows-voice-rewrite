@@ -49,9 +49,13 @@ func ListModels(ctx context.Context, baseURL, apiKey string) ([]string, error) {
 	seen := make(map[string]struct{})
 	models := make([]string, 0, len(response.Data))
 	for _, entry := range response.Data {
+		// Reject control characters before trimming: a newline-prefixed ID
+		// must not silently turn into a different selectable model.
+		if strings.IndexFunc(entry.ID, unicode.IsControl) >= 0 {
+			continue
+		}
 		id := strings.TrimSpace(entry.ID)
-		if id == "" || len(id) > coreconfig.MaxModelIDBytes ||
-			strings.IndexFunc(id, unicode.IsControl) >= 0 {
+		if id == "" || len(id) > coreconfig.MaxModelIDBytes {
 			continue
 		}
 		if _, exists := seen[id]; exists {
