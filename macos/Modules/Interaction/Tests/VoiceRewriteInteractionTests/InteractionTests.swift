@@ -48,6 +48,24 @@ private final class FakeUptime: @unchecked Sendable {
 
 #if os(macOS)
 final class NativeClipboardReceiptTests: XCTestCase {
+    func testDictationTargetPolicyChecksWindowWhenAvailableWithoutRequiringAX() {
+        XCTAssertTrue(DictationTargetPolicy.maySend(
+            capturedPID: 123, foregroundPID: 123, secureInput: false))
+        XCTAssertFalse(DictationTargetPolicy.maySend(
+            capturedPID: 123, foregroundPID: 456, secureInput: false))
+        XCTAssertFalse(DictationTargetPolicy.maySend(
+            capturedPID: 123, foregroundPID: 123, secureInput: true))
+        XCTAssertTrue(DictationTargetPolicy.sameWindow(captured: nil, current: 42))
+        XCTAssertTrue(DictationTargetPolicy.sameWindow(captured: 42, current: nil))
+        XCTAssertTrue(DictationTargetPolicy.sameWindow(captured: 42, current: 42))
+        XCTAssertFalse(DictationTargetPolicy.sameWindow(captured: 42, current: 99))
+        XCTAssertFalse(DictationTargetPolicy.canConfirmReadback(
+            original: "same 😀", expected: "same 😀"),
+            "unchanged AXValue is not proof that Cmd+V reached the editor")
+        XCTAssertTrue(DictationTargetPolicy.canConfirmReadback(
+            original: "Before", expected: "Before听写"))
+    }
+
     func testLazyPasteboardReportsActualTextRead() throws {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

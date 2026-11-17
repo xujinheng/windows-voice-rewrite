@@ -150,6 +150,7 @@ final class WorkspaceModel: ObservableObject {
     private var activeRequestID: String?
     private var activeInsert: MacDictationTarget?
     private var activeVoiceSelection: (snapshot: SelectionSnapshot, generation: UInt64)?
+    private var activeVoiceTargetPID: Int32?
     private var hotKeyDriver: CarbonHotKeyDriver?
     private var hotKeys: HotKeyRegistry?
     private var sideMouse: SideMouseButtonDriver?
@@ -1655,6 +1656,7 @@ final class WorkspaceModel: ObservableObject {
             Task { await interaction.cancelTask(generation: old.generation) }
         }
         activeVoiceSelection = nil
+        activeVoiceTargetPID = nil
         isVoiceSelectionRecording = false
         sideGate.clear()
         isProcessing = false
@@ -1692,59 +1694,31 @@ final class WorkspaceModel: ObservableObject {
         invalidatePending()
         let token = resultGeneration.begin()
         isStarting = true
-        interactionStatus = rewriteCapturingSelection()
+        // Like Windows Hold, capture the selection on release rather than
+        // delaying the microphone startup with an AX request on key-down.
         showIndicator(phase: .selection, mode: "改写", pending: false)
         Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.refreshMicrophonePermission() }
-            var generation: UInt64?
             do {
-                let next = try await interaction.beginTask(targetProcessID: pid)
-                generation = next
-                let snapshot = try await interaction.captureSelection(
-                    generation: next, intent: .replaceSelection)
-                let captured = rewriteVoiceAfterCapture(
-                    tokenValid: resultGeneration.accepts(token),
-                    tooLong: SelectionLimit.tooLongMessage(selected: snapshot.originalSelectedText))
-                if captured.cancelTask || captured.cancelMicrophone {
-                    await cancelSelectionCue(captured, generation: next)
-                }
-                presentSelectionCue(captured)
-                if captured.leave {
-                    guard resultGeneration.accepts(token) else { return }
+                try await microphone.start(deviceUID: settings.microphoneUID,
+                                           maximumSeconds: settings.maxRecordSeconds)
+                guard resultGeneration.accepts(token) else {
+                    microphone.cancel()
                     isStarting = false
-                    finishKeyboardStart(.rewrite)
                     return
                 }
-                if captured.startMicrophone {
-                    try await microphone.start(deviceUID: settings.microphoneUID,
-                                               maximumSeconds: settings.maxRecordSeconds)
-                    let ready = rewriteVoiceMicrophoneReady(tokenValid: resultGeneration.accepts(token))
-                    if ready.beginRecording {
-                        activeVoiceSelection = (snapshot, next)
-                        isVoiceSelectionRecording = true
-                        isRecording = true
-                        showIndicator(phase: .recording, mode: "改写", pending: false)
-                    }
-                    if ready.cancelTask || ready.cancelMicrophone {
-                        await cancelSelectionCue(ready, generation: next)
-                    }
-                    presentSelectionCue(ready)
-                    if ready.leave {
-                        guard resultGeneration.accepts(token) else { return }
-                        isStarting = false
-                        finishKeyboardStart(.rewrite)
-                        return
-                    }
-                }
+                activeVoiceTargetPID = pid
+                isVoiceSelectionRecording = true
+                isRecording = true
+                showIndicator(phase: .recording, mode: "改写", pending: false)
+                recordingStatus = rewriteRecording()
             } catch {
-                let failed = rewriteVoiceCaptureFailed(
-                    tokenValid: resultGeneration.accepts(token),
-                    status: rewriteCaptureStatus(error, password: ResultCopy.passwordSelection))
-                await cancelSelectionCue(failed, generation: generation)
-                presentSelectionCue(failed)
+                guard resultGeneration.accepts(token) else { return }
+                microphone.cancel()
+                interactionStatus = rewriteCaptureStatus(error, password: ResultCopy.passwordSelection)
+                showIndicator(phase: .error, mode: "改写", pending: false)
             }
-            guard resultGeneration.accepts(token) else { return }
             isStarting = false
             stopWhenSideMouseReleased(.rewrite)
             finishKeyboardStart(.rewrite)
@@ -1820,33 +1794,58 @@ final class WorkspaceModel: ObservableObject {
         recordingStatus = dictationProcessing()
         let token = resultGeneration.latest
         let insertion = activeInsert
-        let voiceSelection = activeVoiceSelection
+        let voiceTargetPID = activeVoiceTargetPID
         activeInsert = nil
-        activeVoiceSelection = nil
+        activeVoiceTargetPID = nil
         isVoiceSelectionRecording = false
         Task { @MainActor [weak self] in
             guard let self else { return }
+            var selectionGeneration: UInt64?
             do {
                 let pcm = try await microphone.stop()
-                let route = recordingDispatch(tokenValid: resultGeneration.accepts(token), voiceSelection: voiceSelection != nil)
+                let route = recordingDispatch(tokenValid: resultGeneration.accepts(token), voiceSelection: voiceTargetPID != nil)
                 guard route.send else { return }
                 if route.cancelProbes { cancelProbes() }
                 if let status = route.asrProbe { asrProbeStatus = status }
                 if let status = route.llmProbe { llmProbeStatus = status }
-                if route.spoken, let voiceSelection {
+                if route.spoken, let voiceTargetPID {
+                    // The release PID must still be the original application.
+                    // InteractionSession then captures and monitors the *actual*
+                    // selected element before the model is ever called.
+                    guard voiceSelectionReleaseMayCapture(
+                        tokenValid: resultGeneration.accepts(token),
+                        targetPID: voiceTargetPID,
+                        foregroundPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
+                        throw InteractionFailure.applicationChanged
+                    }
+                    interactionStatus = rewriteCapturingSelection()
+                    let generation = try await interaction.beginTask(targetProcessID: voiceTargetPID)
+                    selectionGeneration = generation
+                    let snapshot = try await interaction.captureSelection(
+                        generation: generation, intent: .replaceSelection)
+                    guard resultGeneration.accepts(token) else {
+                        await interaction.cancelTask(generation: generation)
+                        return
+                    }
+                    if let tooLong = SelectionLimit.tooLongMessage(selected: snapshot.originalSelectedText) {
+                        await interaction.cancelTask(generation: generation)
+                        isProcessing = false
+                        interactionStatus = tooLong
+                        showIndicator(phase: .error, mode: "改写", pending: false)
+                        return
+                    }
+                    activeVoiceSelection = (snapshot, generation)
                     let config = try requestConfig(for: .spokenSelectedTask)
                     guard let bridge else { throw BridgeFailure.notRunning }
                     let id = bridge.send(operation: "selected_voice_task", fields: [
                         "config": config,
                         "pcm_base64": .string(pcm.base64EncodedString()),
-                        "selected_text": .string(voiceSelection.snapshot.originalSelectedText),
+                        "selected_text": .string(snapshot.originalSelectedText),
                     ]) { [weak self] reply in
                         Task { @MainActor [weak self] in
                             guard let self else { return }
-                            self.handleSelectedTaskReply(reply,
-                                snapshot: voiceSelection.snapshot,
-                                generation: voiceSelection.generation,
-                                token: token, spoken: true)
+                            self.handleSelectedTaskReply(reply, snapshot: snapshot,
+                                generation: generation, token: token, spoken: true)
                         }
                     }
                     activeRequestID = id
@@ -1880,7 +1879,12 @@ final class WorkspaceModel: ObservableObject {
                 let failed = recordingStopFailure(tokenValid: resultGeneration.accepts(token))
                 guard failed.apply else { return }
                 if failed.stopProcessing { isProcessing = false }
-                applyTask(recordingStopFollowUp(detail: error.localizedDescription, voiceSelection: voiceSelection != nil, mode: indicatorSnapshot.mode), generation: voiceSelection?.generation)
+                applyTask(recordingStopFollowUp(detail: error.localizedDescription,
+                    voiceSelection: voiceTargetPID != nil, mode: indicatorSnapshot.mode),
+                    generation: selectionGeneration)
+                if voiceTargetPID != nil {
+                    interactionStatus = rewriteCaptureStatus(error, password: ResultCopy.passwordSelection)
+                }
             }
         }
     }
@@ -1923,7 +1927,7 @@ final class WorkspaceModel: ObservableObject {
                 let step = typedSelectionAfterCapture(
                     tokenValid: resultGeneration.accepts(token),
                     tooLong: SelectionLimit.tooLongMessage(selected: snapshot.originalSelectedText))
-                if step.cancelTask || step.cancelMicrophone {
+                if step.cancelTask {
                     await cancelSelectionCue(step, generation: generation)
                 }
                 presentSelectionCue(step)
@@ -1954,11 +1958,7 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    /// The microphone is canceled before the Accessibility task.
     private func cancelSelectionCue(_ cue: SelectionCue, generation: UInt64?) async {
-        if cue.cancelMicrophone {
-            microphone.cancel()
-        }
         if cue.cancelTask, let generation {
             await interaction.cancelTask(generation: generation)
         }
@@ -1970,9 +1970,6 @@ final class WorkspaceModel: ObservableObject {
         }
         if let status = cue.interactionStatus {
             interactionStatus = status
-        }
-        if let status = cue.recordingStatus {
-            recordingStatus = status
         }
         if let probe = cue.llmProbe {
             llmProbeStatus = probe
@@ -2147,13 +2144,16 @@ final class WorkspaceModel: ObservableObject {
                     guard self.resultGeneration.accepts(token) else { return }
                     DiagnosticLog.note("stage=dictation_delivery status=\(outcome)")
                     self.applyTask(dictationInsertFollowUp(
-                        succeeded: !outcome.requiresManualResult,
-                        status: "", manualTitle: ResultCopy.dictationWriteUnconfirmed, text: text))
+                        outcome: outcome,
+                        status: insertionStatus(InteractionFailure.writeNotConfirmed, rewrite: false,
+                                                passwordRewrite: ResultCopy.passwordRewrite,
+                                                passwordDictation: ResultCopy.passwordDictation),
+                        manualTitle: ResultCopy.dictationWriteUnconfirmed, text: text))
                 } catch {
                     guard self.resultGeneration.accepts(token) else { return }
                     DiagnosticLog.note("stage=dictation_delivery status=failed code=\(insertionDiagnosticCode(error))")
                     self.applyTask(dictationInsertFollowUp(
-                        succeeded: false,
+                        outcome: (error as? InteractionFailure) == .writeNotConfirmed ? .uncertain : .blocked,
                         status: insertionStatus(error, rewrite: false, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation),
                         manualTitle: ((error as? InteractionFailure) == .writeNotConfirmed || error is ClipboardFailure)
                             ? ResultCopy.dictationWriteUnconfirmed : ResultCopy.dictationCopyManually,

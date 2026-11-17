@@ -10,16 +10,31 @@ import Foundation
 public struct MacDictationTarget: @unchecked Sendable {
     public let processID: pid_t
     fileprivate let focusedElement: AXUIElement?
+    fileprivate let windowID: CGWindowID?
 
-    fileprivate init(processID: pid_t, focusedElement: AXUIElement?) {
+    fileprivate init(processID: pid_t, focusedElement: AXUIElement?, windowID: CGWindowID?) {
         self.processID = processID
         self.focusedElement = focusedElement
+        self.windowID = windowID
     }
 }
 
 public enum DictationTargetPolicy {
     public static func maySend(capturedPID: Int32, foregroundPID: Int32?, secureInput: Bool) -> Bool {
         capturedPID > 0 && foregroundPID == capturedPID && !secureInput
+    }
+
+    /// Missing CGWindow information is not an AX permission gate for dictation.
+    /// Distinct, known foreground windows must never be treated as one target.
+    public static func sameWindow(captured: UInt32?, current: UInt32?) -> Bool {
+        guard let captured, let current else { return true }
+        return captured == current
+    }
+
+    /// A no-op replacement does not prove that a keyboard event was consumed.
+    /// Only an observable change to the original editor is a write receipt.
+    public static func canConfirmReadback(original: String, expected: String) -> Bool {
+        !TextWriteVerification.confirms(actual: original, expected: expected)
     }
 }
 
@@ -39,6 +54,20 @@ public final class MacDictationDelivery {
         guard AXUIElementCopyAttributeValue(application, kAXFocusedUIElementAttribute as CFString, &value) == .success,
               let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
         return value as! AXUIElement
+    }
+
+    private func foregroundWindowID(for pid: pid_t) -> CGWindowID? {
+        guard let windows = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return nil
+        }
+        for window in windows {
+            guard (window[kCGWindowOwnerPID as String] as? Int) == Int(pid),
+                  (window[kCGWindowLayer as String] as? Int) == 0,
+                  let number = window[kCGWindowNumber as String] as? Int, number > 0 else { continue }
+            return CGWindowID(number)
+        }
+        return nil
     }
 
     private func secureField(_ focused: AXUIElement) -> Bool {
@@ -67,7 +96,8 @@ public final class MacDictationDelivery {
         }
         let focused = focusedElement(in: processID)
         if let focused, secureField(focused) { throw InteractionFailure.secureField }
-        return MacDictationTarget(processID: processID, focusedElement: focused)
+        return MacDictationTarget(processID: processID, focusedElement: focused,
+                                   windowID: foregroundWindowID(for: processID))
     }
 
     private func revalidate(_ target: MacDictationTarget) throws {
@@ -77,12 +107,82 @@ public final class MacDictationDelivery {
             secureInput: IsSecureEventInputEnabled()) else {
             throw InteractionFailure.applicationChanged
         }
+        if !DictationTargetPolicy.sameWindow(
+            captured: target.windowID, current: foregroundWindowID(for: target.processID)) {
+            throw InteractionFailure.focusChanged
+        }
         if let current = focusedElement(in: target.processID) {
             if secureField(current) { throw InteractionFailure.secureField }
             if let original = target.focusedElement, !CFEqual(original, current) {
                 throw InteractionFailure.focusChanged
             }
         }
+    }
+
+
+    /// Best-effort readback evidence only. AX support must never become a
+    /// prerequisite for ordinary dictation into Chrome, Electron or TextEdit.
+    private func expectedTextAfterPaste(_ text: String, target: MacDictationTarget) -> String? {
+        guard let element = target.focusedElement else { return nil }
+        AXUIElementSetMessagingTimeout(element, 0.25)
+        var rawValue: CFTypeRef?
+        var rawRange: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &rawValue) == .success,
+              let original = rawValue as? String,
+              AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &rawRange) == .success,
+              let rawRange, CFGetTypeID(rawRange) == AXValueGetTypeID() else { return nil }
+        let axRange = rawRange as! AXValue
+        guard AXValueGetType(axRange) == .cfRange else { return nil }
+        var range = CFRange(location: 0, length: 0)
+        guard AXValueGetValue(axRange, .cfRange, &range) else { return nil }
+        var rawSelected: CFTypeRef?
+        let selected = AXUIElementCopyAttributeValue(
+            element, kAXSelectedTextAttribute as CFString, &rawSelected) == .success
+            ? rawSelected as? String : nil
+        let textRange = TextRange(location: range.location, length: range.length)
+        guard let selectedText = TextWriteVerification.selectedText(
+            reported: selected, fullValue: original, range: textRange) else { return nil }
+        guard let expected = TextWriteVerification.expectedValue(
+            original: original, selectedText: selectedText,
+            range: textRange, replacement: text),
+              DictationTargetPolicy.canConfirmReadback(original: original, expected: expected) else {
+            return nil
+        }
+        return expected
+    }
+
+    private func matchesReadback(_ expected: String, target: MacDictationTarget) -> Bool {
+        guard let original = target.focusedElement,
+              DictationTargetPolicy.maySend(
+                capturedPID: target.processID,
+                foregroundPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                secureInput: IsSecureEventInputEnabled()),
+              let current = focusedElement(in: target.processID),
+              CFEqual(original, current), !secureField(current),
+              DictationTargetPolicy.sameWindow(
+                captured: target.windowID, current: foregroundWindowID(for: target.processID)) else {
+            return false
+        }
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(current, kAXValueAttribute as CFString, &value) == .success,
+              let actual = value as? String else { return false }
+        return TextWriteVerification.confirms(actual: actual, expected: expected)
+    }
+
+    /// A posted event is never itself a success receipt. Check an exact AXValue
+    /// when exposed by the same focused control, without making it a paste gate.
+    private func outcomeAfterPosting(expected: String?, target: MacDictationTarget,
+                                     stillValid: () -> Bool) async -> DeliveryState {
+        guard let expected else { return .sentUnverified }
+        for attempt in 0..<3 {
+            guard stillValid(), !Task<Never, Never>.isCancelled else { return .sentUnverified }
+            if matchesReadback(expected, target: target) { return .confirmed }
+            if attempt < 2 {
+                do { try await Task.sleep(nanoseconds: 150_000_000) }
+                catch { return .sentUnverified }
+            }
+        }
+        return .sentUnverified
     }
 
     private func requireKeyboardEventPermission() throws {
@@ -115,6 +215,8 @@ public final class MacDictationDelivery {
         }
         let units = Array(text.utf16)
         var offset = 0
+        var postedAny = false
+        do {
         while offset < units.count {
             guard stillValid() else { throw InteractionFailure.cancelled }
             try revalidate(target)
@@ -133,8 +235,15 @@ public final class MacDictationDelivery {
                 up.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress!)
             }
             down.post(tap: .cgSessionEventTap)
+            postedAny = true
             up.post(tap: .cgSessionEventTap)
             offset = end
+        }
+        } catch {
+            // A cancellation or focus change after a chunk was posted can
+            // leave a partial insertion. Never call it a clean non-write.
+            if postedAny { throw InteractionFailure.writeNotConfirmed }
+            throw error
         }
     }
 
@@ -160,9 +269,11 @@ public final class MacDictationDelivery {
         do {
             lease = try await clipboard.beginWhenAvailable(text, stillValid: stillValid)
         } catch ClipboardFailure.snapshotUnavailable {
+            let expected = expectedTextAfterPaste(text, target: target)
             try typeUnicode(text, to: target, stillValid: stillValid)
-            return .sentUnverified
+            return await outcomeAfterPosting(expected: expected, target: target, stillValid: stillValid)
         }
+        let expected = expectedTextAfterPaste(text, target: target)
         do {
             try revalidate(target)
             guard clipboard.isOwned(lease) else { throw ClipboardFailure.ownershipLost }
@@ -171,14 +282,14 @@ public final class MacDictationDelivery {
             // synchronously, before CGEvent.post returns.
             let postingStartedAt = ProcessInfo.processInfo.systemUptime
             try postPaste()
-            // A queued Cmd+V is not a consumption receipt. Prefer a real paste
-            // read notification; otherwise retain the transcript until timeout.
+            // Release ownership asynchronously after the receiver's read or a
+            // bounded timeout. Never restore immediately after posting.
             clipboard.restoreAfterPaste(lease, postingStartedAt: postingStartedAt)
-            return .sentUnverified
         } catch {
             try? clipboard.finish(lease)
             throw error
         }
+        return await outcomeAfterPosting(expected: expected, target: target, stillValid: stillValid)
     }
 }
 #endif
