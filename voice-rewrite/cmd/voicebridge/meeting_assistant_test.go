@@ -375,3 +375,73 @@ func TestMeetingCancelDuringExpressionCannotOverwriteNewAnswer(t *testing.T) {
 	}
 	h.close()
 }
+
+func TestMeetingReplyHandoffAllowsIncompleteFirstWithReadySecondAndTip(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		text := "ONE\tThe first option.\t第一条。"
+		switch n {
+		case 2:
+			text = "TWO\tCould you expand?\t能详细说说吗？\nTIP\t核对实际范围"
+		case 3:
+			text = "THREE\tLet me verify the numbers.\t我去核对数字。\nTIP\t检查时间区间"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{map[string]any{
+				"finish_reason": "stop",
+				"message": map[string]string{"content": text},
+			}},
+		})
+	}))
+	defer srv.Close()
+
+	cfg := coreconfig.Defaults()
+	cfg.LLMBaseURL = srv.URL + "/v1"
+	cfg.TextModel = "test-model"
+	m, err := newBridgeMeeting(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.stop()
+	for turn := uint64(1); turn <= 3; turn++ {
+		m.mu.Lock()
+		m.captions = append(m.captions, meetingcore.Caption{
+			ID: turn, Source: "test speech", Final: true,
+		})
+		m.prior = meetingcore.RememberPrior(m.prior, "test speech")
+		m.lastFinal = turn
+		m.mu.Unlock()
+		if err := m.runReplies(context.Background(), turn); err != nil {
+			t.Fatalf("turn %d valid reply was rejected: %v", turn, err)
+		}
+		snapshot := m.snapshot()
+		if turn == 2 {
+			if snapshot["reply_pending"] != true {
+				t.Fatal("second-only batch is not switchable")
+			}
+			if snapshot["reply_first_ready"] != 0 {
+				t.Fatal("unaccepted batch should preserve the first displayed option")
+			}
+			if !m.acceptReplies() {
+				t.Fatal("could not accept second-only batch")
+			}
+			snapshot = m.snapshot()
+			if snapshot["reply_first_ready"] != 1 ||
+				snapshot["reply_tip"] != "核对实际范围" {
+				t.Fatalf("second-only reply lost index or hint: %#v", snapshot)
+			}
+		}
+		if turn == 3 {
+			if !m.acceptReplies() {
+				t.Fatal("third-only reply was not offered")
+			}
+			snapshot = m.snapshot()
+			if snapshot["reply_first_ready"] != 2 ||
+				snapshot["reply_tip"] != "检查时间区间" {
+				t.Fatalf("third-only batch was not preserved: %#v", snapshot)
+			}
+		}
+	}
+}

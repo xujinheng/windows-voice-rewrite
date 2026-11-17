@@ -173,7 +173,7 @@ func ReplyBody(english, chinese, tip string, complete bool) string {
 		text += "\r\n正在生成…（完成后可复制或改写）"
 	}
 	if english == "" {
-		text = "听到提问后生成建议；新建议可点击“查看新建议”后阅读。"
+		text = "听到完整发言后生成建议；新建议可点击“查看新建议”后阅读。"
 	}
 	if tip != "" {
 		text += "\r\n提示 · " + tip

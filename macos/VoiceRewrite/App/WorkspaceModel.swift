@@ -70,8 +70,11 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var meetingActive = false
     @Published private(set) var meetingReplies: [MeetingReplyRow] = []
     @Published private(set) var meetingReplyPending = false
+    @Published private(set) var meetingCaptionsOnly = false
+    @Published private(set) var meetingExpressionExpanded = false
     @Published private(set) var meetingReplyStatus = ""
     @Published private(set) var meetingReplySource = ""
+    @Published private(set) var meetingReplyTip = ""
     @Published private(set) var meetingExpression = ""
     @Published private(set) var meetingExpressionChinese = ""
     @Published private(set) var meetingExpressionStatus = ""
@@ -573,9 +576,13 @@ final class WorkspaceModel: ObservableObject {
         meetingStarting = true
         meetingStatus = "正在准备会议识别…"
         meetingCaptions = []
+        meetingCaptionsOnly = false
+        meetingExpressionExpanded = false
         meetingReplies = []
         meetingReplyPending = false
         meetingReplyStatus = ""
+        meetingReplyTip = ""
+        meetingReplySource = ""
         meetingExpression = ""
         meetingExpressionChinese = ""
         meetingExpressionStatus = ""
@@ -687,7 +694,14 @@ final class WorkspaceModel: ObservableObject {
         if let value = values["expression"]?.string { meetingExpression = value }
         if let value = values["expression_chinese"]?.string { meetingExpressionChinese = value }
         if let source = values["reply_source"]?.string { meetingReplySource = source }
+        if let tip = values["reply_tip"]?.string { meetingReplyTip = tip }
         meetingReplyPending = values["reply_pending"]?.boolValue == true
+        if let captionsOnly = values["captions_only"]?.boolValue {
+            meetingCaptionsOnly = captionsOnly
+        }
+        if let expanded = values["expression_expanded"]?.boolValue {
+            meetingExpressionExpanded = expanded
+        }
         if case .array(let items)? = values["replies"] {
             meetingReplies = items.enumerated().compactMap { index, value in
                 guard case .object(let row) = value,
@@ -695,6 +709,14 @@ final class WorkspaceModel: ObservableObject {
                       let chinese = row["chinese"]?.string else { return nil }
                 return MeetingReplyRow(id: index, english: english,
                     chinese: chinese, complete: row["complete"]?.boolValue == true)
+            }
+            // The core selects the first finished option, not necessarily ONE.
+            // Preserve an explicit selection while it remains copyable.
+            let selectedReady = meetingReplies.contains {
+                $0.id == meetingSelectedIndex && $0.complete && !$0.english.isEmpty
+            }
+            if !selectedReady, let suggested = values["reply_first_ready"]?.int, suggested >= 0 {
+                meetingSelectedIndex = suggested
             }
         }
     }
@@ -723,12 +745,16 @@ final class WorkspaceModel: ObservableObject {
                     let message = response.error?.userText ?? "会议处理失败，请重试"
                     if operation == "meeting_replies" {
                         self.meetingReplyStatus = message
+                    } else if operation == "meeting_view" {
+                        self.meetingStatus = message
                     } else {
                         self.meetingExpressionStatus = message
                     }
                 case .failure:
                     if operation == "meeting_replies" {
                         self.meetingReplyStatus = "会议建议请求已取消或连接已断开"
+                    } else if operation == "meeting_view" {
+                        self.meetingStatus = "会议布局切换失败；请检查 Helper 连接"
                     } else {
                         self.meetingExpressionStatus = "会议处理已取消或连接已断开"
                     }
@@ -739,6 +765,18 @@ final class WorkspaceModel: ObservableObject {
 
     func requestMeetingReplies() {
         meetingAction("meeting_replies")
+    }
+
+    func toggleMeetingCaptionsOnly() {
+        meetingAction("meeting_view", fields: [
+            "button_id": .number(Double(ContractLimits.meetingButtonCaptions)),
+        ])
+    }
+
+    func toggleMeetingExpressionExpanded() {
+        meetingAction("meeting_view", fields: [
+            "button_id": .number(Double(ContractLimits.meetingButtonExpression)),
+        ])
     }
 
     func acceptMeetingReplies() {
@@ -759,7 +797,6 @@ final class WorkspaceModel: ObservableObject {
                 self.meetingPresentationRevision &+= 1
                 if case .success(let response) = result, response.ok {
                     self.applyMeetingSnapshot(response.result ?? [:])
-                    self.meetingSelectedIndex = 0
                 } else {
                     self.meetingReplyStatus = "切换回复失败，请重试"
                 }

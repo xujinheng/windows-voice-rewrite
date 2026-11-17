@@ -211,6 +211,19 @@ private struct MeetingView: View {
             Text(model.meetingStatus)
                 .font(.footnote).foregroundStyle(.secondary)
                 .accessibilityIdentifier("meeting_status")
+            HStack {
+                Button(model.meetingCaptionsOnly ? "完整视图" : "专注字幕") {
+                    model.toggleMeetingCaptionsOnly()
+                }
+                .disabled(!model.meetingActive || model.meetingBusy)
+                .accessibilityIdentifier("meeting_focus_captions")
+                Button(model.meetingExpressionExpanded ? "收起英文" : "放大英文") {
+                    model.toggleMeetingExpressionExpanded()
+                }
+                .disabled(!model.meetingActive || model.meetingBusy || model.meetingCaptionsOnly)
+                .accessibilityIdentifier("meeting_expand_expression")
+                Spacer()
+            }
             HSplitView {
                 GroupBox("实时对话与历史字幕") {
                     ScrollView {
@@ -243,8 +256,10 @@ private struct MeetingView: View {
                     }
                 }
                 .frame(minWidth: 210)
-                VSplitView {
-                    GroupBox("英语回复建议") {
+                if !model.meetingCaptionsOnly {
+                    VSplitView {
+                        if !model.meetingExpressionExpanded {
+                            GroupBox("英语回复建议") {
                         VStack(alignment: .leading, spacing: 7) {
                             HStack {
                                 Button("重新生成") { model.requestMeetingReplies() }
@@ -261,6 +276,12 @@ private struct MeetingView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                             if !model.meetingReplySource.isEmpty {
                                 Text(model.meetingReplySource).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            }
+                            if !model.meetingReplyTip.isEmpty {
+                                Text("提示 · " + model.meetingReplyTip)
+                                    .font(.caption).foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                                    .accessibilityIdentifier("meeting_reply_tip")
                             }
                             ScrollView {
                                 VStack(alignment: .leading, spacing: 8) {
@@ -299,10 +320,11 @@ private struct MeetingView: View {
                                         $0.id == model.meetingSelectedIndex && $0.complete && !$0.english.isEmpty
                                     }))
                                 .accessibilityIdentifier("meeting_refine")
-                        }.padding(8)
-                    }
-                    .frame(minHeight: 225)
-                    GroupBox("我的主动表达") {
+                            }.padding(8)
+                            }
+                            .frame(minHeight: 225)
+                        }
+                        GroupBox("我的主动表达") {
                         VStack(alignment: .leading, spacing: 8) {
                             TextEditor(text: $model.meetingInput)
                                 .frame(minHeight: 65)
@@ -338,9 +360,10 @@ private struct MeetingView: View {
                                 .accessibilityIdentifier("meeting_copy_expression")
                         }.padding(8)
                     }
-                    .frame(minHeight: 190)
+                        .frame(minHeight: 190)
+                    }
+                    .frame(minWidth: 290)
                 }
-                .frame(minWidth: 290)
             }
             if !model.meetingCopyStatus.isEmpty {
                 Text(model.meetingCopyStatus)

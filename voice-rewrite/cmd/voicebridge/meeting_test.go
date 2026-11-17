@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"voicerewrite/internal/core/audio"
+	meetingcore "voicerewrite/internal/core/meeting"
 )
 
 func TestBridgeMeetingLifecycleAndStalePackets(t *testing.T) {
@@ -161,6 +162,66 @@ func TestMeetingProtocolNeverEchoesPrivateConfiguration(t *testing.T) {
 	reply := h.receive()
 	if reply.OK || reply.Error == nil || strings.Contains(reply.Error.Message, secret) {
 		t.Fatalf("invalid meeting configuration was echoed: %#v", reply)
+	}
+	h.close()
+}
+
+func TestBridgeMeetingViewUsesSharedHUDStateAndRejectsOtherButtons(t *testing.T) {
+	h := startBridge(t, defaultOptions())
+	cfg := configFor("http://127.0.0.1:8080")
+	cfg["meeting_asr_mode"] = "multipart"
+	h.send(map[string]any{"v": 1, "id": "start-view", "op": "meeting_start", "config": cfg})
+	start := h.receive()
+	if !start.OK {
+		t.Fatalf("start: %#v", start)
+	}
+	sid := object(t, start.Result)["session_id"].(string)
+	setView := func(id string, button int) response {
+		t.Helper()
+		h.send(map[string]any{
+			"v": 1, "id": id, "op": "meeting_view",
+			"session_id": sid, "button_id": button,
+		})
+		return h.receive()
+	}
+	captions := setView("focus", meetingcore.ButtonCaptions)
+	if !captions.OK || object(t, captions.Result)["captions_only"] != true ||
+		object(t, captions.Result)["expression_expanded"] != false {
+		t.Fatalf("focus view: %#v", captions)
+	}
+	expanded := setView("expand", meetingcore.ButtonExpression)
+	if !expanded.OK || object(t, expanded.Result)["captions_only"] != true ||
+		object(t, expanded.Result)["expression_expanded"] != true {
+		t.Fatalf("shared independent flags: %#v", expanded)
+	}
+	invalid := setView("unsafe-button", meetingcore.ButtonToggleCapture)
+	if invalid.OK || invalid.Error == nil || invalid.Error.Code != "invalid_request" {
+		t.Fatalf("arbitrary meeting control accepted: %#v", invalid)
+	}
+	captions = setView("all", meetingcore.ButtonCaptions)
+	if !captions.OK || object(t, captions.Result)["captions_only"] != false ||
+		object(t, captions.Result)["expression_expanded"] != true {
+		t.Fatalf("return from focus lost expanded view: %#v", captions)
+	}
+	h.send(map[string]any{"v": 1, "id": "stop-view", "op": "meeting_stop", "session_id": sid})
+	if got := h.receive(); !got.OK {
+		t.Fatalf("stop: %#v", got)
+	}
+	h.send(map[string]any{"v": 1, "id": "new-view", "op": "meeting_start", "config": cfg})
+	next := h.receive()
+	if !next.OK {
+		t.Fatalf("restart: %#v", next)
+	}
+	newID := object(t, next.Result)["session_id"].(string)
+	h.send(map[string]any{"v": 1, "id": "snapshot-view", "op": "meeting_snapshot", "session_id": newID})
+	view := h.receive()
+	if !view.OK || object(t, view.Result)["captions_only"] != false ||
+		object(t, view.Result)["expression_expanded"] != false {
+		t.Fatalf("new session inherited old window flags: %#v", view)
+	}
+	h.send(map[string]any{"v": 1, "id": "done-view", "op": "meeting_stop", "session_id": newID})
+	if got := h.receive(); !got.OK {
+		t.Fatalf("shutdown: %#v", got)
 	}
 	h.close()
 }

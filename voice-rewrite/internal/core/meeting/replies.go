@@ -8,6 +8,21 @@ type ReplyBatch struct {
 	Tip    string
 }
 
+// FirstReadyReply selects the first independently completed, copyable
+// suggestion. A provider may omit ONE but return TWO or THREE successfully.
+func FirstReadyReply(lines [3]Line) int {
+	for i, line := range lines {
+		if ReplyCopyEnabled(line.Complete, line.English) {
+			return i
+		}
+	}
+	return -1
+}
+
+func (b ReplyBatch) HasReadyReply() bool {
+	return FirstReadyReply(b.Lines) >= 0
+}
+
 // Apply incorporates one protocol line into the in-progress batch.
 func (b *ReplyBatch) Apply(line Line) bool {
 	switch line.Kind {
@@ -85,14 +100,14 @@ func (s *ReplyState) Publish(serial uint64, batch ReplyBatch) bool {
 	if !s.Current(serial) {
 		return false
 	}
-	if s.Displayed.Lines[0].English == "" || s.DisplaySerial == serial {
+	if !s.Displayed.HasReadyReply() || s.DisplaySerial == serial {
 		s.DisplaySerial = serial
 		s.Displayed = batch
 		return true
 	}
 	s.PendingSerial = serial
 	s.Pending = batch
-	s.PendingAvailable = batch.Lines[0].Complete
+	s.PendingAvailable = batch.HasReadyReply()
 	return true
 }
 
@@ -119,7 +134,7 @@ func (s *ReplyState) DiscardPartial() {
 			s.Pending.Lines[i] = Line{}
 		}
 	}
-	s.PendingAvailable = s.Pending.Lines[0].Complete
+	s.PendingAvailable = s.Pending.HasReadyReply()
 }
 
 func (s *ReplyState) ResetWork() {

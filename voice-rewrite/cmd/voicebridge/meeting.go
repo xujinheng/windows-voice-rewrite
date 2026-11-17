@@ -62,6 +62,7 @@ type bridgeMeeting struct {
 	level            int
 	lastFinal        uint64
 	replies          meetingcore.ReplyState
+	view             meetingcore.HUDFlags
 	replyStatus      string
 	expression       meetingcore.Line
 	expressionStatus string
@@ -255,14 +256,8 @@ func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64) 
 			m.mu.Unlock()
 		})
 	}, nil)
-	if err == nil {
-		complete := false
-		for _, line := range batch.Lines {
-			complete = complete || line.Complete && strings.TrimSpace(line.English) != ""
-		}
-		if !complete {
-			err = errors.New("meeting provider returned no completed suggestions")
-		}
+	if err == nil && !batch.HasReadyReply() {
+		err = errors.New("meeting provider returned no completed suggestions")
 	}
 	m.mu.Lock()
 	if m.replies.Current(serial) && m.runtime.Active(epoch) {
@@ -279,6 +274,19 @@ func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64) 
 	}
 	m.mu.Unlock()
 	return err
+}
+
+// View actions use the same authoritative Go HUD transition function as
+// Windows. The macOS host only decides how to lay out native SwiftUI panes.
+func (m *bridgeMeeting) applyViewButton(id int) bool {
+	if id != meetingcore.ButtonCaptions && id != meetingcore.ButtonExpression {
+		return false
+	}
+	action, _ := meetingcore.CommandFor(id)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.view, _ = meetingcore.ApplyCommand(m.view, action, 0)
+	return true
 }
 
 func (m *bridgeMeeting) acceptReplies() bool {
@@ -374,7 +382,10 @@ func (m *bridgeMeeting) snapshot() map[string]any {
 	}
 	return map[string]any{
 		"replies": lines, "reply_source": m.replies.Displayed.Source,
+		"reply_tip": m.replies.Displayed.Tip,
+		"reply_first_ready": meetingcore.FirstReadyReply(m.replies.Displayed.Lines),
 		"reply_pending": m.replies.PendingAvailable, "reply_status": m.replyStatus,
+		"captions_only": m.view.CaptionsOnly, "expression_expanded": m.view.ExpressionExpanded,
 		"expression": m.expression.English, "expression_chinese": m.expression.Chinese,
 		"expression_status": m.expressionStatus,
 		"session_id":        m.id, "status": m.status,
