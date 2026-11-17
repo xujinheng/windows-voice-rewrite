@@ -111,7 +111,7 @@ final class WorkspaceModel: ObservableObject {
     private var historyStore = SessionHistory()
     private var updateCheck = ResultGeneration()
 
-    private let microphone = MicrophoneRecorder()
+    private let microphone: any VoiceRecordingDevice
     private let systemAudio = SystemAudioCapture()
     private var meetingGeneration = ResultGeneration()
     private var meetingCaptureGeneration = ResultGeneration()
@@ -151,7 +151,8 @@ final class WorkspaceModel: ObservableObject {
     private var sideDictationPreflight: SideDictationPreflight?
     private let credentials = KeychainCredentials()
     private let interaction = InteractionSession.macOS()
-    private let dictationDelivery = MacDictationDelivery()
+    private let dictationDelivery: any DictationDelivering
+    private let helperExecutableURL: URL?
     private var store: SettingsStore?
     private var bridge: BridgeClient?
     private var helperStartupWatchdog: Task<Void, Never>?
@@ -181,7 +182,14 @@ final class WorkspaceModel: ObservableObject {
     private var activeShortcutPlan: MacShortcutPlan?
     private var shortcutGeneration = ResultGeneration()
 
-    init() {
+    init(
+        microphone: any VoiceRecordingDevice = MicrophoneRecorder(),
+        dictationDelivery: any DictationDelivering = MacDictationDelivery(),
+        helperExecutableURL: URL? = nil
+    ) {
+        self.microphone = microphone
+        self.dictationDelivery = dictationDelivery
+        self.helperExecutableURL = helperExecutableURL
         do {
             let s = try SettingsStore()
             settings = try s.load()
@@ -318,7 +326,7 @@ final class WorkspaceModel: ObservableObject {
         bridge = nil
         connection = .connecting
         serviceStatus = helperStarting()
-        guard let executable = Bundle.main.executableURL?.deletingLastPathComponent()
+        guard let executable = helperExecutableURL ?? Bundle.main.executableURL?.deletingLastPathComponent()
             .appendingPathComponent("voicebridge") else {
             applyHelperConnection(.bundleMissing)
             return
@@ -740,7 +748,9 @@ final class WorkspaceModel: ObservableObject {
         settings.recordMode = enabled ? "hold" : "toggle"
     }
 
-    private func keyboardPressed(_ action: SideMouseAction, targetPID: Int32?) {
+    // Internal so the CI user-journey test enters through the *same* keyboard
+    // state machine as the actual native right-modifier/keyboard callbacks.
+    func keyboardPressed(_ action: SideMouseAction, targetPID: Int32?) {
         if !keyboardHoldEnabled {
             if meetingActive {
                 toggleMeetingVoice(intent: action == .dictation ? .express : .compose)
@@ -785,7 +795,7 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func keyboardReleased(_ action: SideMouseAction) {
+    func keyboardReleased(_ action: SideMouseAction) {
         guard keyboardHoldEnabled else { return }
         let starting = meetingActive ? meetingVoiceStarting : isStarting
         let recording = meetingActive ? meetingVoiceRecording : isRecording
