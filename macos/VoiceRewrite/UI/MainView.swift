@@ -8,6 +8,8 @@ struct MainView: View {
         TabView {
             dashboard
                 .tabItem { Label("工作台", systemImage: "waveform") }
+            MeetingView(model: model)
+                .tabItem { Label("会议", systemImage: "person.2.wave.2") }
             SettingsView(model: model)
                 .tabItem { Label("设置", systemImage: "gearshape") }
         }
@@ -161,5 +163,93 @@ struct MainView: View {
     private func resultHeight(_ value: String?) -> CGFloat {
         guard let value, !value.isEmpty else { return 70 }
         return ResultCardMetrics.height(unicodeScalars: value.unicodeScalars.count)
+    }
+}
+
+ 
+/// The native host paints the adjustable panels; the Go Meeting core owns
+/// segmentation, caption revisions, translations and session cancellation.
+private struct MeetingView: View {
+    @ObservedObject var model: WorkspaceModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("会议字幕").font(.title2.bold())
+                Spacer()
+                Button("刷新音频来源") { model.refreshMeetingSources() }
+                    .disabled(model.meetingStarting || model.meetingActive)
+                    .accessibilityIdentifier("meeting_refresh_sources")
+            }
+            HStack {
+                Picker("音频来源", selection: $model.meetingSourceID) {
+                    ForEach(model.meetingSources) { source in
+                        Text(source.name).tag(source.id)
+                    }
+                }
+                .disabled(model.meetingStarting || model.meetingActive)
+                .accessibilityIdentifier("meeting_audio_source")
+                Spacer()
+                if model.meetingActive || model.meetingStarting {
+                    Button("停止会议") { model.stopMeeting() }
+                } else {
+                    Button("开始会议") { model.startMeeting() }
+                        .disabled(model.meetingSources.isEmpty)
+                }
+            }
+            Text(model.meetingStatus)
+                .font(.footnote).foregroundStyle(.secondary)
+                .accessibilityIdentifier("meeting_status")
+            HSplitView {
+                GroupBox("实时对话") {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 10) {
+                            if let latest = model.meetingCaptions.last {
+                                Text(latest.source.isEmpty ? "等待发言…" : latest.source)
+                                    .font(.title3)
+                                    .textSelection(.enabled)
+                                Divider()
+                                Text(latest.chinese.isEmpty ? "正在准备中文释义…" : latest.chinese)
+                                    .font(.body)
+                                    .textSelection(.enabled)
+                                if !latest.final {
+                                    Text("识别中 · 原文仍可能调整")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            } else {
+                                Text("等待所选应用发言…").foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                    }
+                }
+                .frame(minWidth: 230)
+                GroupBox("历史字幕") {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            ForEach(model.meetingCaptions.filter { $0.final }) { row in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(row.source).textSelection(.enabled)
+                                    if !row.chinese.isEmpty {
+                                        Text(row.chinese)
+                                            .foregroundStyle(.secondary)
+                                            .textSelection(.enabled)
+                                    }
+                                }
+                                Divider()
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                    }
+                }
+                .frame(minWidth: 210)
+            }
+            Text("仅捕获用户指定来源的系统音频，不捕获 VoiceRewrite 自身。首次使用需允许屏幕与系统音频录制；ASR 与翻译使用已配置服务。拖动分隔线可调整栏目宽度。")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+        .frame(minHeight: 320)
+        .onAppear { model.refreshMeetingSources() }
     }
 }
