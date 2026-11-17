@@ -9,6 +9,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -256,4 +258,50 @@ func TestOneClickLauncherReportsUnexpectedChildExit(t *testing.T) {
 	if err == nil || !bytes.Contains(out, []byte("exited before model was ready")) {
 		t.Fatalf("unexpected child exit must be visible: %v %s", err, out)
 	}
+}
+
+func TestOneClickAttachLeavesExternalLlamaRunning(t *testing.T) {
+	external := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if r.URL.Path == "/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"data":[{"id":"external"}]}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer external.Close()
+	backendURL, err := url.Parse(external.URL)
+	if err != nil { t.Fatal(err) }
+	backend, err := strconv.Atoi(backendURL.Port())
+	if err != nil { t.Fatal(err) }
+	public := freeLocalPort(t)
+	if public == backend { public = freeLocalPort(t) }
+	cfgPath := fakeConfig(t, "", public, backend)
+	cfg, err := loadConfig(cfgPath)
+	if err != nil { t.Fatal(err) }
+	cfg.AttachToExistingServer = true
+	cfg.LlamaServerPath, cfg.ModelPath, cfg.MMProjPath = "", "", ""
+	b, err := json.Marshal(cfg)
+	if err != nil { t.Fatal(err) }
+	if err := os.WriteFile(cfgPath, b, 0600); err != nil { t.Fatal(err) }
+	bin := testOneClickExecutable(t)
+	cmd, logs := startMockLauncher(t, bin, cfgPath)
+	frontend := fmt.Sprintf("http://127.0.0.1:%d", public)
+	waitHTTPReady(t, frontend, cmd, logs)
+	resp, err := http.Get(frontend + "/v1/models")
+	if err != nil { t.Fatal(err) }
+	data, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !bytes.Contains(data, []byte("external")) { t.Fatalf("attach proxy: %s", data) }
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil { t.Fatal(err) }
+	if err := cmd.Wait(); err != nil { t.Fatal(err) }
+	// An attached external process must not be killed by our launcher.
+	resp, err = http.Get(external.URL + "/health")
+	if err != nil { t.Fatalf("attached external backend was stopped: %v", err) }
+	resp.Body.Close()
+	if resp.StatusCode != 200 { t.Fatalf("attached backend status: %d", resp.StatusCode) }
 }
