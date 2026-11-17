@@ -72,6 +72,9 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var updateStatus = updateNotChecked()
     @Published private(set) var updatePage: String?
     @Published private(set) var isCheckingUpdate = false
+    @Published private(set) var menuIndicatorPhase: IndicatorPhase?
+    @Published private(set) var menuIndicatorMode = "听写"
+    var onUpdateCheckCompleted: ((String, String?) -> Void)?
     @Published private(set) var meetingSources: [MeetingAudioSource] = []
     @Published var meetingSourceID = "system"
     @Published private(set) var meetingStatus = "选择音频来源后启动会议"
@@ -97,6 +100,9 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var meetingVoiceStarting = false
     @Published private(set) var meetingCapturePaused = false
     @Published private(set) var meetingCaptureSwitching = false
+    @Published private(set) var meetingProfileUpdating = false
+    @Published private(set) var meetingProfileVersion = 0
+    @Published private(set) var meetingDemoActive = false
     @Published var meetingSelectedIndex = 0
     @Published var meetingInput = ""
     @Published var meetingRefineInput = ""
@@ -113,6 +119,7 @@ final class WorkspaceModel: ObservableObject {
     private var meetingVoiceGeneration = ResultGeneration()
     private var meetingPresentationRevision: UInt64 = 0
     private var meetingSessionID: String?
+    private var showStartupDemoOnConnect = false
     private var meetingPendingPackets = 0
     private var meetingSnapshotPending = false
     private var meetingRequestID: String?
@@ -184,7 +191,8 @@ final class WorkspaceModel: ObservableObject {
         NSWorkspace.shared.open(url)
     }
 
-    func launch() {
+    func launch(demo: Bool = false) {
+        showStartupDemoOnConnect = demo
         refreshMicrophonePermission()
         refreshMicrophoneDevices()
         DiagnosticLog.note("应用已启动")
@@ -652,7 +660,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func sideMouseHeld(_ action: SideMouseAction, targetPID: Int32?) {
-        if meetingActive {
+        if meetingActive && !meetingDemoActive {
             dismissPreviewIndicator()
             guard meetingSideAction == nil, !meetingBusy, !meetingCancelPending,
                   !meetingVoiceRecording, !meetingVoiceStarting,
@@ -820,23 +828,134 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    /// Profile changes are persisted immediately, but the Go Meeting session
-    /// snapshots its config at start. Never claim live inference was updated.
-    @discardableResult
-    func saveMeetingProfile(background: String, terms: String) -> Bool {
+    /// Save the same portable two-field profile as Windows. During a live
+    /// meeting, commit the new model/ASR configuration through Go's epoch
+    /// boundary. If live delivery fails, the persisted fields are explicitly
+    /// next-session only; never claim they affected in-flight inference.
+    func updateMeetingProfile(background: String, terms: String, mode: String,
+                              completion: @escaping (Bool, String) -> Void) {
+        guard !meetingStarting && !meetingCaptureSwitching && !meetingProfileUpdating &&
+              !meetingBusy && !meetingVoiceRecording && !meetingVoiceStarting &&
+              meetingVoiceASRID == nil else {
+            completion(false, "请先完成当前会议切换或语音处理")
+            return
+        }
         do {
             guard let store else { throw SettingsError.insecureStorage }
-            var updated = settings
-            updated.meetingBackground = background
-            updated.meetingTerms = terms
-            try updated.canonicalize()
-            try store.save(updated)
-            settings = updated
-            settingsStatus = "会议资料已保存；正在进行的会议将在重新开始后应用"
-            return true
+            var next = settings
+            next.meetingBackground = background
+            next.meetingTerms = terms
+            next.meetingASRMode = mode
+            try next.canonicalize()
+            try store.save(next)
+            settings = next
         } catch {
-            settingsStatus = settingsSaveFailed(error.localizedDescription)
-            return false
+            let message = settingsSaveFailed(error.localizedDescription)
+            settingsStatus = message
+            completion(false, message)
+            return
+        }
+        guard meetingActive && !meetingDemoActive else {
+            let message = "会议资料和识别模式已保存；下次真实会议开始时生效"
+            settingsStatus = message
+            completion(true, message)
+            return
+        }
+        guard let id = meetingSessionID, let bridge else {
+            let message = "资料已保存，但当前会议未连接；重新开始会议后生效"
+            settingsStatus = message
+            completion(false, message)
+            return
+        }
+        let config: JSONValue
+        do {
+            guard case .object(var values) = try requestConfig(for: .spokenSelectedTask) else {
+                throw BridgeFailure.invalidRequest
+            }
+            values["meeting_asr_mode"] = .string(settings.meetingASRMode)
+            config = .object(values)
+        } catch {
+            let message = "资料已保存，但无法向当前会议提供有效配置；下次开始时生效"
+            settingsStatus = message
+            completion(false, message)
+            return
+        }
+        meetingProfileUpdating = true
+        meetingPresentationRevision &+= 1
+        let token = meetingGeneration.latest
+        bridge.send(operation: "meeting_configure", fields: [
+            "session_id": .string(id), "config": config,
+        ]) { [weak self] result in
+            Task { @MainActor [weak self] in
+                guard let self, self.meetingSessionID == id,
+                      self.meetingGeneration.accepts(token) else {
+                    completion(false, "会话已更换；资料已保存，新会议开始时生效")
+                    return
+                }
+                self.meetingProfileUpdating = false
+                self.meetingPresentationRevision &+= 1
+                switch result {
+                case .success(let reply) where reply.ok:
+                    // Old in-flight feed completions are fenced by audio_epoch below.
+                    // Rebase native backpressure to the new Go runtime epoch;
+                    // otherwise old pending feeds can falsely stop fresh capture.
+                    self.meetingPendingPackets = 0
+                    self.applyMeetingSnapshot(reply.result ?? [:])
+                    let message = "已应用到当前会议 · 版本 \(self.meetingProfileVersion)；旧识别任务已取消"
+                    self.settingsStatus = message
+                    completion(true, message)
+                default:
+                    let message = "资料已保存，但当前会议更新失败；重新开始会议后生效"
+                    self.settingsStatus = message
+                    completion(false, message)
+                }
+            }
+        }
+    }
+
+    /// Preview data comes entirely from the bundled Go Core fixture. This does
+    /// not request audio permissions, start ScreenCaptureKit, or call a provider.
+    func startMeetingDemo() {
+        guard !meetingActive && !meetingStarting, !meetingDemoActive else { return }
+        guard let bridge, case .connected = connection else {
+            meetingStatus = "离线演示需要已连接的本地 Go Helper，不需要 ASR/LLM 服务"
+            return
+        }
+        let token = meetingGeneration.begin()
+        meetingStarting = true
+        bridge.send(operation: "meeting_demo") { [weak self] result in
+            Task { @MainActor [weak self] in
+                guard let self, self.meetingGeneration.accepts(token),
+                      !self.meetingActive && self.meetingStarting else { return }
+                self.meetingStarting = false
+                guard case .success(let reply) = result, reply.ok,
+                      reply.result?["demo"]?.boolValue == true else {
+                    self.meetingStatus = "无法读取本地离线演示数据"
+                    self.showStartupDemoOnConnect = false
+                    return
+                }
+                self.meetingDemoActive = true
+                self.meetingActive = true
+                self.meetingSessionID = nil
+                self.meetingCaptionsOnly = false
+                self.meetingExpressionExpanded = false
+                self.meetingSelectedIndex = 0
+                self.applyMeetingSnapshot(reply.result ?? [:])
+                if case .array(let items)? = reply.result?["captions"] {
+                    self.meetingCaptions = items.compactMap { item in
+                        guard case .object(let row) = item, let id = row["id"]?.int,
+                              let source = row["source"]?.string,
+                              let chinese = row["chinese"]?.string else { return nil }
+                        return MeetingCaptionRow(id: id, source: source, chinese: chinese,
+                            final: row["final"]?.boolValue == true)
+                    }
+                }
+                self.meetingStatus = "离线演示 · 固定测试字幕，不采集 Zoom 或系统音频，不请求在线服务"
+                if self.showStartupDemoOnConnect {
+                    self.showStartupDemoOnConnect = false
+                    MeetingReaderWindowController.shared.open(model: self)
+                }
+            }
         }
     }
 
@@ -871,6 +990,8 @@ final class WorkspaceModel: ObservableObject {
         meetingCancelPending = false
         meetingCapturePaused = false
         meetingCaptureSwitching = false
+        meetingDemoActive = false
+        meetingProfileVersion = 1
         meetingCaptureSourceID = meetingSourceID
         meetingAudioEpoch = 0
         meetingPendingPackets = 0
@@ -943,12 +1064,13 @@ final class WorkspaceModel: ObservableObject {
     private func feedMeeting(_ bytes: Data, sessionID id: String, capture: UInt64) {
         guard meetingSessionID == id, meetingCaptureGeneration.accepts(capture),
               meetingAudioEpoch > 0, meetingActive, !meetingCapturePaused,
-              !meetingCaptureSwitching, let bridge else { return }
+              !meetingCaptureSwitching, !meetingProfileUpdating, let bridge else { return }
         guard meetingPendingPackets < 8 else {
             stopMeeting(reason: "会议音频处理过载，采集已停止；请检查电脑负载")
             return
         }
         meetingPendingPackets += 1
+        let sentEpoch = meetingAudioEpoch
         bridge.send(operation: "meeting_feed", fields: [
             "session_id": .string(id),
             "audio_epoch": .number(Double(meetingAudioEpoch)),
@@ -956,10 +1078,11 @@ final class WorkspaceModel: ObservableObject {
         ]) { [weak self] reply in
             Task { @MainActor [weak self] in
                 guard let self, self.meetingSessionID == id,
-                      self.meetingCaptureGeneration.accepts(capture) else { return }
+                      self.meetingCaptureGeneration.accepts(capture),
+                      self.meetingAudioEpoch == sentEpoch else { return }
                 self.meetingPendingPackets = max(0, self.meetingPendingPackets - 1)
                 guard case .success(let response) = reply, response.ok else {
-                    if self.meetingCapturePaused || self.meetingCaptureSwitching { return }
+                    if self.meetingCapturePaused || self.meetingCaptureSwitching || self.meetingProfileUpdating { return }
                     self.stopMeeting(reason: "会议音频传输中断，已停止采集")
                     return
                 }
@@ -1009,6 +1132,8 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func applyMeetingSnapshot(_ values: [String: JSONValue]) {
+        if let epoch = values["epoch"]?.int, epoch > 0 { meetingAudioEpoch = epoch }
+        if let version = values["profile_version"]?.int { meetingProfileVersion = version }
         if let paused = values["capture_paused"]?.boolValue, !meetingCaptureSwitching {
             meetingCapturePaused = paused
         }
@@ -1179,6 +1304,8 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func toggleMeetingVoice(intent: MeetingVoiceIntent) {
+        // Viewing prerecorded demo material must never request a microphone.
+        guard !meetingDemoActive else { return }
         if meetingVoiceRecording {
             meetingVoiceRecording = false
             meetingBusy = true
@@ -1416,6 +1543,15 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func stopMeeting(reason: String = "会议采集已停止") {
+        let wasDemo = meetingDemoActive
+        meetingDemoActive = false
+        meetingProfileUpdating = false
+        if wasDemo {
+            meetingCaptions = []
+            meetingReplies = []
+            meetingExpression = ""
+            meetingExpressionChinese = ""
+        }
         // Fence native callbacks synchronously, before a new meeting can start.
         systemAudio.cancel()
         _ = meetingCaptureGeneration.begin()
@@ -1607,13 +1743,14 @@ final class WorkspaceModel: ObservableObject {
                 self.updateStatus = follow.status
                 self.updatePage = follow.page
                 DiagnosticLog.note(self.updateStatus)
+                self.onUpdateCheckCompleted?(follow.status, follow.page)
             }
         }
     }
 
     func openUpdatePage() {
-        guard let updatePage, let url = URL(string: updatePage) else { return }
-        NSWorkspace.shared.open(url)
+        guard let updatePage, let url = UpdatePagePolicy.officialReleaseURL(updatePage) else { return }
+        if !NSWorkspace.shared.open(url) { DiagnosticLog.note("无法打开官方发布页面") }
     }
 
     func checkServices() {
@@ -2083,11 +2220,16 @@ final class WorkspaceModel: ObservableObject {
         if effect.logServiceStatus {
             DiagnosticLog.note(serviceStatus)
         }
-        if effect.checkServices {
+        // The --meeting-demo path must not run even background ASR/LLM
+        // endpoint probes. The bundled fixture is genuinely offline.
+        if effect.checkServices && !showStartupDemoOnConnect {
             checkServices()
         }
         if effect.refreshShortcuts {
             refreshShortcutsFromCore()
+        }
+        if effect.connectedLabel != nil && showStartupDemoOnConnect {
+            startMeetingDemo()
         }
     }
 
@@ -2280,6 +2422,10 @@ final class WorkspaceModel: ObservableObject {
         indicatorSnapshot.pending = pending
         indicatorSnapshot.phase = phase
         indicatorSnapshot.mode = mode
+        if !pending {
+            menuIndicatorPhase = phase
+            menuIndicatorMode = mode
+        }
         recordingIndicator.present(indicatorSnapshot, levelSource: { [weak self] in
             IndicatorMath.normalizeMicrophoneLevel(Double(self?.microphone.rmsLevel ?? 0))
         }, onCancel: { [weak self] in
@@ -2299,10 +2445,12 @@ final class WorkspaceModel: ObservableObject {
         }, onAutoDismiss: { [weak self] in
             self?.indicatorSnapshot.visible = false
             self?.indicatorSnapshot.pending = false
+            self?.menuIndicatorPhase = nil
         })
     }
 
     private func dismissIndicator() {
+        menuIndicatorPhase = nil
         indicatorSnapshot.visible = false
         indicatorSnapshot.pending = false
         recordingIndicator.dismiss()

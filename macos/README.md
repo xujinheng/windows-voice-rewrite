@@ -46,7 +46,7 @@ The script `scripts/verify-macos-package.sh` can additionally validate an extrac
 
 ## Menu bar and window lifecycle
 
-VoiceRewrite remains active in the macOS menu bar after its main window is closed.
+VoiceRewrite normally starts as a menu-bar utility without raising the workspace over the foreground editor. The menu reminds first-time users to configure ASR/LLM and **打开 VoiceRewrite** opens the single workspace window. Finder reopen also restores it. VoiceRewrite remains active in the macOS menu bar after its main window is closed.
 Closing the main window does **not** quit the app or clear the current-session history.
 Use the waveform menu bar icon to view voice/meeting status, pause or resume ordinary
 voice shortcuts, cancel an active voice task, reopen the workspace, open Settings,
@@ -61,8 +61,7 @@ or rewritten words. Restoring a result opens the existing result card. The
 Meeting entry opens the workspace; choose its Meeting tab to start or configure
 capture. Pausing ordinary voice shortcuts also stops a live Meeting session and
 releases native capture. The Meeting reader's Capture Pause button separately
-stops native audio without ending the Meeting; Resume rechecks the selected source. Update checks only
-show the release page when available; they do not install software.
+stops native audio without ending the Meeting; Resume rechecks the selected source. Explicit update checks show a native alert, only open the official HTTPS releases page and never install software. The configurable global quit shortcut defaults to **Ctrl+Option+F10**; it is not a voice action. The only voice shortcuts are Ctrl+Option+R/E. The menu also provides the independent Meeting reader, offline demo, permissions recovery and diagnostic logs.
 
 ## Use
 

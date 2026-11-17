@@ -40,8 +40,16 @@ enum DiagnosticLog {
     }
 
     static func latestError() -> String? {
-        guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else { return nil }
-        return latestError(in: contents)
+        latestError(at: fileURL, backupCount: backups)
+    }
+
+    static func latestError(at url: URL, backupCount: Int) -> String? {
+        for index in 0...max(0, backupCount) {
+            let candidate = index == 0 ? url : URL(fileURLWithPath: url.path + ".\(index)")
+            guard let contents = try? String(contentsOf: candidate, encoding: .utf8) else { continue }
+            if let error = latestError(in: contents) { return error }
+        }
+        return nil
     }
 
     static func latestError(in log: String) -> String? {
