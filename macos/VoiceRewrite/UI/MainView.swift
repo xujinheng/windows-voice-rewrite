@@ -169,7 +169,6 @@ struct MainView: View {
 
 private struct MeetingView: View {
     @ObservedObject var model: WorkspaceModel
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         ScrollView([.horizontal, .vertical]) {
@@ -178,7 +177,7 @@ private struct MeetingView: View {
                     Text("会议助手").font(.title2.bold())
                     Spacer()
                     Button("打开独立阅读窗口") {
-                        openWindow(id: "meeting-reader")
+                        MeetingReaderWindowController.shared.open(model: model)
                     }
                     .accessibilityIdentifier("meeting_open_reader")
                     Button("刷新音频来源") { model.refreshMeetingSources() }
