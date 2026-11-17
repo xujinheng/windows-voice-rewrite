@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"voicerewrite/internal/core/indicator"
+	"voicerewrite/internal/core/delivery"
 )
 
 const (
@@ -91,7 +92,11 @@ func DictationUnfocused() Delivery {
 
 // DictationInserted is the pill and card after a dictation paste attempt.
 func DictationInserted(err error) Delivery {
+	outcome := delivery.Sent(delivery.Dictation)
 	if err != nil {
+		outcome = delivery.Failure(delivery.Dictation, true)
+	}
+	if outcome.ShowManualResult() {
 		return Delivery{ShowCard: true, Title: DictationCopyManually, Phase: indicator.Fallback, SetPhase: true}
 	}
 	return Delivery{Phase: indicator.Success, SetPhase: true, TraySuccess: true}
