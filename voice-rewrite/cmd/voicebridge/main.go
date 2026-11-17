@@ -214,7 +214,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	}
 	s.seen[req.ID] = struct{}{}
 
-	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "selected_voice_task" && req.Op != "probe_asr" && req.Op != "probe_llm" && req.Op != "list_asr_models" && req.Op != "list_llm_models" && req.Op != "check_update" && req.Op != "meeting_replies" && req.Op != "meeting_refine" && req.Op != "meeting_compose" {
+	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "selected_voice_task" && req.Op != "probe_asr" && req.Op != "probe_llm" && req.Op != "list_asr_models" && req.Op != "list_llm_models" && req.Op != "check_update" && req.Op != "meeting_replies" && req.Op != "meeting_refine" && req.Op != "meeting_compose" && req.Op != "meeting_express" {
 		s.mu.Unlock()
 		switch req.Op {
 		case "meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop", "meeting_pause", "meeting_resume", "meeting_accept", "meeting_cancel", "meeting_view":
@@ -255,7 +255,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	if req.Op == "meeting_replies" || req.Op == "meeting_refine" {
 		timeout = 40 * time.Second
 	}
-	if req.Op == "meeting_compose" {
+	if req.Op == "meeting_compose" || req.Op == "meeting_express" {
 		timeout = 60 * time.Second
 	}
 	if req.Op == "selected_task" {
@@ -368,7 +368,7 @@ func (s *bridgeServer) runTask(ctx context.Context, task *bridgeTask, req reques
 		// Provider errors and unexpected panics may contain private request data.
 		// Reaching the protocol requires a fixed recovery string or a constant fallback.
 		defer func() { _ = recover() }()
-		if req.Op == "meeting_replies" || req.Op == "meeting_refine" || req.Op == "meeting_compose" {
+		if req.Op == "meeting_replies" || req.Op == "meeting_refine" || req.Op == "meeting_compose" || req.Op == "meeting_express" {
 			reply = s.meetingTask(ctx, req)
 		} else {
 			reply = processRequest(ctx, req)
@@ -406,6 +406,11 @@ func (s *bridgeServer) meetingTask(ctx context.Context, req request) response {
 			return failure(req.ID, "invalid_request", "请选择回复并输入 2000 字以内的调整指令")
 		}
 		err = m.refine(ctx, req.ReplyIndex, req.Instruction)
+	case "meeting_express":
+		if !meetingcore.ValidInstruction(req.Instruction) {
+			return failure(req.ID, "invalid_request", "请输入 2000 字以内需要忠实翻译的内容")
+		}
+		err = m.express(ctx, req.Instruction)
 	case "meeting_compose":
 		if !meetingcore.ValidInstruction(req.Instruction) {
 			return failure(req.ID, "invalid_request", "请输入 2000 字以内想表达的内容")

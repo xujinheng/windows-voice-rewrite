@@ -221,10 +221,12 @@ struct MeetingReaderView: View {
             Button("A+") { fontSize = min(28, fontSize + 2) }
                 .disabled(fontSize >= 28)
                 .accessibilityLabel("放大阅读字号")
-            Button("暂停采集") {}
-                .disabled(true)
-                .help("等待 D/F 提供会议采集暂停和恢复状态接口")
-                .accessibilityIdentifier("meeting_capture_pause")
+            Button(model.meetingCapturePaused ? "恢复采集" : "暂停采集") {
+                model.toggleMeetingCapturePause()
+            }
+            .disabled(!model.meetingActive || model.meetingCaptureSwitching ||
+                      model.meetingVoiceRecording || model.meetingVoiceStarting)
+            .accessibilityIdentifier("meeting_capture_pause")
             Button("会议资料") { showProfile = true }
                 .accessibilityIdentifier("meeting_profile")
         }

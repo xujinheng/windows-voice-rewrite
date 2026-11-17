@@ -28,6 +28,15 @@ final class WorkspaceModel: ObservableObject {
         case failed(String)
     }
 
+    private enum MeetingVoiceIntent {
+        case express
+        case compose
+
+        var operation: String {
+            self == .express ? "meeting_express" : "meeting_compose"
+        }
+    }
+
     @Published var settings: MacSettings = .defaults
     @Published var asrKeyInput = ""
     @Published var llmKeyInput = ""
@@ -84,6 +93,8 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var meetingCancelPending = false
     @Published private(set) var meetingVoiceRecording = false
     @Published private(set) var meetingVoiceStarting = false
+    @Published private(set) var meetingCapturePaused = false
+    @Published private(set) var meetingCaptureSwitching = false
     @Published var meetingSelectedIndex = 0
     @Published var meetingInput = ""
     @Published var meetingRefineInput = ""
@@ -101,7 +112,11 @@ final class WorkspaceModel: ObservableObject {
     private var meetingPendingPackets = 0
     private var meetingSnapshotPending = false
     private var meetingRequestID: String?
+    private var meetingCaptureSourceID = ""
     private var meetingVoiceASRID: String?
+    private var meetingVoiceIntent: MeetingVoiceIntent = .compose
+    private var meetingSideAction: SideMouseAction?
+    private var meetingSideReleasedDuringStart = false
     private let recordingIndicator = RecordingIndicatorController()
     private var indicatorSnapshot = IndicatorSnapshot()
     private var sideGate = SideVoiceGate()
@@ -393,9 +408,17 @@ final class WorkspaceModel: ObservableObject {
         let driver = CarbonHotKeyDriver { [weak self] shortcut, pid in
             guard let self, let bound = self.activeShortcutPlan else { return }
             if shortcut == bound.dictation {
-                self.toggleRecording(from: pid)
+                if self.meetingActive {
+                    self.toggleMeetingVoice(intent: .express)
+                } else {
+                    self.toggleRecording(from: pid)
+                }
             } else if shortcut == bound.rewrite {
-                self.triggerSelectionRewrite(from: pid)
+                if self.meetingActive {
+                    self.toggleMeetingVoice(intent: .compose)
+                } else {
+                    self.triggerSelectionRewrite(from: pid)
+                }
             }
         }
         let registry = HotKeyRegistry(driver: driver)
@@ -474,6 +497,9 @@ final class WorkspaceModel: ObservableObject {
         }
         guard turn.toggle else { return }
         voicePaused.toggle()
+        if voicePaused && (meetingActive || meetingStarting) {
+            stopMeeting(reason: "语音已暂停；会议采集已结束")
+        }
         sideMouse?.setVoicePaused(voicePaused)
         dismissPreviewIndicator()
         if let status = turn.sideStatus {
@@ -482,6 +508,16 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func sideMouseHeld(_ action: SideMouseAction, targetPID: Int32?) {
+        if meetingActive {
+            dismissPreviewIndicator()
+            guard meetingSideAction == nil, !meetingBusy, !meetingCancelPending,
+                  !meetingVoiceRecording, !meetingVoiceStarting,
+                  !isRecording, !isStarting, !isProcessing else { return }
+            meetingSideAction = action
+            meetingSideReleasedDuringStart = false
+            toggleMeetingVoice(intent: action == .dictation ? .express : .compose)
+            return
+        }
         let promotingPreflight = action == .dictation && sideDictationPreflight != nil
         switch sideGate.hold(paused: voicePaused,
                              busy: isRecording || isProcessing || (isStarting && !promotingPreflight)) {
@@ -513,6 +549,15 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func sideMouseReleased(_ action: SideMouseAction) {
+        if meetingSideAction == action {
+            meetingSideAction = nil
+            if meetingVoiceStarting {
+                meetingSideReleasedDuringStart = true
+            } else if meetingVoiceRecording {
+                toggleMeetingVoice()
+            }
+            return
+        }
         switch sideGate.release(action, starting: isStarting, recording: isRecording) {
         case .none, .wait:
             return
@@ -659,6 +704,9 @@ final class WorkspaceModel: ObservableObject {
         _ = meetingVoiceGeneration.begin()
         meetingPresentationRevision &+= 1
         meetingCancelPending = false
+        meetingCapturePaused = false
+        meetingCaptureSwitching = false
+        meetingCaptureSourceID = meetingSourceID
         meetingStarting = true
         meetingStatus = "正在准备会议识别…"
         meetingCaptions = []
@@ -711,7 +759,8 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func feedMeeting(_ bytes: Data, sessionID id: String) {
-        guard meetingSessionID == id, meetingActive, let bridge else { return }
+        guard meetingSessionID == id, meetingActive, !meetingCapturePaused,
+              !meetingCaptureSwitching, let bridge else { return }
         guard meetingPendingPackets < 8 else {
             stopMeeting(reason: "会议音频处理过载，采集已停止；请检查电脑负载")
             return
@@ -725,6 +774,7 @@ final class WorkspaceModel: ObservableObject {
                 guard let self, self.meetingSessionID == id else { return }
                 self.meetingPendingPackets = max(0, self.meetingPendingPackets - 1)
                 guard case .success(let response) = reply, response.ok else {
+                    if self.meetingCapturePaused || self.meetingCaptureSwitching { return }
                     self.stopMeeting(reason: "会议音频传输中断，已停止采集")
                     return
                 }
@@ -774,6 +824,9 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func applyMeetingSnapshot(_ values: [String: JSONValue]) {
+        if let paused = values["capture_paused"]?.boolValue, !meetingCaptureSwitching {
+            meetingCapturePaused = paused
+        }
         if let status = values["status"]?.string { meetingStatus = status }
         if let status = values["reply_status"]?.string { meetingReplyStatus = status }
         if let status = values["expression_status"]?.string { meetingExpressionStatus = status }
@@ -909,12 +962,17 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func toggleMeetingVoice() {
+        toggleMeetingVoice(intent: .compose)
+    }
+
+    private func toggleMeetingVoice(intent: MeetingVoiceIntent) {
         if meetingVoiceRecording {
             meetingVoiceRecording = false
             meetingBusy = true
             let token = meetingGeneration.latest
             let voiceToken = meetingVoiceGeneration.latest
             let id = meetingSessionID
+            let operation = meetingVoiceIntent.operation
             meetingExpressionStatus = "正在识别你的语音…"
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -941,7 +999,7 @@ final class WorkspaceModel: ObservableObject {
                                 return
                             }
                             self.meetingInput = words
-                            self.composeMeetingText()
+                            self.meetingAction(operation, fields: ["instruction": .string(words)])
                         }
                     }
                 } catch {
@@ -957,6 +1015,7 @@ final class WorkspaceModel: ObservableObject {
         }
         guard meetingActive, !meetingBusy, !meetingCancelPending, !meetingVoiceStarting,
               !isRecording, !isStarting, !isProcessing else { return }
+        meetingVoiceIntent = intent
         meetingVoiceStarting = true
         meetingExpressionStatus = "正在启动麦克风…"
         let token = meetingGeneration.latest
@@ -973,7 +1032,13 @@ final class WorkspaceModel: ObservableObject {
                     return
                 }
                 self.meetingVoiceRecording = true
-                self.meetingExpressionStatus = "正在录制想表达的内容；再次点击结束"
+                self.meetingExpressionStatus = intent == .express
+                    ? "正在录制需要忠实翻译的中文；松开侧键结束"
+                    : "正在录制想表达的内容；松开侧键或再次点击结束"
+                if self.meetingSideReleasedDuringStart {
+                    self.meetingSideReleasedDuringStart = false
+                    self.toggleMeetingVoice()
+                }
             } catch {
                 if self.meetingGeneration.accepts(token),
                    self.meetingVoiceGeneration.accepts(voiceToken) {
@@ -982,6 +1047,10 @@ final class WorkspaceModel: ObservableObject {
                 }
             }
             if self.meetingVoiceGeneration.accepts(voiceToken) {
+                if !self.meetingVoiceRecording {
+                    self.meetingSideAction = nil
+                    self.meetingSideReleasedDuringStart = false
+                }
                 self.meetingVoiceStarting = false
                 self.refreshMicrophonePermission()
             }
@@ -1044,7 +1113,78 @@ final class WorkspaceModel: ObservableObject {
         meetingCopyStatus = copied ? ResultCopy.copySucceeded : ResultCopy.copyFailed
     }
 
+    /// Pause is a native capture boundary as well as a Go Core epoch boundary.
+    /// The Go Core rejects late PCM while paused; the host stops ScreenCaptureKit.
+    func toggleMeetingCapturePause() {
+        guard meetingActive, !meetingStarting, !meetingCaptureSwitching,
+              !meetingVoiceRecording, !meetingVoiceStarting,
+              let session = meetingSessionID, let bridge else { return }
+        let token = meetingGeneration.latest
+        meetingCaptureSwitching = true
+        meetingPresentationRevision &+= 1
+        if !meetingCapturePaused {
+            meetingCapturePaused = true
+            meetingStatus = "正在暂停会议音频…"
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.systemAudio.stop()
+                guard self.meetingSessionID == session,
+                      self.meetingGeneration.accepts(token), self.meetingActive else { return }
+                bridge.send(operation: "meeting_pause", fields: [
+                    "session_id": .string(session),
+                ]) { [weak self] result in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.meetingSessionID == session,
+                              self.meetingGeneration.accepts(token) else { return }
+                        guard case .success(let reply) = result, reply.ok else {
+                            self.stopMeeting(reason: "暂停会议音频失败，已停止采集")
+                            return
+                        }
+                        self.meetingCaptureSwitching = false
+                        self.applyMeetingSnapshot(reply.result ?? [:])
+                        self.meetingStatus = "会议音频已暂停"
+                    }
+                }
+            }
+        } else {
+            meetingStatus = "正在恢复会议音频…"
+            bridge.send(operation: "meeting_resume", fields: [
+                "session_id": .string(session),
+            ]) { [weak self] result in
+                Task { @MainActor [weak self] in
+                    guard let self, self.meetingSessionID == session,
+                          self.meetingGeneration.accepts(token), self.meetingActive else { return }
+                    guard case .success(let reply) = result, reply.ok else {
+                        self.stopMeeting(reason: "恢复会议处理失败，已停止采集")
+                        return
+                    }
+                    do {
+                        try await self.systemAudio.start(sourceID: self.meetingCaptureSourceID,
+                            onPCM: { [weak self] bytes in self?.feedMeeting(bytes, sessionID: session) },
+                            onFailure: { [weak self] detail in self?.stopMeeting(reason: detail) })
+                        guard self.meetingSessionID == session,
+                              self.meetingGeneration.accepts(token), self.meetingActive else {
+                            await self.systemAudio.stop()
+                            return
+                        }
+                        self.meetingCaptureSwitching = false
+                        self.meetingCapturePaused = false
+                        self.applyMeetingSnapshot(reply.result ?? [:])
+                        self.meetingStatus = "正在监听所选应用音频"
+                    } catch {
+                        self.stopMeeting(reason: "恢复系统音频失败；请重新选择音频来源")
+                    }
+                }
+            }
+        }
+    }
+
     func stopMeeting(reason: String = "会议采集已停止") {
+        meetingCapturePaused = false
+        meetingCaptureSwitching = false
+        meetingCaptureSourceID = ""
+        meetingSideAction = nil
+        meetingSideReleasedDuringStart = false
         _ = meetingGeneration.begin()
         _ = meetingActionGeneration.begin()
         _ = meetingVoiceGeneration.begin()
