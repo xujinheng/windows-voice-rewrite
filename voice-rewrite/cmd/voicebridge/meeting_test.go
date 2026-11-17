@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -64,7 +65,7 @@ func TestBridgeMeetingLifecycleAndStalePackets(t *testing.T) {
 }
 
 func TestBridgeMeetingUsesSharedSegmentationAndASR(t *testing.T) {
-	var asrCalls, translationCalls atomic.Int32
+	var asrCalls, completeASRCalls, translationCalls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/audio/transcriptions":
@@ -73,8 +74,17 @@ func TestBridgeMeetingUsesSharedSegmentationAndASR(t *testing.T) {
 				t.Error("meeting ASR did not use configured ASR key")
 			}
 			if err := r.ParseMultipartForm(2 << 20); err != nil {
+				// An in-flight preview can be superseded while the HTTP body is
+				// uploading. Windows reports a truncated multipart request as
+				// unexpected EOF even when the real final ASR succeeds later.
+				// Require a complete request for any successful transcript.
+				if errors.Is(err, io.ErrUnexpectedEOF) || r.Context().Err() != nil {
+					return
+				}
 				t.Errorf("invalid ASR WAV: %v", err)
+				return
 			}
+			completeASRCalls.Add(1)
 			_, _ = io.WriteString(w, `{"text":"hello from meeting"}`)
 		case "/v1/chat/completions":
 			translationCalls.Add(1)
@@ -134,7 +144,7 @@ func TestBridgeMeetingUsesSharedSegmentationAndASR(t *testing.T) {
 		}
 		time.Sleep(40 * time.Millisecond)
 	}
-	if !found || asrCalls.Load() == 0 {
+	if !found || asrCalls.Load() == 0 || completeASRCalls.Load() == 0 {
 		t.Fatal("shared core Meeting segmentation did not publish a final ASR caption")
 	}
 	if translationCalls.Load() == 0 {
