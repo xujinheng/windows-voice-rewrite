@@ -146,7 +146,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.maxSelectedRunes, ContractLimits.defaultMaxSelectedRunes)
         XCTAssertEqual(settings.selectionCopyAttempts, ContractLimits.defaultCopyAttempts)
         XCTAssertEqual(settings.selectionCopyTimeoutMS, ContractLimits.defaultCopyTimeoutMS)
-        settings.systemPrompt = String(repeating: "X", count: 16385)
+        settings.systemPrompt = String(repeating: "X", count: ContractLimits.maxSystemPromptBytes + 1)
         XCTAssertThrowsError(try settings.canonicalize())
     }
 
