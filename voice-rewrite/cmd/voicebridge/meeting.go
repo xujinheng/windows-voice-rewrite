@@ -382,9 +382,9 @@ func (m *bridgeMeeting) snapshot() map[string]any {
 	}
 	return map[string]any{
 		"replies": lines, "reply_source": m.replies.Displayed.Source,
-		"reply_tip": m.replies.Displayed.Tip,
+		"reply_tip":         m.replies.Displayed.Tip,
 		"reply_first_ready": meetingcore.FirstReadyReply(m.replies.Displayed.Lines),
-		"reply_pending": m.replies.PendingAvailable, "reply_status": m.replyStatus,
+		"reply_pending":     m.replies.PendingAvailable, "reply_status": m.replyStatus,
 		"captions_only": m.view.CaptionsOnly, "expression_expanded": m.view.ExpressionExpanded,
 		"expression": m.expression.English, "expression_chinese": m.expression.Chinese,
 		"expression_status": m.expressionStatus,

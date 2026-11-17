@@ -391,7 +391,7 @@ func TestMeetingReplyHandoffAllowsIncompleteFirstWithReadySecondAndTip(t *testin
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []any{map[string]any{
 				"finish_reason": "stop",
-				"message": map[string]string{"content": text},
+				"message":       map[string]string{"content": text},
 			}},
 		})
 	}))

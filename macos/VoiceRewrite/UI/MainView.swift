@@ -260,106 +260,106 @@ private struct MeetingView: View {
                     VSplitView {
                         if !model.meetingExpressionExpanded {
                             GroupBox("英语回复建议") {
-                        VStack(alignment: .leading, spacing: 7) {
-                            HStack {
-                                Button("重新生成") { model.requestMeetingReplies() }
-                                    .disabled(!model.meetingActive || model.meetingBusy || model.meetingVoiceRecording)
-                                if model.meetingReplyPending {
-                                    Button("查看新建议") { model.acceptMeetingReplies() }
-                                        .disabled(model.meetingBusy || model.meetingCancelPending)
-                                }
-                                Spacer()
-                                Button("取消") { model.cancelMeetingWork() }
-                                    .disabled(!model.meetingActive || model.meetingCancelPending)
-                            }
-                            Text(model.meetingReplyStatus.isEmpty ? "最新完整发言生成最多三条建议" : model.meetingReplyStatus)
-                                .font(.caption).foregroundStyle(.secondary)
-                            if !model.meetingReplySource.isEmpty {
-                                Text(model.meetingReplySource).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                            }
-                            if !model.meetingReplyTip.isEmpty {
-                                Text("提示 · " + model.meetingReplyTip)
-                                    .font(.caption).foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                                    .accessibilityIdentifier("meeting_reply_tip")
-                            }
-                            ScrollView {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    ForEach(model.meetingReplies) { reply in
-                                        if !reply.english.isEmpty && reply.complete {
-                                            Button {
-                                                model.meetingSelectedIndex = reply.id
-                                            } label: {
-                                                VStack(alignment: .leading, spacing: 4) {
-                                                    HStack {
-                                                        Image(systemName: model.meetingSelectedIndex == reply.id
-                                                            ? "largecircle.fill.circle" : "circle")
-                                                        Text(reply.english).font(.body).multilineTextAlignment(.leading)
+                                VStack(alignment: .leading, spacing: 7) {
+                                    HStack {
+                                        Button("重新生成") { model.requestMeetingReplies() }
+                                            .disabled(!model.meetingActive || model.meetingBusy || model.meetingVoiceRecording)
+                                        if model.meetingReplyPending {
+                                            Button("查看新建议") { model.acceptMeetingReplies() }
+                                                .disabled(model.meetingBusy || model.meetingCancelPending)
+                                        }
+                                        Spacer()
+                                        Button("取消") { model.cancelMeetingWork() }
+                                            .disabled(!model.meetingActive || model.meetingCancelPending)
+                                    }
+                                    Text(model.meetingReplyStatus.isEmpty ? "最新完整发言生成最多三条建议" : model.meetingReplyStatus)
+                                        .font(.caption).foregroundStyle(.secondary)
+                                    if !model.meetingReplySource.isEmpty {
+                                        Text(model.meetingReplySource).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                    }
+                                    if !model.meetingReplyTip.isEmpty {
+                                        Text("提示 · " + model.meetingReplyTip)
+                                            .font(.caption).foregroundStyle(.secondary)
+                                            .textSelection(.enabled)
+                                            .accessibilityIdentifier("meeting_reply_tip")
+                                    }
+                                    ScrollView {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            ForEach(model.meetingReplies) { reply in
+                                                if !reply.english.isEmpty && reply.complete {
+                                                    Button {
+                                                        model.meetingSelectedIndex = reply.id
+                                                    } label: {
+                                                        VStack(alignment: .leading, spacing: 4) {
+                                                            HStack {
+                                                                Image(systemName: model.meetingSelectedIndex == reply.id
+                                                                    ? "largecircle.fill.circle" : "circle")
+                                                                Text(reply.english).font(.body).multilineTextAlignment(.leading)
+                                                            }
+                                                            Text(reply.chinese)
+                                                                .font(.caption).foregroundStyle(.secondary)
+                                                                .multilineTextAlignment(.leading)
+                                                        }
+                                                        .frame(maxWidth: .infinity, alignment: .leading)
                                                     }
-                                                    Text(reply.chinese)
-                                                        .font(.caption).foregroundStyle(.secondary)
-                                                        .multilineTextAlignment(.leading)
+                                                    .buttonStyle(.plain)
                                                 }
-                                                .frame(maxWidth: .infinity, alignment: .leading)
                                             }
-                                            .buttonStyle(.plain)
                                         }
                                     }
-                                }
-                            }
-                            Button("复制选中英文") { model.copyMeetingReply() }
-                                .disabled(!model.meetingReplies.contains(where: {
-                                    $0.id == model.meetingSelectedIndex && $0.complete && !$0.english.isEmpty
-                                }))
-                            TextField("追加要求（例如：更简短、更礼貌）", text: $model.meetingRefineInput)
-                                .accessibilityIdentifier("meeting_refine_input")
-                            Button("微调选中回复") { model.refineMeetingReply() }
-                                .disabled(!model.meetingActive || model.meetingBusy ||
-                                    model.meetingRefineInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                                    !model.meetingReplies.contains(where: {
-                                        $0.id == model.meetingSelectedIndex && $0.complete && !$0.english.isEmpty
-                                    }))
-                                .accessibilityIdentifier("meeting_refine")
-                            }.padding(8)
+                                    Button("复制选中英文") { model.copyMeetingReply() }
+                                        .disabled(!model.meetingReplies.contains(where: {
+                                            $0.id == model.meetingSelectedIndex && $0.complete && !$0.english.isEmpty
+                                        }))
+                                    TextField("追加要求（例如：更简短、更礼貌）", text: $model.meetingRefineInput)
+                                        .accessibilityIdentifier("meeting_refine_input")
+                                    Button("微调选中回复") { model.refineMeetingReply() }
+                                        .disabled(!model.meetingActive || model.meetingBusy ||
+                                            model.meetingRefineInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                                            !model.meetingReplies.contains(where: {
+                                                $0.id == model.meetingSelectedIndex && $0.complete && !$0.english.isEmpty
+                                            }))
+                                        .accessibilityIdentifier("meeting_refine")
+                                }.padding(8)
                             }
                             .frame(minHeight: 225)
                         }
                         GroupBox("我的主动表达") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            TextEditor(text: $model.meetingInput)
-                                .frame(minHeight: 65)
-                                .accessibilityIdentifier("meeting_expression_input")
-                            HStack {
-                                Button("生成可直接说的英语") { model.composeMeetingText() }
-                                    .disabled(!model.meetingActive || model.meetingBusy ||
-                                        model.meetingInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                                Button(model.meetingVoiceRecording ? "结束语音并生成" : "语音输入") {
-                                    model.toggleMeetingVoice()
-                                }
-                                .disabled(!model.meetingActive || model.meetingVoiceStarting ||
-                                    (model.meetingBusy && !model.meetingVoiceRecording) ||
-                                    model.isRecording || model.isStarting || model.isProcessing)
-                                Spacer()
-                            }
-                            Text(model.meetingExpressionStatus)
-                                .font(.caption).foregroundStyle(.secondary)
-                            ScrollView {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(model.meetingExpression.isEmpty
-                                        ? "可以主动提问、陈述、要数据或寻求建议，不必等待对方提问。"
-                                        : model.meetingExpression)
-                                        .textSelection(.enabled)
-                                    if !model.meetingExpressionChinese.isEmpty {
-                                        Text(model.meetingExpressionChinese)
-                                            .foregroundStyle(.secondary).textSelection(.enabled)
+                            VStack(alignment: .leading, spacing: 8) {
+                                TextEditor(text: $model.meetingInput)
+                                    .frame(minHeight: 65)
+                                    .accessibilityIdentifier("meeting_expression_input")
+                                HStack {
+                                    Button("生成可直接说的英语") { model.composeMeetingText() }
+                                        .disabled(!model.meetingActive || model.meetingBusy ||
+                                            model.meetingInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                    Button(model.meetingVoiceRecording ? "结束语音并生成" : "语音输入") {
+                                        model.toggleMeetingVoice()
                                     }
-                                }.frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            Button("复制英文表达") { model.copyMeetingExpression() }
-                                .disabled(model.meetingExpression.isEmpty)
-                                .accessibilityIdentifier("meeting_copy_expression")
-                        }.padding(8)
-                    }
+                                    .disabled(!model.meetingActive || model.meetingVoiceStarting ||
+                                        (model.meetingBusy && !model.meetingVoiceRecording) ||
+                                        model.isRecording || model.isStarting || model.isProcessing)
+                                    Spacer()
+                                }
+                                Text(model.meetingExpressionStatus)
+                                    .font(.caption).foregroundStyle(.secondary)
+                                ScrollView {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text(model.meetingExpression.isEmpty
+                                            ? "可以主动提问、陈述、要数据或寻求建议，不必等待对方提问。"
+                                            : model.meetingExpression)
+                                            .textSelection(.enabled)
+                                        if !model.meetingExpressionChinese.isEmpty {
+                                            Text(model.meetingExpressionChinese)
+                                                .foregroundStyle(.secondary).textSelection(.enabled)
+                                        }
+                                    }.frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                Button("复制英文表达") { model.copyMeetingExpression() }
+                                    .disabled(model.meetingExpression.isEmpty)
+                                    .accessibilityIdentifier("meeting_copy_expression")
+                            }.padding(8)
+                        }
                         .frame(minHeight: 190)
                     }
                     .frame(minWidth: 290)
