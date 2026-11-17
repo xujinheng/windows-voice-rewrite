@@ -255,6 +255,38 @@ func TestBridgeModelDiscoveryUsesCoreAndSeparateKeys(t *testing.T) {
 	}
 }
 
+func TestBridgeModelDiscoveryCancelsInFlightRequest(t *testing.T) {
+	started := make(chan struct{}, 1)
+	stopped := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started <- struct{}{}
+		<-r.Context().Done()
+		stopped <- struct{}{}
+	}))
+	defer srv.Close()
+	h := startBridge(t, defaultOptions())
+	h.send(map[string]any{"v": 1, "id": "models-slow", "op": "list_llm_models", "config": configFor(srv.URL)})
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("model discovery request did not start")
+	}
+	h.send(map[string]any{"v": 1, "id": "stop-models", "op": "cancel", "target_id": "models-slow"})
+	replies := h.receiveIDs("models-slow", "stop-models")
+	if replies["models-slow"].Error == nil || replies["models-slow"].Error.Code != "canceled" {
+		t.Fatalf("stale model request returned a success: %#v", replies["models-slow"])
+	}
+	if !replies["stop-models"].OK || object(t, replies["stop-models"].Result)["found"] != true {
+		t.Fatalf("bridge cancel did not own model request: %#v", replies["stop-models"])
+	}
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("model provider did not receive cancellation")
+	}
+	h.close()
+}
+
 func TestBridgeModelDiscoverySanitizesFailure(t *testing.T) {
 	const secret = "private-credential-from-provider"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
