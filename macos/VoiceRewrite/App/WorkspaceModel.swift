@@ -2537,7 +2537,21 @@ final class WorkspaceModel: ObservableObject {
             llmProbeStatus = probe
         }
         if effect.invalidatePending {
+            let abandonedVoice = isProcessing || isStarting || isRecording
+            let abandonedMode = indicatorSnapshot.mode
             invalidatePending()
+            if abandonedVoice {
+                // A disconnected Helper cannot complete the old operation.
+                // Never leave its nonterminal "processing" pill on screen after
+                // invalidating the generation and cancelling its watchdog.
+                keyboardGate.clear()
+                keyboardHoldSequence &+= 1
+                microphone.cancel()
+                isRecording = false
+                isStarting = false
+                recordingStatus = "语音处理已中断：后台服务断开"
+                showIndicator(phase: .error, mode: abandonedMode, pending: false)
+            }
             invalidateDiscoveredModels(.transcribe)
             invalidateDiscoveredModels(.selectedTask)
         }
