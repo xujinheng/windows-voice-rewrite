@@ -527,7 +527,7 @@ private struct MeetingProfileDraftView: View {
             Text(label).font(.subheadline.bold())
             TextEditor(text: value)
                 .frame(height: height)
-                .overlay(RoundedRectangle(cornerRadius: 5).stroke(.separator))
+                .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color(nsColor: .separatorColor)))
         }
     }
 
