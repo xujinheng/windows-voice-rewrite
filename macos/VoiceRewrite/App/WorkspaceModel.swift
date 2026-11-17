@@ -186,8 +186,21 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    private var microphoneDiscoveryGeneration: UInt64 = 0
+
     func refreshMicrophoneDevices() {
-        microphoneDevices = MicrophoneRecorder.availableDevices()
+        // Enumerating CoreAudio HAL devices is synchronous and can stall for
+        // seconds when a USB/Bluetooth interface is reconnecting. Keep the
+        // settings window and keyboard event tap responsive during discovery.
+        microphoneDiscoveryGeneration &+= 1
+        let generation = microphoneDiscoveryGeneration
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let devices = MicrophoneRecorder.availableDevices()
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.microphoneDiscoveryGeneration == generation else { return }
+                self.microphoneDevices = devices
+            }
+        }
     }
 
     func refreshKeyboardDevices() {
