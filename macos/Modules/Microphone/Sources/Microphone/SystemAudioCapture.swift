@@ -164,6 +164,7 @@ private final class SystemAudioReceiver: NSObject, SCStreamOutput, SCStreamDeleg
     private func process(_ sample: CMSampleBuffer) throws {
         guard let description = sample.formatDescription?.audioStreamBasicDescription,
               description.mFormatID == kAudioFormatLinearPCM,
+              description.mSampleRate.isFinite, description.mSampleRate > 0,
               description.mBitsPerChannel == 32,
               description.mFormatFlags & kAudioFormatFlagIsFloat != 0,
               (1...2).contains(Int(description.mChannelsPerFrame)),
@@ -184,7 +185,10 @@ private final class SystemAudioReceiver: NSObject, SCStreamOutput, SCStreamDeleg
             }
             for channel in 0..<channelCount {
                 let index = list.count == 1 ? 0 : channel
-                guard let raw = list[index].mData else {
+                let requiredBytes = frames * MemoryLayout<Float>.size *
+                    (list.count == 1 ? channelCount : 1)
+                guard let raw = list[index].mData,
+                      Int(list[index].mDataByteSize) >= requiredBytes else {
                     throw MicrophoneError.unsupportedInputFormat
                 }
                 let source = raw.assumingMemoryBound(to: Float.self)
