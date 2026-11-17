@@ -24,7 +24,7 @@ func meetingDemoSnapshot() map[string]any {
 		"source_name": d.SourceName, "status": d.Status,
 		"level": d.Level, "captions": captions, "replies": replies,
 		"reply_source": d.Reply.Displayed.Source,
-		"reply_tip": d.Reply.Displayed.Tip, "reply_status": "",
+		"reply_tip":    d.Reply.Displayed.Tip, "reply_status": "",
 		"reply_pending": false, "reply_first_ready": meetingcore.FirstReadyReply(d.Reply.Displayed.Lines),
 		"captions_only": false, "expression_expanded": false,
 		"expression": d.Expression.English, "expression_chinese": d.Expression.Chinese,
@@ -33,7 +33,7 @@ func meetingDemoSnapshot() map[string]any {
 			"pending": 0, "dropped": 0,
 			"asr_first_ms": d.ASRFirstMS, "asr_done_ms": d.ASRDoneMS,
 			"translation_first_ms": d.TranslationFirstMS,
-			"translation_done_ms": d.TranslationDoneMS,
+			"translation_done_ms":  d.TranslationDoneMS,
 		},
 	}
 }
