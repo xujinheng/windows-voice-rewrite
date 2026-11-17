@@ -54,6 +54,12 @@ func TestSettingsCatalogKeepsSharedPagesAndOrder(t *testing.T) {
 			t.Fatalf("macOS settings catalog missing %s", id)
 		}
 	}
+	for _, id := range []string{"discover_asr_models", "discover_llm_models"} {
+		entry, ok := Find(id)
+		if !ok || entry.Kind != Button || !entry.VisibleOn(Windows) || !entry.VisibleOn(MacOS) || entry.Label != "发现模型" || entry.Stacked {
+			t.Fatalf("discovery button %s is not a shared non-stacked action: %+v", id, entry)
+		}
+	}
 	if len(PageControls("speech", Windows)) != len(PageControls("speech", MacOS)) {
 		t.Fatal("speech page controls diverged")
 	}
