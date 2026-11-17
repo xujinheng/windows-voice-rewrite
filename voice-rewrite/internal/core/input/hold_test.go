@@ -87,8 +87,8 @@ func TestVoiceStartKeepsSideAndKeyboardWindowsApart(t *testing.T) {
 	}
 }
 
-func TestSideHoldDurationsStayHostSpecific(t *testing.T) {
-	if WindowsSideHold != 250*time.Millisecond || MacSideHold != 280*time.Millisecond {
+func TestSideHoldDurationsMatchAcrossHosts(t *testing.T) {
+	if WindowsSideHold != 250*time.Millisecond || MacSideHold != WindowsSideHold {
 		t.Fatalf("windows %s mac %s", WindowsSideHold, MacSideHold)
 	}
 }
