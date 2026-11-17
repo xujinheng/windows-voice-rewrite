@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"voicerewrite/internal/contract"
@@ -119,7 +119,7 @@ type uxSettings struct {
 
 type uxModelDiscoveryResult struct {
 	models []string
-	err error
+	err    error
 }
 
 // Every child control is reflowed after a resize. No hard-coded physical
@@ -577,7 +577,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			if (wParam>>16)&0xffff == 0x0300 { // EN_CHANGE
 				if idx, ok := p.probeEdits[lParam]; ok {
 					p.invalidateModels(idx) // changing provider or model invalidates in-flight choices
-					p.bumpProbe(idx) // reject in-flight stale response
+					p.bumpProbe(idx)        // reject in-flight stale response
 					uxSetText(p.probeStatus[idx], serviceprobe.StatusStale)
 				}
 			}
@@ -700,135 +700,135 @@ func (p *uxSettings) check(kind, base, key, model, field string) {
 // A stale provider callback can never replace a newer model or open a menu on a
 // reused HWND. The request is cancelled on any edit, page switch or close.
 func (p *uxSettings) invalidateModels(slot int) {
-    if slot < 0 || slot >= len(p.modelSerial) {
-        return
-    }
-    p.modelMu.Lock()
-    if cancel := p.modelCancel[slot]; cancel != nil {
-        cancel()
-    }
-    p.modelCancel[slot] = nil
-    p.modelSerial[slot] = uxModelRequestSequence.Add(1)
-    p.modelResults[slot] = uxModelDiscoveryResult{}
-    p.modelMu.Unlock()
+	if slot < 0 || slot >= len(p.modelSerial) {
+		return
+	}
+	p.modelMu.Lock()
+	if cancel := p.modelCancel[slot]; cancel != nil {
+		cancel()
+	}
+	p.modelCancel[slot] = nil
+	p.modelSerial[slot] = uxModelRequestSequence.Add(1)
+	p.modelResults[slot] = uxModelDiscoveryResult{}
+	p.modelMu.Unlock()
 }
 
 func (p *uxSettings) invalidateAllModels() {
-    for slot := range p.modelSerial {
-        p.invalidateModels(slot)
-    }
+	for slot := range p.modelSerial {
+		p.invalidateModels(slot)
+	}
 }
 
 func (p *uxSettings) discoverModels(kind string) {
-    if p == nil || p.window == 0 {
-        return
-    }
-    field, baseField, keyField, _, ok := contract.ProbeInputs(kind)
-    if !ok {
-        return
-    }
-    slot, ok := contract.ProbeSlot(field)
-    if !ok || slot != p.page {
-        return
-    }
-    base, key := p.inputValue(baseField), p.inputValue(keyField)
-    ctx, cancel := context.WithTimeout(context.Background(), 11*time.Second)
-    p.modelMu.Lock()
-    if previous := p.modelCancel[slot]; previous != nil {
-        previous()
-    }
-    token := uxModelRequestSequence.Add(1)
-    p.modelSerial[slot] = token
-    p.modelCancel[slot] = cancel
-    p.modelResults[slot] = uxModelDiscoveryResult{}
-    p.modelMu.Unlock()
-    uxSetText(p.hint, "正在发现模型…")
-    hwnd := p.window
-    go func() {
-        defer cancel()
-        models, err := provider.ListModels(ctx, base, key)
-        p.modelMu.Lock()
-        if token == p.modelSerial[slot] {
-            p.modelResults[slot] = uxModelDiscoveryResult{models: models, err: err}
-        }
-        p.modelMu.Unlock()
-        procPostMessage.Call(hwnd, uxWMModelsDone, uintptr(slot), uintptr(token))
-    }()
+	if p == nil || p.window == 0 {
+		return
+	}
+	field, baseField, keyField, _, ok := contract.ProbeInputs(kind)
+	if !ok {
+		return
+	}
+	slot, ok := contract.ProbeSlot(field)
+	if !ok || slot != p.page {
+		return
+	}
+	base, key := p.inputValue(baseField), p.inputValue(keyField)
+	ctx, cancel := context.WithTimeout(context.Background(), 11*time.Second)
+	p.modelMu.Lock()
+	if previous := p.modelCancel[slot]; previous != nil {
+		previous()
+	}
+	token := uxModelRequestSequence.Add(1)
+	p.modelSerial[slot] = token
+	p.modelCancel[slot] = cancel
+	p.modelResults[slot] = uxModelDiscoveryResult{}
+	p.modelMu.Unlock()
+	uxSetText(p.hint, "正在发现模型…")
+	hwnd := p.window
+	go func() {
+		defer cancel()
+		models, err := provider.ListModels(ctx, base, key)
+		p.modelMu.Lock()
+		if token == p.modelSerial[slot] {
+			p.modelResults[slot] = uxModelDiscoveryResult{models: models, err: err}
+		}
+		p.modelMu.Unlock()
+		procPostMessage.Call(hwnd, uxWMModelsDone, uintptr(slot), uintptr(token))
+	}()
 }
 
 func (p *uxSettings) completeModelDiscovery(slot int, token uint64) {
-    p.modelMu.Lock()
-    accept := settingsform.ModelDiscoveryMayPresent(token, p.modelSerial[slot], slot, p.page)
-    result := p.modelResults[slot]
-    if accept {
-        p.modelCancel[slot] = nil
-    }
-    p.modelMu.Unlock()
-    if !accept {
-        return
-    }
-    if result.err != nil {
-        uxSetText(p.hint, "发现模型失败："+result.err.Error())
-        return
-    }
-    if len(result.models) == 0 {
-        uxSetText(p.hint, "未发现可用模型，请检查 API 地址或手动输入模型 ID")
-        return
-    }
-    p.showModelMenu(slot, result.models)
+	p.modelMu.Lock()
+	accept := settingsform.ModelDiscoveryMayPresent(token, p.modelSerial[slot], slot, p.page)
+	result := p.modelResults[slot]
+	if accept {
+		p.modelCancel[slot] = nil
+	}
+	p.modelMu.Unlock()
+	if !accept {
+		return
+	}
+	if result.err != nil {
+		uxSetText(p.hint, "发现模型失败："+result.err.Error())
+		return
+	}
+	if len(result.models) == 0 {
+		uxSetText(p.hint, "未发现可用模型，请检查 API 地址或手动输入模型 ID")
+		return
+	}
+	p.showModelMenu(slot, result.models)
 }
 
 func (p *uxSettings) showModelMenu(slot int, models []string) {
-    if slot < 0 || slot >= len(p.modelButtons) || p.modelButtons[slot] == 0 {
-        return
-    }
-    menu, _, _ := procCreatePopupMenu.Call()
-    if menu == 0 {
-        uxSetText(p.hint, "无法显示模型列表，请手动输入模型 ID")
-        return
-    }
-    defer procDestroyMenu.Call(menu)
-    count := len(models)
-    if count > settingsform.MaxModelMenuChoices {
-        count = settingsform.MaxModelMenuChoices
-    }
-    for index, id := range models[:count] {
-        // Ampersands must not turn untrusted model names into accelerator keys.
-        label := []rune(strings.ReplaceAll(id, "&", "&&"))
-        if len(label) > 80 {
-            label = append(label[:79], '…')
-        }
-        value := uxPtr(string(label))
-        procAppendMenu.Call(menu, MF_STRING, uintptr(index+1), uintptr(unsafe.Pointer(value)))
-        runtime.KeepAlive(value)
-    }
-    var bounds rect32
-    if ok, _, _ := popupGetWindowRect.Call(p.modelButtons[slot], uintptr(unsafe.Pointer(&bounds))); ok == 0 {
-        uxSetText(p.hint, "无法定位模型列表，请手动输入模型 ID")
-        return
-    }
-    procSetForegroundWindow.Call(p.window)
-    selected, _, _ := procTrackPopupMenu.Call(menu, TPM_RETURNCMD|TPM_RIGHTBUTTON,
-        int32ptr(bounds.Left), int32ptr(bounds.Bottom), 0, p.window, 0)
-    procPostMessage.Call(p.window, WM_NULL, 0, 0)
-    if selected < 1 || selected > uintptr(count) {
-        uxSetText(p.hint, "已取消模型选择，原配置未改变")
-        return
-    }
-    modelField := "asr_model"
-    if slot == 1 {
-        modelField = "text_model"
-    }
-    index, ok := contract.InputIndex(modelField)
-    if !ok {
-        return
-    }
-    uxSetText(p.inputs[index], models[selected-1])
-    suffix := ""
-    if len(models) > count {
-        suffix = fmt.Sprintf("（仅展示前 %d 项）", count)
-    }
-    uxSetText(p.hint, "已选择模型，请点击保存设置后生效"+suffix)
+	if slot < 0 || slot >= len(p.modelButtons) || p.modelButtons[slot] == 0 {
+		return
+	}
+	menu, _, _ := procCreatePopupMenu.Call()
+	if menu == 0 {
+		uxSetText(p.hint, "无法显示模型列表，请手动输入模型 ID")
+		return
+	}
+	defer procDestroyMenu.Call(menu)
+	count := len(models)
+	if count > settingsform.MaxModelMenuChoices {
+		count = settingsform.MaxModelMenuChoices
+	}
+	for index, id := range models[:count] {
+		// Ampersands must not turn untrusted model names into accelerator keys.
+		label := []rune(strings.ReplaceAll(id, "&", "&&"))
+		if len(label) > 80 {
+			label = append(label[:79], '…')
+		}
+		value := uxPtr(string(label))
+		procAppendMenu.Call(menu, MF_STRING, uintptr(index+1), uintptr(unsafe.Pointer(value)))
+		runtime.KeepAlive(value)
+	}
+	var bounds rect32
+	if ok, _, _ := popupGetWindowRect.Call(p.modelButtons[slot], uintptr(unsafe.Pointer(&bounds))); ok == 0 {
+		uxSetText(p.hint, "无法定位模型列表，请手动输入模型 ID")
+		return
+	}
+	procSetForegroundWindow.Call(p.window)
+	selected, _, _ := procTrackPopupMenu.Call(menu, TPM_RETURNCMD|TPM_RIGHTBUTTON,
+		int32ptr(bounds.Left), int32ptr(bounds.Bottom), 0, p.window, 0)
+	procPostMessage.Call(p.window, WM_NULL, 0, 0)
+	if selected < 1 || selected > uintptr(count) {
+		uxSetText(p.hint, "已取消模型选择，原配置未改变")
+		return
+	}
+	modelField := "asr_model"
+	if slot == 1 {
+		modelField = "text_model"
+	}
+	index, ok := contract.InputIndex(modelField)
+	if !ok {
+		return
+	}
+	uxSetText(p.inputs[index], models[selected-1])
+	suffix := ""
+	if len(models) > count {
+		suffix = fmt.Sprintf("（仅展示前 %d 项）", count)
+	}
+	uxSetText(p.hint, "已选择模型，请点击保存设置后生效"+suffix)
 }
 
 func uxCreateControl(parent uintptr, class, text string, style uintptr, x, y, w, h int32, id uintptr, font uintptr) uintptr {
