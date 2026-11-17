@@ -3,6 +3,7 @@ package meeting
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Caption is a platform-neutral meeting utterance. Its translation version is
@@ -194,4 +195,54 @@ func KeepCompletedCaptions(captions []Caption) []Caption {
 		}
 	}
 	return kept
+}
+
+// Meeting history is session-scoped, not the five-turn LLM context. Keep enough
+// for extended reading without making every JSONL snapshot or the Swift reader
+// grow without limit. UTF-8 byte limits also bound multi-byte translations.
+const (
+	MaxHistoryCaptions = 512
+	MaxHistoryBytes    = 1 << 20
+	MaxCaptionField    = 64 << 10
+)
+
+func boundedCaptionField(s string) string {
+	if len(s) <= MaxCaptionField {
+		return s
+	}
+	end := MaxCaptionField
+	for end > 0 && !utf8.RuneStart(s[end]) {
+		end--
+	}
+	return s[:end]
+}
+
+// BoundCaptionHistory retains the newest readable turns, including the active
+// partial line, and reports how many old turns were evicted. Completed captions
+// are not folded into the live caption and can be inspected independently.
+func BoundCaptionHistory(captions []Caption) ([]Caption, int) {
+	for i := range captions {
+		c := &captions[i]
+		c.Source = boundedCaptionField(c.Source)
+		c.Chinese = boundedCaptionField(c.Chinese)
+		c.TranslatedFrom = boundedCaptionField(c.TranslatedFrom)
+		c.Stable = boundedCaptionField(c.Stable)
+		c.Live = boundedCaptionField(c.Live)
+	}
+	size := 0
+	start := len(captions)
+	for start > 0 && len(captions)-start < MaxHistoryCaptions {
+		c := captions[start-1]
+		n := len(c.Source) + len(c.Chinese) + len(c.TranslatedFrom) +
+			len(c.Stable) + len(c.Live)
+		if start < len(captions) && size+n > MaxHistoryBytes {
+			break
+		}
+		size += n
+		start--
+	}
+	if start == 0 {
+		return captions, 0
+	}
+	return append([]Caption(nil), captions[start:]...), start
 }

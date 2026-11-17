@@ -42,20 +42,21 @@ const (
 var errFrameTooLarge = errors.New("frame exceeds limit")
 
 type request struct {
-	Version        int             `json:"v"`
-	ID             string          `json:"id"`
-	Op             string          `json:"op"`
-	Config         json.RawMessage `json:"config"`
-	PCMBase64      string          `json:"pcm_base64"`
-	SelectedText   string          `json:"selected_text"`
-	Instruction    string          `json:"instruction"`
-	CurrentVersion string          `json:"current_version"`
-	Shortcut       string          `json:"shortcut"`
-	TargetID       string          `json:"target_id"`
-	SessionID      string          `json:"session_id"`
-	AudioEpoch     uint64          `json:"audio_epoch"`
-	ReplyIndex     int             `json:"reply_index"`
-	ViewButton     int             `json:"button_id"`
+	Version         int             `json:"v"`
+	ID              string          `json:"id"`
+	Op              string          `json:"op"`
+	Config          json.RawMessage `json:"config"`
+	PCMBase64       string          `json:"pcm_base64"`
+	SelectedText    string          `json:"selected_text"`
+	Instruction     string          `json:"instruction"`
+	CurrentVersion  string          `json:"current_version"`
+	Shortcut        string          `json:"shortcut"`
+	TargetID        string          `json:"target_id"`
+	SessionID       string          `json:"session_id"`
+	AudioEpoch      uint64          `json:"audio_epoch"`
+	ReplyIndex      int             `json:"reply_index"`
+	ViewButton      int             `json:"button_id"`
+	FocusExpression bool            `json:"focus_expression"`
 }
 
 type bridgeError struct {
@@ -298,7 +299,8 @@ func (s *bridgeServer) meetingRequest(req request) response {
 			return failure(req.ID, "meeting_failed", "无法启动会议处理")
 		}
 		s.meeting = m
-		return success(req.ID, map[string]any{"session_id": m.id})
+		_, epoch, _ := m.runtime.Snapshot()
+		return success(req.ID, map[string]any{"session_id": m.id, "audio_epoch": epoch})
 	case "meeting_feed":
 		if req.SessionID == "" || len(req.PCMBase64) == 0 ||
 			len(req.PCMBase64) > base64.StdEncoding.EncodedLen(32_000) {
@@ -367,8 +369,12 @@ func (s *bridgeServer) meetingRequest(req request) response {
 				return failure(req.ID, "no_pending_reply", "没有可切换的新建议")
 			}
 		}
-		if req.Op == "meeting_view" && !m.applyViewButton(req.ViewButton) {
-			return failure(req.ID, "invalid_request", "不支持的会议视图操作")
+		if req.Op == "meeting_view" {
+			if req.FocusExpression {
+				m.focusExpression()
+			} else if !m.applyViewButton(req.ViewButton) {
+				return failure(req.ID, "invalid_request", "不支持的会议视图操作")
+			}
 		}
 		if req.Op == "meeting_cancel" {
 			m.cancelWork()
@@ -420,9 +426,8 @@ func (s *bridgeServer) meetingTask(ctx context.Context, req request) response {
 	case "meeting_replies":
 		err = m.runReplies(ctx, 0)
 	case "meeting_refine":
-		if req.ReplyIndex < 0 || req.ReplyIndex > 2 ||
-			!meetingcore.ValidInstruction(req.Instruction) {
-			return failure(req.ID, "invalid_request", "请选择回复并输入 2000 字以内的调整指令")
+		if _, ok := meetingcore.AcceptRefine(req.ReplyIndex, req.Instruction); !ok {
+			return failure(req.ID, "invalid_request", "请选择回复并输入 600 字以内的调整指令")
 		}
 		err = m.refine(ctx, req.ReplyIndex, req.Instruction)
 	case "meeting_express":

@@ -51,9 +51,40 @@ enum MeetingReaderLayout {
         return updated
     }
 
-    static func unread(previous: Int, current: Int, unread: Int, following: Bool) -> Int {
-        if following || current < previous { return 0 }
-        return unread + max(0, current - previous)
+    static func unread(previous: Int, current: Int, unread: Int, following: Bool,
+                       previousID: Int? = nil, currentID: Int? = nil) -> Int {
+        if following { return 0 }
+        if let previousID, let currentID, currentID < previousID { return 0 }
+        if current < previous && currentID == nil { return 0 }
+        let newTail = previousID != nil && currentID != nil && currentID! > previousID! ? 1 : 0
+        return unread + max(max(0, current - previous), newTail)
+    }
+
+    // Preserve the screen with the greatest overlap, including displays
+    // positioned at negative desktop coordinates. A disconnected monitor's
+    // autosaved frame is instead brought back inside the primary work area.
+    static func restoredFrame(_ frame: NSRect, displays: [NSRect]) -> NSRect {
+        guard let area = displays.max(by: {
+            $0.intersection(frame).width * $0.intersection(frame).height <
+            $1.intersection(frame).width * $1.intersection(frame).height
+        }) else { return frame }
+        let width = min(frame.width, area.width)
+        let height = min(frame.height, area.height)
+        return NSRect(x: min(max(frame.minX, area.minX), area.maxX - width),
+                      y: min(max(frame.minY, area.minY), area.maxY - height),
+                      width: width, height: height)
+    }
+
+    static func shouldFocusExpression(_ english: String, lastFocused: String, following: Bool,
+                                      frozen: Bool, active: Bool, busy: Bool) -> Bool {
+        !english.isEmpty && english != lastFocused && following && !frozen && active && !busy
+    }
+
+    // A completed current turn remains fixed until the next utterance arrives.
+    // Interim ASR text must never appear in the independently scrolled history.
+    static func split(_ captions: [MeetingCaptionRow]) -> (current: MeetingCaptionRow?, history: [MeetingCaptionRow]) {
+        let readable = captions.filter { !$0.source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        return (readable.last, Array(readable.dropLast().filter(\.final)))
     }
 }
 
@@ -66,6 +97,7 @@ private struct ReaderSnapshot {
     let replyTip: String
     let expression: String
     let expressionChinese: String
+    let expressionSource: String
     let expressionStatus: String
 
     init(model: WorkspaceModel) {
@@ -76,6 +108,7 @@ private struct ReaderSnapshot {
         replyTip = model.meetingReplyTip
         expression = model.meetingExpression
         expressionChinese = model.meetingExpressionChinese
+        expressionSource = model.meetingExpressionSource
         expressionStatus = model.meetingExpressionStatus
     }
 }
@@ -88,22 +121,21 @@ struct MeetingReaderView: View {
 
     @AppStorage("meeting.reader.fontSize") private var fontSize = 16
     @AppStorage("meeting.reader.paneWeights") private var savedWeights = "85,50,85,65,230,40"
+    @AppStorage("meeting.reader.captionsFocus") private var savedCaptionsFocus = false
     @State private var weights = MeetingReaderLayout.defaults
     @State private var dragBase: [CGFloat]?
     @State private var dragIndex: Int?
     @State private var frozen: ReaderSnapshot?
     @State private var following = true
     @State private var unread = 0
+    @State private var lastFocusedExpression = ""
     @State private var showProfile = false
+    @State private var showCompose = false
 
     private var captions: [MeetingCaptionRow] { frozen?.captions ?? model.meetingCaptions }
     private var replies: [MeetingReplyRow] { frozen?.replies ?? model.meetingReplies }
-    private var latest: MeetingCaptionRow? { captions.last }
-    private var past: [MeetingCaptionRow] {
-        let finalized = captions.filter(\.final)
-        guard let last = latest, last.final, finalized.last?.id == last.id else { return finalized }
-        return Array(finalized.dropLast())
-    }
+    private var latest: MeetingCaptionRow? { MeetingReaderLayout.split(captions).current }
+    private var past: [MeetingCaptionRow] { MeetingReaderLayout.split(captions).history }
     private var reply: MeetingReplyRow? {
         replies.first(where: { $0.id == model.meetingSelectedIndex }) ??
         replies.first(where: { $0.complete && !$0.english.isEmpty })
@@ -117,7 +149,7 @@ struct MeetingReaderView: View {
     }
     private var history: String {
         past.map { row in
-            row.chinese.isEmpty ? row.source : row.source + "\n" + row.chinese
+            row.chinese.isEmpty ? row.source : row.chinese + "\n" + row.source
         }.joined(separator: "\n\n")
     }
 
@@ -172,18 +204,40 @@ struct MeetingReaderView: View {
             }
         }
         .padding(12)
-        .frame(minWidth: embedded ? 590 : 600, minHeight: embedded ? 625 : 720)
+        .frame(minWidth: embedded ? 590 : 600, minHeight: embedded ? 625 : 550)
         .onAppear { weights = MeetingReaderLayout.decode(savedWeights) }
         .onChange(of: model.meetingActive) { _, active in
             if !active {
                 frozen = nil
                 following = true
                 unread = 0
+                lastFocusedExpression = ""
+            } else if savedCaptionsFocus != model.meetingCaptionsOnly {
+                model.toggleMeetingCaptionsOnly()
             }
         }
+        .onChange(of: model.meetingCaptionsOnly) { _, value in
+            if model.meetingActive { savedCaptionsFocus = value }
+        }
+        .onChange(of: model.meetingExpression) { _, _ in requestExpressionFocusIfReady() }
+        .onChange(of: model.meetingBusy) { _, _ in requestExpressionFocusIfReady() }
+        .onChange(of: following) { _, _ in requestExpressionFocusIfReady() }
+        .onChange(of: frozen == nil) { _, _ in requestExpressionFocusIfReady() }
         .sheet(isPresented: $showProfile) {
             MeetingProfileDraftView(model: model)
         }
+        .sheet(isPresented: $showCompose) {
+            MeetingTextComposerSheet(model: model)
+        }
+    }
+
+    private func requestExpressionFocusIfReady() {
+        let current = model.meetingExpression
+        guard MeetingReaderLayout.shouldFocusExpression(current,
+            lastFocused: lastFocusedExpression, following: following,
+            frozen: frozen != nil, active: model.meetingActive, busy: model.meetingBusy) else { return }
+        lastFocusedExpression = current
+        model.focusMeetingExpressionIfReadingLatest()
     }
 
     private var toolbar: some View {
@@ -278,7 +332,7 @@ struct MeetingReaderView: View {
                         size: fontSize + 1)
             }
         case 2:
-            section("之前的对话 · \(past.count) 段\(unread > 0 ? " · \(unread) 条新内容" : "")",
+            section("之前的对话 · \(past.count) 段\(model.meetingHistoryTrimmed > 0 ? " · 更早 \(model.meetingHistoryTrimmed) 段已清理" : "")\(unread > 0 ? " · \(unread) 条新内容" : "")",
                     identifier: "meeting_pane_history") {
                 VStack(spacing: 1) {
                     HStack {
@@ -291,7 +345,8 @@ struct MeetingReaderView: View {
                         .controlSize(.mini)
                         .accessibilityIdentifier("meeting_history_latest")
                     }
-                    HistoryReaderText(text: history, completedCount: past.count, fontSize: fontSize,
+                    HistoryReaderText(text: history, completedCount: past.count,
+                                      newestID: past.last?.id, fontSize: fontSize,
                                       following: $following, unread: $unread)
                         .accessibilityIdentifier("meeting_history_text")
                 }
@@ -424,27 +479,62 @@ struct MeetingReaderView: View {
     }
 
     private var sourcePane: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            TextEditor(text: $model.meetingInput)
+        HStack(alignment: .top, spacing: 6) {
+            let original = frozen?.expressionSource ?? model.meetingExpressionSource
+            let status = frozen?.expressionStatus ?? model.meetingExpressionStatus
+            Text(original.isEmpty
+                 ? (status.isEmpty ? "语音原话会显示在这里" : status)
+                 : "已识别 · " + original)
                 .font(.system(size: CGFloat(fontSize)))
-                .scrollContentBackground(.hidden)
+                .lineLimit(2)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(original)
+                .accessibilityIdentifier("meeting_expression_source")
+            Button("文字输入") { showCompose = true }
+                .disabled(!model.meetingActive || model.meetingBusy || frozen != nil)
+                .accessibilityIdentifier("meeting_compose_open")
+            Button(model.meetingVoiceRecording ? "结束语音" : "语音输入") {
+                model.toggleMeetingVoice()
+            }
+            .disabled(!model.meetingActive || model.meetingVoiceStarting ||
+                      (model.meetingBusy && !model.meetingVoiceRecording) ||
+                      model.isRecording || model.isStarting || model.isProcessing ||
+                      frozen != nil)
+            Button("取消处理") { model.cancelMeetingWork() }
+                .disabled(!model.meetingActive || model.meetingCancelPending || frozen != nil)
+        }
+        .controlSize(.mini)
+    }
+}
+
+// Compose is a separate editor so the sixth reading region remains the
+// original utterance, matching the Windows read-only expression-source field.
+private struct MeetingTextComposerSheet: View {
+    @ObservedObject var model: WorkspaceModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("生成可直接说的英语").font(.headline)
+            TextEditor(text: $model.meetingInput)
+                .font(.system(size: 16))
+                .frame(minHeight: 150)
                 .accessibilityIdentifier("meeting_expression_input")
             HStack {
-                Button("生成可直接说的英语") { model.composeMeetingText() }
-                    .disabled(!model.meetingActive || model.meetingBusy ||
-                              model.meetingInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button(model.meetingVoiceRecording ? "结束语音并生成" : "语音输入") {
-                    model.toggleMeetingVoice()
-                }
-                .disabled(!model.meetingActive || model.meetingVoiceStarting ||
-                          (model.meetingBusy && !model.meetingVoiceRecording) ||
-                          model.isRecording || model.isStarting || model.isProcessing)
-                Button("取消处理") { model.cancelMeetingWork() }
-                    .disabled(!model.meetingActive || model.meetingCancelPending)
                 Spacer()
+                Button("取消") { dismiss() }
+                Button("生成英文") {
+                    model.composeMeetingText()
+                    dismiss()
+                }
+                .disabled(!model.meetingActive || model.meetingBusy ||
+                    model.meetingInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityIdentifier("meeting_compose_submit")
             }
-            .controlSize(.small)
         }
+        .padding(20)
+        .frame(width: 540)
     }
 }
 
@@ -590,6 +680,7 @@ private struct MeetingProfileDraftView: View {
 private struct HistoryReaderText: NSViewRepresentable {
     let text: String
     let completedCount: Int
+    let newestID: Int?
     let fontSize: Int
     @Binding var following: Bool
     @Binding var unread: Int
@@ -647,13 +738,16 @@ private struct HistoryReaderText: NSViewRepresentable {
         }
         let nextUnread = MeetingReaderLayout.unread(
             previous: oldCount, current: completedCount,
-            unread: unread, following: following)
+            unread: unread, following: following,
+            previousID: coordinator.newestID, currentID: newestID)
         coordinator.count = completedCount
+        coordinator.newestID = newestID
         coordinator.wasFollowing = following
         if nextUnread != unread {
             DispatchQueue.main.async { [weak coordinator] in
                 guard let coordinator else { return }
-                coordinator.parent.unread = nextUnread
+                if coordinator.parent.following { coordinator.parent.unread = 0 }
+                else { coordinator.parent.unread = nextUnread }
             }
         }
     }
@@ -673,6 +767,7 @@ private struct HistoryReaderText: NSViewRepresentable {
         var parent: HistoryReaderText
         weak var scrollView: NSScrollView?
         var count = 0
+        var newestID: Int?
         var wasFollowing = true
         var updating = false
 
@@ -721,7 +816,7 @@ final class MeetingReaderWindowController: NSObject, NSWindowDelegate {
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.minSize = NSSize(width: 680, height: 510)
+        panel.minSize = NSSize(width: 680, height: 610)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = NSHostingView(rootView:
             MeetingReaderView(model: model, embedded: false))
@@ -729,6 +824,9 @@ final class MeetingReaderWindowController: NSObject, NSWindowDelegate {
         if !panel.setFrameUsingName("VoiceRewriteMeetingReader") {
             panel.center()
         }
+        let safeFrame = MeetingReaderLayout.restoredFrame(panel.frame,
+            displays: NSScreen.screens.map(\.visibleFrame))
+        if safeFrame != panel.frame { panel.setFrame(safeFrame, display: false) }
         panel.setFrameAutosaveName("VoiceRewriteMeetingReader")
         self.panel = panel
         panel.makeKeyAndOrderFront(nil)

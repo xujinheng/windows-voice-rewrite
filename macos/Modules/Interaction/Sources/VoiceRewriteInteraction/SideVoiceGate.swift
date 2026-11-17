@@ -82,3 +82,51 @@ public struct SideVoiceGate: Equatable, Sendable {
         ignoreNext = false
     }
 }
+
+ 
+/// The keyboard has a release event (Carbon) but its microphone and AX capture
+/// finish asynchronously. A released key must finish exactly its own start.
+public struct KeyboardHoldGate: Equatable, Sendable {
+    public private(set) var action: SideMouseAction?
+    public private(set) var releasedDuringStart = false
+
+    public init() {}
+
+    @discardableResult
+    public mutating func begin(_ value: SideMouseAction) -> Bool {
+        guard action == nil else { return false }
+        action = value
+        releasedDuringStart = false
+        return true
+    }
+
+    public enum Effect: Equatable, Sendable {
+        case none, stop, clear
+    }
+
+    public mutating func release(_ value: SideMouseAction, starting: Bool, recording: Bool) -> Effect {
+        guard action == value, !releasedDuringStart else { return .none }
+        if starting {
+            releasedDuringStart = true
+            return .none
+        }
+        clear()
+        return recording ? .stop : .clear
+    }
+
+    public mutating func finishStart(_ value: SideMouseAction, recording: Bool) -> Effect {
+        guard action == value else { return .none }
+        if !recording {
+            clear()
+            return .clear
+        }
+        guard releasedDuringStart else { return .none }
+        clear()
+        return .stop
+    }
+
+    public mutating func clear() {
+        action = nil
+        releasedDuringStart = false
+    }
+}

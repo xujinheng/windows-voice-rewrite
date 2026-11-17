@@ -235,6 +235,14 @@ func emitLimits(moduleRoot string) (string, error) {
 		{"RecordSecondsMin", "recordSecondsMin"},
 		{"RecordSecondsMax", "recordSecondsMax"},
 		{"DefaultRecordSeconds", "defaultRecordSeconds"},
+		{"MaxSystemPromptBytes", "maxSystemPromptBytes"},
+		{"MinResponseTokens", "minResponseTokens"},
+		{"MaxResponseTokens", "maxResponseTokens"},
+		{"MaxSelectedRunes", "maxSelectedRunes"},
+		{"MinCopyAttempts", "minCopyAttempts"},
+		{"MaxCopyAttempts", "maxCopyAttempts"},
+		{"MinCopyTimeoutMS", "minCopyTimeoutMS"},
+		{"MaxCopyTimeoutMS", "maxCopyTimeoutMS"},
 		{"MaxEndpointBytes", "maxEndpointBytes"},
 		{"MaxModelIDBytes", "maxModelIDBytes"},
 		{"MaxCredentialBytes", "maxCredentialBytes"},
@@ -308,6 +316,23 @@ func emitLimits(moduleRoot string) (string, error) {
 		{"defaultMeetingASRMode", coreconfig.Defaults().MeetingASRMode},
 		{"meetingASRMultipartTitle", coreconfig.MeetingASRModeTitle(coreconfig.MeetingASRMultipart)},
 		{"meetingASRLlamaPrefixTitle", coreconfig.MeetingASRModeTitle(coreconfig.MeetingASRLlamaPrefix)},
+	} {
+		b.WriteString("    public static let " + item.name + " = " + strconv.Quote(item.value) + "\n")
+	}
+	for _, item := range []struct {
+		name  string
+		value int
+	}{
+		{"defaultMaxResponseTokens", coreconfig.Defaults().MaxResponseTokens},
+		{"defaultMaxSelectedRunes", coreconfig.Defaults().MaxSelectedRunes},
+		{"defaultCopyAttempts", coreconfig.Defaults().SelectionCopyAttempts},
+		{"defaultCopyTimeoutMS", coreconfig.Defaults().SelectionCopyTimeoutMS},
+	} {
+		b.WriteString("    public static let " + item.name + " = " + strconv.Itoa(item.value) + "\n")
+	}
+	for _, item := range []struct{ name, value string }{
+		{"defaultRecordMode", coreconfig.Defaults().RecordMode},
+		{"defaultExitShortcut", coreconfig.Defaults().HotkeyExit},
 	} {
 		b.WriteString("    public static let " + item.name + " = " + strconv.Quote(item.value) + "\n")
 	}
@@ -589,16 +614,21 @@ func numberValue(expr ast.Expr, numbers map[string]string) string {
 
 func settingsMaps() (bindings, actions, status map[string]string) {
 	bindings = map[string]string{
-		"asr_base_url":       "model.settings.asrBaseURL",
-		"asr_model":          "model.settings.asrModel",
-		"asr_api_key":        "model.asrKeyInput",
-		"llm_base_url":       "model.settings.llmBaseURL",
-		"text_model":         "model.settings.textModel",
-		"llm_api_key":        "model.llmKeyInput",
-		"max_record_seconds": "model.settings.maxRecordSeconds",
-		"microphone":         "model.settings.microphoneUID",
-		"rewrite_shortcut":   "model.settings.rewriteShortcut",
-		"dictation_shortcut": "model.settings.dictationShortcut",
+		"asr_base_url":            "model.settings.asrBaseURL",
+		"asr_model":               "model.settings.asrModel",
+		"asr_api_key":             "model.asrKeyInput",
+		"llm_base_url":            "model.settings.llmBaseURL",
+		"text_model":              "model.settings.textModel",
+		"llm_api_key":             "model.llmKeyInput",
+		"max_record_seconds":      "model.settings.maxRecordSeconds",
+		"microphone":              "model.settings.microphoneUID",
+		"rewrite_shortcut":        "model.settings.rewriteShortcut",
+		"dictation_shortcut":      "model.settings.dictationShortcut",
+		"exit_shortcut":           "model.settings.exitShortcut",
+		"record_mode":             "model.settings.recordMode",
+		"system_prompt":           "model.settings.systemPrompt",
+		"max_response_tokens":     "model.settings.maxResponseTokens",
+		"max_selected_characters": "model.settings.maxSelectedRunes",
 	}
 	actions = map[string]string{
 		"probe_asr": "model.checkASRService()",
@@ -652,7 +682,7 @@ func emitSettings() (string, error) {
 		b.WriteString(strconv.Quote(page.ID) + " {\n")
 		b.WriteString("                                Text(" + strconv.Quote(page.Section) + ").font(.headline)\n")
 		for _, control := range contract.PageControls(page.ID, contract.MacOS) {
-			if strings.HasPrefix(control.ID, "capture_") || control.ID == "max_record_seconds" || control.ID == "record_note" || control.ID == "meeting_asr_mode" {
+			if strings.HasPrefix(control.ID, "capture_") || control.ID == "max_record_seconds" || control.ID == "record_note" || control.ID == "meeting_asr_mode" || control.ID == "system_prompt" || control.ID == "max_response_tokens" || control.ID == "max_selected_characters" || control.ID == "selection_copy_attempts" || control.ID == "selection_copy_timeout_ms" {
 				continue
 			}
 			if control.Kind == contract.Shortcut {
@@ -667,6 +697,8 @@ func emitSettings() (string, error) {
 				captureID := "capture_dictation"
 				if control.ID == "rewrite_shortcut" {
 					captureID = "capture_rewrite"
+				} else if control.ID == "exit_shortcut" {
+					captureID = "capture_exit"
 				}
 				capture, ok := contract.Find(captureID)
 				if !ok || !capture.VisibleOn(contract.MacOS) {
@@ -682,7 +714,7 @@ func emitSettings() (string, error) {
 		}
 		if page.ID == "input" {
 			b.WriteString("                                if !captureStatus.isEmpty {\n                                    Text(captureStatus).font(.footnote).foregroundStyle(.secondary)\n                                        .accessibilityIdentifier(\"capture_status\")\n                                }\n                                if showAdvanced {\n                                    Divider()\n                                    Text(\"高级配置\").font(.headline)\n")
-			for _, id := range []string{"max_record_seconds", "record_note", "meeting_asr_mode"} {
+			for _, id := range []string{"max_record_seconds", "record_note", "meeting_asr_mode", "system_prompt", "max_response_tokens", "max_selected_characters", "selection_copy_attempts", "selection_copy_timeout_ms"} {
 				control, ok := contract.Find(id)
 				if !ok || !control.VisibleOn(contract.MacOS) {
 					return "", fmt.Errorf("advanced control %s", id)
@@ -732,7 +764,7 @@ func emitSettings() (string, error) {
 			b.WriteString("        .onChange(of: " + binding + ") { _, _ in model.markConnectionProbeStale(." + control.StaleProbe + ") }\n")
 		}
 	}
-	b.WriteString("        .onAppear { model.refreshMicrophoneDevices() }\n        .onDisappear { stopCapture() }\n    }\n\n    private func selectPage(_ id: String) {\n        stopCapture()\n        selectedPage = id\n    }\n\n    private func beginCapture(_ id: String) {\n        stopCapture()\n        captureTarget = id\n        captureStatus = \"正在监听按键… 按 Esc 取消\"\n        captureMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .otherMouseDown]) { event in\n            if event.type == .otherMouseDown {\n                if event.buttonNumber == 3 { acceptCapture(\"Mouse4\"); return nil }\n                if event.buttonNumber == 4 { acceptCapture(\"Mouse5\"); return nil }\n                return event\n            }\n            if event.keyCode == 53 {\n                stopCapture()\n                captureStatus = \"已取消快捷键录入\"\n                return nil\n            }\n            guard let candidate = Self.shortcutFromKey(event) else {\n                captureStatus = \"请使用 Ctrl/Option 加字母数字，或 F1–F20\"\n                return nil\n            }\n            acceptCapture(candidate)\n            return nil\n        }\n    }\n\n    private func acceptCapture(_ candidate: String) {\n        let other = captureTarget == \"dictation_shortcut\"\n            ? model.settings.rewriteShortcut : model.settings.dictationShortcut\n        if candidate.caseInsensitiveCompare(other) == .orderedSame {\n            captureStatus = \"听写与语音指令不能绑定同一个按键\"\n            return\n        }\n        switch captureTarget {\n        case \"dictation_shortcut\": model.settings.dictationShortcut = candidate\n        case \"rewrite_shortcut\": model.settings.rewriteShortcut = candidate\n        default: return\n        }\n        stopCapture()\n        captureStatus = \"已录入 \\(candidate)，保存设置后生效\"\n    }\n\n    private func stopCapture() {\n        if let captureMonitor { NSEvent.removeMonitor(captureMonitor) }\n        captureMonitor = nil\n        captureTarget = nil\n    }\n\n    private static func shortcutFromKey(_ event: NSEvent) -> String? {\n        let keys: [UInt16: String] = [\n            122: \"F1\", 120: \"F2\", 99: \"F3\", 118: \"F4\", 96: \"F5\",\n            97: \"F6\", 98: \"F7\", 100: \"F8\", 101: \"F9\", 109: \"F10\",\n            103: \"F11\", 111: \"F12\", 105: \"F13\", 107: \"F14\",\n            113: \"F15\", 106: \"F16\", 64: \"F17\", 79: \"F18\",\n            80: \"F19\", 90: \"F20\"\n        ]\n        let flags = event.modifierFlags\n        guard !flags.contains(.command) else { return nil }\n        let key: String\n        if let function = keys[event.keyCode] {\n            key = function\n        } else {\n            let char = event.charactersIgnoringModifiers?.uppercased() ?? \"\"\n            guard char.count == 1, let scalar = char.unicodeScalars.first,\n                  (65...90).contains(scalar.value) || (48...57).contains(scalar.value) else {\n                return nil\n            }\n            key = char\n        }\n        var modifiers: [String] = []\n        if flags.contains(.control) { modifiers.append(\"Ctrl\") }\n        if flags.contains(.option) { modifiers.append(\"Alt\") }\n        if flags.contains(.shift) { modifiers.append(\"Shift\") }\n        if key.count == 1 && !modifiers.contains(\"Ctrl\") && !modifiers.contains(\"Alt\") {\n            return nil\n        }\n        return (modifiers + [key]).joined(separator: \"+\")\n    }\n}\n")
+	b.WriteString("        .onAppear { model.refreshMicrophoneDevices() }\n        .onDisappear { stopCapture() }\n    }\n\n    private func selectPage(_ id: String) {\n        stopCapture()\n        selectedPage = id\n    }\n\n    private func beginCapture(_ id: String) {\n        stopCapture()\n        captureTarget = id\n        captureStatus = \"正在监听按键… 按 Esc 取消\"\n        model.setShortcutCaptureActive(true)\n        captureMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .otherMouseDown]) { event in\n            if event.type == .keyDown && event.isARepeat { return nil }\n            if event.type == .otherMouseDown {\n                if event.buttonNumber == 3 { acceptCapture(\"Mouse4\"); return nil }\n                if event.buttonNumber == 4 { acceptCapture(\"Mouse5\"); return nil }\n                return event\n            }\n            if event.keyCode == 53 {\n                stopCapture()\n                captureStatus = \"已取消快捷键录入\"\n                return nil\n            }\n            guard let candidate = Self.shortcutFromKey(event) else {\n                captureStatus = \"请使用 Ctrl/Option 加字母数字，或 F1–F20\"\n                return nil\n            }\n            acceptCapture(candidate)\n            return nil\n        }\n    }\n\n    private func acceptCapture(_ candidate: String) {\n        let other = captureTarget == \"dictation_shortcut\"\n            ? model.settings.rewriteShortcut : model.settings.dictationShortcut\n        let exit = model.settings.exitShortcut\n        if captureTarget == \"exit_shortcut\" && (candidate == model.settings.rewriteShortcut || candidate == model.settings.dictationShortcut) {\n            captureStatus = \"退出键不能与语音快捷键冲突\"\n            return\n        }\n        if captureTarget == \"exit_shortcut\" && (candidate == \"Mouse4\" || candidate == \"Mouse5\") {\n            captureStatus = \"退出键必须使用键盘快捷键\"\n            return\n        }\n        if captureTarget != \"exit_shortcut\" && candidate.caseInsensitiveCompare(exit) == .orderedSame {\n            captureStatus = \"语音快捷键不能覆盖全局退出键\"\n            return\n        }\n        if captureTarget != \"exit_shortcut\" && candidate.caseInsensitiveCompare(other) == .orderedSame {\n            captureStatus = \"听写与语音指令不能绑定同一个按键\"\n            return\n        }\n        switch captureTarget {\n        case \"dictation_shortcut\": model.settings.dictationShortcut = candidate\n        case \"rewrite_shortcut\": model.settings.rewriteShortcut = candidate\n        case \"exit_shortcut\": model.settings.exitShortcut = candidate\n        default: return\n        }\n        stopCapture()\n        captureStatus = \"已录入 \\(candidate)，保存设置后生效\"\n    }\n\n    private func stopCapture() {\n        if let captureMonitor { NSEvent.removeMonitor(captureMonitor) }\n        captureMonitor = nil\n        captureTarget = nil\n        model.setShortcutCaptureActive(false)\n    }\n\n    private static func shortcutFromKey(_ event: NSEvent) -> String? {\n        let keys: [UInt16: String] = [\n            122: \"F1\", 120: \"F2\", 99: \"F3\", 118: \"F4\", 96: \"F5\",\n            97: \"F6\", 98: \"F7\", 100: \"F8\", 101: \"F9\", 109: \"F10\",\n            103: \"F11\", 111: \"F12\", 105: \"F13\", 107: \"F14\",\n            113: \"F15\", 106: \"F16\", 64: \"F17\", 79: \"F18\",\n            80: \"F19\", 90: \"F20\"\n        ]\n        let flags = event.modifierFlags\n        guard !flags.contains(.command) else { return nil }\n        let key: String\n        if let function = keys[event.keyCode] {\n            key = function\n        } else {\n            let char = event.charactersIgnoringModifiers?.uppercased() ?? \"\"\n            guard char.count == 1, let scalar = char.unicodeScalars.first,\n                  (65...90).contains(scalar.value) || (48...57).contains(scalar.value) else {\n                return nil\n            }\n            key = char\n        }\n        var modifiers: [String] = []\n        if flags.contains(.control) { modifiers.append(\"Ctrl\") }\n        if flags.contains(.option) { modifiers.append(\"Alt\") }\n        if flags.contains(.shift) { modifiers.append(\"Shift\") }\n        if key.count == 1 && !modifiers.contains(\"Ctrl\") && !modifiers.contains(\"Alt\") {\n            return nil\n        }\n        return (modifiers + [key]).joined(separator: \"+\")\n    }\n}\n")
 	return b.String(), nil
 }
 
@@ -745,11 +777,17 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 			return "", err
 		}
 		line := "                TextField(" + strconv.Quote(control.Label) + ", text: $" + binding + ")\n                    " + id + "\n"
+		if control.ID == "system_prompt" {
+			line = "                Text(\"System Prompt\").font(.subheadline)\n                TextEditor(text: $model.settings.systemPrompt)\n                    .frame(minHeight: 96)\n                    " + id + "\n"
+		}
 		if control.ID == "asr_model" || control.ID == "text_model" {
 			line += renderModelDiscovery(control.ID)
 		}
 		return line, nil
 	case contract.Choice:
+		if control.ID == "record_mode" {
+			return "                Picker(\"录音模式\", selection: $model.settings.recordMode) {\n                    Text(\"按住录音（Hold）\").tag(\"hold\")\n                    Text(\"再按停止（Toggle）\").tag(\"toggle\")\n                }\n                .accessibilityIdentifier(\"record_mode\")\n", nil
+		}
 		if control.ID == "meeting_asr_mode" {
 			return "                Picker(\"会议语音识别方式\", selection: $model.settings.meetingASRMode) {\n                    Text(ContractLimits.meetingASRMultipartTitle).tag(ContractLimits.meetingASRMultipart)\n                    Text(ContractLimits.meetingASRLlamaPrefixTitle).tag(ContractLimits.meetingASRLlamaPrefix)\n                }\n                .accessibilityIdentifier(\"meeting_asr_mode\")\n", nil
 		}
@@ -783,18 +821,26 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 		}
 		return "                SecureField(" + strconv.Quote(control.Hint) + ", text: $" + binding + ")\n                    .accessibilityLabel(" + strconv.Quote(control.Label) + ")\n                    " + id + "\n", nil
 	case contract.Stepper:
-		if control.ID != "max_record_seconds" {
+		if control.ID != "max_record_seconds" && control.ID != "max_response_tokens" && control.ID != "max_selected_characters" {
 			return "", fmt.Errorf("stepper %s has no renderer", control.ID)
 		}
 		if _, err := requiredBinding(control, bindings); err != nil {
 			return "", err
 		}
+		if control.ID == "max_response_tokens" {
+			return "                Stepper(\"响应 Token 上限：\\(model.settings.maxResponseTokens)\", value: $model.settings.maxResponseTokens, in: ContractLimits.minResponseTokens...ContractLimits.maxResponseTokens)\n                    " + id + "\n", nil
+		}
+		if control.ID == "max_selected_characters" {
+			return "                Stepper(\"选区字符上限：\\(model.settings.maxSelectedRunes)\", value: $model.settings.maxSelectedRunes, in: 1...ContractLimits.maxSelectedRunes)\n                    " + id + "\n", nil
+		}
 		return "                Stepper(\"" + control.Label + "：\\(model.settings.maxRecordSeconds) 秒\",\n                        value: $model.settings.maxRecordSeconds, in: MacSettings.recordSeconds)\n                    " + id + "\n", nil
 	case contract.Button:
-		if control.ID == "capture_rewrite" || control.ID == "capture_dictation" {
+		if control.ID == "capture_rewrite" || control.ID == "capture_dictation" || control.ID == "capture_exit" {
 			target := "dictation_shortcut"
 			if control.ID == "capture_rewrite" {
 				target = "rewrite_shortcut"
+			} else if control.ID == "capture_exit" {
+				target = "exit_shortcut"
 			}
 			return "                Button(captureTarget == " + strconv.Quote(target) + " ? " + strconv.Quote(contract.WaitingForShortcut) + " : " + strconv.Quote(control.Label) + ") { beginCapture(" + strconv.Quote(target) + ") }\n                    " + id + "\n", nil
 		}

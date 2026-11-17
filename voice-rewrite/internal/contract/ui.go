@@ -52,7 +52,7 @@ func Pages() []Page {
 	return []Page{
 		{ID: "speech", Title: "语音识别", Subtitle: "连接语音识别服务，将录音转换为文字。", Section: "连接配置"},
 		{ID: "writing", Title: "AI 写作", Subtitle: "配置用于改写、翻译与问答的文本模型。", Section: "模型配置"},
-		{ID: "input", Title: "快捷键与设备", Subtitle: "录入语音指令、听写快捷键，并选择麦克风。", Section: "输入偏好"},
+		{ID: "input", Title: "快捷键与设备", Subtitle: "设置语音快捷键、录音模式和麦克风。", Section: "输入偏好"},
 	}
 }
 
@@ -79,9 +79,17 @@ func Controls() []Control {
 		{ID: "dictation_shortcut", Page: "input", Label: "听写快捷键", Kind: Shortcut, Stacked: true},
 		{ID: "capture_dictation", Page: "input", Label: "录入按键", Kind: Button},
 		{ID: "microphone", Page: "input", Label: "麦克风", Kind: Choice, Stacked: true},
+		{ID: "record_mode", Page: "input", Label: "录音模式", Kind: Choice, Platform: MacOS, Gap: "#138"},
+		{ID: "exit_shortcut", Page: "input", Label: "全局退出快捷键（不是语音操作）", Kind: Shortcut, Platform: MacOS, Gap: "#139"},
+		{ID: "capture_exit", Page: "input", Label: "录入按键", Kind: Button, Platform: MacOS, Gap: "#139"},
 		{ID: "max_record_seconds", Page: "input", Label: "最长录音", Kind: Stepper, Platform: MacOS, Gap: "#61 #69"},
 		{ID: "record_note", Page: "input", Label: "录音数据为 16 kHz 单声道 PCM16，最长 180 秒。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
 		{ID: "meeting_asr_mode", Page: "input", Label: "会议语音识别方式", Kind: Choice, Platform: MacOS, Gap: "#61 #69"},
+		{ID: "system_prompt", Page: "input", Label: "System Prompt", Kind: Text, Platform: MacOS, Gap: "#145"},
+		{ID: "max_response_tokens", Page: "input", Label: "响应 Token 上限", Kind: Stepper, Platform: MacOS, Gap: "#146"},
+		{ID: "max_selected_characters", Page: "input", Label: "选区字符上限", Kind: Stepper, Platform: MacOS, Gap: "#147"},
+		{ID: "selection_copy_attempts", Page: "input", Label: "选区复制重试次数（Windows 专用）", Kind: Note, Platform: MacOS, Gap: "#148"},
+		{ID: "selection_copy_timeout_ms", Page: "input", Label: "选区复制超时由 Windows 剪贴板适配器使用；macOS 使用 AX 和原生粘贴板时序。", Kind: Note, Platform: MacOS, Gap: "#148"},
 		{ID: "input_note_windows", Page: "input", Label: "语音指令用于改写/解释/问答；更换按键或设备后需重启软件。", Kind: Note, Platform: Windows, Gap: "#61 #69"},
 		{ID: "input_note_macos", Page: "input", Label: "可用 Ctrl+Alt+R、F8 或 Mouse4。macOS 的 Alt 即 Option；Mouse4 默认听写，Mouse5 默认改写。仅监听已绑定侧键，F21–F24 不可用；听写与改写不能绑定同一个按键。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
 

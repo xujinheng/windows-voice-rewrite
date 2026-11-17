@@ -54,6 +54,32 @@ final class MacShortcutTests: XCTestCase {
         XCTAssertEqual(MacShortcut.hotKey(key: "F20", ctrl: false, alt: false, shift: false)?.keyCode, 90)
     }
 
+    func testExitShortcutIsIndependentAndHoldToggleRejectsUnsafeSideBindings() throws {
+        let dictation = try XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+R"))
+        let rewrite = try XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+E"))
+        let exit = try XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+F10"))
+        let hold = try XCTUnwrap(MacShortcutPlan(
+            dictation: dictation, rewrite: rewrite, exit: exit, recordMode: "hold"))
+        XCTAssertEqual(hold.keyboard.count, 3)
+        XCTAssertNotNil(hold.exit)
+        XCTAssertNotEqual(hold.exit, hold.dictation)
+        XCTAssertNotEqual(hold.exit, hold.rewrite)
+        XCTAssertEqual(hold.sideButtons.action(for: 3), .dictation)
+        XCTAssertNil(MacShortcutPlan(dictation: dictation, rewrite: rewrite, exit: dictation))
+        XCTAssertNil(MacShortcutPlan(dictation: dictation, rewrite: rewrite, exit: rewrite))
+        XCTAssertNil(MacShortcutPlan(dictation: dictation, rewrite: rewrite,
+                                      exit: ShortcutBinding(canonical: "Mouse4")))
+        XCTAssertNil(MacShortcutPlan(dictation: dictation, rewrite: rewrite, recordMode: "invalid"))
+
+        let toggle = try XCTUnwrap(MacShortcutPlan(
+            dictation: dictation, rewrite: rewrite, exit: exit, recordMode: "toggle"))
+        XCTAssertNil(toggle.sideButtons.action(for: 3))
+        XCTAssertNil(toggle.sideButtons.action(for: 4))
+        XCTAssertNil(MacShortcutPlan(
+            dictation: try XCTUnwrap(ShortcutBinding(canonical: "Mouse4")),
+            rewrite: rewrite, exit: exit, recordMode: "toggle"))
+    }
+
     @MainActor
     func testShortcutSaveTransactionSkipsPersistenceWhenRegistrationFails() throws {
         var operations: [String] = []

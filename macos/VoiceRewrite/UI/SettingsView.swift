@@ -71,7 +71,7 @@ struct SettingsView: View {
                         else if selectedPage == "input" {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("快捷键与设备").font(.title2.bold())
-                                Text("录入语音指令、听写快捷键，并选择麦克风。").font(.subheadline).foregroundStyle(.secondary)
+                                Text("设置语音快捷键、录音模式和麦克风。").font(.subheadline).foregroundStyle(.secondary)
                             }
                         } 
                     }
@@ -176,6 +176,17 @@ struct SettingsView: View {
                     Text("已保存的麦克风不在当前设备列表中，录音会提示设备不可用。")
                         .font(.footnote).foregroundStyle(.orange)
                 }
+                Picker("录音模式", selection: $model.settings.recordMode) {
+                    Text("按住录音（Hold）").tag("hold")
+                    Text("再按停止（Toggle）").tag("toggle")
+                }
+                .accessibilityIdentifier("record_mode")
+                                HStack(spacing: 12) {
+                TextField("全局退出快捷键（不是语音操作）", text: $model.settings.exitShortcut)
+                    .accessibilityIdentifier("exit_shortcut")
+                Button(captureTarget == "exit_shortcut" ? "等待按键…" : "录入按键") { beginCapture("exit_shortcut") }
+                    .accessibilityIdentifier("capture_exit")
+                                }
                 Text("可用 Ctrl+Alt+R、F8 或 Mouse4。macOS 的 Alt 即 Option；Mouse4 默认听写，Mouse5 默认改写。仅监听已绑定侧键，F21–F24 不可用；听写与改写不能绑定同一个按键。")
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("input_note_macos")
@@ -197,6 +208,20 @@ struct SettingsView: View {
                     Text(ContractLimits.meetingASRLlamaPrefixTitle).tag(ContractLimits.meetingASRLlamaPrefix)
                 }
                 .accessibilityIdentifier("meeting_asr_mode")
+                Text("System Prompt").font(.subheadline)
+                TextEditor(text: $model.settings.systemPrompt)
+                    .frame(minHeight: 96)
+                    .accessibilityIdentifier("system_prompt")
+                Stepper("响应 Token 上限：\(model.settings.maxResponseTokens)", value: $model.settings.maxResponseTokens, in: ContractLimits.minResponseTokens...ContractLimits.maxResponseTokens)
+                    .accessibilityIdentifier("max_response_tokens")
+                Stepper("选区字符上限：\(model.settings.maxSelectedRunes)", value: $model.settings.maxSelectedRunes, in: 1...ContractLimits.maxSelectedRunes)
+                    .accessibilityIdentifier("max_selected_characters")
+                Text("选区复制重试次数（Windows 专用）")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("selection_copy_attempts")
+                Text("选区复制超时由 Windows 剪贴板适配器使用；macOS 使用 AX 和原生粘贴板时序。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("selection_copy_timeout_ms")
                                 }
                             } 
                         }
@@ -266,7 +291,9 @@ struct SettingsView: View {
         stopCapture()
         captureTarget = id
         captureStatus = "正在监听按键… 按 Esc 取消"
+        model.setShortcutCaptureActive(true)
         captureMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .otherMouseDown]) { event in
+            if event.type == .keyDown && event.isARepeat { return nil }
             if event.type == .otherMouseDown {
                 if event.buttonNumber == 3 { acceptCapture("Mouse4"); return nil }
                 if event.buttonNumber == 4 { acceptCapture("Mouse5"); return nil }
@@ -289,13 +316,27 @@ struct SettingsView: View {
     private func acceptCapture(_ candidate: String) {
         let other = captureTarget == "dictation_shortcut"
             ? model.settings.rewriteShortcut : model.settings.dictationShortcut
-        if candidate.caseInsensitiveCompare(other) == .orderedSame {
+        let exit = model.settings.exitShortcut
+        if captureTarget == "exit_shortcut" && (candidate == model.settings.rewriteShortcut || candidate == model.settings.dictationShortcut) {
+            captureStatus = "退出键不能与语音快捷键冲突"
+            return
+        }
+        if captureTarget == "exit_shortcut" && (candidate == "Mouse4" || candidate == "Mouse5") {
+            captureStatus = "退出键必须使用键盘快捷键"
+            return
+        }
+        if captureTarget != "exit_shortcut" && candidate.caseInsensitiveCompare(exit) == .orderedSame {
+            captureStatus = "语音快捷键不能覆盖全局退出键"
+            return
+        }
+        if captureTarget != "exit_shortcut" && candidate.caseInsensitiveCompare(other) == .orderedSame {
             captureStatus = "听写与语音指令不能绑定同一个按键"
             return
         }
         switch captureTarget {
         case "dictation_shortcut": model.settings.dictationShortcut = candidate
         case "rewrite_shortcut": model.settings.rewriteShortcut = candidate
+        case "exit_shortcut": model.settings.exitShortcut = candidate
         default: return
         }
         stopCapture()
@@ -306,6 +347,7 @@ struct SettingsView: View {
         if let captureMonitor { NSEvent.removeMonitor(captureMonitor) }
         captureMonitor = nil
         captureTarget = nil
+        model.setShortcutCaptureActive(false)
     }
 
     private static func shortcutFromKey(_ event: NSEvent) -> String? {

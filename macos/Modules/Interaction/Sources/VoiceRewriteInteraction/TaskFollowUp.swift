@@ -137,11 +137,21 @@ public func dictationTranscriptFollowUp(
     }
 }
 
-public func dictationInsertFollowUp(succeeded: Bool, status: String, manualTitle: String, text: String) -> TaskFollowUp {
-    if succeeded {
+/// Native delivery evidence, not mere CGEvent.post completion, determines
+/// whether the pill may claim success. A sent-but-unverified paste is single
+/// shot: the transcript stays in history and no automatic or manual retry is
+/// initiated. A blocked or uncertain attempt preserves the copyable result.
+public func dictationInsertFollowUp(outcome: DeliveryState, status: String,
+                                    manualTitle: String, text: String) -> TaskFollowUp {
+    switch outcome {
+    case .confirmed:
         return TaskFollowUp(interactionStatus: dictationInserted(), phase: .success, mode: "听写")
+    case .sentUnverified:
+        return TaskFollowUp(interactionStatus: dictationInserted(), phase: .answer, mode: "听写")
+    case .blocked, .uncertain:
+        return TaskFollowUp(interactionStatus: status, phase: .fallback, mode: "听写",
+                            cardTitle: manualTitle, cardText: text)
     }
-    return TaskFollowUp(interactionStatus: status, phase: .fallback, mode: "听写", cardTitle: manualTitle, cardText: text)
 }
 
 public func recordingStopFollowUp(detail: String, voiceSelection: Bool, mode: String) -> TaskFollowUp {

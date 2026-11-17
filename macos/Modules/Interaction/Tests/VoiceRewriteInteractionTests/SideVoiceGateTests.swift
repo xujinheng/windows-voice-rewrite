@@ -2,6 +2,33 @@ import XCTest
 @testable import VoiceRewriteInteraction
 
 final class SideVoiceGateTests: XCTestCase {
+    func testKeyboardKeyReleaseDuringMicrophoneStartStopsOnce() {
+        var gate = KeyboardHoldGate()
+        XCTAssertTrue(gate.begin(.dictation))
+        XCTAssertFalse(gate.begin(.rewrite))
+        XCTAssertEqual(gate.release(.dictation, starting: true, recording: false), .none)
+        XCTAssertTrue(gate.releasedDuringStart)
+        XCTAssertFalse(gate.begin(.dictation))
+        XCTAssertEqual(gate.finishStart(.dictation, recording: true), .stop)
+        XCTAssertNil(gate.action)
+        XCTAssertEqual(gate.finishStart(.dictation, recording: true), .none)
+        XCTAssertTrue(gate.begin(.rewrite))
+        XCTAssertEqual(gate.release(.rewrite, starting: false, recording: true), .stop)
+    }
+
+    func testKeyboardFailureAndCancellationPermitRapidNextPress() {
+        var gate = KeyboardHoldGate()
+        XCTAssertTrue(gate.begin(.rewrite))
+        XCTAssertEqual(gate.release(.dictation, starting: true, recording: false), .none)
+        XCTAssertEqual(gate.release(.rewrite, starting: true, recording: false), .none)
+        XCTAssertEqual(gate.finishStart(.rewrite, recording: false), .clear)
+        XCTAssertTrue(gate.begin(.dictation))
+        gate.clear()
+        XCTAssertEqual(gate.release(.dictation, starting: false, recording: true), .none)
+        XCTAssertTrue(gate.begin(.rewrite))
+        XCTAssertEqual(gate.release(.rewrite, starting: false, recording: false), .clear)
+    }
+
     func testEarlyMicrophoneOnlyStartsForAuthorizedIdleDictation() {
         XCTAssertTrue(shouldPreCaptureDictation(action: .dictation, authorized: true,
                                                 paused: false, meetingRunning: false, busy: false))

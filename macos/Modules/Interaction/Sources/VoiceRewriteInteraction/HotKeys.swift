@@ -31,6 +31,28 @@ public struct HotKeyToken: Hashable, Sendable {
     public init(id: UInt32) { self.id = id }
 }
 
+/// Event-pair admission for native Carbon hotkeys. Dropped or repeated
+/// callbacks never become a second recording, including after re-registration.
+public struct HotKeyPressState: Sendable {
+    private var down = Set<HotKeyToken>()
+
+    public init() {}
+
+    @discardableResult
+    public mutating func transition(_ token: HotKeyToken, pressed: Bool) -> Bool {
+        if pressed { return down.insert(token).inserted }
+        return down.remove(token) != nil
+    }
+
+    public mutating func forget(_ token: HotKeyToken) {
+        down.remove(token)
+    }
+
+    public mutating func clear() {
+        down.removeAll()
+    }
+}
+
 @MainActor
 public protocol HotKeyDriver: AnyObject {
     func register(_ shortcut: HotKeyShortcut) throws -> HotKeyToken

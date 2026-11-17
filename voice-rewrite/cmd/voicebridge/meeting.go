@@ -59,6 +59,7 @@ type bridgeMeeting struct {
 
 	mu                 sync.Mutex
 	captions           []meetingcore.Caption
+	historyTrimmed     int
 	prior              []string
 	status             string
 	level              int
@@ -72,6 +73,7 @@ type bridgeMeeting struct {
 	view               meetingcore.HUDFlags
 	replyStatus        string
 	expression         meetingcore.Line
+	expressionSource   string
 	expressionStatus   string
 }
 
@@ -123,9 +125,9 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 			if !turn.Final && m.config.MeetingASRMode != coreconfig.MeetingASRMultipart {
 				meetingcore.SetCaptionPrefix(m.captions, turn.ID, stable)
 			}
-			if len(m.captions) > 12 {
-				m.captions = append([]meetingcore.Caption(nil), m.captions[len(m.captions)-12:]...)
-			}
+			var evicted int
+			m.captions, evicted = meetingcore.BoundCaptionHistory(m.captions)
+			m.historyTrimmed += evicted
 			prior := append([]string(nil), m.prior...)
 			if turn.Final {
 				m.prior = meetingcore.RememberPrior(m.prior, latest)
@@ -141,7 +143,11 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 			m.mu.Lock()
 			defer m.mu.Unlock()
 			if m.runtime.Active(job.Epoch) {
-				meetingcore.ApplyCaptionTranslation(m.captions, job.ID, job.Latest, chinese)
+				if meetingcore.ApplyCaptionTranslation(m.captions, job.ID, job.Latest, chinese) {
+					var evicted int
+					m.captions, evicted = meetingcore.BoundCaptionHistory(m.captions)
+					m.historyTrimmed += evicted
+				}
 			}
 		},
 		OnASRFirst: func(turn meetingcore.AudioTurn, elapsed time.Duration) {
@@ -318,6 +324,8 @@ func (m *bridgeMeeting) feed(pcm []byte, expectedEpoch uint64) error {
 	case m.source.packets <- pcm:
 		return nil
 	default:
+		m.dropped++
+		m.status = meetingcore.DroppedWork
 		return errMeetingBusy
 	}
 }
@@ -344,6 +352,9 @@ func (m *bridgeMeeting) setPaused(paused bool) error {
 	if m.runtime.SetPaused(paused) {
 		m.discardPacketsLocked()
 		m.level = 0
+		// A new capture epoch must not display old inference latency.
+		m.asrFirstMS, m.asrDoneMS = 0, 0
+		m.translationFirstMS, m.translationDoneMS = 0, 0
 		m.replies.ResetWork()
 		m.captions = meetingcore.KeepCompletedCaptions(m.captions)
 		if clear, status := meetingcore.CancelPresentation(m.expression.Complete, m.expressionStatus); clear {
@@ -479,6 +490,16 @@ func (m *bridgeMeeting) applyViewButton(id int) bool {
 	return true
 }
 
+// A fresh English expression can be focused only on the native reader's
+// explicit request. The reader does not send it while reading old history.
+func (m *bridgeMeeting) focusExpression() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.view.CaptionsOnly, m.view.ExpressionExpanded =
+		meetingcore.ExpressionFocus(m.expression.Complete,
+			m.expression.English != "", m.view.CaptionsOnly, m.view.ExpressionExpanded)
+}
+
 func (m *bridgeMeeting) acceptReplies() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -502,12 +523,16 @@ func (m *bridgeMeeting) refine(parent context.Context, index int, instruction st
 	if index < 0 || index >= 3 {
 		return errors.New("invalid reply index")
 	}
+	instruction, ok := meetingcore.AcceptRefine(index, instruction)
+	if !ok {
+		return errMeetingInvalidReply
+	}
 	m.mu.Lock()
 	chosen := m.replies.Displayed.Lines[index]
 	source := m.replies.Displayed.Source
+	_, _, paused := m.runtime.Snapshot()
 	m.mu.Unlock()
-	if !chosen.Complete || !meetingcore.RefineMayRun(chosen.English, false) ||
-		!meetingcore.ValidInstruction(instruction) {
+	if !chosen.Complete || !meetingcore.RefineMayRun(chosen.English, paused) {
 		return errMeetingInvalidReply
 	}
 	return m.runExpression(parent, meetingcore.Query{Mode: "refine",
@@ -535,9 +560,14 @@ func (m *bridgeMeeting) runExpression(parent context.Context, query meetingcore.
 	stopParent := context.AfterFunc(parent, cancel)
 	defer stopParent()
 	m.mu.Lock()
-	if !m.runtime.CurrentExpression(epoch, serial) {
+	if !m.runtime.CurrentExpression(epoch, serial) || ctx.Err() != nil {
 		m.mu.Unlock()
 		return context.Canceled
+	}
+	if query.Mode == "compose" {
+		// Only the intent-based action may resolve references against recent
+		// completed speech. PrepareQuery will discard unrelated history.
+		query.Prior = append([]string(nil), m.prior...)
 	}
 	m.expressionStatus = meetingcore.ExpressionLabel(query.Mode)
 	cfg := m.config
@@ -552,9 +582,15 @@ func (m *bridgeMeeting) runExpression(parent context.Context, query meetingcore.
 	}, nil)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// A canceled client must never commit an answer that happened to finish
+	// just before the cancellation callback reached the bridge.
+	if err == nil && ctx.Err() != nil {
+		err = ctx.Err()
+	}
 	if m.runtime.CurrentExpression(epoch, serial) {
 		if err == nil && expression.English != "" {
 			m.expression = expression
+			m.expressionSource = query.UserPoints
 			m.expressionStatus = ""
 		} else if errors.Is(ctx.Err(), context.Canceled) {
 			m.expressionStatus = meetingcore.WorkCanceled
@@ -600,8 +636,9 @@ func (m *bridgeMeeting) snapshot() map[string]any {
 		"reply_pending":     m.replies.PendingAvailable, "reply_status": m.replyStatus,
 		"captions_only": m.view.CaptionsOnly, "expression_expanded": m.view.ExpressionExpanded,
 		"expression": m.expression.English, "expression_chinese": m.expression.Chinese,
-		"expression_status": m.expressionStatus,
-		"session_id":        m.id, "status": m.status,
+		"expression_source": m.expressionSource, "expression_status": m.expressionStatus,
+		"session_id": m.id, "status": m.status,
 		"level": m.level, "captions": captions,
+		"history_trimmed": m.historyTrimmed,
 	}
 }
