@@ -39,6 +39,25 @@ enum DiagnosticLog {
         }
     }
 
+    static func latestError() -> String? {
+        guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else { return nil }
+        return latestError(in: contents)
+    }
+
+    static func latestError(in log: String) -> String? {
+        for line in log.split(whereSeparator: \.isNewline).reversed() {
+            let value = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lower = value.lowercased()
+            if lower.contains("status=failed") || lower.contains("status=error") ||
+                lower.contains("failed") || lower.contains("error") ||
+                value.contains("失败") || value.contains("错误") ||
+                value.contains("无法") || value.contains("拒绝") {
+                return String(value.prefix(400))
+            }
+        }
+        return nil
+    }
+
     static func reveal() {
         prepare()
         let url = fileURL
