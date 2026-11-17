@@ -96,6 +96,19 @@ final class NativeClipboardReceiptTests: XCTestCase {
         XCTAssertEqual(pasteboard.string(forType: .string), "new owner")
     }
 
+    func testBinaryClipboardFallsBackWithoutFetchingLargeExternalData() throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.setData(Data(repeating: 1, count: 1024),
+                                          forType: NSPasteboard.PasteboardType("public.tiff")))
+        let board = MacClipboardBoard(board: pasteboard)
+        XCTAssertThrowsError(try board.capture()) {
+            XCTAssertEqual($0 as? ClipboardFailure, .snapshotUnavailable)
+        }
+        XCTAssertNotNil(pasteboard.data(forType: NSPasteboard.PasteboardType("public.tiff")))
+    }
+
     func testFastReceiverReadBeforeReceiptRegistration() async throws {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
