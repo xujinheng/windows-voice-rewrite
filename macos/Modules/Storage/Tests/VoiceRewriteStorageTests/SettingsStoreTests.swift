@@ -70,6 +70,7 @@ final class SettingsStoreTests: XCTestCase {
         let dir = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: dir.deletingLastPathComponent()) }
         let store = SettingsStore(directory: dir)
+        XCTAssertEqual(ContractLimits.defaultMeetingASRMode, ContractLimits.meetingASRLlamaPrefix)
         XCTAssertEqual(MacSettings.defaults.meetingASRMode, ContractLimits.defaultMeetingASRMode)
         var settings = MacSettings.defaults
         settings.meetingASRMode = ContractLimits.meetingASRMultipart
