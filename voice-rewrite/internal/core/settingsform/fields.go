@@ -23,6 +23,26 @@ func FieldEdit(row int) Rect {
 	return Rect{frame.X + insetX, frame.Y + insetY, frame.W - 2*insetX, editHeight}
 }
 
+// ModelEdit leaves room for the native model-discovery action inside the shared field frame.
+func ModelEdit(row int) Rect {
+	field := FieldEdit(row)
+	field.W -= 110
+	return field
+}
+
+func ModelDiscoverButton(row int) Rect {
+	frame := FieldFrame(row)
+	return Rect{frame.X + frame.W - 96, frame.Y + 2, 92, 30}
+}
+
+// ModelDiscoveryMayPresent rejects an old response, an abandoned settings page,
+// and a cancelled request even if the previous window handle is reused.
+func ModelDiscoveryMayPresent(requestID, currentID uint64, requestPage, visiblePage int) bool {
+	return requestID != 0 && requestID == currentID && requestPage == visiblePage
+}
+
+const MaxModelMenuChoices = 40
+
 func FieldLabel(row int) Rect {
 	frame := FieldFrame(row)
 	return Rect{224, frame.Y + 5, 119, 24}

@@ -1,16 +1,18 @@
 package contract
 
 const (
-	SaveButton       = 9101
-	CloseButton      = 9102
-	AdvancedButton   = 9103
-	ProbeASRButton   = 9104
-	ProbeLLMButton   = 9105
-	NavSpeech        = 9120
-	NavAI            = 9121
-	NavInput         = 9122
-	CaptureRewrite   = 9140
-	CaptureDictation = 9141
+	SaveButton        = 9101
+	CloseButton       = 9102
+	AdvancedButton    = 9103
+	ProbeASRButton    = 9104
+	ProbeLLMButton    = 9105
+	DiscoverASRButton = 9150
+	DiscoverLLMButton = 9151
+	NavSpeech         = 9120
+	NavAI             = 9121
+	NavInput          = 9122
+	CaptureRewrite    = 9140
+	CaptureDictation  = 9141
 	// EndpointEdit is the first settings text field. The next fields use the
 	// following ids in catalog order.
 	EndpointEdit = 9130
@@ -29,6 +31,8 @@ const (
 	ActionAdvanced
 	ActionProbeASR
 	ActionProbeLLM
+	ActionDiscoverASR
+	ActionDiscoverLLM
 )
 
 // InputIndex is the Windows settings text-field position for this catalog id.
@@ -108,6 +112,10 @@ func Command(id int) (Action, int) {
 		return ActionProbeASR, 0
 	case ProbeLLMButton:
 		return ActionProbeLLM, 0
+	case DiscoverASRButton:
+		return ActionDiscoverASR, 0
+	case DiscoverLLMButton:
+		return ActionDiscoverLLM, 0
 	default:
 		return ActionNone, 0
 	}
@@ -128,6 +136,10 @@ func ButtonLabel(id int, capturing bool) (string, bool) {
 		return controlLabel("probe_asr"), false
 	case ProbeLLMButton:
 		return controlLabel("probe_llm"), false
+	case DiscoverASRButton:
+		return controlLabel("discover_asr_models"), false
+	case DiscoverLLMButton:
+		return controlLabel("discover_llm_models"), false
 	case CaptureRewrite, CaptureDictation:
 		if capturing {
 			return WaitingForShortcut, false
