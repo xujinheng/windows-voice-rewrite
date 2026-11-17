@@ -2100,6 +2100,10 @@ final class WorkspaceModel: ObservableObject {
 
     /// Shared upper bound for the native stop, AX and Helper stages. The Go
     /// service timeout cannot protect a stalled local microphone/AX await.
+    static func elapsedMilliseconds(since start: TimeInterval) -> Int {
+        max(0, Int(((ProcessInfo.processInfo.systemUptime - start) * 1000).rounded()))
+    }
+
     static func asrDeadline(for pcm: Data) -> UInt64 {
         let duration = (pcm.count + 31_999) / 32_000
         return UInt64(min(220, max(65, 45 + 2 * duration)) + 15)
@@ -2237,6 +2241,7 @@ final class WorkspaceModel: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.refreshMicrophonePermission() }
+            let startupStarted = ProcessInfo.processInfo.systemUptime
             var captured = false
             var failure: String?
             var snapshot: MacDictationTarget?
@@ -2251,6 +2256,7 @@ final class WorkspaceModel: ObservableObject {
                 }
             }
             guard resultGeneration.accepts(token) else { return }
+            DiagnosticLog.note("stage=dictation_target status=done elapsed_ms=\(Self.elapsedMilliseconds(since: startupStarted))")
             let arm = dictationArm(hasTarget: (targetPID ?? 0) > 0, tokenValid: resultGeneration.accepts(token), captured: captured, captureFailure: failure)
             if let status = arm.interactionStatus { interactionStatus = status }
             if arm.keepInsert, let snapshot {
@@ -2272,6 +2278,7 @@ final class WorkspaceModel: ObservableObject {
                     return
                 }
                 finishProcessingWatchdog()
+                DiagnosticLog.note("stage=microphone_start status=done elapsed_ms=\(Self.elapsedMilliseconds(since: startupStarted))")
                 isRecording = true
                 showIndicator(phase: .recording, mode: "听写", pending: false)
                 if let status = ready.recordingStatus { recordingStatus = status }
@@ -2310,8 +2317,11 @@ final class WorkspaceModel: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             var selectionGeneration: UInt64?
+            let stopStarted = ProcessInfo.processInfo.systemUptime
             do {
                 let pcm = try await microphone.stop()
+                guard resultGeneration.accepts(token) else { return }
+                DiagnosticLog.note("stage=microphone_stop status=done elapsed_ms=\(Self.elapsedMilliseconds(since: stopStarted))")
                 armProcessingWatchdog(token: token,
                     seconds: voiceTargetPID == nil ? Self.asrDeadline(for: pcm) : 375,
                     stage: voiceTargetPID == nil ? "asr" : "spoken_edit")
@@ -2367,6 +2377,7 @@ final class WorkspaceModel: ObservableObject {
                 }
                 let config = try requestConfig(for: .transcribe)
                 guard let bridge else { throw BridgeFailure.notRunning }
+                let requestStarted = ProcessInfo.processInfo.systemUptime
                 let id = bridge.sendPCM(operation: "transcribe", pcm: pcm, fields: [
                     "config": config,
                 ]) { [weak self] reply in
@@ -2375,6 +2386,7 @@ final class WorkspaceModel: ObservableObject {
                         self.activeRequestID = nil
                         self.finishProcessingWatchdog()
                         self.isProcessing = false
+                        DiagnosticLog.note("stage=asr_reply status=finished elapsed_ms=\(Self.elapsedMilliseconds(since: requestStarted))")
                         let response = try? reply.get()
                         let follow = dictationTranscriptFollowUp(
                             ok: response?.ok ?? false,
