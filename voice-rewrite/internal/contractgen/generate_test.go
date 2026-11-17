@@ -73,8 +73,8 @@ func TestGenerateHostFilesFromCore(t *testing.T) {
 			t.Fatalf("visible %s: %v", control.ID, err)
 		}
 	}
-	if _, err := renderControl(contract.Control{ID: "microphone", Kind: contract.Choice, Label: "麦克风"}, bindings, actions, status); err == nil {
-		t.Fatal("choice rendered")
+	if _, err := renderControl(contract.Control{ID: "unmapped", Kind: contract.Choice, Label: "未知设备"}, bindings, actions, status); err == nil {
+		t.Fatal("unmapped choice rendered")
 	}
 	if _, err := renderControl(contract.Control{ID: "extra", Kind: contract.Button, Label: "多余"}, bindings, actions, status); err == nil {
 		t.Fatal("empty button rendered")

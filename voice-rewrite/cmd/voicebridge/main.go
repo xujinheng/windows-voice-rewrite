@@ -52,6 +52,7 @@ type request struct {
 	Shortcut       string          `json:"shortcut"`
 	TargetID       string          `json:"target_id"`
 	SessionID      string          `json:"session_id"`
+	ReplyIndex     int             `json:"reply_index"`
 }
 
 type bridgeError struct {
@@ -210,10 +211,10 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	}
 	s.seen[req.ID] = struct{}{}
 
-	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "selected_voice_task" && req.Op != "probe_asr" && req.Op != "probe_llm" && req.Op != "list_asr_models" && req.Op != "list_llm_models" && req.Op != "check_update" {
+	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "selected_voice_task" && req.Op != "probe_asr" && req.Op != "probe_llm" && req.Op != "list_asr_models" && req.Op != "list_llm_models" && req.Op != "check_update" && req.Op != "meeting_replies" && req.Op != "meeting_refine" && req.Op != "meeting_compose" {
 		s.mu.Unlock()
 		switch req.Op {
-		case "meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop":
+		case "meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop", "meeting_accept", "meeting_cancel":
 			s.send(s.meetingRequest(req))
 		case "hello":
 			s.send(success(req.ID, map[string]any{"name": jsonl.HelloName, "protocol": jsonl.Version}))
@@ -247,6 +248,12 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		timeout = 8 * time.Second
 	} else if req.Op == "list_asr_models" || req.Op == "list_llm_models" {
 		timeout = 12 * time.Second
+	}
+	if req.Op == "meeting_replies" || req.Op == "meeting_refine" {
+		timeout = 40 * time.Second
+	}
+	if req.Op == "meeting_compose" {
+		timeout = 60 * time.Second
 	}
 	if req.Op == "selected_task" {
 		timeout = s.options.SelectedTimeout
@@ -305,7 +312,7 @@ func (s *bridgeServer) meetingRequest(req request) response {
 			return failure(req.ID, "meeting_busy", "会议音频队列已满，已停止接收当前音频帧")
 		}
 		return success(req.ID, map[string]any{"accepted": true})
-	case "meeting_snapshot", "meeting_stop":
+	case "meeting_snapshot", "meeting_stop", "meeting_accept", "meeting_cancel":
 		s.mu.Lock()
 		m := s.meeting
 		if m == nil || req.SessionID == "" || req.SessionID != m.id {
@@ -319,6 +326,14 @@ func (s *bridgeServer) meetingRequest(req request) response {
 			return success(req.ID, map[string]any{"stopped": true})
 		}
 		s.mu.Unlock()
+		if req.Op == "meeting_accept" {
+			if !m.acceptReplies() {
+				return failure(req.ID, "no_pending_reply", "没有可切换的新建议")
+			}
+		}
+		if req.Op == "meeting_cancel" {
+			m.cancelWork()
+		}
 		return success(req.ID, m.snapshot())
 	}
 	return failure(req.ID, "unsupported_op", msgUnsupported)
@@ -333,7 +348,11 @@ func (s *bridgeServer) runTask(ctx context.Context, task *bridgeTask, req reques
 		// Provider errors and unexpected panics may contain private request data.
 		// Reaching the protocol requires a fixed recovery string or a constant fallback.
 		defer func() { _ = recover() }()
-		reply = processRequest(ctx, req)
+		if req.Op == "meeting_replies" || req.Op == "meeting_refine" || req.Op == "meeting_compose" {
+			reply = s.meetingTask(ctx, req)
+		} else {
+			reply = processRequest(ctx, req)
+		}
 	}()
 
 	s.mu.Lock()
@@ -345,6 +364,40 @@ func (s *bridgeServer) runTask(ctx context.Context, task *bridgeTask, req reques
 	delete(s.active, req.ID)
 	s.mu.Unlock()
 	s.send(reply)
+}
+
+func (s *bridgeServer) meetingTask(ctx context.Context, req request) response {
+	s.mu.Lock()
+	m := s.meeting
+	s.mu.Unlock()
+	if m == nil || req.SessionID == "" || req.SessionID != m.id {
+		return failure(req.ID, "stale_meeting", "会议已停止或更换")
+	}
+	if len(req.Instruction) > 8<<10 || !utf8.ValidString(req.Instruction) {
+		return failure(req.ID, "invalid_request", "会议指令超出长度限制")
+	}
+	var err error
+	switch req.Op {
+	case "meeting_replies":
+		err = m.runReplies(ctx, 0)
+	case "meeting_refine":
+		if req.ReplyIndex < 0 || req.ReplyIndex > 2 || len(req.Instruction) == 0 {
+			return failure(req.ID, "invalid_request", "请选择回复并输入调整指令")
+		}
+		err = m.refine(ctx, req.ReplyIndex, req.Instruction)
+	case "meeting_compose":
+		if len(req.Instruction) == 0 {
+			return failure(req.ID, "invalid_request", "请输入想表达的内容")
+		}
+		err = m.compose(ctx, req.Instruction)
+	}
+	if ctx.Err() != nil {
+		return contextFailure(req.ID, ctx.Err())
+	}
+	if err != nil {
+		return providerFailure(req.ID, "meeting_inference_failed", "会议英文生成失败；请检查 LLM 服务后重试", err)
+	}
+	return success(req.ID, m.snapshot())
 }
 
 func decodeRequestPCM(req request, cfg coreconfig.Config) ([]byte, string) {

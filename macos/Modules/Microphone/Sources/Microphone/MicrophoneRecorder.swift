@@ -1,6 +1,8 @@
 #if os(macOS)
 import AppKit
 import AVFoundation
+import AudioToolbox
+import CoreAudio
 import Foundation
 
 public enum MicrophonePermissionStatus: Equatable {
@@ -10,7 +12,12 @@ public enum MicrophonePermissionStatus: Equatable {
     case restricted
 }
 
-/// Captures the *current system-default* macOS microphone through AVAudioEngine.
+public struct MicrophoneInputDevice: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let name: String
+}
+
+/// Captures the selected macOS microphone through AVAudioEngine.
 /// No simulated device, ASR, network work or Go integration lives in this package.
 ///
 /// The returned Data is headerless, 16,000 Hz, mono, signed little-endian PCM16,
@@ -32,6 +39,65 @@ public final class MicrophoneRecorder {
     private var deadline: Task<Void, Never>?
 
     public init() {}
+
+    /// Selectable physical devices are enumerated by the CoreAudio HAL.
+    /// Stable device UIDs survive device-index changes.
+    public static func availableDevices() -> [MicrophoneInputDevice] {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        let system = AudioObjectID(kAudioObjectSystemObject)
+        guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr,
+              size > 0 else { return [] }
+        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        let result = ids.withUnsafeMutableBufferPointer { buffer in
+            guard let pointer = buffer.baseAddress else { return OSStatus(-1) }
+            return AudioObjectGetPropertyData(system, &address, 0, nil, &size, pointer)
+        }
+        guard result == noErr else { return [] }
+        return ids.compactMap { id in
+            var streams = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyStreams,
+                mScope: kAudioDevicePropertyScopeInput,
+                mElement: kAudioObjectPropertyElementMain)
+            var streamBytes: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(id, &streams, 0, nil, &streamBytes) == noErr,
+                  streamBytes > 0,
+                  let uid = propertyString(id, selector: kAudioDevicePropertyDeviceUID),
+                  let name = propertyString(id, selector: kAudioObjectPropertyName),
+                  !uid.isEmpty else { return nil }
+            return MicrophoneInputDevice(id: uid, name: name)
+        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private static func propertyString(_ device: AudioDeviceID, selector: AudioObjectPropertySelector) -> String? {
+        var property = AudioObjectPropertyAddress(
+            mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var value: CFString?
+        var size = UInt32(MemoryLayout<CFString?>.size)
+        guard AudioObjectGetPropertyData(device, &property, 0, nil, &size, &value) == noErr else { return nil }
+        return value as String?
+    }
+
+    private static func deviceID(for uid: String) -> AudioDeviceID? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        let system = AudioObjectID(kAudioObjectSystemObject)
+        guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr else { return nil }
+        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        let result = ids.withUnsafeMutableBufferPointer {
+            guard let pointer = $0.baseAddress else { return OSStatus(-1) }
+            return AudioObjectGetPropertyData(system, &address, 0, nil, &size, pointer)
+        }
+        guard result == noErr else { return nil }
+        return ids.first { propertyString($0, selector: kAudioDevicePropertyDeviceUID) == uid }
+    }
 
     public var permissionStatus: MicrophonePermissionStatus {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
@@ -59,7 +125,7 @@ public final class MicrophoneRecorder {
         return permissionStatus
     }
 
-    public func start() async throws {
+    public func start(deviceUID: String = "") async throws {
         guard case .idle = state else { throw MicrophoneError.alreadyRecording }
         state = .starting
         let attempt = UUID()
@@ -72,11 +138,19 @@ public final class MicrophoneRecorder {
             case .denied, .notDetermined: throw MicrophoneError.permissionDenied
             case .restricted: throw MicrophoneError.permissionRestricted
             }
-            guard AVCaptureDevice.default(for: .audio) != nil else {
+            guard AVCaptureDevice.default(for: .audio) != nil || !deviceUID.isEmpty else {
                 throw MicrophoneError.noInputDevice
             }
             let instance = AVAudioEngine()
             let input = instance.inputNode
+            if !deviceUID.isEmpty {
+                guard let id = Self.deviceID(for: deviceUID),
+                      let unit = input.audioUnit else { throw MicrophoneError.noInputDevice }
+                var device = id
+                let result = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
+                    kAudioUnitScope_Global, 0, &device, UInt32(MemoryLayout<AudioDeviceID>.size))
+                guard result == noErr else { throw MicrophoneError.engineStartFailed }
+            }
             let format = input.outputFormat(forBus: 0)
             guard format.channelCount > 0, format.sampleRate > 0 else {
                 throw MicrophoneError.noInputDevice

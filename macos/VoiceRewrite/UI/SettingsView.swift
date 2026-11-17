@@ -82,6 +82,21 @@ struct SettingsView: View {
                     .accessibilityIdentifier("dictation_shortcut")
                 TextField("文字指令", text: $model.settings.textEditShortcut)
                     .accessibilityIdentifier("text_edit_shortcut")
+                HStack {
+                    Picker("麦克风输入设备", selection: $model.settings.microphoneUID) {
+                        Text("系统默认麦克风").tag("")
+                        ForEach(model.microphoneDevices) { device in
+                            Text(device.name).tag(device.id)
+                        }
+                    }
+                    .accessibilityIdentifier("microphone_device")
+                    Button("刷新设备") { model.refreshMicrophoneDevices() }
+                }
+                if !model.settings.microphoneUID.isEmpty &&
+                   !model.microphoneDevices.contains(where: { $0.id == model.settings.microphoneUID }) {
+                    Text("已保存的麦克风不在当前设备列表中，录音会提示设备不可用。")
+                        .font(.footnote).foregroundStyle(.orange)
+                }
                 Text("与 Windows 使用同一套写法，例如 Ctrl+Alt+R、F8 或 Mouse4。Alt 在 macOS 上是 Option。未配置鼠标绑定时，Mouse4 默认听写、Mouse5 默认改写；显式配置鼠标键时仅拦截已分配的侧键。F21–F24 在 macOS 上不可用，三个功能不能绑定同一个按键。")
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("input_note_macos")
@@ -114,6 +129,7 @@ struct SettingsView: View {
             model.markConnectionProbeStale(.selectedTask)
             model.invalidateDiscoveredModels(.selectedTask)
         }
+        .onAppear { model.refreshMicrophoneDevices() }
         .formStyle(.grouped)
     }
 }
