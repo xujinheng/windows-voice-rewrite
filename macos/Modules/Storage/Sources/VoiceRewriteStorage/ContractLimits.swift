@@ -15,7 +15,7 @@ public enum ContractLimits {
     public static let defaultTextModel = "auto"
     public static let meetingASRMultipart = "multipart"
     public static let meetingASRLlamaPrefix = "llama-prefix"
-    public static let defaultMeetingASRMode = "llama-prefix"
+    public static let defaultMeetingASRMode = "multipart"
     public static let meetingASRMultipartTitle = "分段音频识别"
     public static let meetingASRLlamaPrefixTitle = "累积音频 / 前缀续写"
     public static let meetingASRModes = [meetingASRMultipart, meetingASRLlamaPrefix]

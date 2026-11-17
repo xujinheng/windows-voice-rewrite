@@ -305,7 +305,7 @@ func emitLimits(moduleRoot string) (string, error) {
 	for _, item := range []struct{ name, value string }{
 		{"meetingASRMultipart", coreconfig.MeetingASRMultipart},
 		{"meetingASRLlamaPrefix", coreconfig.MeetingASRLlamaPrefix},
-		{"defaultMeetingASRMode", coreconfig.Defaults().MeetingASRMode},
+		{"defaultMeetingASRMode", coreconfig.MeetingASRMultipart},
 		{"meetingASRMultipartTitle", coreconfig.MeetingASRModeTitle(coreconfig.MeetingASRMultipart)},
 		{"meetingASRLlamaPrefixTitle", coreconfig.MeetingASRModeTitle(coreconfig.MeetingASRLlamaPrefix)},
 	} {
