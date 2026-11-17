@@ -441,6 +441,12 @@ final class WorkspaceModel: ObservableObject {
     /// of native OS hotkey registration. Settings UI owns how this is presented.
     func setKeyboardHoldEnabled(_ enabled: Bool) {
         guard keyboardHoldEnabled != enabled else { return }
+        guard !isRecording, !isStarting, !isProcessing,
+              !meetingVoiceRecording, !meetingVoiceStarting,
+              keyboardGate.action == nil else {
+            interactionStatus = "请先结束当前语音操作，再切换键盘录音模式"
+            return
+        }
         keyboardGate.clear()
         keyboardHoldSequence &+= 1
         keyboardHoldEnabled = enabled
@@ -1627,6 +1633,7 @@ final class WorkspaceModel: ObservableObject {
                 }
                 presentSelectionCue(captured)
                 if captured.leave {
+                    guard resultGeneration.accepts(token) else { return }
                     isStarting = false
                     finishKeyboardStart(.rewrite)
                     return
@@ -1646,6 +1653,7 @@ final class WorkspaceModel: ObservableObject {
                     }
                     presentSelectionCue(ready)
                     if ready.leave {
+                        guard resultGeneration.accepts(token) else { return }
                         isStarting = false
                         finishKeyboardStart(.rewrite)
                         return
@@ -1658,6 +1666,7 @@ final class WorkspaceModel: ObservableObject {
                 await cancelSelectionCue(failed, generation: generation)
                 presentSelectionCue(failed)
             }
+            guard resultGeneration.accepts(token) else { return }
             isStarting = false
             stopWhenSideMouseReleased(.rewrite)
             finishKeyboardStart(.rewrite)
@@ -1691,6 +1700,7 @@ final class WorkspaceModel: ObservableObject {
                 activeInsert = snapshot
             }
             guard arm.startMicrophone else {
+                guard resultGeneration.accepts(token) else { return }
                 isStarting = false
                 finishKeyboardStart(.dictation)
                 return
