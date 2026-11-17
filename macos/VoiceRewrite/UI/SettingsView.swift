@@ -1,8 +1,14 @@
-// Source: voice-rewrite/internal/contract
+// Source: voice-rewrite/internal/contract and voice-rewrite/internal/core/settingsform
 import SwiftUI
 import AppKit
 import VoiceRewriteStorage
 import Microphone
+
+enum SettingsWindowMetrics {
+    static let width: CGFloat = 860
+    static let height: CGFloat = 530
+    static let minimumSize = NSSize(width: 480, height: 420)
+}
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
