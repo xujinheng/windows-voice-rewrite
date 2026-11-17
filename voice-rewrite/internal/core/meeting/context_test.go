@@ -118,7 +118,7 @@ func TestCompleteInjectsOnlyRelevantGlossaryIntoExpressAndCompose(t *testing.T) 
 				}
 				w.Header().Set("Content-Type", "text/event-stream")
 				chunk, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": map[string]string{"content": "Zhang Wei will join on Friday."}}}})
-				fmt.Fprintf(w, "data: %s\\n\\ndata: [DONE]\\n\\n", chunk)
+				fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", chunk)
 			}))
 			defer server.Close()
 			cfg := coreconfig.Defaults()
