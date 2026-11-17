@@ -121,13 +121,13 @@ func emitDelivery(path string) (string, error) {
 		}
 	}
 	return sourceNote("voice-rewrite/internal/core/delivery") +
-		"import Foundation\\n\\npublic enum DeliveryState: Int, Sendable {\\n" +
-		"    case blocked = " + values[names[0]] + "\\n" +
-		"    case sentUnverified = " + values[names[1]] + "\\n" +
-		"    case confirmed = " + values[names[2]] + "\\n" +
-		"    case uncertain = " + values[names[3]] + "\\n" +
-		"    public var requiresManualResult: Bool { self == .blocked || self == .uncertain }\\n" +
-		"}\\n", nil
+		"import Foundation\n\npublic enum DeliveryState: Int, Sendable {\n" +
+		"    case blocked = " + values[names[0]] + "\n" +
+		"    case sentUnverified = " + values[names[1]] + "\n" +
+		"    case confirmed = " + values[names[2]] + "\n" +
+		"    case uncertain = " + values[names[3]] + "\n" +
+		"    public var requiresManualResult: Bool { self == .blocked || self == .uncertain }\n" +
+		"}\n", nil
 }
 
 func emitSideHold(path string) (string, error) {
