@@ -413,11 +413,11 @@ func ValidateStartup(mode, dictation, rewrite, exit string) (Startup, error) {
 	if err != nil {
 		return Startup{}, err
 	}
-	if exitVK == 0 {
-		return Startup{}, errors.New(KeyRejectedMessage)
-	}
 	if exitMouse {
 		return Startup{}, fmt.Errorf(MouseExitPrefix+"%q must use the mouse hook", exit)
+	}
+	if exitVK == 0 {
+		return Startup{}, errors.New(KeyRejectedMessage)
 	}
 	out.ExitMods, out.ExitVK = exitMods, exitVK
 	sameRewriteExit := !rewriteMouse && out.RewriteMods == exitMods && out.RewriteVK == exitVK
