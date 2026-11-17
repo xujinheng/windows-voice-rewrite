@@ -1,18 +1,18 @@
 package contract
 
 const (
-	SaveButton       = 9101
-	CloseButton      = 9102
-	AdvancedButton   = 9103
-	ProbeASRButton   = 9104
-	ProbeLLMButton   = 9105
+	SaveButton        = 9101
+	CloseButton       = 9102
+	AdvancedButton    = 9103
+	ProbeASRButton    = 9104
+	ProbeLLMButton    = 9105
 	DiscoverASRButton = 9150
 	DiscoverLLMButton = 9151
-	NavSpeech        = 9120
-	NavAI            = 9121
-	NavInput         = 9122
-	CaptureRewrite   = 9140
-	CaptureDictation = 9141
+	NavSpeech         = 9120
+	NavAI             = 9121
+	NavInput          = 9122
+	CaptureRewrite    = 9140
+	CaptureDictation  = 9141
 	// EndpointEdit is the first settings text field. The next fields use the
 	// following ids in catalog order.
 	EndpointEdit = 9130
