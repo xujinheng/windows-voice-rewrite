@@ -33,4 +33,36 @@ final class SystemAudioStartGateTests: XCTestCase {
         XCTAssertNil(gate.begin(streamExists: true))
         XCTAssertNotNil(gate.begin(streamExists: false))
     }
+    func testRepeatedCancelAndRestartRejectEveryPreviousStart() throws {
+        var gate = SystemAudioStartGate()
+        let first = try XCTUnwrap(gate.begin(streamExists: false))
+        gate.invalidate()
+        let second = try XCTUnwrap(gate.begin(streamExists: false))
+        gate.invalidate()
+        let third = try XCTUnwrap(gate.begin(streamExists: false))
+        gate.finish(first)
+        gate.finish(second)
+        XCTAssertFalse(gate.accepts(first))
+        XCTAssertFalse(gate.accepts(second))
+        XCTAssertTrue(gate.accepts(third))
+        gate.finish(third)
+        XCTAssertNil(gate.begin(streamExists: true))
+    }
+
+    func testSlowMainActorAudioDeliveryIsBoundedAndCanRecover() {
+        var gate = SystemAudioDeliveryGate(limit: 2)
+        XCTAssertTrue(gate.reserve(active: true))
+        XCTAssertTrue(gate.reserve(active: true))
+        XCTAssertFalse(gate.reserve(active: true))
+        XCTAssertEqual(gate.pending, 2)
+        gate.complete()
+        XCTAssertTrue(gate.reserve(active: true))
+        XCTAssertFalse(gate.reserve(active: false))
+        gate.complete()
+        gate.complete()
+        gate.complete() // a canceled completion cannot underflow the counter
+        XCTAssertEqual(gate.pending, 0)
+        XCTAssertTrue(gate.reserve(active: true))
+    }
+
 }

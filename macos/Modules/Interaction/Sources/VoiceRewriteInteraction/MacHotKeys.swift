@@ -12,15 +12,12 @@ private let carbonHotKeyCallback: EventHandlerUPP = { _, event, userData in
     guard result == noErr else { return result }
     let driver = Unmanaged<CarbonHotKeyDriver>.fromOpaque(userData).takeUnretainedValue()
     let identifier = hotKeyID.id
+    let pressed = GetEventKind(event) == UInt32(kEventHotKeyPressed)
     // Pin the foreground target when the OS delivers the hotkey, before any async work.
     let foregroundPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-    // The EventRef is valid only during this callback. Capture its kind now,
-    // before scheduling the native UI handler on the main actor.
-    let released = GetEventKind(event) == UInt32(kEventHotKeyReleased)
+    // Never block Carbon's event callback; delivery is always on the main actor.
     DispatchQueue.main.async {
-        MainActor.assumeIsolated {
-            driver.dispatch(identifier: identifier, foregroundPID: foregroundPID, released: released)
-        }
+        MainActor.assumeIsolated { driver.dispatch(identifier: identifier, pressed: pressed, foregroundPID: foregroundPID) }
     }
     return noErr
 }
@@ -33,10 +30,11 @@ public final class CarbonHotKeyDriver: HotKeyDriver {
     private var registrations: [HotKeyToken: (shortcut: HotKeyShortcut, ref: EventHotKeyRef)] = [:]
     private var nextIdentifier: UInt32 = 1
     private let onPressed: @MainActor (HotKeyShortcut, Int32?) -> Void
-    private let onReleased: (@MainActor (HotKeyShortcut, Int32?) -> Void)?
+    private let onReleased: @MainActor (HotKeyShortcut) -> Void
+    private var pressState = HotKeyPressState()
 
     public init(onPressed: @escaping @MainActor (HotKeyShortcut, Int32?) -> Void,
-                onReleased: (@MainActor (HotKeyShortcut, Int32?) -> Void)? = nil) {
+                onReleased: @escaping @MainActor (HotKeyShortcut) -> Void = { _ in }) {
         self.onPressed = onPressed
         self.onReleased = onReleased
     }
@@ -44,14 +42,14 @@ public final class CarbonHotKeyDriver: HotKeyDriver {
     public func register(_ shortcut: HotKeyShortcut) throws -> HotKeyToken {
         guard nextIdentifier < UInt32.max else { throw HotKeyFailure.registrationFailed(-1) }
         if eventHandler == nil {
-            var specs = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
-                                       eventKind: UInt32(kEventHotKeyPressed)),
-                         EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
-                                       eventKind: UInt32(kEventHotKeyReleased))]
+            var specs = [
+                EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+                EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
+            ]
             var handler: EventHandlerRef?
             let result = InstallEventHandler(GetApplicationEventTarget(), carbonHotKeyCallback,
-                                             specs.count, &specs, Unmanaged.passUnretained(self).toOpaque(),
-                                             &handler)
+                                             specs.count, &specs,
+                                             Unmanaged.passUnretained(self).toOpaque(), &handler)
             guard result == noErr, let handler else {
                 throw HotKeyFailure.registrationFailed(result)
             }
@@ -79,6 +77,7 @@ public final class CarbonHotKeyDriver: HotKeyDriver {
 
     public func unregister(_ token: HotKeyToken) {
         guard let registration = registrations.removeValue(forKey: token) else { return }
+        pressState.forget(token)
         UnregisterEventHotKey(registration.ref)
         if registrations.isEmpty, let eventHandler {
             RemoveEventHandler(eventHandler)
@@ -86,18 +85,30 @@ public final class CarbonHotKeyDriver: HotKeyDriver {
         }
     }
 
+    /// A lost OS key-up (sleep, keyboard disconnect, app activation change)
+    /// must not make the next press permanently invisible after the hold timeout.
+    public func resetHeldState() {
+        pressState.clear()
+    }
+
     /// Release all Carbon objects on app exit, even if registry teardown was skipped.
     public func shutdown() {
         for registration in registrations.values { UnregisterEventHotKey(registration.ref) }
         registrations.removeAll()
+        pressState.clear()
         if let eventHandler { RemoveEventHandler(eventHandler) }
         eventHandler = nil
     }
 
-    fileprivate func dispatch(identifier: UInt32, foregroundPID: Int32?, released: Bool) {
-        guard let registration = registrations[HotKeyToken(id: identifier)] else { return }
-        if released { onReleased?(registration.shortcut, foregroundPID) }
-        else { onPressed(registration.shortcut, foregroundPID) }
+    fileprivate func dispatch(identifier: UInt32, pressed: Bool, foregroundPID: Int32?) {
+        let token = HotKeyToken(id: identifier)
+        guard let registration = registrations[token],
+              pressState.transition(token, pressed: pressed) else { return }
+        if pressed {
+            onPressed(registration.shortcut, foregroundPID)
+        } else {
+            onReleased(registration.shortcut)
+        }
     }
 
     deinit { MainActor.assumeIsolated { shutdown() } }

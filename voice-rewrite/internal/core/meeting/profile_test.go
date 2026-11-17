@@ -23,7 +23,7 @@ func TestAcceptProfileKeepsTrimAndRejectsRawLength(t *testing.T) {
 	}
 }
 
-func TestAcceptRefineUsesThreeChoicesAndTwoThousandRunes(t *testing.T) {
+func TestAcceptRefineUsesThreeChoicesAndSixHundredRunes(t *testing.T) {
 	got, ok := AcceptRefine(2, "  shorter please  ")
 	if !ok || got != "shorter please" {
 		t.Fatalf("accepted refine: %q %v", got, ok)
@@ -37,13 +37,13 @@ func TestAcceptRefineUsesThreeChoicesAndTwoThousandRunes(t *testing.T) {
 	if _, ok = AcceptRefine(0, "   "); ok {
 		t.Fatal("blank instruction accepted")
 	}
-	if _, ok = AcceptRefine(1, strings.Repeat("调", MaxRefineInstructionRunes)); !ok {
-		t.Fatal("2000-rune instruction rejected")
+	if _, ok = AcceptRefine(1, strings.Repeat("调", RefineFieldLimit)); !ok {
+		t.Fatal("600-rune instruction rejected")
 	}
-	if RefineFieldLimit != 600 || RefineFieldLimit >= MaxRefineInstructionRunes {
+	if RefineFieldLimit != 600 {
 		t.Fatal("field limit")
 	}
-	if _, ok = AcceptRefine(1, strings.Repeat("调", MaxRefineInstructionRunes+1)); ok {
-		t.Fatal("2001-rune instruction accepted")
+	if _, ok = AcceptRefine(1, strings.Repeat("调", RefineFieldLimit+1)); ok {
+		t.Fatal("601-rune instruction accepted")
 	}
 }

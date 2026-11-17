@@ -74,6 +74,15 @@ private struct MenuBarControlCenter: View {
         .disabled(busy)
         Button("取消当前语音任务") { model.cancelCurrent() }
             .disabled(!busy)
+        Menu("键盘录音模式") {
+            Button(model.keyboardHoldEnabled ? "✓ 按住录音，松开结束" : "按住录音，松开结束") {
+                model.setKeyboardHoldEnabled(true)
+            }
+            Button(model.keyboardHoldEnabled ? "点击开始／再次点击结束" : "✓ 点击开始／再次点击结束") {
+                model.setKeyboardHoldEnabled(false)
+            }
+        }
+        .disabled(busy || model.meetingVoiceRecording || model.meetingVoiceStarting)
         Divider()
         Button("恢复最近结果") {
             if let entry = model.sessionHistory.first {

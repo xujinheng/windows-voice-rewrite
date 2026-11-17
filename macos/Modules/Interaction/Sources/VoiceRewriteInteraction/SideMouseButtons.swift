@@ -107,6 +107,14 @@ struct SideButtonHoldState {
         cancelledReleases.removeValue(forKey: button) ?? .ignored
     }
 
+    /// An event tap can be disabled while a button is physically down.
+    /// Expiring its unmatched release marker permits the next real press.
+    mutating func expireCancelledReleases() -> [Int] {
+        let buttons = Array(cancelledReleases.keys)
+        cancelledReleases.removeAll()
+        return buttons
+    }
+
     mutating func clear() -> Bool {
         let hadActive = pressed.values.contains { $0.active }
         pressed.removeAll()
@@ -135,6 +143,7 @@ public final class SideMouseButtonDriver {
     private let onRelease: @MainActor (SideMouseAction) -> Void
     private let onCancel: @MainActor () -> Void
     private let onObservedButton: @MainActor (Int) -> Void
+    private let onFault: @MainActor (SideMouseFailure) -> Void
 
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
@@ -175,7 +184,8 @@ public final class SideMouseButtonDriver {
         onHold: @escaping @MainActor (SideMouseAction, Int32?) -> Void,
         onRelease: @escaping @MainActor (SideMouseAction) -> Void,
         onCancel: @escaping @MainActor () -> Void,
-        onObservedButton: @escaping @MainActor (Int) -> Void = { _ in }
+        onObservedButton: @escaping @MainActor (Int) -> Void = { _ in },
+        onFault: @escaping @MainActor (SideMouseFailure) -> Void = { _ in }
     ) {
         self.threshold = threshold
         self.bindings = bindings
@@ -185,19 +195,21 @@ public final class SideMouseButtonDriver {
         self.onRelease = onRelease
         self.onCancel = onCancel
         self.onObservedButton = onObservedButton
+        self.onFault = onFault
     }
 
     public func start() throws {
         guard AXIsProcessTrusted() else { throw SideMouseFailure.accessibilityDenied }
         if let tap {
-            guard CFMachPortIsValid(tap) else { throw SideMouseFailure.eventTapUnavailable }
-            if !CGEvent.tapIsEnabled(tap: tap) {
-                CGEvent.tapEnable(tap: tap, enable: true)
+            if CFMachPortIsValid(tap) {
+                if !CGEvent.tapIsEnabled(tap: tap) {
+                    CGEvent.tapEnable(tap: tap, enable: true)
+                }
+                if CGEvent.tapIsEnabled(tap: tap) { return }
             }
-            guard CGEvent.tapIsEnabled(tap: tap) else {
-                throw SideMouseFailure.eventTapUnavailable
-            }
-            return
+            // Permission changes and wake-up can invalidate a Mach port.
+            // Never strand the driver with a nonfunctional retained tap.
+            shutdown()
         }
         let mask = (CGEventMask(1) << CGEventType.otherMouseDown.rawValue)
             | (CGEventMask(1) << CGEventType.otherMouseUp.rawValue)
@@ -239,15 +251,23 @@ public final class SideMouseButtonDriver {
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             let pending = state.hasPendingPress
-            let active = state.clear()
-            downEvents.removeAll()
+            let active = state.reset()
             targetPIDs.removeAll()
             DispatchQueue.main.async { [weak self] in
-                if active { self?.onCancel() }
-                else if pending { self?.onPreviewDismissed() }
+                guard let self else { return }
+                if active { self.onCancel() }
+                else if pending { self.onPreviewDismissed() }
+                // Carbon/Quartz may disable a tap after a stall or OS
+                // permission change. Re-enable or rebuild rather than
+                // silently leaving Mouse4/5 without a listener.
+                do { try self.start() }
+                catch { self.onFault(.eventTapUnavailable) }
             }
-            if type == .tapDisabledByTimeout, let tap {
-                CGEvent.tapEnable(tap: tap, enable: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard let self else { return }
+                for button in self.state.expireCancelledReleases() {
+                    self.downEvents.removeValue(forKey: button)
+                }
             }
             return Unmanaged.passUnretained(event)
         }

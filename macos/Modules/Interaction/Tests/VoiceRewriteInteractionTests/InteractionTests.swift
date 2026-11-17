@@ -48,6 +48,24 @@ private final class FakeUptime: @unchecked Sendable {
 
 #if os(macOS)
 final class NativeClipboardReceiptTests: XCTestCase {
+    func testDictationTargetPolicyChecksWindowWhenAvailableWithoutRequiringAX() {
+        XCTAssertTrue(DictationTargetPolicy.maySend(
+            capturedPID: 123, foregroundPID: 123, secureInput: false))
+        XCTAssertFalse(DictationTargetPolicy.maySend(
+            capturedPID: 123, foregroundPID: 456, secureInput: false))
+        XCTAssertFalse(DictationTargetPolicy.maySend(
+            capturedPID: 123, foregroundPID: 123, secureInput: true))
+        XCTAssertTrue(DictationTargetPolicy.sameWindow(captured: nil, current: 42))
+        XCTAssertTrue(DictationTargetPolicy.sameWindow(captured: 42, current: nil))
+        XCTAssertTrue(DictationTargetPolicy.sameWindow(captured: 42, current: 42))
+        XCTAssertFalse(DictationTargetPolicy.sameWindow(captured: 42, current: 99))
+        XCTAssertFalse(DictationTargetPolicy.canConfirmReadback(
+            original: "same 😀", expected: "same 😀"),
+            "unchanged AXValue is not proof that Cmd+V reached the editor")
+        XCTAssertTrue(DictationTargetPolicy.canConfirmReadback(
+            original: "Before", expected: "Before听写"))
+    }
+
     func testLazyPasteboardReportsActualTextRead() throws {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -293,6 +311,21 @@ private final class FakeHotKeyDriver: HotKeyDriver {
 }
 
 final class HotKeyTests: XCTestCase {
+    func testCarbonKeyReleaseDebouncesAndDoesNotReplayAfterUnregister() {
+        var ledger = HotKeyPressState()
+        let first = HotKeyToken(id: 1), second = HotKeyToken(id: 2)
+        XCTAssertTrue(ledger.transition(first, pressed: true))
+        XCTAssertFalse(ledger.transition(first, pressed: true))
+        XCTAssertTrue(ledger.transition(second, pressed: true))
+        XCTAssertTrue(ledger.transition(first, pressed: false))
+        XCTAssertFalse(ledger.transition(first, pressed: false))
+        ledger.forget(second)
+        XCTAssertFalse(ledger.transition(second, pressed: false))
+        XCTAssertTrue(ledger.transition(first, pressed: true))
+        ledger.clear()
+        XCTAssertFalse(ledger.transition(first, pressed: false))
+    }
+
     func testRegisterDuplicateConflictAndRelease() async throws {
         try await MainActor.run {
         let driver = FakeHotKeyDriver(), registry = HotKeyRegistry(driver: driver)
