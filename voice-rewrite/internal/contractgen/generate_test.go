@@ -50,7 +50,8 @@ func TestGenerateHostFilesFromCore(t *testing.T) {
 	settings := first[filepath.Join(filepath.Dir(root), "macos/VoiceRewrite/UI/SettingsView.swift")]
 	for _, piece := range []string{
 		"测试连接", "asr_base_url", "nav_speech", "nav_writing", "nav_input",
-		"capture_rewrite", "capture_dictation", "meeting_asr_mode",
+		"capture_rewrite", "capture_dictation", "capture_exit", "record_mode", "exit_shortcut",
+		"system_prompt", "max_response_tokens", "max_selected_characters", "meeting_asr_mode",
 		"Text(model.settingsStatus)", "onDisappear { stopCapture() }",
 	} {
 		if !strings.Contains(settings, piece) {
@@ -79,7 +80,17 @@ func TestGenerateHostFilesFromCore(t *testing.T) {
 		t.Fatal("history policy was not transcribed from Go")
 	}
 	limits := first[filepath.Join(filepath.Dir(root), "macos/Modules/Storage/Sources/VoiceRewriteStorage/ContractLimits.swift")]
-	if strings.Contains(limits, "macTextEditShortcut") {
+	for _, marker := range []string{
+        "maxSystemPromptBytes", "defaultRecordMode", "defaultExitShortcut",
+        "minResponseTokens", "maxResponseTokens", "defaultMaxResponseTokens",
+        "maxSelectedRunes", "defaultMaxSelectedRunes", "defaultCopyAttempts",
+        "defaultCopyTimeoutMS",
+    } {
+        if !strings.Contains(limits, marker) {
+            t.Fatalf("settings contract missing %s", marker)
+        }
+    }
+    if strings.Contains(limits, "macTextEditShortcut") {
 		t.Fatal("third global macOS keyboard shortcut was regenerated")
 	}
 	if !strings.Contains(limits, "func canonicalEndpoints") || !strings.Contains(limits, "func storedCredentialTooLong") || !strings.Contains(limits, "trimmed.contains(\"://\")") || !strings.Contains(limits, "func baseURLEscapesOK") || !strings.Contains(limits, "\"%25\"") {
