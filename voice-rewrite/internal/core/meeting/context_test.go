@@ -40,7 +40,7 @@ func TestPrepareQuerySeparatesLiteralSpeechFromIntentAndRelevantHistory(t *testi
 		t.Fatalf("caption should see vocabulary but not a transcript recap: %+v", caption)
 	}
 	replies := PrepareQuery(cfg, Query{Mode: "replies", Latest: "Should we proceed?", Prior: prior})
-	if len(replies.Prior) != 2 || replies.Terms != cfg.MeetingTerms || replies.Background != cfg.MeetingBackground {
+	if len(replies.Prior) != 2 || replies.Terms != "" || replies.Background != cfg.MeetingBackground {
 		t.Fatalf("requested replies must preserve bounded user profile: %+v", replies)
 	}
 }
