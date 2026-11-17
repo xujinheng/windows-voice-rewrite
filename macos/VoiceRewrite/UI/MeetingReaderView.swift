@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import VoiceRewriteStorage
 
 // Windows Meeting HUD: Chinese, English, history, replies, expression, source.
 enum MeetingReaderLayout {
