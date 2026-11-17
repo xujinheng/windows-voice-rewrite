@@ -19,6 +19,7 @@ import (
 	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/jsonl"
+	meetingcore "voicerewrite/internal/core/meeting"
 	"voicerewrite/internal/core/provider"
 	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/shortcut"
@@ -381,13 +382,14 @@ func (s *bridgeServer) meetingTask(ctx context.Context, req request) response {
 	case "meeting_replies":
 		err = m.runReplies(ctx, 0)
 	case "meeting_refine":
-		if req.ReplyIndex < 0 || req.ReplyIndex > 2 || len(req.Instruction) == 0 {
-			return failure(req.ID, "invalid_request", "请选择回复并输入调整指令")
+		if req.ReplyIndex < 0 || req.ReplyIndex > 2 ||
+			!meetingcore.ValidInstruction(req.Instruction) {
+			return failure(req.ID, "invalid_request", "请选择回复并输入 2000 字以内的调整指令")
 		}
 		err = m.refine(ctx, req.ReplyIndex, req.Instruction)
 	case "meeting_compose":
-		if len(req.Instruction) == 0 {
-			return failure(req.ID, "invalid_request", "请输入想表达的内容")
+		if !meetingcore.ValidInstruction(req.Instruction) {
+			return failure(req.ID, "invalid_request", "请输入 2000 字以内想表达的内容")
 		}
 		err = m.compose(ctx, req.Instruction)
 	}
@@ -395,7 +397,18 @@ func (s *bridgeServer) meetingTask(ctx context.Context, req request) response {
 		return contextFailure(req.ID, ctx.Err())
 	}
 	if err != nil {
-		return providerFailure(req.ID, "meeting_inference_failed", "会议英文生成失败；请检查 LLM 服务后重试", err)
+		switch {
+		case errors.Is(err, errMeetingNoFinalTurn):
+			return failure(req.ID, "invalid_request", meetingcore.RepliesWait)
+		case errors.Is(err, errMeetingInvalidReply):
+			return failure(req.ID, "invalid_request", "请选择一条完整英文建议后再微调")
+		case errors.Is(err, context.Canceled), errors.Is(err, meetingcore.ErrPreempted):
+			return failure(req.ID, "canceled", msgCanceled)
+		case errors.Is(err, context.DeadlineExceeded):
+			return failure(req.ID, "timeout", msgTimedOut)
+		default:
+			return providerFailure(req.ID, "meeting_inference_failed", "会议英文生成失败；请检查 LLM 服务后重试", err)
+		}
 	}
 	return success(req.ID, m.snapshot())
 }
