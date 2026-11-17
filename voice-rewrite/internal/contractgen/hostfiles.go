@@ -825,10 +825,10 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 			return "", err
 		}
 		if control.ID == "max_response_tokens" {
-			return "                Stepper(\"响应 Token 上限：\\(model.settings.maxResponseTokens)\", value: $model.settings.maxResponseTokens, in: ContractLimits.minResponseTokens...ContractLimits.maxResponseTokens, step: 64)\n                    " + id + "\n", nil
+			return "                Stepper(\"响应 Token 上限：\\(model.settings.maxResponseTokens)\", value: $model.settings.maxResponseTokens, in: ContractLimits.minResponseTokens...ContractLimits.maxResponseTokens)\n                    " + id + "\n", nil
 		}
 		if control.ID == "max_selected_characters" {
-			return "                Stepper(\"选区字符上限：\\(model.settings.maxSelectedRunes)\", value: $model.settings.maxSelectedRunes, in: 1...ContractLimits.maxSelectedRunes, step: 100)\n                    " + id + "\n", nil
+			return "                Stepper(\"选区字符上限：\\(model.settings.maxSelectedRunes)\", value: $model.settings.maxSelectedRunes, in: 1...ContractLimits.maxSelectedRunes)\n                    " + id + "\n", nil
 		}
 		return "                Stepper(\"" + control.Label + "：\\(model.settings.maxRecordSeconds) 秒\",\n                        value: $model.settings.maxRecordSeconds, in: MacSettings.recordSeconds)\n                    " + id + "\n", nil
 	case contract.Button:
