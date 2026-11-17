@@ -219,7 +219,9 @@ public final class RightModifierHoldDriver {
             return Unmanaged.passUnretained(event)
         }
         guard let key else { return Unmanaged.passUnretained(event) }
-        if !pressed {
+        // flagsChanged is emitted once per physical transition. A same-side
+        // key-up can still carry .maskControl when left Control is held.
+        if state.held == key || !pressed {
             if let released = state.release(key) {
                 DispatchQueue.main.async { [weak self] in self?.onRelease(released) }
             }
