@@ -56,6 +56,7 @@ type request struct {
 	AudioEpoch     uint64          `json:"audio_epoch"`
 	ReplyIndex     int             `json:"reply_index"`
 	ViewButton     int             `json:"button_id"`
+	FocusExpression bool           `json:"focus_expression"`
 }
 
 type bridgeError struct {
@@ -348,8 +349,12 @@ func (s *bridgeServer) meetingRequest(req request) response {
 				return failure(req.ID, "no_pending_reply", "没有可切换的新建议")
 			}
 		}
-		if req.Op == "meeting_view" && !m.applyViewButton(req.ViewButton) {
-			return failure(req.ID, "invalid_request", "不支持的会议视图操作")
+		if req.Op == "meeting_view" {
+			if req.FocusExpression {
+				m.focusExpression()
+			} else if !m.applyViewButton(req.ViewButton) {
+				return failure(req.ID, "invalid_request", "不支持的会议视图操作")
+			}
 		}
 		if req.Op == "meeting_cancel" {
 			m.cancelWork()
