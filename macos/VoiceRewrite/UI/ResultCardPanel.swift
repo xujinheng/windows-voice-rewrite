@@ -18,8 +18,8 @@ enum ResultApplyReceipt: Equatable {
     case unsafe
 }
 
-// H supplies these closures with the original SelectionSnapshot and task generation.
-// Never grant apply access to preview-only, canceled, history, or dictation cards.
+// Apply belongs only to a live editable selection with a captured original target
+// and task generation. Preview, history, and dictation cards expose copy only.
 struct ResultCardApply {
     let revalidate: @MainActor () async -> ResultApplyAuthorization
     let replace: @MainActor (String) async -> ResultApplyReceipt
@@ -83,7 +83,7 @@ final class ResultCardActionSession: ObservableObject {
     }
 }
 
-/// Result-card geometry comes from the generated popup rules.
+/// Result-card dimensions and standard controls follow the generated popup rules.
 @MainActor
 final class ResultCardPanel {
     static let shared = ResultCardPanel()
