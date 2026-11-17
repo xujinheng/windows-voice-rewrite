@@ -32,7 +32,7 @@ func TestSettingsCatalogKeepsSharedPagesAndOrder(t *testing.T) {
 		t.Fatalf("windows input: %v", windowsInput)
 	}
 	macInput := ids(Stacked("input", MacOS))
-	if join(macInput) != "max_record_seconds rewrite_shortcut dictation_shortcut text_edit_shortcut microphone" {
+	if join(macInput) != "rewrite_shortcut dictation_shortcut microphone" {
 		t.Fatalf("macos input: %v", macInput)
 	}
 	for _, control := range Controls() {
@@ -44,6 +44,9 @@ func TestSettingsCatalogKeepsSharedPagesAndOrder(t *testing.T) {
 	probe, pok := Find("probe_asr")
 	if !ok || !pok || save.Label != "保存设置" || probe.Label != "测试连接" {
 		t.Fatalf("actions: %+v %+v", save, probe)
+	}
+	if _, ok := Find("text_edit_shortcut"); ok {
+		t.Fatal("third global shortcut must not appear in settings")
 	}
 	if len(PageControls("speech", Windows)) != len(PageControls("speech", MacOS)) {
 		t.Fatal("speech page controls diverged")
