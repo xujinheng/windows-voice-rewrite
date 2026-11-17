@@ -160,7 +160,7 @@ final class WorkspaceModel: ObservableObject {
     private var activeVoiceSelection: (snapshot: SelectionSnapshot, generation: UInt64)?
     private var activeVoiceTargetPID: Int32?
     private var hotKeyDriver: CarbonHotKeyDriver?
-    private var rightModifierDriver: RightModifierHoldDriver?
+    private var rightModifierDriver: MacModifierHoldDriver?
     private var shortcutCaptureActive = false
     private var hotKeys: HotKeyRegistry?
     private var sideMouse: SideMouseButtonDriver?
@@ -383,8 +383,8 @@ final class WorkspaceModel: ObservableObject {
     /// Register a listen-only macOS modifier tap without touching Carbon's
     /// key-combination registry. Installing the tap first keeps old bindings
     /// active when permissions are missing.
-    private func makeRightModifierDriver() throws -> RightModifierHoldDriver {
-        let driver = rightModifierDriver ?? RightModifierHoldDriver(
+    private func makeModifierHoldDriver() throws -> MacModifierHoldDriver {
+        let driver = rightModifierDriver ?? MacModifierHoldDriver(
             onHold: { [weak self] key, pid in
                 guard let self, let bound = self.activeShortcutPlan else { return }
                 if key == bound.modifierDictation {
@@ -437,9 +437,9 @@ final class WorkspaceModel: ObservableObject {
             dictation: MacShortcut.display(dictation.normalized),
             rewrite: MacShortcut.display(rewrite.normalized))
         let needsModifier = next.modifierDictation != nil || next.modifierRewrite != nil
-        var candidate: RightModifierHoldDriver?
+        var candidate: MacModifierHoldDriver?
         do {
-            if needsModifier { candidate = try makeRightModifierDriver() }
+            if needsModifier { candidate = try makeModifierHoldDriver() }
             if let registry = hotKeys {
                 try registry.replace(with: next.keyboard)
             } else {
@@ -481,7 +481,7 @@ final class WorkspaceModel: ObservableObject {
             keyboardHoldEnabled = previous?.recordMode == "hold"
             if let previous,
                previous.modifierDictation != nil || previous.modifierRewrite != nil {
-                let driver = try makeRightModifierDriver()
+                let driver = try makeModifierHoldDriver()
                 driver.setBindings(dictation: previous.modifierDictation, rewrite: previous.modifierRewrite)
                 driver.setSuspended(shortcutCaptureActive)
                 driver.setVoicePaused(voicePaused)

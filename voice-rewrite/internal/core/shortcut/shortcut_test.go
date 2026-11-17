@@ -189,9 +189,11 @@ func TestMacKeyboardDefaultsStayKeyboardShortcuts(t *testing.T) {
 	}
 }
 
-func TestMacRightModifiersParseButWindowsRejectsTheirRegistration(t *testing.T) {
+func TestMacSideModifiersParseButWindowsRejectsTheirRegistration(t *testing.T) {
 	for _, tc := range []struct{ raw, canonical string }{
-		{"rightcontrol", "RightCtrl"}, {"rightalt", "RightOption"},
+		{"leftcontrol", "LeftCtrl"}, {"rightcontrol", "RightCtrl"},
+		{"leftalt", "LeftOption"}, {"rightalt", "RightOption"},
+		{"leftcmd", "LeftCommand"}, {"rightcmd", "RightCommand"},
 	} {
 		value, err := Bind(tc.raw)
 		if err != nil || value.Normalized != tc.canonical || value.Key != tc.canonical || value.Mouse || value.Ctrl || value.Alt || value.Shift {

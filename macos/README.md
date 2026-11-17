@@ -61,7 +61,7 @@ or rewritten words. Restoring a result opens the existing result card. The
 Meeting entry opens the workspace; choose its Meeting tab to start or configure
 capture. Pausing ordinary voice shortcuts also stops a live Meeting session and
 releases native capture. The Meeting reader's Capture Pause button separately
-stops native audio without ending the Meeting; Resume rechecks the selected source. Explicit update checks show a native alert, only open the official HTTPS releases page and never install software. The configurable global quit shortcut defaults to **Ctrl+Option+F10**; it is not a voice action. There are exactly two voice actions. On macOS, hold **right Control** to dictate and hold **right Option** to rewrite, then release to finish; Mouse4/Mouse5 remain enabled. The old Ctrl+Option+R/E chords remain available as optional custom bindings. The menu also provides the independent Meeting reader, offline demo, permissions recovery and diagnostic logs.
+stops native audio without ending the Meeting; Resume rechecks the selected source. Explicit update checks show a native alert, only open the official HTTPS releases page and never install software. The configurable global quit shortcut defaults to **Ctrl+Option+F10**; it is not a voice action. There are exactly two voice actions. On macOS, hold **right Control** to dictate and hold **right Option** to rewrite, then release to finish; Mouse4/Mouse5 remain enabled. In Settings > Shortcuts & Devices, click the key-learning control and press **any one of the six physical left/right Control, Option or Command keys** to assign it to either voice action. Left and right sides are distinct and a 250 ms hold is required; a normal keyboard chord cancels a pending hold instead of triggering voice. The standard MacBook Pro/Air keyboard has no right Control, so laptop-only users should choose **right Command** or **left Control** for dictation; **right Option** works for rewrite. The global quit shortcut cannot use a bare modifier. The old Ctrl+Option+R/E chords remain available as optional custom bindings. The menu also provides the independent Meeting reader, offline demo, permissions recovery and diagnostic logs.
 
 ## Use
 
@@ -78,7 +78,7 @@ To dictate into another app, focus its editable text field and trigger Mouse4 or
 The Settings view has three pages: Speech Recognition, AI Writing and Shortcuts & Devices.
 Each page retains unsaved values while navigating. The navigation rail and Save, Advanced
 and Close actions remain visible while the settings body scrolls. **Record a key** accepts
-a right Control / right Option flagsChanged event, a keyboard chord, or a physical Mouse4/Mouse5 event; Esc cancels recording a binding.
+a physical left/right Control, Option or Command key, a keyboard chord, or a Mouse4/Mouse5 event; Esc cancels recording a binding.
 Dictation and selected-text rewrite each have one voice shortcut; the separate **global exit
 shortcut** terminates the app and is not a third voice operation. Duplicate or unsupported
 bindings are refused rather than replacing an already active global shortcut.

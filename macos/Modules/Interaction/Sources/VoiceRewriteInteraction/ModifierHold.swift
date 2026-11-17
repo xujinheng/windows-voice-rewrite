@@ -4,31 +4,103 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
-/// Physical right-hand modifier key codes, independent of keyboard layout.
-public enum RightModifierKey: String, Equatable, Sendable {
-    case control = "RightCtrl"
-    case option = "RightOption"
+/// The six physical left/right keys, independent of the keyboard layout.
+/// Bare modifier holds belong to the macOS host and are never Carbon hotkeys.
+public enum MacModifierKey: String, CaseIterable, Hashable, Sendable {
+    case leftControl = "LeftCtrl"
+    case rightControl = "RightCtrl"
+    case leftOption = "LeftOption"
+    case rightOption = "RightOption"
+    case leftCommand = "LeftCommand"
+    case rightCommand = "RightCommand"
+
+    public init?(canonical: String) {
+        switch canonical.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "leftctrl", "leftcontrol": self = .leftControl
+        case "rightctrl", "rightcontrol": self = .rightControl
+        case "leftoption", "leftalt": self = .leftOption
+        case "rightoption", "rightalt": self = .rightOption
+        case "leftcommand", "leftcmd": self = .leftCommand
+        case "rightcommand", "rightcmd": self = .rightCommand
+        default: return nil
+        }
+    }
+
+    public init?(keyCode: Int64) {
+        switch keyCode {
+        case 59: self = .leftControl
+        case 62: self = .rightControl
+        case 58: self = .leftOption
+        case 61: self = .rightOption
+        case 55: self = .leftCommand
+        case 54: self = .rightCommand
+        default: return nil
+        }
+    }
 
     public var keyCode: Int64 {
         switch self {
-        case .control: return 62 // kVK_RightControl
-        case .option: return 61 // kVK_RightOption
+        case .leftControl: return 59
+        case .rightControl: return 62
+        case .leftOption: return 58
+        case .rightOption: return 61
+        case .leftCommand: return 55
+        case .rightCommand: return 54
+        }
+    }
+
+    public var otherSideKeyCode: CGKeyCode {
+        switch self {
+        case .leftControl: return 62
+        case .rightControl: return 59
+        case .leftOption: return 61
+        case .rightOption: return 58
+        case .leftCommand: return 54
+        case .rightCommand: return 55
+        }
+    }
+
+    public var groupFlag: CGEventFlags {
+        switch self {
+        case .leftControl, .rightControl: return .maskControl
+        case .leftOption, .rightOption: return .maskAlternate
+        case .leftCommand, .rightCommand: return .maskCommand
+        }
+    }
+
+    /// NSEvent flags for the same modifier family, used by key-learning UI.
+    public var captureFlag: NSEvent.ModifierFlags {
+        switch self {
+        case .leftControl, .rightControl: return .control
+        case .leftOption, .rightOption: return .option
+        case .leftCommand, .rightCommand: return .command
+        }
+    }
+
+    public var displayName: String {
+        switch self {
+        case .leftControl: return "左 Control（长按）"
+        case .rightControl: return "右 Control（长按）"
+        case .leftOption: return "左 Option（长按）"
+        case .rightOption: return "右 Option（长按）"
+        case .leftCommand: return "左 Command（长按）"
+        case .rightCommand: return "右 Command（长按）"
         }
     }
 }
 
-/// A bare right modifier only becomes voice input after a deliberate hold.
+/// A single physical modifier only becomes voice input after a deliberate hold.
 /// All flagsChanged/keyDown events pass through to the focused application.
 /// Once another key or modifier is used, it cannot re-arm until key-up.
-public struct RightModifierHoldState: Sendable {
-    public private(set) var held: RightModifierKey?
+public struct MacModifierHoldState: Sendable {
+    public private(set) var held: MacModifierKey?
     public private(set) var active = false
     private var blocked = false
     private var sequence: UInt64 = 0
 
     public init() {}
 
-    public mutating func press(_ key: RightModifierKey, unmodified: Bool) -> UInt64? {
+    public mutating func press(_ key: MacModifierKey, unmodified: Bool) -> UInt64? {
         if held != nil {
             _ = interrupt()
             return nil
@@ -40,14 +112,14 @@ public struct RightModifierHoldState: Sendable {
         return sequence
     }
 
-    public mutating func activate(_ key: RightModifierKey, token: UInt64) -> Bool {
+    public mutating func activate(_ key: MacModifierKey, token: UInt64) -> Bool {
         guard held == key, sequence == token, !blocked, !active else { return false }
         active = true
         return true
     }
 
     /// Returns an activated action that must be cancelled, not submitted.
-    public mutating func interrupt() -> RightModifierKey? {
+    public mutating func interrupt() -> MacModifierKey? {
         guard held != nil else { return nil }
         let canceled = active ? held : nil
         blocked = true
@@ -56,7 +128,7 @@ public struct RightModifierHoldState: Sendable {
     }
 
     /// Short presses are ignored; release an activated hold exactly once.
-    public mutating func release(_ key: RightModifierKey) -> RightModifierKey? {
+    public mutating func release(_ key: MacModifierKey) -> MacModifierKey? {
         guard held == key else { return nil }
         let released = active ? held : nil
         held = nil
@@ -65,7 +137,7 @@ public struct RightModifierHoldState: Sendable {
         return released
     }
 
-    public mutating func clear() -> RightModifierKey? {
+    public mutating func clear() -> MacModifierKey? {
         let canceled = active ? held : nil
         held = nil
         active = false
@@ -75,7 +147,7 @@ public struct RightModifierHoldState: Sendable {
     }
 }
 
-public enum RightModifierFailure: Error, LocalizedError {
+public enum MacModifierHoldFailure: Error, LocalizedError {
     case accessibilityDenied
     case eventTapUnavailable
 
@@ -89,35 +161,35 @@ public enum RightModifierFailure: Error, LocalizedError {
     }
 }
 
-private let rightModifierTapCallback: CGEventTapCallBack = { _, type, event, userData in
+private let macModifierTapCallback: CGEventTapCallBack = { _, type, event, userData in
     guard let userData else { return Unmanaged.passUnretained(event) }
-    let driver = Unmanaged<RightModifierHoldDriver>.fromOpaque(userData).takeUnretainedValue()
+    let driver = Unmanaged<MacModifierHoldDriver>.fromOpaque(userData).takeUnretainedValue()
     return MainActor.assumeIsolated { driver.handle(type: type, event: event) }
 }
 
-/// A listen-only Quartz tap: never consumes Right Control, Right Option, or
-/// combinations in another program. It shares the mouse driver's permission
+/// A listen-only Quartz tap: never consumes Control, Option, Command, or
+/// their combinations in another program. It shares the mouse driver's permission
 /// model without replacing its Mouse4/Mouse5 tap.
 @MainActor
-public final class RightModifierHoldDriver {
+public final class MacModifierHoldDriver {
     private let threshold: TimeInterval
-    private let onHold: @MainActor (RightModifierKey, Int32?) -> Void
-    private let onRelease: @MainActor (RightModifierKey) -> Void
+    private let onHold: @MainActor (MacModifierKey, Int32?) -> Void
+    private let onRelease: @MainActor (MacModifierKey) -> Void
     private let onCancel: @MainActor () -> Void
-    private let onFault: @MainActor (RightModifierFailure) -> Void
+    private let onFault: @MainActor (MacModifierHoldFailure) -> Void
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
-    private var state = RightModifierHoldState()
-    private var dictation: RightModifierKey?
-    private var rewrite: RightModifierKey?
+    private var state = MacModifierHoldState()
+    private var dictation: MacModifierKey?
+    private var rewrite: MacModifierKey?
     private var suspended = false
     private var paused = false
 
     public init(threshold: TimeInterval = SideHold.threshold,
-                onHold: @escaping @MainActor (RightModifierKey, Int32?) -> Void,
-                onRelease: @escaping @MainActor (RightModifierKey) -> Void,
+                onHold: @escaping @MainActor (MacModifierKey, Int32?) -> Void,
+                onRelease: @escaping @MainActor (MacModifierKey) -> Void,
                 onCancel: @escaping @MainActor () -> Void,
-                onFault: @escaping @MainActor (RightModifierFailure) -> Void = { _ in }) {
+                onFault: @escaping @MainActor (MacModifierHoldFailure) -> Void = { _ in }) {
         self.threshold = threshold
         self.onHold = onHold
         self.onRelease = onRelease
@@ -125,7 +197,7 @@ public final class RightModifierHoldDriver {
         self.onFault = onFault
     }
 
-    public func setBindings(dictation: RightModifierKey?, rewrite: RightModifierKey?) {
+    public func setBindings(dictation: MacModifierKey?, rewrite: MacModifierKey?) {
         guard self.dictation != dictation || self.rewrite != rewrite else { return }
         if state.clear() != nil { onCancel() }
         self.dictation = dictation
@@ -143,7 +215,7 @@ public final class RightModifierHoldDriver {
     }
 
     public func start() throws {
-        guard AXIsProcessTrusted() else { throw RightModifierFailure.accessibilityDenied }
+        guard AXIsProcessTrusted() else { throw MacModifierHoldFailure.accessibilityDenied }
         if let tap {
             if CFMachPortIsValid(tap) {
                 if !CGEvent.tapIsEnabled(tap: tap) { CGEvent.tapEnable(tap: tap, enable: true) }
@@ -156,11 +228,11 @@ public final class RightModifierHoldDriver {
         guard let port = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap,
             options: .listenOnly, eventsOfInterest: mask,
-            callback: rightModifierTapCallback, userInfo: Unmanaged.passUnretained(self).toOpaque()
-        ) else { throw RightModifierFailure.eventTapUnavailable }
+            callback: macModifierTapCallback, userInfo: Unmanaged.passUnretained(self).toOpaque()
+        ) else { throw MacModifierHoldFailure.eventTapUnavailable }
         guard let loopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0) else {
             CFMachPortInvalidate(port)
-            throw RightModifierFailure.eventTapUnavailable
+            throw MacModifierHoldFailure.eventTapUnavailable
         }
         tap = port
         source = loopSource
@@ -168,7 +240,7 @@ public final class RightModifierHoldDriver {
         CGEvent.tapEnable(tap: port, enable: true)
         guard CGEvent.tapIsEnabled(tap: port) else {
             shutdown()
-            throw RightModifierFailure.eventTapUnavailable
+            throw MacModifierHoldFailure.eventTapUnavailable
         }
     }
 
@@ -202,29 +274,24 @@ public final class RightModifierHoldDriver {
         }
         guard type == .flagsChanged else { return Unmanaged.passUnretained(event) }
         let code = event.getIntegerValueField(.keyboardEventKeycode)
-        let flags = event.flags
-        let key: RightModifierKey?
-        let pressed: Bool
-        switch code {
-        case RightModifierKey.control.keyCode:
-            key = .control
-            pressed = flags.contains(.maskControl)
-        case RightModifierKey.option.keyCode:
-            key = .option
-            pressed = flags.contains(.maskAlternate)
-        default:
+        guard let key = MacModifierKey(keyCode: code) else {
             if state.interrupt() != nil {
                 DispatchQueue.main.async { [weak self] in self?.onCancel() }
             }
             return Unmanaged.passUnretained(event)
         }
-        guard let key else { return Unmanaged.passUnretained(event) }
-        // flagsChanged is emitted once per physical transition. A same-side
-        // key-up can still carry .maskControl when left Control is held.
-        if state.held == key || !pressed {
+        let flags = event.flags
+        // A flagsChanged event uses the physical virtual keycode to identify
+        // which side moved. The aggregate flags cannot identify that side.
+        // For the held key, this event is its release even if the other side
+        // of the same modifier remains pressed.
+        if state.held == key {
             if let released = state.release(key) {
                 DispatchQueue.main.async { [weak self] in self?.onRelease(released) }
             }
+            return Unmanaged.passUnretained(event)
+        }
+        guard flags.contains(key.groupFlag) else {
             return Unmanaged.passUnretained(event)
         }
         guard dictation == key || rewrite == key else {
@@ -233,13 +300,9 @@ public final class RightModifierHoldDriver {
             }
             return Unmanaged.passUnretained(event)
         }
-        let otherKeys: CGEventFlags = [.maskCommand, .maskShift, .maskControl, .maskAlternate]
-        let expected: CGEventFlags = key == .control ? .maskControl : .maskAlternate
-        // The aggregate CG flags do not distinguish left/right of the same
-        // modifier. Also reject a concurrently held left-side counterpart.
-        let leftEquivalent: CGKeyCode = key == .control ? 59 : 58
-        let alone = flags.intersection(otherKeys) == expected &&
-            !CGEventSource.keyState(.combinedSessionState, key: leftEquivalent)
+        let ordinaryModifierFlags: CGEventFlags = [.maskCommand, .maskShift, .maskControl, .maskAlternate]
+        let alone = flags.intersection(ordinaryModifierFlags) == key.groupFlag &&
+            !CGEventSource.keyState(.combinedSessionState, key: key.otherSideKeyCode)
         if let token = state.press(key, unmodified: alone) {
             let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
             DispatchQueue.main.asyncAfter(deadline: .now() + threshold) { [weak self] in

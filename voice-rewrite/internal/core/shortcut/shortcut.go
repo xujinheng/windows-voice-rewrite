@@ -176,10 +176,18 @@ func Parse(raw string) (string, uint32, uint32, bool, error) {
 		return "Mouse5", 0, 0, true, nil
 	case "pause", "break":
 		return "Pause", noRepeat, 0x13, false, nil
+	case "leftctrl", "leftcontrol":
+		return "LeftCtrl", noRepeat, 0, false, nil // macOS flagsChanged, never RegisterHotKey
 	case "rightctrl", "rightcontrol":
-		return "RightCtrl", noRepeat, 0, false, nil // macOS flagsChanged, never RegisterHotKey
+		return "RightCtrl", noRepeat, 0, false, nil
+	case "leftoption", "leftalt":
+		return "LeftOption", noRepeat, 0, false, nil
 	case "rightoption", "rightalt":
 		return "RightOption", noRepeat, 0, false, nil
+	case "leftcommand", "leftcmd":
+		return "LeftCommand", noRepeat, 0, false, nil
+	case "rightcommand", "rightcmd":
+		return "RightCommand", noRepeat, 0, false, nil
 	}
 	parts := strings.Split(key, "+")
 	if len(parts) == 0 {

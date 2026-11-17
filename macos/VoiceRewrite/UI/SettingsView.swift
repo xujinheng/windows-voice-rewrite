@@ -2,6 +2,7 @@
 import SwiftUI
 import AppKit
 import VoiceRewriteStorage
+import VoiceRewriteInteraction
 import Microphone
 
 enum SettingsWindowMetrics {
@@ -253,7 +254,7 @@ struct SettingsView: View {
                 Button(captureTarget == "exit_shortcut" ? "等待按键…" : "录入按键") { beginCapture("exit_shortcut") }
                     .accessibilityIdentifier("capture_exit")
                                 }
-                Text("Mac 默认长按右 Control 听写、长按右 Option 改写；松开结束。Mouse4 听写、Mouse5 改写保持不变。也可自行配置 Ctrl+Alt+R/E 或 F8。右侧单键需要辅助功能/输入监控权限，单独按住 250ms 才会触发；组合键不触发录音。注意：MacBook Pro 内建键盘通常没有右 Control，右 Control 需要外接键盘。")
+                Text("快捷键可直接录入左/右 Control、左/右 Option、左/右 Command 六个单键；单独按住 250ms 开始、松开结束，正常组合键不被拦截。Mouse4 听写、Mouse5 改写保留，亦可配置 Ctrl+Option 组合键。默认右 Control 听写、右 Option 改写；MacBook Pro/Air 内建键盘没有右 Control，可在这里改为右 Command 或左 Control。退出快捷键必须使用功能键或组合键。")
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("input_note_macos")
                                 if !captureStatus.isEmpty {
@@ -362,15 +363,18 @@ struct SettingsView: View {
         captureMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .otherMouseDown, .flagsChanged]) { event in
             if event.type == .keyDown && event.isARepeat { return nil }
             if event.type == .flagsChanged {
-                if event.keyCode == 62 && event.modifierFlags.contains(.control) {
-                    acceptCapture("RightCtrl")
+                guard let key = MacModifierKey(keyCode: Int64(event.keyCode)) else { return event }
+                let families: NSEvent.ModifierFlags = [.control, .option, .command, .shift]
+                guard event.modifierFlags.intersection(families) == key.captureFlag,
+                      !CGEventSource.keyState(.combinedSessionState, key: key.otherSideKeyCode) else {
+                    return event // release or multi-key chord is not a bare key
+                }
+                if captureTarget == "exit_shortcut" {
+                    captureStatus = "退出快捷键不能使用单独的 Control/Option/Command，请选择组合键或功能键"
                     return nil
                 }
-                if event.keyCode == 61 && event.modifierFlags.contains(.option) {
-                    acceptCapture("RightOption")
-                    return nil
-                }
-                return event
+                acceptCapture(key.rawValue)
+                return nil
             }
             if event.type == .otherMouseDown {
                 if event.buttonNumber == 3 { acceptCapture("Mouse4"); return nil }
@@ -383,7 +387,7 @@ struct SettingsView: View {
                 return nil
             }
             guard let candidate = Self.shortcutFromKey(event) else {
-                captureStatus = "请长按右 Control/右 Option，或使用 Ctrl/Option 组合键、F1–F20"
+                captureStatus = "可单按左/右 Control、Option、Command，或录入 Ctrl/Option 组合键、F1–F20、Mouse4/5"
                 return nil
             }
             acceptCapture(candidate)
@@ -399,8 +403,10 @@ struct SettingsView: View {
             captureStatus = "退出键不能与语音快捷键冲突"
             return
         }
-        if captureTarget == "exit_shortcut" && (candidate == "Mouse4" || candidate == "Mouse5") {
-            captureStatus = "退出键必须使用键盘快捷键"
+        if captureTarget == "exit_shortcut" &&
+           (candidate == "Mouse4" || candidate == "Mouse5" ||
+            MacModifierKey(canonical: candidate) != nil) {
+            captureStatus = "退出快捷键必须使用功能键或组合键"
             return
         }
         if captureTarget != "exit_shortcut" && candidate.caseInsensitiveCompare(exit) == .orderedSame {
