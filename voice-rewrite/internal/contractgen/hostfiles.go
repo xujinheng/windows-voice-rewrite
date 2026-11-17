@@ -600,7 +600,6 @@ func settingsMaps() (bindings, actions, status map[string]string) {
 		"microphone":         "model.settings.microphoneUID",
 		"rewrite_shortcut":   "model.settings.rewriteShortcut",
 		"dictation_shortcut": "model.settings.dictationShortcut",
-		"text_edit_shortcut": "model.settings.textEditShortcut",
 	}
 	actions = map[string]string{
 		"probe_asr": "model.checkASRService()",
@@ -618,38 +617,76 @@ func emitSettings() (string, error) {
 	bindings, actions, status := settingsMaps()
 	var b strings.Builder
 	b.WriteString(sourceNote("voice-rewrite/internal/contract"))
-	b.WriteString("import SwiftUI\nimport VoiceRewriteStorage\nimport Microphone\n\nstruct SettingsView: View {\n")
-	b.WriteString("    @ObservedObject var model: WorkspaceModel\n\n    var body: some View {\n        Form {\n")
-	for _, page := range contract.Sections() {
-		controls := contract.PageControls(page.ID, contract.MacOS)
-		if len(controls) == 0 {
-			continue
-		}
-		b.WriteString("            Section(" + strconv.Quote(page.Title) + ") {\n")
-		for _, control := range controls {
-			if page.ID == "save" && control.Kind == contract.Note {
-				b.WriteString("                Text(model.settingsStatus).foregroundStyle(.secondary)\n")
-				b.WriteString("                    .font(.footnote).textSelection(.enabled)\n")
-			}
-			line, err := renderControl(control, bindings, actions, status)
-			if err != nil {
-				return "", err
-			}
-			b.WriteString(line)
-		}
-		b.WriteString("            }\n")
+	b.WriteString("import SwiftUI\nimport AppKit\nimport VoiceRewriteStorage\nimport Microphone\n\nstruct SettingsView: View {\n    @ObservedObject var model: WorkspaceModel\n    @State private var selectedPage = \"speech\"\n    @State private var showAdvanced = false\n    @State private var captureTarget: String?\n    @State private var captureStatus = \"\"\n    @State private var captureMonitor: Any?\n\n    var body: some View {\n        VStack(spacing: 0) {\n            HStack(spacing: 0) {\n                VStack(alignment: .leading, spacing: 12) {\n                    Text(\"VoiceRewrite\").font(.title3.bold())\n                    Text(\"设置分类\").font(.caption).foregroundStyle(.secondary)\n")
+	for _, page := range contract.Pages() {
+		b.WriteString("                    Button(" + strconv.Quote(page.Title) + ") { selectPage(" + strconv.Quote(page.ID) + ") }\n")
+		b.WriteString("                        .buttonStyle(.plain)\n")
+		b.WriteString("                        .font(.system(size: 13, weight: selectedPage == " + strconv.Quote(page.ID) + " ? .semibold : .regular))\n")
+		b.WriteString("                        .padding(.vertical, 9)\n                        .padding(.horizontal, 12)\n                        .frame(maxWidth: .infinity, alignment: .leading)\n")
+		b.WriteString("                        .background(selectedPage == " + strconv.Quote(page.ID) + " ? Color.accentColor.opacity(0.12) : Color.clear)\n")
+		b.WriteString("                        .clipShape(RoundedRectangle(cornerRadius: 9))\n")
+		b.WriteString("                        .accessibilityIdentifier(" + strconv.Quote("nav_"+page.ID) + ")\n")
 	}
-	b.WriteString("        }\n")
+	b.WriteString("                    Spacer(minLength: 0)\n                }\n                .frame(width: 160, alignment: .leading)\n                .padding(16)\n                .frame(maxHeight: .infinity)\n                .background(Color(nsColor: .controlBackgroundColor))\n                Divider()\n                VStack(alignment: .leading, spacing: 0) {\n                    Group {\n")
+	for i, page := range contract.Pages() {
+		if i == 0 { b.WriteString("                        if selectedPage == ") } else { b.WriteString("                        else if selectedPage == ") }
+		b.WriteString(strconv.Quote(page.ID) + " {\n")
+		b.WriteString("                            VStack(alignment: .leading, spacing: 4) {\n")
+		b.WriteString("                                Text(" + strconv.Quote(page.Title) + ").font(.title2.bold())\n")
+		b.WriteString("                                Text(" + strconv.Quote(page.Subtitle) + ").font(.subheadline).foregroundStyle(.secondary)\n")
+		b.WriteString("                            }\n")
+		b.WriteString("                        } \n")
+	}
+	b.WriteString("                    }\n                    .frame(maxWidth: .infinity, alignment: .leading)\n                    .padding(.horizontal, 24)\n                    .padding(.top, 22)\n                    .padding(.bottom, 14)\n                    Divider()\n                    ScrollView {\n                        VStack(alignment: .leading, spacing: 14) {\n")
+	for i, page := range contract.Pages() {
+		if i == 0 { b.WriteString("                            if selectedPage == ") } else { b.WriteString("                            else if selectedPage == ") }
+		b.WriteString(strconv.Quote(page.ID) + " {\n")
+		b.WriteString("                                Text(" + strconv.Quote(page.Section) + ").font(.headline)\n")
+		for _, control := range contract.PageControls(page.ID, contract.MacOS) {
+			if strings.HasPrefix(control.ID, "capture_") || control.ID == "max_record_seconds" || control.ID == "record_note" || control.ID == "meeting_asr_mode" { continue }
+			if control.Kind == contract.Shortcut { b.WriteString("                                HStack(spacing: 12) {\n") }
+			line, err := renderControl(control, bindings, actions, status)
+			if err != nil { return "", err }
+			b.WriteString(line)
+			if control.Kind == contract.Shortcut {
+				captureID := "capture_dictation"
+				if control.ID == "rewrite_shortcut" { captureID = "capture_rewrite" }
+				capture, ok := contract.Find(captureID)
+				if !ok || !capture.VisibleOn(contract.MacOS) { return "", fmt.Errorf("missing capture %s", captureID) }
+				line, err := renderControl(capture, bindings, actions, status)
+				if err != nil { return "", err }
+				b.WriteString(line)
+				b.WriteString("                                }\n")
+			}
+		}
+		if page.ID == "input" {
+		b.WriteString("                                if !captureStatus.isEmpty {\n                                    Text(captureStatus).font(.footnote).foregroundStyle(.secondary)\n                                        .accessibilityIdentifier(\"capture_status\")\n                                }\n                                if showAdvanced {\n                                    Divider()\n                                    Text(\"高级配置\").font(.headline)\n")
+			for _, id := range []string{"max_record_seconds", "record_note", "meeting_asr_mode"} {
+				control, ok := contract.Find(id)
+				if !ok || !control.VisibleOn(contract.MacOS) { return "", fmt.Errorf("advanced control %s", id) }
+				line, err := renderControl(control, bindings, actions, status)
+				if err != nil { return "", err }
+				b.WriteString(line)
+			}
+			b.WriteString("                                }\n")
+		}
+		b.WriteString("                            } \n")
+	}
+	b.WriteString("                        }\n                        .frame(maxWidth: .infinity, alignment: .leading)\n                        .padding(24)\n                    }\n                }\n                .frame(maxWidth: .infinity, maxHeight: .infinity)\n            }\n            Divider()\n            HStack(spacing: 12) {\n                Button(\"保存设置\") { model.saveSettings() }\n                    .buttonStyle(.borderedProminent)\n                    .accessibilityIdentifier(\"save\")\n                Button(\"高级配置\") {\n                    selectPage(\"input\")\n                    showAdvanced.toggle()\n                }\n                .accessibilityIdentifier(\"advanced\")\n                Spacer()\n                Button(\"关闭\") { NSApp.keyWindow?.close() }\n                    .accessibilityIdentifier(\"close\")\n            }\n            .padding(.horizontal, 20)\n            .padding(.top, 12)\n            Text(model.settingsStatus)\n                .font(.footnote)\n                .foregroundStyle(.secondary)\n                .textSelection(.enabled)\n                .frame(maxWidth: .infinity, alignment: .leading)\n                .padding(.horizontal, 20)\n")
+	save, ok := contract.Find("save")
+	if !ok { return "", fmt.Errorf("missing save") }
+	advanced, ok := contract.Find("advanced")
+	if !ok { return "", fmt.Errorf("missing advanced") }
+	closeButton, ok := contract.Find("close")
+	if !ok { return "", fmt.Errorf("missing close") }
+	if save.Label != "保存设置" || advanced.Label != "高级配置" || closeButton.Label != "关闭" { return "", fmt.Errorf("footer labels out of sync") }
+	b.WriteString("            Text(\"API Key 为可选项；需要认证时先保存再检测。连接检测共用 Windows 的 Go Core 规则：ASR 发送生成的静音 WAV，LLM 查询 /models，不发送用户录音或文本。密钥仅保存在 Keychain。\")\n                .font(.footnote).foregroundStyle(.secondary)\n                .accessibilityIdentifier(\"save_note\")\n")
+	b.WriteString("                .padding(.horizontal, 20)\n                .padding(.bottom, 12)\n        }\n        .frame(minWidth: 540, minHeight: 480)\n")
 	for _, control := range contract.Controls() {
-		if control.StaleProbe == "" || !control.VisibleOn(contract.MacOS) {
-			continue
-		}
+		if control.StaleProbe == "" || !control.VisibleOn(contract.MacOS) { continue }
 		binding, ok := bindings[control.ID]
-		if !ok || binding == "" {
-			return "", fmt.Errorf("stale probe %s has no binding", control.ID)
-		}
-		if control.ID == "asr_base_url" || control.ID == "asr_api_key" ||
-			control.ID == "llm_base_url" || control.ID == "llm_api_key" {
+		if !ok || binding == "" { return "", fmt.Errorf("stale probe %s has no binding", control.ID) }
+		if control.ID == "asr_base_url" || control.ID == "asr_api_key" || control.ID == "llm_base_url" || control.ID == "llm_api_key" {
 			b.WriteString("        .onChange(of: " + binding + ") { _, _ in\n")
 			b.WriteString("            model.markConnectionProbeStale(." + control.StaleProbe + ")\n")
 			b.WriteString("            model.invalidateDiscoveredModels(." + control.StaleProbe + ")\n")
@@ -658,8 +695,7 @@ func emitSettings() (string, error) {
 			b.WriteString("        .onChange(of: " + binding + ") { _, _ in model.markConnectionProbeStale(." + control.StaleProbe + ") }\n")
 		}
 	}
-	b.WriteString("        .onAppear { model.refreshMicrophoneDevices() }\n")
-	b.WriteString("        .formStyle(.grouped)\n    }\n}\n")
+	b.WriteString("        .onAppear { model.refreshMicrophoneDevices() }\n        .onDisappear { stopCapture() }\n    }\n\n    private func selectPage(_ id: String) {\n        stopCapture()\n        selectedPage = id\n    }\n\n    private func beginCapture(_ id: String) {\n        stopCapture()\n        captureTarget = id\n        captureStatus = \"正在监听按键… 按 Esc 取消\"\n        captureMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .otherMouseDown]) { event in\n            if event.type == .otherMouseDown {\n                if event.buttonNumber == 3 { acceptCapture(\"Mouse4\"); return nil }\n                if event.buttonNumber == 4 { acceptCapture(\"Mouse5\"); return nil }\n                return event\n            }\n            if event.keyCode == 53 {\n                stopCapture()\n                captureStatus = \"已取消快捷键录入\"\n                return nil\n            }\n            guard let candidate = Self.shortcutFromKey(event) else {\n                captureStatus = \"请使用 Ctrl/Option 加字母数字，或 F1–F20\"\n                return nil\n            }\n            acceptCapture(candidate)\n            return nil\n        }\n    }\n\n    private func acceptCapture(_ candidate: String) {\n        let other = captureTarget == \"dictation_shortcut\"\n            ? model.settings.rewriteShortcut : model.settings.dictationShortcut\n        if candidate.caseInsensitiveCompare(other) == .orderedSame {\n            captureStatus = \"听写与语音指令不能绑定同一个按键\"\n            return\n        }\n        switch captureTarget {\n        case \"dictation_shortcut\": model.settings.dictationShortcut = candidate\n        case \"rewrite_shortcut\": model.settings.rewriteShortcut = candidate\n        default: return\n        }\n        stopCapture()\n        captureStatus = \"已录入 \\(candidate)，保存设置后生效\"\n    }\n\n    private func stopCapture() {\n        if let captureMonitor { NSEvent.removeMonitor(captureMonitor) }\n        captureMonitor = nil\n        captureTarget = nil\n    }\n\n    private static func shortcutFromKey(_ event: NSEvent) -> String? {\n        let keys: [UInt16: String] = [\n            122: \"F1\", 120: \"F2\", 99: \"F3\", 118: \"F4\", 96: \"F5\",\n            97: \"F6\", 98: \"F7\", 100: \"F8\", 101: \"F9\", 109: \"F10\",\n            103: \"F11\", 111: \"F12\", 105: \"F13\", 107: \"F14\",\n            113: \"F15\", 106: \"F16\", 64: \"F17\", 79: \"F18\",\n            80: \"F19\", 90: \"F20\"\n        ]\n        let flags = event.modifierFlags\n        guard !flags.contains(.command) else { return nil }\n        let key: String\n        if let function = keys[event.keyCode] {\n            key = function\n        } else {\n            let char = event.charactersIgnoringModifiers?.uppercased() ?? \"\"\n            guard char.count == 1, let scalar = char.unicodeScalars.first,\n                  (65...90).contains(scalar.value) || (48...57).contains(scalar.value) else {\n                return nil\n            }\n            key = char\n        }\n        var modifiers: [String] = []\n        if flags.contains(.control) { modifiers.append(\"Ctrl\") }\n        if flags.contains(.option) { modifiers.append(\"Alt\") }\n        if flags.contains(.shift) { modifiers.append(\"Shift\") }\n        if !key.hasPrefix(\"F\") && !modifiers.contains(\"Ctrl\") && !modifiers.contains(\"Alt\") {\n            return nil\n        }\n        return (modifiers + [key]).joined(separator: \"+\")\n    }\n}\n")
 	return b.String(), nil
 }
 
@@ -677,6 +713,9 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 		}
 		return line, nil
 	case contract.Choice:
+		if control.ID == "meeting_asr_mode" {
+			return "                Picker(\"会议语音识别方式\", selection: $model.settings.meetingASRMode) {\n                    Text(ContractLimits.meetingASRMultipartTitle).tag(ContractLimits.meetingASRMultipart)\n                    Text(ContractLimits.meetingASRLlamaPrefixTitle).tag(ContractLimits.meetingASRLlamaPrefix)\n                }\n                .accessibilityIdentifier(\"meeting_asr_mode\")\n", nil
+		}
 		if control.ID != "microphone" {
 			return "", fmt.Errorf("choice %s has no renderer", control.ID)
 		}
@@ -715,6 +754,11 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 		}
 		return "                Stepper(\"" + control.Label + "：\\(model.settings.maxRecordSeconds) 秒\",\n                        value: $model.settings.maxRecordSeconds, in: MacSettings.recordSeconds)\n                    " + id + "\n", nil
 	case contract.Button:
+		if control.ID == "capture_rewrite" || control.ID == "capture_dictation" {
+			target := "dictation_shortcut"
+			if control.ID == "capture_rewrite" { target = "rewrite_shortcut" }
+			return "                Button(captureTarget == " + strconv.Quote(target) + " ? " + strconv.Quote(contract.WaitingForShortcut) + " : " + strconv.Quote(control.Label) + ") { beginCapture(" + strconv.Quote(target) + ") }\n                    " + id + "\n", nil
+		}
 		action, ok := actions[control.ID]
 		if !ok || action == "" {
 			return "", fmt.Errorf("button %s has no action", control.ID)
