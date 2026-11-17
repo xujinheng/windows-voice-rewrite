@@ -221,6 +221,13 @@ func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64) 
 		return context.Canceled
 	}
 	turn := m.lastFinal
+	// Do not launch reply inference for every completed subtitle by default.
+	// An explicit meeting_replies action is always allowed; automatic mode
+	// requires an opt-in and must be checked before acquiring a GPU job.
+	if !m.replies.AllowsRequest(expectedTurn != 0) {
+		m.mu.Unlock()
+		return nil
+	}
 	// Automatic final-turn and manual requests must not race to infer the
 	// same speech. A successful automatic batch is never inferred twice.
 	if !m.replies.MayStartTurn(turn, expectedTurn != 0) {
