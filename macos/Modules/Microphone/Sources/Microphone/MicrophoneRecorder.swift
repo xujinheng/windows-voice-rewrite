@@ -47,6 +47,7 @@ public final class MicrophoneRecorder {
     private var configurationObserver: NSObjectProtocol?
     private var sleepObserver: NSObjectProtocol?
     private var deadline: Task<Void, Never>?
+    private var captureLiveness: Task<Void, Never>?
 
     public init() {}
 
@@ -219,6 +220,21 @@ public final class MicrophoneRecorder {
             }
             recordingDeviceUID = deviceUID
             state = .recording
+            // This supervisor is independent of CoreAudio callback delivery.
+            // A frozen device may deliver neither buffers nor an interruption
+            // notification; waiting for another callback would never recover.
+            captureLiveness = Task { [weak self, id = processor.id] in
+                while !Task.isCancelled {
+                    do { try await Task.sleep(nanoseconds: 1_000_000_000) }
+                    catch { return }
+                    guard let self, self.recordingID == id else { return }
+                    guard case .recording = self.state else { return }
+                    if self.pipeline?.hasStalled() == true {
+                        self.handleFailure(id: id, error: .recordingInterrupted)
+                        return
+                    }
+                }
+            }
             deadline = Task { [weak self, id = processor.id] in
                 do {
                     try await Task.sleep(nanoseconds: UInt64(duration) * 1_000_000_000)
@@ -385,6 +401,8 @@ public final class MicrophoneRecorder {
     /// Detach the native engine before awaiting teardown, so cancellation
     /// cannot synchronously repeat a stuck CoreAudio stop on the main thread.
     private func teardownEngineAfterStop() async {
+        captureLiveness?.cancel()
+        captureLiveness = nil
         deadline?.cancel()
         deadline = nil
         if let observer = configurationObserver {
@@ -409,6 +427,8 @@ public final class MicrophoneRecorder {
     }
 
     private func teardownEngine() {
+        captureLiveness?.cancel()
+        captureLiveness = nil
         deadline?.cancel()
         deadline = nil
         if let observer = configurationObserver {
