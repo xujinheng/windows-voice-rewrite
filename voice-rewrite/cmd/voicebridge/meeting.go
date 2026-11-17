@@ -48,14 +48,14 @@ func (s *meetingPacketSource) Stream(ctx context.Context, started func(), push f
 }
 
 type bridgeMeeting struct {
-	id        string
-	runtime   *meetingcore.SessionRuntime
-	pipeline  *meetingcore.Pipeline
-	source    *meetingPacketSource
-	audioDone chan struct{}
-	config    coreconfig.Config
+	id             string
+	runtime        *meetingcore.SessionRuntime
+	pipeline       *meetingcore.Pipeline
+	source         *meetingPacketSource
+	audioDone      chan struct{}
+	config         coreconfig.Config
 	profileVersion uint64
-	scheduler *meetingcore.Scheduler
+	scheduler      *meetingcore.Scheduler
 
 	mu                 sync.Mutex
 	captions           []meetingcore.Caption
@@ -81,14 +81,14 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 		return nil, err
 	}
 	m := &bridgeMeeting{
-		id:        hex.EncodeToString(key[:]),
-		runtime:   meetingcore.NewSessionRuntime(),
-		source:    &meetingPacketSource{packets: make(chan []byte, 12)},
-		audioDone: make(chan struct{}),
-		status:    meetingcore.ListeningPrompt,
-		config:    cfg,
+		id:             hex.EncodeToString(key[:]),
+		runtime:        meetingcore.NewSessionRuntime(),
+		source:         &meetingPacketSource{packets: make(chan []byte, 12)},
+		audioDone:      make(chan struct{}),
+		status:         meetingcore.ListeningPrompt,
+		config:         cfg,
 		profileVersion: 1,
-		scheduler: &meetingcore.Scheduler{},
+		scheduler:      &meetingcore.Scheduler{},
 	}
 	m.pipeline = meetingcore.NewPipeline(m.runtime, meetingcore.PipelineHooks{
 		Transcribe: func(ctx context.Context, state *meetingcore.ASRState, turn meetingcore.AudioTurn, emit func(string)) (string, error) {
@@ -205,14 +205,20 @@ func (m *bridgeMeeting) configSnapshot() coreconfig.Config {
 // and expressions from the previous epoch are canceled and cannot publish.
 func (m *bridgeMeeting) reconfigure(next coreconfig.Config) error {
 	background, terms, err := meetingcore.AcceptProfile(next.MeetingBackground, next.MeetingTerms)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	if !coreconfig.KnownMeetingASRMode(next.MeetingASRMode) {
 		return errors.New(meetingcore.UnknownMeetingASRMode)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.runtime.Context().Err() != nil { return context.Canceled }
-	if m.config.MeetingBackground == background && m.config.MeetingTerms == terms && m.config.MeetingASRMode == next.MeetingASRMode { return nil }
+	if m.runtime.Context().Err() != nil {
+		return context.Canceled
+	}
+	if m.config.MeetingBackground == background && m.config.MeetingTerms == terms && m.config.MeetingASRMode == next.MeetingASRMode {
+		return nil
+	}
 	m.runtime.ResetWork()
 	m.discardPacketsLocked()
 	m.captions = meetingcore.KeepCompletedCaptions(m.captions)
@@ -223,7 +229,9 @@ func (m *bridgeMeeting) reconfigure(next coreconfig.Config) error {
 	} else {
 		m.expressionStatus = status
 	}
-	if m.replyStatus == meetingcore.RepliesPreparing { m.replyStatus = meetingcore.WorkCanceled }
+	if m.replyStatus == meetingcore.RepliesPreparing {
+		m.replyStatus = meetingcore.WorkCanceled
+	}
 	m.level = 0
 	m.asrFirstMS, m.asrDoneMS, m.translationFirstMS, m.translationDoneMS = 0, 0, 0, 0
 	m.config.MeetingBackground = background
@@ -231,7 +239,11 @@ func (m *bridgeMeeting) reconfigure(next coreconfig.Config) error {
 	m.config.MeetingASRMode = next.MeetingASRMode
 	m.profileVersion++
 	_, _, paused := m.runtime.Snapshot()
-	if paused { m.status = meetingcore.CapturePausedStatus } else { m.status = meetingcore.ListeningPrompt }
+	if paused {
+		m.status = meetingcore.CapturePausedStatus
+	} else {
+		m.status = meetingcore.ListeningPrompt
+	}
 	return nil
 }
 
