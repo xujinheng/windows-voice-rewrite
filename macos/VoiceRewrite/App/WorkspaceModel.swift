@@ -1547,7 +1547,7 @@ final class WorkspaceModel: ObservableObject {
                     generation: next, intent: .replaceSelection)
                 let captured = rewriteVoiceAfterCapture(
                     tokenValid: resultGeneration.accepts(token),
-                    tooLong: SelectionLimit.tooLongMessage(selected: snapshot.originalSelectedText))
+                    tooLong: SelectionLimit.tooLongMessage(limit: settings.maxSelectedRunes, selected: snapshot.originalSelectedText))
                 if captured.cancelTask || captured.cancelMicrophone {
                     await cancelSelectionCue(captured, generation: next)
                 }
@@ -1758,7 +1758,7 @@ final class WorkspaceModel: ObservableObject {
                     generation: generation, intent: .replaceSelection)
                 let step = typedSelectionAfterCapture(
                     tokenValid: resultGeneration.accepts(token),
-                    tooLong: SelectionLimit.tooLongMessage(selected: snapshot.originalSelectedText))
+                    tooLong: SelectionLimit.tooLongMessage(limit: settings.maxSelectedRunes, selected: snapshot.originalSelectedText))
                 if step.cancelTask || step.cancelMicrophone {
                     await cancelSelectionCue(step, generation: generation)
                 }
