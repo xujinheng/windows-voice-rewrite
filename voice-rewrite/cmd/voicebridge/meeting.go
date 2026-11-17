@@ -207,7 +207,13 @@ func (m *bridgeMeeting) runAudio() {
 			m.mu.Lock()
 			defer m.mu.Unlock()
 			return time.Duration(m.asrDoneMS+m.translationDoneMS) * time.Millisecond
-		}, func() {}, func(event meetingcore.AudioEvent) {
+		}, func() {
+			m.mu.Lock()
+			if m.runtime.Active(epoch) {
+				m.status = meetingcore.ListeningPrompt
+			}
+			m.mu.Unlock()
+		}, func(event meetingcore.AudioEvent) {
 			if event.Meter {
 				m.mu.Lock()
 				if m.runtime.Active(epoch) {
