@@ -58,6 +58,7 @@ type bridgeMeeting struct {
 
 	mu                 sync.Mutex
 	captions           []meetingcore.Caption
+	historyTrimmed     int
 	prior              []string
 	status             string
 	level              int
@@ -119,9 +120,9 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 			if !turn.Final && cfg.MeetingASRMode != coreconfig.MeetingASRMultipart {
 				meetingcore.SetCaptionPrefix(m.captions, turn.ID, stable)
 			}
-			if len(m.captions) > 12 {
-				m.captions = append([]meetingcore.Caption(nil), m.captions[len(m.captions)-12:]...)
-			}
+			var evicted int
+			m.captions, evicted = meetingcore.BoundCaptionHistory(m.captions)
+			m.historyTrimmed += evicted
 			prior := append([]string(nil), m.prior...)
 			if turn.Final {
 				m.prior = meetingcore.RememberPrior(m.prior, latest)
@@ -137,7 +138,11 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 			m.mu.Lock()
 			defer m.mu.Unlock()
 			if m.runtime.Active(job.Epoch) {
-				meetingcore.ApplyCaptionTranslation(m.captions, job.ID, job.Latest, chinese)
+				if meetingcore.ApplyCaptionTranslation(m.captions, job.ID, job.Latest, chinese) {
+					var evicted int
+					m.captions, evicted = meetingcore.BoundCaptionHistory(m.captions)
+					m.historyTrimmed += evicted
+				}
 			}
 		},
 		OnASRFirst: func(turn meetingcore.AudioTurn, elapsed time.Duration) {
@@ -541,5 +546,6 @@ func (m *bridgeMeeting) snapshot() map[string]any {
 		"expression_status": m.expressionStatus,
 		"session_id":        m.id, "status": m.status,
 		"level": m.level, "captions": captions,
+		"history_trimmed": m.historyTrimmed,
 	}
 }
