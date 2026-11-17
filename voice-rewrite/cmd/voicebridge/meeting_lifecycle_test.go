@@ -51,8 +51,9 @@ func TestBridgeMeetingPauseResumeAndSessionIsolation(t *testing.T) {
 		pauseState["epoch"].(float64) <= initialEpoch {
 		t.Fatalf("pause did not invalidate active audio epoch: %#v", pauseState)
 	}
-	if got := send("paused-feed", "meeting_feed", sid, map[string]any{"pcm_base64": pcm}); got.OK || got.Error == nil || got.Error.Code != "meeting_paused" {
-		t.Fatalf("paused session accepted PCM: %#v", got)
+	if got := send("paused-feed", "meeting_feed", sid, map[string]any{"pcm_base64": pcm, "audio_epoch": initialEpoch});
+		!got.OK || object(t, got.Result)["accepted"] != false || object(t, got.Result)["paused"] != true {
+		t.Fatalf("paused PCM was not harmlessly dropped: %#v", got)
 	}
 	again := send("pause-again", "meeting_pause", sid, nil)
 	if !again.OK || object(t, again.Result)["epoch"] != pauseState["epoch"] {
@@ -64,7 +65,14 @@ func TestBridgeMeetingPauseResumeAndSessionIsolation(t *testing.T) {
 		resumed["epoch"].(float64) <= pauseState["epoch"].(float64) {
 		t.Fatalf("resume failed to create a new epoch: %#v", resume)
 	}
-	if got := send("resumed-feed", "meeting_feed", sid, map[string]any{"pcm_base64": pcm}); !got.OK {
+	if got := send("old-epoch-feed", "meeting_feed", sid, map[string]any{
+		"pcm_base64": pcm, "audio_epoch": initialEpoch,
+	}); !got.OK || object(t, got.Result)["accepted"] != false || object(t, got.Result)["stale_epoch"] != true {
+		t.Fatalf("old epoch PCM reached resumed segmentation: %#v", got)
+	}
+	if got := send("resumed-feed", "meeting_feed", sid, map[string]any{
+		"pcm_base64": pcm, "audio_epoch": resumed["epoch"],
+	}); !got.OK || object(t, got.Result)["accepted"] != true {
 		t.Fatalf("resumed audio refused: %#v", got)
 	}
 	metrics, ok := resumed["metrics"].(map[string]any)
@@ -223,7 +231,7 @@ func TestBridgeMeetingRapidStopJoinsAudioConsumer(t *testing.T) {
 		default:
 			t.Fatal("meeting capture consumer survived stop")
 		}
-		if err := m.feed(make([]byte, audio.FrameBytes)); err == nil {
+		if err := m.feed(make([]byte, audio.FrameBytes), 0); err == nil {
 			t.Fatal("stopped meeting accepted packets")
 		}
 		m.stop()
