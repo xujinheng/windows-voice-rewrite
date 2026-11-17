@@ -14,15 +14,15 @@ enum MeetingDemoLaunch {
 private let exitHotKeySignature: OSType = 0x5652_4558 // 'VREX'
 private let exitHotKeyID: UInt32 = 0xFFFF_FF10
 private let exitHotKeyHandler: EventHandlerUPP = { _, event, _ in
-    guard let event else { return eventNotHandledErr }
+    guard let event else { return OSStatus(eventNotHandledErr) }
     var identifier = EventHotKeyID()
     let status = GetEventParameter(event, EventParamName(kEventParamDirectObject),
                                    EventParamType(typeEventHotKeyID), nil,
                                    MemoryLayout<EventHotKeyID>.size, nil, &identifier)
-    guard status == noErr else { return eventNotHandledErr }
+    guard status == noErr else { return OSStatus(eventNotHandledErr) }
     // Leave the two voice shortcuts to their own Carbon handler.
     guard identifier.signature == exitHotKeySignature,
-          identifier.id == exitHotKeyID else { return eventNotHandledErr }
+          identifier.id == exitHotKeyID else { return OSStatus(eventNotHandledErr) }
     DispatchQueue.main.async { NSApp.terminate(nil) }
     return noErr
 }
@@ -35,7 +35,7 @@ final class GlobalExitHotKey {
 
     /// The settings owner can pass the saved canonical binding here once
     /// the independently configurable exit setting is added.
-    func register(canonical: String = defaultBinding) -> Bool {
+    func register(canonical: String) -> Bool {
         guard let binding = ShortcutBinding(canonical: canonical),
               !binding.mouse,
               let shortcut = MacShortcut.hotKey(key: binding.key, ctrl: binding.ctrl,
