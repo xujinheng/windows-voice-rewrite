@@ -18,38 +18,38 @@ final class MacShortcutTests: XCTestCase {
     func testDefaultKeyboardPlanPreservesBothMouseSideButtons() throws {
         let dictation = try XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+R"))
         let rewrite = try XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+E"))
-        let text = try XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+T"))
-        let plan = try XCTUnwrap(MacShortcutPlan(dictation: dictation, rewrite: rewrite, textEdit: text))
-        XCTAssertEqual(plan.keyboard.count, 3)
+        let plan = try XCTUnwrap(MacShortcutPlan(dictation: dictation, rewrite: rewrite))
+        XCTAssertEqual(plan.keyboard.count, 2)
+        XCTAssertFalse(plan.keyboard.contains(HotKeyShortcut(keyCode: 17, modifiers: [.control, .option])))
         XCTAssertEqual(plan.sideButtons.action(for: 3), .dictation)
         XCTAssertEqual(plan.sideButtons.action(for: 4), .rewrite)
+        // The stored text command remains callable in-app, never a Carbon global key.
+        let text = try XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+T"))
+        XCTAssertNotNil(MacShortcut.hotKey(key: text.key, ctrl: text.ctrl, alt: text.alt, shift: text.shift))
     }
 
     func testConfiguredMouseSwapAndUnboundPassThrough() throws {
-        let text = try XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+T"))
         let swapped = try XCTUnwrap(MacShortcutPlan(
             dictation: XCTUnwrap(ShortcutBinding(canonical: "Mouse5")),
-            rewrite: XCTUnwrap(ShortcutBinding(canonical: "Mouse4")), textEdit: text))
+            rewrite: XCTUnwrap(ShortcutBinding(canonical: "Mouse4"))))
         XCTAssertEqual(swapped.sideButtons.action(for: 3), .rewrite)
         XCTAssertEqual(swapped.sideButtons.action(for: 4), .dictation)
         let onlyOne = try XCTUnwrap(MacShortcutPlan(
             dictation: XCTUnwrap(ShortcutBinding(canonical: "Mouse5")),
-            rewrite: XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+E")), textEdit: text))
+            rewrite: XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+E"))))
         XCTAssertNil(onlyOne.sideButtons.action(for: 3))
         XCTAssertEqual(onlyOne.sideButtons.action(for: 4), .dictation)
     }
 
     func testInvalidCollisionAndUnsupportedKeyNeverBuildPlan() throws {
         let r = try XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+R"))
-        let t = try XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+T"))
-        XCTAssertNil(MacShortcutPlan(dictation: r, rewrite: r, textEdit: t))
+        XCTAssertNil(MacShortcutPlan(dictation: r, rewrite: r))
         let mouse = try XCTUnwrap(ShortcutBinding(canonical: "Mouse4"))
-        XCTAssertNil(MacShortcutPlan(dictation: mouse, rewrite: mouse, textEdit: t))
-        XCTAssertNil(MacShortcutPlan(dictation: r, rewrite: t, textEdit: mouse))
+        XCTAssertNil(MacShortcutPlan(dictation: mouse, rewrite: mouse))
         XCTAssertNil(ShortcutBinding(canonical: "Ctrl+Ctrl+R"))
         XCTAssertNil(ShortcutBinding(canonical: "Ctrl+Mouse4"))
         let unsupported = try XCTUnwrap(ShortcutBinding(canonical: "F21"))
-        XCTAssertNil(MacShortcutPlan(dictation: unsupported, rewrite: t, textEdit: r))
+        XCTAssertNil(MacShortcutPlan(dictation: unsupported, rewrite: t))
         XCTAssertEqual(MacShortcut.hotKey(key: "F13", ctrl: false, alt: false, shift: false)?.keyCode, 105)
         XCTAssertEqual(MacShortcut.hotKey(key: "F20", ctrl: false, alt: false, shift: false)?.keyCode, 90)
     }
