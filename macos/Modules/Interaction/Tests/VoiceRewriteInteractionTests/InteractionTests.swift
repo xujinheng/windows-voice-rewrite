@@ -347,9 +347,17 @@ private final class FakeClipboard: ClipboardBoard, @unchecked Sendable {
     var activeOwner: UUID?
     var simulateWriteFailure = false
     var simulateRestoreFailure = false
+    var externalWriteBeforeStage = false
     var restores = 0
     func capture() throws -> ClipboardContents { current }
-    func installTemporaryText(_ text: String, owner: UUID) throws -> Int {
+    func installTemporaryText(_ text: String, owner: UUID, expectedChangeCount: Int) throws -> Int {
+        if externalWriteBeforeStage {
+            externalWriteBeforeStage = false
+            current = ClipboardContents(items: [["text": Data("external update".utf8)]],
+                                        changeCount: current.changeCount + 1)
+            activeOwner = nil
+        }
+        guard current.changeCount == expectedChangeCount else { throw ClipboardFailure.snapshotUnavailable }
         activeOwner = owner
         current = ClipboardContents(items: [["text": Data(text.utf8)]], changeCount: current.changeCount + 1)
         if simulateWriteFailure { throw ClipboardFailure.writeFailed }
@@ -422,6 +430,21 @@ final class ClipboardTests: XCTestCase {
         XCTAssertFalse(ClipboardOwnership.mayRestore(hasOriginal: false, owned: 11, current: 11))
         XCTAssertFalse(ClipboardOwnership.mayRestore(hasOriginal: true, owned: 11, current: nil))
         XCTAssertTrue(ClipboardOwnership.mayRestore(hasOriginal: true, owned: 11, current: 11))
+    }
+
+    func testExternalClipboardTakeoverDuringSnapshotDoesNotRestoreStaleContents() throws {
+        let board = FakeClipboard(), protector = ClipboardProtector(board: board)
+        board.externalWriteBeforeStage = true
+        XCTAssertThrowsError(try protector.beginTemporaryText("speech")) {
+            XCTAssertEqual($0 as? ClipboardFailure, .snapshotUnavailable)
+        }
+        XCTAssertEqual(board.current.items, [["text": Data("external update".utf8)]])
+        XCTAssertEqual(board.restores, 0)
+        // A failed stage must leave no stranded lease for the next dictation.
+        let next = try protector.beginTemporaryText("second")
+        XCTAssertTrue(protector.isOwned(next))
+        try protector.finish(next)
+        XCTAssertEqual(board.current.items, [["text": Data("external update".utf8)]])
     }
 
     func testPartialWriteFailureRestoresOnlyIfOwned() async throws {
