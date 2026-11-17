@@ -231,19 +231,23 @@ func (m *bridgeMeeting) runAudio() {
 var (
 	errMeetingBusy         = errors.New("meeting audio queue full")
 	errMeetingPaused       = errors.New("meeting capture paused")
+	errMeetingStaleEpoch   = errors.New("meeting audio belongs to an earlier epoch")
 	errMeetingNoFinalTurn  = errors.New("no completed meeting turn")
 	errMeetingInvalidReply = errors.New("selected reply is not complete")
 )
 
-func (m *bridgeMeeting) feed(pcm []byte) error {
+func (m *bridgeMeeting) feed(pcm []byte, expectedEpoch uint64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	work, _, paused := m.runtime.Snapshot()
+	work, epoch, paused := m.runtime.Snapshot()
 	if m.runtime.Context().Err() != nil {
 		return context.Canceled
 	}
 	if paused || work.Err() != nil {
 		return errMeetingPaused
+	}
+	if expectedEpoch != 0 && expectedEpoch != epoch {
+		return errMeetingStaleEpoch
 	}
 	select {
 	case m.source.packets <- pcm:
