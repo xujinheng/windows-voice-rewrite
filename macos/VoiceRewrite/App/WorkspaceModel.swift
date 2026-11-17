@@ -46,6 +46,8 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var recordingStatus = recordingIdle()
     @Published private(set) var microphonePermission: MicrophonePermissionStatus = .notDetermined
     @Published private(set) var microphoneDevices: [MicrophoneInputDevice] = []
+    @Published private(set) var keyboardDevices: [MacKeyboardDevice] = []
+    @Published private(set) var keyboardSourceStatus = ""
     @Published private(set) var serviceStatus = helperNotYetConnected()
     @Published private(set) var asrProbeStatus = ServiceProbeCopy.idle
     @Published private(set) var llmProbeStatus = ServiceProbeCopy.idle
@@ -161,6 +163,9 @@ final class WorkspaceModel: ObservableObject {
     private var activeVoiceTargetPID: Int32?
     private var hotKeyDriver: CarbonHotKeyDriver?
     private var rightModifierDriver: MacModifierHoldDriver?
+    private var keyboardHID: MacKeyboardHIDMonitor?
+    private var activeDictationKeyboardID = ""
+    private var activeRewriteKeyboardID = ""
     private var shortcutCaptureActive = false
     private var hotKeys: HotKeyRegistry?
     private var sideMouse: SideMouseButtonDriver?
@@ -183,6 +188,57 @@ final class WorkspaceModel: ObservableObject {
         microphoneDevices = MicrophoneRecorder.availableDevices()
     }
 
+    func refreshKeyboardDevices() {
+        do {
+            try getKeyboardHID().start()
+            keyboardHID?.refresh()
+            keyboardSourceStatus = "设备级快捷键需要系统输入监控权限。未连接的已选键盘不会触发录音。"
+        } catch {
+            keyboardSourceStatus = error.localizedDescription
+        }
+    }
+
+    func captureKeyFromSelectedKeyboard(_ id: String, action: @escaping @MainActor (MacModifierKey) -> Void) {
+        guard !id.isEmpty else { return }
+        do {
+            let hid = getKeyboardHID()
+            try hid.start()
+            hid.capture(deviceID: id, onKey: action)
+        } catch {
+            keyboardSourceStatus = error.localizedDescription
+        }
+    }
+
+    func stopKeyboardDeviceCapture() {
+        keyboardHID?.capture(deviceID: nil, onKey: nil)
+    }
+
+    private func getKeyboardHID() -> MacKeyboardHIDMonitor {
+        if let keyboardHID { return keyboardHID }
+        let hid = MacKeyboardHIDMonitor(
+            onDevices: { [weak self] in self?.keyboardDevices = $0 },
+            onPress: { [weak self] key, pid in
+                guard let self, let bound = self.activeShortcutPlan else { return }
+                if key == bound.modifierDictation && !self.activeDictationKeyboardID.isEmpty {
+                    self.keyboardPressed(.dictation, targetPID: pid)
+                } else if key == bound.modifierRewrite && !self.activeRewriteKeyboardID.isEmpty {
+                    self.keyboardPressed(.rewrite, targetPID: pid)
+                }
+            },
+            onRelease: { [weak self] key in
+                guard let self, let bound = self.activeShortcutPlan else { return }
+                if key == bound.modifierDictation && !self.activeDictationKeyboardID.isEmpty {
+                    self.keyboardReleased(.dictation)
+                } else if key == bound.modifierRewrite && !self.activeRewriteKeyboardID.isEmpty {
+                    self.keyboardReleased(.rewrite)
+                }
+            },
+            onCancel: { [weak self] in self?.cancelRightModifierVoice() }
+        )
+        keyboardHID = hid
+        return hid
+    }
+
     func refreshMicrophonePermission() {
         microphonePermission = microphone.permissionStatus
     }
@@ -196,6 +252,7 @@ final class WorkspaceModel: ObservableObject {
         showStartupDemoOnConnect = demo
         refreshMicrophonePermission()
         refreshMicrophoneDevices()
+        refreshKeyboardDevices()
         DiagnosticLog.note("应用已启动")
         if case .disconnected = connection { connect() }
         if hotKeys == nil { registerHotKeys() }
@@ -302,6 +359,13 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func acceptedShortcutPlan() -> (ShortcutBinding, ShortcutBinding)? {
+        // Carbon hotkeys have no trustworthy source device: scope only HID modifier holds.
+        guard (settings.dictationKeyboardID.isEmpty ||
+               MacModifierKey(canonical: settings.dictationShortcut) != nil),
+              (settings.rewriteKeyboardID.isEmpty ||
+               MacModifierKey(canonical: settings.rewriteShortcut) != nil),
+              MacSettings.validKeyboardID(settings.dictationKeyboardID),
+              MacSettings.validKeyboardID(settings.rewriteKeyboardID) else { return nil }
         guard let dictation = ShortcutBinding(canonical: settings.dictationShortcut),
               let rewrite = ShortcutBinding(canonical: settings.rewriteShortcut),
               let exit = ShortcutBinding(canonical: settings.exitShortcut),
@@ -387,17 +451,17 @@ final class WorkspaceModel: ObservableObject {
         let driver = rightModifierDriver ?? MacModifierHoldDriver(
             onHold: { [weak self] key, pid in
                 guard let self, let bound = self.activeShortcutPlan else { return }
-                if key == bound.modifierDictation {
+                if key == bound.modifierDictation && self.activeDictationKeyboardID.isEmpty {
                     self.keyboardPressed(.dictation, targetPID: pid)
-                } else if key == bound.modifierRewrite {
+                } else if key == bound.modifierRewrite && self.activeRewriteKeyboardID.isEmpty {
                     self.keyboardPressed(.rewrite, targetPID: pid)
                 }
             },
             onRelease: { [weak self] key in
                 guard let self, let bound = self.activeShortcutPlan else { return }
-                if key == bound.modifierDictation {
+                if key == bound.modifierDictation && self.activeDictationKeyboardID.isEmpty {
                     self.keyboardReleased(.dictation)
-                } else if key == bound.modifierRewrite {
+                } else if key == bound.modifierRewrite && self.activeRewriteKeyboardID.isEmpty {
                     self.keyboardReleased(.rewrite)
                 }
             },
@@ -436,10 +500,21 @@ final class WorkspaceModel: ObservableObject {
         let label = voiceShortcutPlanLabel(
             dictation: MacShortcut.display(dictation.normalized),
             rewrite: MacShortcut.display(rewrite.normalized))
-        let needsModifier = next.modifierDictation != nil || next.modifierRewrite != nil
+        let needsModifier = (next.modifierDictation != nil && settings.dictationKeyboardID.isEmpty) ||
+            (next.modifierRewrite != nil && settings.rewriteKeyboardID.isEmpty)
+        let needsHID = !settings.dictationKeyboardID.isEmpty || !settings.rewriteKeyboardID.isEmpty
         var candidate: MacModifierHoldDriver?
         do {
             if needsModifier { candidate = try makeModifierHoldDriver() }
+            if needsHID {
+                try getKeyboardHID().start()
+                let chosen = [settings.dictationKeyboardID, settings.rewriteKeyboardID].filter { !$0.isEmpty }
+                // Fail closed rather than unintentionally run on another keyboard.
+                guard chosen.allSatisfy({ id in keyboardDevices.contains(where: { $0.id == id && $0.selectable }) }) else {
+                    throw NSError(domain: "VoiceRewrite.KeyboardHID", code: 1,
+                                  userInfo: [NSLocalizedDescriptionKey: "所选键盘未连接或无法区分，请刷新键盘列表"])
+                }
+            }
             if let registry = hotKeys {
                 try registry.replace(with: next.keyboard)
             } else {
@@ -449,8 +524,27 @@ final class WorkspaceModel: ObservableObject {
             }
             activeShortcutPlan = next
             keyboardHoldEnabled = next.recordMode == "hold"
+            activeDictationKeyboardID = settings.dictationKeyboardID
+            activeRewriteKeyboardID = settings.rewriteKeyboardID
+            if needsHID {
+                getKeyboardHID().setBindings(
+                    dictation: next.modifierDictation.flatMap {
+                        settings.dictationKeyboardID.isEmpty ? nil :
+                            MacKeyboardHIDBinding(deviceID: settings.dictationKeyboardID, key: $0)
+                    },
+                    rewrite: next.modifierRewrite.flatMap {
+                        settings.rewriteKeyboardID.isEmpty ? nil :
+                            MacKeyboardHIDBinding(deviceID: settings.rewriteKeyboardID, key: $0)
+                    })
+                keyboardHID?.setSuspended(shortcutCaptureActive)
+                keyboardHID?.setPaused(voicePaused)
+            } else {
+                keyboardHID?.setBindings(dictation: nil, rewrite: nil)
+            }
             if let candidate {
-                candidate.setBindings(dictation: next.modifierDictation, rewrite: next.modifierRewrite)
+                candidate.setBindings(
+                    dictation: settings.dictationKeyboardID.isEmpty ? next.modifierDictation : nil,
+                    rewrite: settings.rewriteKeyboardID.isEmpty ? next.modifierRewrite : nil)
                 candidate.setSuspended(shortcutCaptureActive)
                 candidate.setVoicePaused(voicePaused)
                 rightModifierDriver = candidate
@@ -479,10 +573,22 @@ final class WorkspaceModel: ObservableObject {
             }
             activeShortcutPlan = previous
             keyboardHoldEnabled = previous?.recordMode == "hold"
+            // Preferences may contain unsaved changes. Restore only the previous live devices.
+            keyboardHID?.setBindings(
+                dictation: previous?.modifierDictation.flatMap {
+                    activeDictationKeyboardID.isEmpty ? nil :
+                        MacKeyboardHIDBinding(deviceID: activeDictationKeyboardID, key: $0)
+                },
+                rewrite: previous?.modifierRewrite.flatMap {
+                    activeRewriteKeyboardID.isEmpty ? nil :
+                        MacKeyboardHIDBinding(deviceID: activeRewriteKeyboardID, key: $0)
+                })
             if let previous,
                previous.modifierDictation != nil || previous.modifierRewrite != nil {
                 let driver = try makeModifierHoldDriver()
-                driver.setBindings(dictation: previous.modifierDictation, rewrite: previous.modifierRewrite)
+                driver.setBindings(
+                    dictation: activeDictationKeyboardID.isEmpty ? previous.modifierDictation : nil,
+                    rewrite: activeRewriteKeyboardID.isEmpty ? previous.modifierRewrite : nil)
                 driver.setSuspended(shortcutCaptureActive)
                 driver.setVoicePaused(voicePaused)
                 rightModifierDriver = driver
@@ -625,6 +731,7 @@ final class WorkspaceModel: ObservableObject {
         guard shortcutCaptureActive != active else { return }
         shortcutCaptureActive = active
         rightModifierDriver?.setSuspended(active)
+        keyboardHID?.setSuspended(active)
         sideMouse?.setBindings(shortcutCaptureBindings())
     }
 
@@ -717,6 +824,7 @@ final class WorkspaceModel: ObservableObject {
         }
         sideMouse?.setVoicePaused(voicePaused)
         rightModifierDriver?.setVoicePaused(voicePaused)
+        keyboardHID?.setPaused(voicePaused)
         dismissPreviewIndicator()
         if let status = turn.sideStatus {
             sideMouseStatus = status
@@ -2564,6 +2672,8 @@ final class WorkspaceModel: ObservableObject {
         hotKeyDriver?.shutdown()
         rightModifierDriver?.shutdown()
         rightModifierDriver = nil
+        keyboardHID?.stop()
+        keyboardHID = nil
         hotKeys = nil
         hotKeyDriver = nil
         activeShortcutPlan = nil
