@@ -947,7 +947,7 @@ final class WorkspaceModel: ObservableObject {
         guard meetingActive, !meetingBusy, !meetingCancelPending,
               !meetingExpression.isEmpty,
               meetingCaptionsOnly || !meetingExpressionExpanded else { return }
-        meetingAction("meeting_view", fields: ["button_id": .number(0)])
+        meetingAction("meeting_view", fields: ["focus_expression": .bool(true)])
     }
 
     func acceptMeetingReplies() {
