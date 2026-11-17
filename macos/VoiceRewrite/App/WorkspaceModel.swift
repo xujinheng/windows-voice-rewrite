@@ -644,7 +644,9 @@ final class WorkspaceModel: ObservableObject {
             sideMouseStatus = sideMouseAccessibilityDenied()
             return
         }
-        if rightModifierDriver == nil { registerHotKeys() }
+        if rightModifierDriver == nil &&
+           (activeShortcutPlan == nil || activeShortcutPlan?.modifierDictation != nil ||
+            activeShortcutPlan?.modifierRewrite != nil) { registerHotKeys() }
         let isFreshStart = sideMouse == nil
         let driver = sideMouse ?? SideMouseButtonDriver(
             bindings: shortcutCaptureBindings(),
