@@ -7,13 +7,17 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 	"syscall"
 	"unsafe"
 
 	"voicerewrite/internal/contract"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/desktop"
+	"voicerewrite/internal/core/provider"
 	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/settingsform"
 	"voicerewrite/internal/core/shortcut"
@@ -48,6 +52,7 @@ const (
 	uxBSOwnerDraw             = 0x000B
 	uxEMSetMargins            = 0x00D3
 	uxWMProbeDone             = 0x8000 + 104
+	uxWMModelsDone            = 0x8000 + 106
 	uxShortcutInput           = 9106
 	uxRewriteInput            = 9108
 	WM_SETTINGS_CAPTURE_MOUSE = 0x8000 + 105
@@ -72,6 +77,7 @@ var (
 	uxSetBkMode      = gdi32.NewProc("SetBkMode")
 	uxWindowCallback = syscall.NewCallback(uxSettingsWndProc)
 	uxActiveSettings *uxSettings
+	uxModelRequestSequence atomic.Uint64
 )
 
 type uxSettings struct {
@@ -96,6 +102,11 @@ type uxSettings struct {
 	probeResult                             [2]string
 	probeStatus                             [2]uintptr
 	probeSerial                             [2]uint64
+	modelButtons                            [2]uintptr
+	modelMu                                 sync.Mutex
+	modelSerial                             [2]uint64
+	modelCancel                             [2]context.CancelFunc
+	modelResults                            [2]uxModelDiscoveryResult
 	controls                                []uxControl
 	scale                                   float64
 	scrollX, scrollY                        int32
@@ -104,6 +115,11 @@ type uxSettings struct {
 	focusRow                                int
 	pages                                   [3][]uintptr
 	navButtons                              [3]uintptr
+}
+
+type uxModelDiscoveryResult struct {
+	models []string
+	err error
 }
 
 // Every child control is reflowed after a resize. No hard-coded physical
@@ -175,6 +191,7 @@ func (p *uxSettings) switchPage(next int) {
 	}
 	if step.StopCapture {
 		p.stopShortcutCapture()
+		p.invalidateAllModels()
 	}
 	p.page = next
 	if step.ClearFocus {
@@ -441,6 +458,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMNCDestroy:
 		if p != nil && p.window == hwnd {
 			p.stopShortcutCapture()
+			p.invalidateAllModels()
 			uxActiveSettings = nil
 			resultRemoveReadyProperty.Call(hwnd, uintptr(unsafe.Pointer(resultReadyProperty)))
 			if p.renderer != nil {
@@ -535,6 +553,11 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			}
 		}
 		return 0
+	case uxWMModelsDone:
+		if p != nil && p.window == hwnd && wParam < 2 {
+			p.completeModelDiscovery(int(wParam), uint64(lParam))
+		}
+		return 0
 	case uxWMCommand:
 		if p != nil && p.window == hwnd {
 			// Native focus events keep the D2D field outline keyboard-visible.
@@ -553,6 +576,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			}
 			if (wParam>>16)&0xffff == 0x0300 { // EN_CHANGE
 				if idx, ok := p.probeEdits[lParam]; ok {
+					p.invalidateModels(idx) // changing provider or model invalidates in-flight choices
 					p.bumpProbe(idx) // reject in-flight stale response
 					uxSetText(p.probeStatus[idx], serviceprobe.StatusStale)
 				}
@@ -583,6 +607,12 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				return 0
 			case contract.ActionProbeLLM:
 				p.probe("LLM")
+				return 0
+			case contract.ActionDiscoverASR:
+				p.discoverModels("ASR")
+				return 0
+			case contract.ActionDiscoverLLM:
+				p.discoverModels("LLM")
 				return 0
 			}
 		}
@@ -666,6 +696,141 @@ func (p *uxSettings) check(kind, base, key, model, field string) {
 	}()
 }
 
+// Every model request owns a unique token, even across settings-window lifetimes.
+// A stale provider callback can never replace a newer model or open a menu on a
+// reused HWND. The request is cancelled on any edit, page switch or close.
+func (p *uxSettings) invalidateModels(slot int) {
+    if slot < 0 || slot >= len(p.modelSerial) {
+        return
+    }
+    p.modelMu.Lock()
+    if cancel := p.modelCancel[slot]; cancel != nil {
+        cancel()
+    }
+    p.modelCancel[slot] = nil
+    p.modelSerial[slot] = uxModelRequestSequence.Add(1)
+    p.modelResults[slot] = uxModelDiscoveryResult{}
+    p.modelMu.Unlock()
+}
+
+func (p *uxSettings) invalidateAllModels() {
+    for slot := range p.modelSerial {
+        p.invalidateModels(slot)
+    }
+}
+
+func (p *uxSettings) discoverModels(kind string) {
+    if p == nil || p.window == 0 {
+        return
+    }
+    field, baseField, keyField, _, ok := contract.ProbeInputs(kind)
+    if !ok {
+        return
+    }
+    slot, ok := contract.ProbeSlot(field)
+    if !ok || slot != p.page {
+        return
+    }
+    base, key := p.inputValue(baseField), p.inputValue(keyField)
+    ctx, cancel := context.WithTimeout(context.Background(), 11*time.Second)
+    p.modelMu.Lock()
+    if previous := p.modelCancel[slot]; previous != nil {
+        previous()
+    }
+    token := uxModelRequestSequence.Add(1)
+    p.modelSerial[slot] = token
+    p.modelCancel[slot] = cancel
+    p.modelResults[slot] = uxModelDiscoveryResult{}
+    p.modelMu.Unlock()
+    uxSetText(p.hint, "正在发现模型…")
+    hwnd := p.window
+    go func() {
+        defer cancel()
+        models, err := provider.ListModels(ctx, base, key)
+        p.modelMu.Lock()
+        if token == p.modelSerial[slot] {
+            p.modelResults[slot] = uxModelDiscoveryResult{models: models, err: err}
+        }
+        p.modelMu.Unlock()
+        procPostMessage.Call(hwnd, uxWMModelsDone, uintptr(slot), uintptr(token))
+    }()
+}
+
+func (p *uxSettings) completeModelDiscovery(slot int, token uint64) {
+    p.modelMu.Lock()
+    accept := settingsform.ModelDiscoveryMayPresent(token, p.modelSerial[slot], slot, p.page)
+    result := p.modelResults[slot]
+    if accept {
+        p.modelCancel[slot] = nil
+    }
+    p.modelMu.Unlock()
+    if !accept {
+        return
+    }
+    if result.err != nil {
+        uxSetText(p.hint, "发现模型失败："+result.err.Error())
+        return
+    }
+    if len(result.models) == 0 {
+        uxSetText(p.hint, "未发现可用模型，请检查 API 地址或手动输入模型 ID")
+        return
+    }
+    p.showModelMenu(slot, result.models)
+}
+
+func (p *uxSettings) showModelMenu(slot int, models []string) {
+    if slot < 0 || slot >= len(p.modelButtons) || p.modelButtons[slot] == 0 {
+        return
+    }
+    menu, _, _ := procCreatePopupMenu.Call()
+    if menu == 0 {
+        uxSetText(p.hint, "无法显示模型列表，请手动输入模型 ID")
+        return
+    }
+    defer procDestroyMenu.Call(menu)
+    count := len(models)
+    if count > settingsform.MaxModelMenuChoices {
+        count = settingsform.MaxModelMenuChoices
+    }
+    for index, id := range models[:count] {
+        // Ampersands must not turn untrusted model names into accelerator keys.
+        label := []rune(strings.ReplaceAll(id, "&", "&&"))
+        if len(label) > 80 {
+            label = append(label[:79], '…')
+        }
+        value := uxPtr(string(label))
+        procAppendMenu.Call(menu, MF_STRING, uintptr(index+1), uintptr(unsafe.Pointer(value)))
+        runtime.KeepAlive(value)
+    }
+    var bounds rect32
+    if ok, _, _ := popupGetWindowRect.Call(p.modelButtons[slot], uintptr(unsafe.Pointer(&bounds))); ok == 0 {
+        uxSetText(p.hint, "无法定位模型列表，请手动输入模型 ID")
+        return
+    }
+    procSetForegroundWindow.Call(p.window)
+    selected, _, _ := procTrackPopupMenu.Call(menu, TPM_RETURNCMD|TPM_RIGHTBUTTON,
+        int32ptr(bounds.Left), int32ptr(bounds.Bottom), 0, p.window, 0)
+    procPostMessage.Call(p.window, WM_NULL, 0, 0)
+    if selected < 1 || selected > uintptr(count) {
+        uxSetText(p.hint, "已取消模型选择，原配置未改变")
+        return
+    }
+    modelField := "asr_model"
+    if slot == 1 {
+        modelField = "text_model"
+    }
+    index, ok := contract.InputIndex(modelField)
+    if !ok {
+        return
+    }
+    uxSetText(p.inputs[index], models[selected-1])
+    suffix := ""
+    if len(models) > count {
+        suffix = fmt.Sprintf("（仅展示前 %d 项）", count)
+    }
+    uxSetText(p.hint, "已选择模型，请点击保存设置后生效"+suffix)
+}
+
 func uxCreateControl(parent uintptr, class, text string, style uintptr, x, y, w, h int32, id uintptr, font uintptr) uintptr {
 	cn := uxPtr(class)
 	val := uxPtr(text)
@@ -712,6 +877,8 @@ func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t stri
 		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.ASRBaseURL)
 	case "asr_model":
 		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.ASRModel)
+	case "discover_asr_models":
+		p.modelButtons[0] = placeModelDiscoverButton(makeOne, btn, control, contract.DiscoverASRButton)
 	case "asr_api_key":
 		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.ASRAPIKey)
 	case "probe_asr_status":
@@ -724,6 +891,8 @@ func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t stri
 		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.LLMBaseURL)
 	case "text_model":
 		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.TextModel)
+	case "discover_llm_models":
+		p.modelButtons[1] = placeModelDiscoverButton(makeOne, btn, control, contract.DiscoverLLMButton)
 	case "llm_api_key":
 		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.LLMAPIKey)
 	case "probe_llm_status":
@@ -777,6 +946,9 @@ func placeLabeledEdit(p *uxSettings, makeOne func(cls, t string, style uintptr, 
 	}
 	label := settingsform.FieldLabel(row)
 	field := settingsform.FieldEdit(row)
+	if control.ID == "asr_model" || control.ID == "text_model" {
+		field = settingsform.ModelEdit(row)
+	}
 	style := edit
 	if control.Kind == contract.Secret {
 		style |= uxESPassword
@@ -788,6 +960,11 @@ func placeLabeledEdit(p *uxSettings, makeOne func(cls, t string, style uintptr, 
 		p.probeEdits[hwnd] = slot
 	}
 	return nil
+}
+
+func placeModelDiscoverButton(makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, btn uintptr, control contract.Control, id uintptr) uintptr {
+	box := settingsform.ModelDiscoverButton(1)
+	return makeOne("BUTTON", control.Label, btn, box.X, box.Y, box.W, box.H, id, false)
 }
 
 func placeProbeStatus(p *uxSettings, makeOne func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr, stat uintptr, fieldID string) error {
