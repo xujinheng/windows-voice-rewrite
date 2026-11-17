@@ -251,6 +251,9 @@ public final class MicrophoneRecorder {
         case .recording: break
         default: throw MicrophoneError.notRecording
         }
+        guard let id = recordingID, let processor = pipeline else {
+            throw MicrophoneError.notRecording
+        }
         state = .stopping
         // A recording state requires a successfully started engine. Avoid
         // calling CoreAudio.isRunning or HAL device discovery synchronously
@@ -263,6 +266,10 @@ public final class MicrophoneRecorder {
         // calls on AppKit's main actor; the host's processing watchdog can
         // recover independently if teardown fails to complete.
         await teardownEngineAfterStop()
+        // CoreAudio teardown may outlive the UI watchdog. Cancellation and
+        // re-recording must never let an old stop finish a new pipeline.
+        guard recordingID == id else { throw MicrophoneError.cancelled }
+        guard case .stopping = state else { throw MicrophoneError.cancelled }
         let deviceStillAvailable: Bool
         if stoppedDeviceUID.isEmpty {
             deviceStillAvailable = true
@@ -273,12 +280,8 @@ public final class MicrophoneRecorder {
                 }
             }
         }
-        guard let processor = pipeline else {
-            state = .idle
-            recordingID = nil
-            throw MicrophoneError.notRecording
-        }
-        let id = recordingID
+        guard recordingID == id else { throw MicrophoneError.cancelled }
+        guard case .stopping = state else { throw MicrophoneError.cancelled }
         guard engineWasRunning && deviceStillAvailable else {
             processor.cancel()
             pipeline = nil
