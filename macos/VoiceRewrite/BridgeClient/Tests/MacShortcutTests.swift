@@ -26,11 +26,14 @@ final class MacShortcutTests: XCTestCase {
     }
 
     func testDefaultKeyboardPlanPreservesBothMouseSideButtons() throws {
-        let dictation = try XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+R"))
-        let rewrite = try XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+E"))
+        let dictation = try XCTUnwrap(ShortcutBinding(canonical: "RightCtrl"))
+        let rewrite = try XCTUnwrap(ShortcutBinding(canonical: "RightOption"))
         let plan = try XCTUnwrap(MacShortcutPlan(dictation: dictation, rewrite: rewrite))
-        XCTAssertEqual(plan.keyboard.count, 2)
-        XCTAssertFalse(plan.keyboard.contains(HotKeyShortcut(keyCode: 17, modifiers: [.control, .option])))
+        XCTAssertEqual(plan.keyboard.count, 0)
+        XCTAssertEqual(plan.modifierDictation, .control)
+        XCTAssertEqual(plan.modifierRewrite, .option)
+        XCTAssertEqual(MacShortcut.display("RightCtrl"), "右 Control（长按）")
+        XCTAssertEqual(MacShortcut.display("RightOption"), "右 Option（长按）")
         XCTAssertEqual(plan.sideButtons.action(for: 3), .dictation)
         XCTAssertEqual(plan.sideButtons.action(for: 4), .rewrite)
         // The stored text command remains callable in-app, never a Carbon global key.
@@ -88,6 +91,24 @@ final class MacShortcutTests: XCTestCase {
         XCTAssertNil(MacShortcutPlan(
             dictation: try XCTUnwrap(ShortcutBinding(canonical: "Mouse4")),
             rewrite: rewrite, exit: exit, recordMode: "toggle"))
+    }
+
+    func testRightModifierHoldCannotAccidentallyBecomeToggleOrExit() throws {
+        let rightControl = try XCTUnwrap(ShortcutBinding(canonical: "RightCtrl"))
+        let rightOption = try XCTUnwrap(ShortcutBinding(canonical: "RightOption"))
+        let plan = try XCTUnwrap(MacShortcutPlan(dictation: rightControl, rewrite: rightOption))
+        XCTAssertEqual(plan.sideButtons.action(for: 3), .dictation)
+        XCTAssertEqual(plan.sideButtons.action(for: 4), .rewrite)
+        XCTAssertNil(MacShortcutPlan(dictation: rightControl, rewrite: rightOption, recordMode: "toggle"))
+        XCTAssertNil(MacShortcutPlan(dictation: rightControl, rewrite: rightControl))
+        XCTAssertNil(MacShortcutPlan(dictation: rightControl, rewrite: rightOption, exit: rightControl))
+        XCTAssertNil(ShortcutBinding(canonical: "Ctrl+RightCtrl"))
+        let custom = try XCTUnwrap(MacShortcutPlan(
+            dictation: XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+R")),
+            rewrite: XCTUnwrap(ShortcutBinding(canonical: "Ctrl+Alt+E"))))
+        XCTAssertEqual(custom.keyboard.count, 2)
+        XCTAssertNil(custom.modifierDictation)
+        XCTAssertNil(custom.modifierRewrite)
     }
 
     @MainActor
