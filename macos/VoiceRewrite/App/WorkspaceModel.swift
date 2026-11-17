@@ -143,6 +143,7 @@ final class WorkspaceModel: ObservableObject {
     private var activeInsert: MacDictationTarget?
     private var activeVoiceSelection: (snapshot: SelectionSnapshot, generation: UInt64)?
     private var hotKeyDriver: CarbonHotKeyDriver?
+    private var keyboardReleasedDuringStart: HotKeyShortcut?
     private var hotKeys: HotKeyRegistry?
     private var sideMouse: SideMouseButtonDriver?
 
@@ -284,7 +285,9 @@ final class WorkspaceModel: ObservableObject {
     private func acceptedShortcutPlan() -> (ShortcutBinding, ShortcutBinding)? {
         guard let dictation = ShortcutBinding(canonical: settings.dictationShortcut),
               let rewrite = ShortcutBinding(canonical: settings.rewriteShortcut),
-              MacShortcutPlan(dictation: dictation, rewrite: rewrite) != nil else {
+              let exit = ShortcutBinding(canonical: settings.exitShortcut),
+              MacShortcutPlan(dictation: dictation, rewrite: rewrite,
+                              exit: exit, recordMode: settings.recordMode) != nil else {
             return nil
         }
         return (dictation, rewrite)
@@ -360,7 +363,9 @@ final class WorkspaceModel: ObservableObject {
     /// Keep working global shortcuts registered until every new key succeeds.
     @discardableResult
     private func register(dictation: ShortcutBinding, rewrite: ShortcutBinding) -> Bool {
-        guard let next = MacShortcutPlan(dictation: dictation, rewrite: rewrite) else {
+        guard let exit = ShortcutBinding(canonical: settings.exitShortcut),
+              let next = MacShortcutPlan(dictation: dictation, rewrite: rewrite,
+                                         exit: exit, recordMode: settings.recordMode) else {
             interactionStatus = shortcutPlanRejected()
             return false
         }
@@ -405,8 +410,13 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func createHotKeyRegistry(plan: MacShortcutPlan) throws -> (CarbonHotKeyDriver, HotKeyRegistry) {
-        let driver = CarbonHotKeyDriver { [weak self] shortcut, pid in
+        let driver = CarbonHotKeyDriver(onPressed: { [weak self] shortcut, pid in
             guard let self, let bound = self.activeShortcutPlan else { return }
+            if shortcut == bound.exit {
+                NSApp.terminate(nil)
+                return
+            }
+            self.keyboardReleasedDuringStart = nil
             if shortcut == bound.dictation {
                 if self.meetingActive {
                     self.toggleMeetingVoice(intent: .express)
@@ -420,7 +430,22 @@ final class WorkspaceModel: ObservableObject {
                     self.triggerSelectionRewrite(from: pid)
                 }
             }
-        }
+        }, onReleased: { [weak self] shortcut, _ in
+            guard let self, self.settings.recordMode == "hold",
+                  let bound = self.activeShortcutPlan,
+                  shortcut == bound.dictation || shortcut == bound.rewrite else { return }
+            if self.meetingActive {
+                if self.meetingVoiceStarting { self.meetingSideReleasedDuringStart = true }
+                else if self.meetingVoiceRecording { self.toggleMeetingVoice() }
+                return
+            }
+            if shortcut == bound.rewrite && self.useTypedRewriteInstruction { return }
+            if self.isRecording {
+                self.stopRecording()
+            } else if self.isStarting {
+                self.keyboardReleasedDuringStart = shortcut
+            }
+        })
         let registry = HotKeyRegistry(driver: driver)
         do {
             for shortcut in plan.keyboard { try registry.register(shortcut) }
@@ -1539,6 +1564,11 @@ final class WorkspaceModel: ObservableObject {
                         activeVoiceSelection = (snapshot, next)
                         isVoiceSelectionRecording = true
                         isRecording = true
+                        if keyboardReleasedDuringStart == activeShortcutPlan?.rewrite {
+                            keyboardReleasedDuringStart = nil
+                            stopRecording()
+                            return
+                        }
                         showIndicator(phase: .recording, mode: "改写", pending: false)
                     }
                     if ready.cancelTask || ready.cancelMicrophone {
@@ -1598,6 +1628,11 @@ final class WorkspaceModel: ObservableObject {
                     return
                 }
                 isRecording = true
+                if keyboardReleasedDuringStart == activeShortcutPlan?.dictation {
+                    keyboardReleasedDuringStart = nil
+                    stopRecording()
+                    return
+                }
                 showIndicator(phase: .recording, mode: "听写", pending: false)
                 if let status = ready.recordingStatus { recordingStatus = status }
             } catch {
