@@ -22,6 +22,7 @@ import (
 	"runtime"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -323,6 +324,10 @@ func llamaArgs(o options) []string {
 }
 
 func checkGPUs(path, cwd string, allowCPU bool) error {
+	// A CPU-only launch is an explicit user choice. Do not require a GPU runtime.
+	if allowCPU {
+		return nil
+	}
 	cmd := exec.Command(path, "--list-devices")
 	cmd.Dir = cwd
 	output, err := cmd.CombinedOutput()
@@ -330,11 +335,19 @@ func checkGPUs(path, cwd string, allowCPU bool) error {
 	fmt.Print(string(output))
 	fmt.Println("-----------------------------------")
 	if err != nil {
-		return fmt.Errorf("failed to list CUDA devices: %w; check the cudart-llama CUDA runtime DLLs", err)
+		return fmt.Errorf("llama-server --list-devices failed: %w; check the selected binary and its dependencies", err)
 	}
-	gpuIdent := regexp.MustCompile(`(?i)\bCUDA[0-9]+\b`)
-	if !allowCPU && !gpuIdent.Match(output) {
-		return fmt.Errorf("no CUDA device listed by llama-server.exe; check ggml-cuda.dll and cudart/cublas DLLs (add -allow-cpu to override)")
+	switch runtime.GOOS {
+	case "darwin":
+		// macOS llama.cpp uses Metal, not CUDA. Neither the Swift launcher nor
+		// this check claims that Metal inference works without a real model run.
+		if !regexp.MustCompile(`(?i)\bmetal\b|\bmtl[0-9]+\b`).Match(output) {
+			return errors.New("llama-server did not list a Metal device; select a Metal-enabled build or enable CPU fallback")
+		}
+	default:
+		if !regexp.MustCompile(`(?i)\bCUDA[0-9]+\b`).Match(output) {
+			return errors.New("llama-server did not list a CUDA device; check CUDA runtime libraries or enable CPU fallback")
+		}
 	}
 	return nil
 }
@@ -376,8 +389,10 @@ func run(o options) error {
 		}
 		o.llamaPath = filepath.Join(directory, exe)
 	}
-	if info, err := os.Stat(o.llamaPath); err != nil || info.IsDir() {
-		return fmt.Errorf("llama-server.exe not found at %s; put this EXE in the same folder as llama-server.exe (or use -llama)", o.llamaPath)
+	if !o.attach {
+		if info, err := os.Stat(o.llamaPath); err != nil || info.IsDir() {
+		return fmt.Errorf("llama-server not found at %s; choose an executable llama-server and retry", o.llamaPath)
+		}
 	}
 	if !o.attach {
 		if err := findModelPaths(directory, &o); err != nil {
@@ -400,7 +415,7 @@ func run(o options) error {
 			con.Close()
 			return fmt.Errorf("port %s is already occupied; close your old llama-server.exe first, or start with -attach to reuse it", addr)
 		}
-		if err := checkGPUs(o.llamaPath, filepath.Dir(o.llamaPath), o.allowCPU); err != nil {
+		if err := checkGPUs(o.llamaPath, filepath.Dir(o.llamaPath), o.allowCPU || o.gpuLayers == 0); err != nil {
 			return err
 		}
 	}
@@ -420,7 +435,7 @@ func run(o options) error {
 	}()
 	defer srv.Shutdown(context.Background())
 	// Lifetime is tied to this EXE: closing the window / Ctrl+C stops the child.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	childExited := make(chan error, 1)
 	var child *exec.Cmd
