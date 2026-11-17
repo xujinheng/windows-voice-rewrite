@@ -54,7 +54,7 @@ final class CapturePipeline: @unchecked Sendable {
     func hasStalled(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        return phase == .accepting && isStalled(lastBufferAt: lastCaptureAt, now: now)
+        return phase == .accepting && Self.isStalled(lastBufferAt: lastCaptureAt, now: now)
     }
 
     func enqueue(_ buffer: AVAudioPCMBuffer) {
