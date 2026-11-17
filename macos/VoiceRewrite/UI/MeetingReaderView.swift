@@ -181,7 +181,7 @@ struct MeetingReaderView: View {
             }
         }
         .sheet(isPresented: $showProfile) {
-            MeetingProfileDraftView(mode: model.settings.meetingASRMode)
+            MeetingProfileDraftView(model: model)
         }
     }
 
@@ -448,30 +448,55 @@ struct MeetingReaderView: View {
 // This input surface is ready for F/H's profile persistence and live mode-change
 // endpoints. It must not claim that unsent notes affect ASR or the model.
 private struct MeetingProfileDraftView: View {
-    let mode: String
+    @ObservedObject var model: WorkspaceModel
     @Environment(\.dismiss) private var dismiss
-    @State private var background = ""
-    @State private var terms = ""
+    @State private var background: String
+    @State private var terms: String
+    @State private var error = ""
+
+    init(model: WorkspaceModel) {
+        self.model = model
+        _background = State(initialValue: model.settings.meetingBackground)
+        _terms = State(initialValue: model.settings.meetingTerms)
+    }
+
+    private var valid: Bool {
+        background.unicodeScalars.count <= 4000 && terms.unicodeScalars.count <= 2000
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("会议资料").font(.title2.bold())
             Text("背景：角色、项目、目标、已知限制").font(.headline)
             TextEditor(text: $background).frame(height: 135)
-                .onChange(of: background) { _, value in
-                    if value.count > 4000 { background = String(value.prefix(4000)) }
-                }
+                .accessibilityIdentifier("meeting_profile_background")
+            Text("背景最多 4000 字，术语最多 2000 字（按 Unicode 字符计）")
+                .font(.caption).foregroundStyle(.secondary)
             Text("术语：人名、缩写、产品名和中英对照（每行一条）").font(.headline)
             TextEditor(text: $terms).frame(height: 120)
-                .onChange(of: terms) { _, value in
-                    if value.count > 2000 { terms = String(value.prefix(2000)) }
-                }
-            Text("会议识别方式：\(mode)").foregroundStyle(.secondary)
-            Text("会议资料保存接口尚未接入。当前输入不会发送给 ASR 或 LLM。")
-                .font(.caption).foregroundStyle(.orange)
+                .accessibilityIdentifier("meeting_profile_terms")
+            Text("会议识别方式：\(model.settings.meetingASRMode)")
+                .foregroundStyle(.secondary)
+            Text("资料保存在本机配置中，并随新会议传给 Go Core；正在进行的会议需要重新开始后生效。")
+                .font(.caption).foregroundStyle(.secondary)
+            if !valid {
+                Text("背景或术语超出长度限制").foregroundStyle(.red)
+            }
+            if !error.isEmpty {
+                Text(error).foregroundStyle(.red).accessibilityIdentifier("meeting_profile_error")
+            }
             HStack {
                 Spacer()
                 Button("取消") { dismiss() }
-                Button("保存并应用") {}.disabled(true)
+                Button("保存并应用") {
+                    if model.saveMeetingProfile(background: background, terms: terms) {
+                        dismiss()
+                    } else {
+                        error = model.settingsStatus
+                    }
+                }
+                .disabled(!valid)
+                .accessibilityIdentifier("meeting_profile_save")
             }
         }
         .padding(20)
