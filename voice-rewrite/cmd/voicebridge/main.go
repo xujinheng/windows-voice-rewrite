@@ -217,7 +217,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "selected_voice_task" && req.Op != "probe_asr" && req.Op != "probe_llm" && req.Op != "list_asr_models" && req.Op != "list_llm_models" && req.Op != "check_update" && req.Op != "meeting_replies" && req.Op != "meeting_refine" && req.Op != "meeting_compose" && req.Op != "meeting_express" {
 		s.mu.Unlock()
 		switch req.Op {
-		case "meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop", "meeting_pause", "meeting_resume", "meeting_accept", "meeting_cancel", "meeting_view":
+		case "meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop", "meeting_pause", "meeting_resume", "meeting_accept", "meeting_cancel", "meeting_view", "meeting_configure", "meeting_demo":
 			s.send(s.meetingRequest(req))
 		case "hello":
 			s.send(success(req.ID, map[string]any{"name": jsonl.HelloName, "protocol": jsonl.Version}))
@@ -273,6 +273,9 @@ func (s *bridgeServer) dispatch(frame []byte) {
 
 func (s *bridgeServer) meetingRequest(req request) response {
 	switch req.Op {
+	case "meeting_demo":
+		// Fixture-only: no session, audio capture, ASR or LLM connection.
+		return success(req.ID, meetingDemoSnapshot())
 	case "meeting_start":
 		if len(req.Config) == 0 {
 			return failure(req.ID, "invalid_config", msgInvalidConfig)
@@ -324,7 +327,7 @@ func (s *bridgeServer) meetingRequest(req request) response {
 			}
 		}
 		return success(req.ID, map[string]any{"accepted": true})
-	case "meeting_snapshot", "meeting_stop", "meeting_pause", "meeting_resume", "meeting_accept", "meeting_cancel", "meeting_view":
+	case "meeting_snapshot", "meeting_stop", "meeting_pause", "meeting_resume", "meeting_accept", "meeting_cancel", "meeting_view", "meeting_configure":
 		s.mu.Lock()
 		m := s.meeting
 		if m == nil || req.SessionID == "" || req.SessionID != m.id {
@@ -338,7 +341,19 @@ func (s *bridgeServer) meetingRequest(req request) response {
 			return success(req.ID, map[string]any{"stopped": true})
 		}
 		s.mu.Unlock()
-		if req.Op == "meeting_pause" || req.Op == "meeting_resume" {
+		if req.Op == "meeting_configure" {
+		if len(req.Config) == 0 {
+			return failure(req.ID, "invalid_config", msgInvalidConfig)
+		}
+		cfg, err := coreconfig.Parse(req.Config)
+		if err != nil { return failure(req.ID, "invalid_config", msgInvalidConfig) }
+		cfg, err = coreconfig.Normalize(cfg)
+		if err != nil { return failure(req.ID, "invalid_config", msgInvalidConfig) }
+		if err := m.reconfigure(cfg); err != nil {
+			return failure(req.ID, "invalid_profile", "会议资料或识别模式无效；请检查内容长度和模式")
+		}
+	}
+	if req.Op == "meeting_pause" || req.Op == "meeting_resume" {
 			if err := m.setPaused(req.Op == "meeting_pause"); err != nil {
 				return failure(req.ID, "stale_meeting", "会议已停止或更换")
 			}
