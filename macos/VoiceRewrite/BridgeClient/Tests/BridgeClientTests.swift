@@ -159,6 +159,14 @@ final class BridgeClientTests: XCTestCase {
     }
 
     @MainActor
+    func testMeetingSnapshotTimeoutCannotRemainPendingForever() {
+        XCTAssertFalse(WorkspaceModel.meetingSnapshotExpired(startedAt: 0, now: 100))
+        XCTAssertFalse(WorkspaceModel.meetingSnapshotExpired(startedAt: 100, now: 111.99))
+        XCTAssertTrue(WorkspaceModel.meetingSnapshotExpired(startedAt: 100, now: 112))
+        XCTAssertTrue(WorkspaceModel.meetingSnapshotExpired(startedAt: 100, now: 130))
+    }
+
+    @MainActor
     func testAudioDeadlineAlwaysFinishesAndScalesWithDuration() {
         XCTAssertEqual(WorkspaceModel.asrDeadline(for: Data(repeating: 0, count: 32000)), 80)
         XCTAssertEqual(WorkspaceModel.asrDeadline(for: Data(repeating: 0, count: 960000)), 120)
