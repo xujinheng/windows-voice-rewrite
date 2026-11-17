@@ -20,6 +20,8 @@ final class SettingsStoreTests: XCTestCase {
         settings.maxRecordSeconds = 90
         settings.microphoneUID = "recording-device-uid"
         settings.meetingASRMode = ContractLimits.meetingASRMultipart
+        settings.meetingBackground = "项目背景与目标"
+        settings.meetingTerms = "ASR = 语音识别"
         try store.save(settings)
         XCTAssertEqual(try store.load(), settings)
         let file = dir.appendingPathComponent("settings.json")
@@ -28,7 +30,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(Set(json.keys), [
             "asr_base_url", "llm_base_url", "asr_model", "text_model", "max_record_seconds",
             "dictation_shortcut", "rewrite_shortcut", "microphone_uid",
-            "meeting_asr_mode",
+            "meeting_asr_mode", "meeting_background", "meeting_terms",
         ])
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: dir.path)[.posixPermissions] as? NSNumber)?.intValue, 0o700)
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber)?.intValue, 0o600)
@@ -37,6 +39,8 @@ final class SettingsStoreTests: XCTestCase {
         json.removeValue(forKey: "rewrite_shortcut")
         json["text_edit_shortcut"] = "Ctrl+Alt+T" // Old saved field must not return as a hotkey.
         json.removeValue(forKey: "meeting_asr_mode")
+        json.removeValue(forKey: "meeting_background")
+        json.removeValue(forKey: "meeting_terms")
         try JSONSerialization.data(withJSONObject: json).write(to: file)
         let migrated = try store.load()
         XCTAssertEqual(migrated.dictationShortcut, "Ctrl+Alt+R")
@@ -44,10 +48,29 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(migrated.textModel, "text-model")
         XCTAssertEqual(migrated.microphoneUID, "recording-device-uid")
         XCTAssertEqual(migrated.meetingASRMode, ContractLimits.defaultMeetingASRMode)
+        XCTAssertEqual(migrated.meetingBackground, "")
+        XCTAssertEqual(migrated.meetingTerms, "")
         try store.save(migrated)
         let saved = try XCTUnwrap(JSONSerialization.jsonObject(
             with: Data(contentsOf: file)) as? [String: Any])
         XCTAssertNil(saved["text_edit_shortcut"])
+    }
+
+    func testMeetingProfileRejectsExcessUnicodeScalars() throws {
+        var settings = MacSettings.defaults
+        settings.meetingBackground = String(repeating: "甲", count: 4001)
+        XCTAssertThrowsError(try settings.canonicalize()) {
+            XCTAssertEqual($0 as? SettingsError, .invalidValues)
+        }
+        settings.meetingBackground = " 背景 "
+        settings.meetingTerms = String(repeating: "术", count: 2001)
+        XCTAssertThrowsError(try settings.canonicalize()) {
+            XCTAssertEqual($0 as? SettingsError, .invalidValues)
+        }
+        settings.meetingTerms = " 缩写 = 英文 "
+        try settings.canonicalize()
+        XCTAssertEqual(settings.meetingBackground, "背景")
+        XCTAssertEqual(settings.meetingTerms, "缩写 = 英文")
     }
 
     func testInvalidJSONAndUnknownSecretFieldsAreRejected() throws {

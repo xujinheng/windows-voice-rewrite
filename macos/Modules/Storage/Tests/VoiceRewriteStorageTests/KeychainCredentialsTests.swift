@@ -28,7 +28,9 @@ final class KeychainCredentialsTests: XCTestCase {
                 account == .asr ? "fixture-asr-only" : "fixture-llm-only"
             }
         }
-        let settings = MacSettings.defaults
+        var settings = MacSettings.defaults
+        settings.meetingBackground = "业务背景"
+        settings.meetingTerms = "ASR = 语音识别"
         let factory = HelperConfigFactory(credentials: Fixtures())
         try factory.withEphemeralConfig(settings: settings, operation: .transcribe) { config in
             XCTAssertEqual(config["asr_api_key"] as? String, "fixture-asr-only")
@@ -42,6 +44,8 @@ final class KeychainCredentialsTests: XCTestCase {
         try factory.withEphemeralConfig(settings: settings, operation: .spokenSelectedTask) { config in
             XCTAssertEqual(config["asr_api_key"] as? String, "fixture-asr-only")
             XCTAssertEqual(config["llm_api_key"] as? String, "fixture-llm-only")
+            XCTAssertEqual(config["meeting_background"] as? String, "业务背景")
+            XCTAssertEqual(config["meeting_terms"] as? String, "ASR = 语音识别")
         }
         let stored = String(decoding: try JSONEncoder().encode(settings), as: UTF8.self)
         XCTAssertFalse(stored.contains("api_key"))
