@@ -30,10 +30,14 @@ output="$(cd "$(dirname "$output")" && pwd)/$(basename "$output")"
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 /usr/bin/ditto "$app" "$stage/VoiceRewrite.app"
+codesign --verify --deep --strict "$stage/VoiceRewrite.app"
 ln -s /Applications "$stage/Applications"
 
 /usr/bin/hdiutil create -volname "VoiceRewrite" -srcfolder "$stage" \
   -format UDZO -ov "$output" >/dev/null
 /usr/bin/hdiutil verify "$output" >/dev/null
-shasum -a 256 "$output" > "$output.sha256"
+(
+  cd "$(dirname "$output")"
+  shasum -a 256 "$(basename "$output")" > "$(basename "$output").sha256"
+)
 echo "Verified $architecture DMG: $output"
