@@ -80,6 +80,14 @@ jobs:
           artifact="$RUNNER_TEMP/VoiceRewrite-macOS-${{ matrix.arch }}.zip"
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$artifact"
           shasum -a 256 "$artifact" > "$artifact.sha256"
+          dmg="$RUNNER_TEMP/VoiceRewrite-macOS-${{ matrix.arch }}.dmg"
+          bash scripts/package-macos-dmg.sh "$app" "$dmg" "${{ matrix.arch }}"
+          xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --team-id "$TEAM" \
+            --password "$APPLE_PASSWORD" --wait
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          # Stapling changes the container bytes; refresh the verification checksum.
+          shasum -a 256 "$dmg" > "$dmg.sha256"
           security delete-keychain "$keychain"
       - name: Upload signed and notarized application
         uses: actions/upload-artifact@v4
@@ -88,4 +96,6 @@ jobs:
           path: |
             ${{ runner.temp }}/VoiceRewrite-macOS-${{ matrix.arch }}.zip
             ${{ runner.temp }}/VoiceRewrite-macOS-${{ matrix.arch }}.zip.sha256
+            ${{ runner.temp }}/VoiceRewrite-macOS-${{ matrix.arch }}.dmg
+            ${{ runner.temp }}/VoiceRewrite-macOS-${{ matrix.arch }}.dmg.sha256
           if-no-files-found: error
