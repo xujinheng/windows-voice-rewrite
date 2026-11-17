@@ -46,8 +46,8 @@ public final class SystemAudioCapture {
         sources.sort { left, right in
             if left.id == "system" { return true }
             if right.id == "system" { return false }
-            let leftZoom = left.name.localizedLowercase.contains("zoom")
-            let rightZoom = right.name.localizedLowercase.contains("zoom")
+            let leftZoom = left.name.localizedLowercase.hasPrefix("zoom")
+            let rightZoom = right.name.localizedLowercase.hasPrefix("zoom")
             if leftZoom != rightZoom { return leftZoom }
             return left.name.localizedStandardCompare(right.name) == .orderedAscending
         }
