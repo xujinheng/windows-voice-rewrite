@@ -61,6 +61,11 @@ type bridgeMeeting struct {
 	status           string
 	level            int
 	lastFinal        uint64
+	dropped          int
+	asrFirstMS       int64
+	asrDoneMS        int64
+	translationFirstMS int64
+	translationDoneMS  int64
 	replies          meetingcore.ReplyState
 	view             meetingcore.HUDFlags
 	replyStatus      string
@@ -77,7 +82,7 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 		id:        hex.EncodeToString(key[:]),
 		runtime:   meetingcore.NewSessionRuntime(),
 		source:    &meetingPacketSource{packets: make(chan []byte, 12)},
-		status:    "正在监听应用音频",
+		status:    meetingcore.ListeningPrompt,
 		config:    cfg,
 		scheduler: &meetingcore.Scheduler{},
 	}
@@ -123,7 +128,7 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 					go func(id uint64) { _ = m.runReplies(m.runtime.Context(), id) }(turn.ID)
 				}
 			}
-			m.status = "正在监听应用音频"
+			m.status = meetingcore.ListeningPrompt
 			return prior
 		},
 		OnTranslation: func(job meetingcore.CaptionTask, chinese string) {
@@ -133,33 +138,78 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 				meetingcore.ApplyCaptionTranslation(m.captions, job.ID, job.Latest, chinese)
 			}
 		},
-		OnASRDone: func(turn meetingcore.AudioTurn, _, _ time.Duration, err error) {
-			if err != nil {
-				m.mu.Lock()
-				if m.runtime.Active(turn.Epoch) {
+		OnASRFirst: func(turn meetingcore.AudioTurn, elapsed time.Duration) {
+			m.mu.Lock()
+			if m.runtime.Active(turn.Epoch) {
+				m.asrFirstMS = elapsed.Milliseconds()
+			}
+			m.mu.Unlock()
+		},
+		OnASRDone: func(turn meetingcore.AudioTurn, _ time.Duration, elapsed time.Duration, err error) {
+			m.mu.Lock()
+			if m.runtime.Active(turn.Epoch) {
+				m.asrDoneMS = elapsed.Milliseconds()
+				if err != nil {
 					m.status = "会议识别失败，请检查 ASR 服务与模型"
 				}
-				m.mu.Unlock()
 			}
+			m.mu.Unlock()
 		},
-		OnTranslationDone: func(job meetingcore.CaptionTask, _ time.Duration, err error) {
-			if err != nil {
-				m.mu.Lock()
-				if m.runtime.Active(job.Epoch) {
-					m.status = "翻译服务不可用；原文仍可阅读"
-				}
-				m.mu.Unlock()
+		OnTranslationFirst: func(job meetingcore.CaptionTask, elapsed time.Duration) {
+			m.mu.Lock()
+			if m.runtime.Active(job.Epoch) {
+				m.translationFirstMS = elapsed.Milliseconds()
 			}
+			m.mu.Unlock()
+		},
+		OnTranslationDone: func(job meetingcore.CaptionTask, elapsed time.Duration, err error) {
+			m.mu.Lock()
+			if m.runtime.Active(job.Epoch) {
+				m.translationDoneMS = elapsed.Milliseconds()
+				if err != nil {
+					m.status = meetingcore.TranslationUnavailable
+				}
+			}
+			m.mu.Unlock()
+		},
+		OnDropped: func(epoch uint64) {
+			m.mu.Lock()
+			if m.runtime.Active(epoch) {
+				m.dropped++
+				m.status = meetingcore.DroppedWork
+			}
+			m.mu.Unlock()
 		},
 	})
 	m.pipeline.Run()
-	go func() {
-		work, epoch, _ := m.runtime.Snapshot()
+	go m.runAudio()
+	return m, nil
+}
+
+// runAudio restarts the shared segmenter for every active epoch. Pausing or
+// resuming cannot accidentally revive buffered packets from an older turn.
+func (m *bridgeMeeting) runAudio() {
+	for m.runtime.Context().Err() == nil {
+		work, epoch, paused := m.runtime.Snapshot()
+		if paused {
+			select {
+			case <-m.runtime.Context().Done():
+				return
+			case <-m.runtime.Wake():
+				continue
+			}
+		}
 		var turnID uint64
-		_ = meetingcore.StreamAudio(work, m.source, nil, func() {}, func(event meetingcore.AudioEvent) {
+		_ = meetingcore.StreamAudio(work, m.source, func() time.Duration {
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			return time.Duration(m.asrDoneMS+m.translationDoneMS) * time.Millisecond
+		}, func() {}, func(event meetingcore.AudioEvent) {
 			if event.Meter {
 				m.mu.Lock()
-				m.level = event.Level
+				if m.runtime.Active(epoch) {
+					m.level = event.Level
+				}
 				m.mu.Unlock()
 			}
 			if event.UtteranceStarted {
@@ -172,19 +222,25 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 				})
 			}
 		})
-	}()
-	return m, nil
+	}
 }
 
 var (
 	errMeetingBusy         = errors.New("meeting audio queue full")
+	errMeetingPaused       = errors.New("meeting capture paused")
 	errMeetingNoFinalTurn  = errors.New("no completed meeting turn")
 	errMeetingInvalidReply = errors.New("selected reply is not complete")
 )
 
 func (m *bridgeMeeting) feed(pcm []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	work, _, paused := m.runtime.Snapshot()
 	if m.runtime.Context().Err() != nil {
 		return context.Canceled
+	}
+	if paused || work.Err() != nil {
+		return errMeetingPaused
 	}
 	select {
 	case m.source.packets <- pcm:
@@ -194,7 +250,45 @@ func (m *bridgeMeeting) feed(pcm []byte) error {
 	}
 }
 
-func (m *bridgeMeeting) stop() { m.runtime.Stop() }
+func (m *bridgeMeeting) discardPacketsLocked() {
+	for {
+		select {
+		case <-m.source.packets:
+		default:
+			return
+		}
+	}
+}
+
+// setPaused invalidates all in-flight work and buffered audio together.
+// The native host must also stop ScreenCaptureKit while paused; the bridge
+// independently refuses PCM even when the host has not yet stopped.
+func (m *bridgeMeeting) setPaused(paused bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.runtime.Context().Err() != nil {
+		return context.Canceled
+	}
+	if m.runtime.SetPaused(paused) {
+		m.discardPacketsLocked()
+		m.level = 0
+		m.replies.ResetWork()
+		if paused {
+			m.status = meetingcore.CapturePausedStatus
+		} else {
+			m.status = meetingcore.CaptureConnecting
+		}
+	}
+	return nil
+}
+
+func (m *bridgeMeeting) stop() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.runtime.Stop()
+	m.discardPacketsLocked()
+	m.level = 0
+}
 
 func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64) error {
 	m.mu.Lock()
@@ -380,7 +474,16 @@ func (m *bridgeMeeting) snapshot() map[string]any {
 	for _, line := range m.replies.Displayed.Lines {
 		lines = append(lines, map[string]any{"english": line.English, "chinese": line.Chinese, "complete": line.Complete})
 	}
+	_, epoch, paused := m.runtime.Snapshot()
 	return map[string]any{
+		"capture_paused": paused, "epoch": epoch,
+		"metrics": map[string]any{
+			"pending": m.pipeline.Pending() + m.scheduler.Pending(),
+			"dropped": m.dropped,
+			"asr_first_ms": m.asrFirstMS, "asr_done_ms": m.asrDoneMS,
+			"translation_first_ms": m.translationFirstMS,
+			"translation_done_ms": m.translationDoneMS,
+		},
 		"replies": lines, "reply_source": m.replies.Displayed.Source,
 		"reply_tip":         m.replies.Displayed.Tip,
 		"reply_first_ready": meetingcore.FirstReadyReply(m.replies.Displayed.Lines),
