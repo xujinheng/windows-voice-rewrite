@@ -2071,6 +2071,13 @@ final class WorkspaceModel: ObservableObject {
     func shutdown() {
         _ = helloGeneration.begin()
         _ = shortcutGeneration.begin()
+        // Tear down Meeting before closing the Helper; native ScreenCaptureKit
+        // callbacks must not outlive the app's session and IPC ownership.
+        if meetingActive || meetingStarting || meetingSessionID != nil {
+            stopMeeting()
+        } else {
+            systemAudio.cancel()
+        }
         cancelProbes()
         cancelCurrent()
         sideMouse?.shutdown()
