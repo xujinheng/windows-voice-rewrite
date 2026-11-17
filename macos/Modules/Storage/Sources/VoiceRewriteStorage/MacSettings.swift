@@ -12,7 +12,6 @@ public struct MacSettings: Codable, Equatable, Sendable {
     public var maxRecordSeconds: Int
     public var dictationShortcut: String
     public var rewriteShortcut: String
-    public var textEditShortcut: String
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case asrBaseURL = "asr_base_url"
@@ -24,7 +23,6 @@ public struct MacSettings: Codable, Equatable, Sendable {
         case maxRecordSeconds = "max_record_seconds"
         case dictationShortcut = "dictation_shortcut"
         case rewriteShortcut = "rewrite_shortcut"
-        case textEditShortcut = "text_edit_shortcut"
     }
 
     public init(
@@ -36,8 +34,7 @@ public struct MacSettings: Codable, Equatable, Sendable {
         maxRecordSeconds: Int = ContractLimits.defaultRecordSeconds,
         microphoneUID: String = "",
         dictationShortcut: String = ContractLimits.macDictationShortcut,
-        rewriteShortcut: String = ContractLimits.macRewriteShortcut,
-        textEditShortcut: String = ContractLimits.macTextEditShortcut
+        rewriteShortcut: String = ContractLimits.macRewriteShortcut
     ) {
         self.asrBaseURL = asrBaseURL
         self.llmBaseURL = llmBaseURL
@@ -48,7 +45,6 @@ public struct MacSettings: Codable, Equatable, Sendable {
         self.microphoneUID = microphoneUID
         self.dictationShortcut = dictationShortcut
         self.rewriteShortcut = rewriteShortcut
-        self.textEditShortcut = textEditShortcut
     }
 
     public static let defaults = MacSettings()
@@ -87,7 +83,6 @@ public struct MacSettings: Codable, Equatable, Sendable {
         }
         dictationShortcut = normalizedShortcut(dictationShortcut, fallback: ContractLimits.macDictationShortcut)
         rewriteShortcut = normalizedShortcut(rewriteShortcut, fallback: ContractLimits.macRewriteShortcut)
-        textEditShortcut = normalizedShortcut(textEditShortcut, fallback: ContractLimits.macTextEditShortcut)
     }
 
     private func normalizedShortcut(_ value: String, fallback: String) -> String {
@@ -101,10 +96,10 @@ public struct MacSettings: Codable, Equatable, Sendable {
         guard var values = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw SettingsError.invalidJSON
         }
+        values.removeValue(forKey: "text_edit_shortcut")
         let shortcutDefaults = [
             "dictation_shortcut": ContractLimits.macDictationShortcut,
             "rewrite_shortcut": ContractLimits.macRewriteShortcut,
-            "text_edit_shortcut": ContractLimits.macTextEditShortcut,
         ]
         if values["microphone_uid"] == nil { values["microphone_uid"] = "" }
         if values["meeting_asr_mode"] == nil {
