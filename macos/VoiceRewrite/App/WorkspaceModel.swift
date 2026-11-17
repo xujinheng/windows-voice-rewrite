@@ -519,10 +519,11 @@ final class WorkspaceModel: ObservableObject {
             if needsHID {
                 try getKeyboardHID().start()
                 let chosen = [settings.dictationKeyboardID, settings.rewriteKeyboardID].filter { !$0.isEmpty }
-                // Fail closed rather than unintentionally run on another keyboard.
-                guard chosen.allSatisfy({ id in keyboardDevices.contains(where: { $0.id == id && $0.selectable }) }) else {
-                    throw NSError(domain: "VoiceRewrite.KeyboardHID", code: 1,
-                                  userInfo: [NSLocalizedDescriptionKey: "所选键盘未连接或无法区分，请刷新键盘列表"])
+                // Allow saving a disconnected keyboard profile. The HID driver
+                // matches exact source IDs, so it stays inert until the device
+                // appears; there is never a global Quartz fallback.
+                if !chosen.allSatisfy({ id in keyboardDevices.contains(where: { $0.id == id && $0.selectable }) }) {
+                    keyboardSourceStatus = "所选键盘暂未连接或无法唯一区分；快捷键不会回退到其他键盘"
                 }
             }
             if let registry = hotKeys {
