@@ -1,6 +1,12 @@
 import SwiftUI
 import AppKit
 
+enum MeetingDemoLaunch {
+    static func requested(arguments: [String]) -> Bool {
+        arguments.dropFirst().contains("--meeting-demo")
+    }
+}
+
 final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
     var onTerminate: (() -> Void)?
     var onActivate: (() -> Void)?
@@ -166,7 +172,7 @@ struct VoiceRewriteApp: App {
                         workspace?.refreshMicrophonePermission()
                     }
                     lifecycle.launchWorkspaceOnce {
-                        workspace.launch(demo: CommandLine.arguments.contains("--meeting-demo"))
+                        workspace.launch(demo: MeetingDemoLaunch.requested(arguments: CommandLine.arguments))
                     }
                 }
         }
