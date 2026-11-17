@@ -704,7 +704,7 @@ final class WorkspaceModel: ObservableObject {
                 do {
                     generation = try await interaction.beginTask(targetProcessID: pid)
                     snapshot = try await interaction.captureSelection(
-                        generation: generation, intent: .insertAtCaret)
+                        generation: generation, intent: .dictation)
                     captured = true
                 } catch {
                     failure = captureStatus(error, password: ResultCopy.passwordDictation)
