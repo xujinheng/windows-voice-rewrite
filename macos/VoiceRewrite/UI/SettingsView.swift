@@ -1,6 +1,7 @@
 // Source: voice-rewrite/internal/contract
 import SwiftUI
 import VoiceRewriteStorage
+import Microphone
 
 struct SettingsView: View {
     @ObservedObject var model: WorkspaceModel
@@ -93,7 +94,8 @@ struct SettingsView: View {
                     Button("刷新设备") { model.refreshMicrophoneDevices() }
                 }
                 if !model.settings.microphoneUID.isEmpty &&
-                   !model.microphoneDevices.contains(where: { $0.id == model.settings.microphoneUID }) {
+                   MicrophoneRecorder.selectionUnavailable(model.settings.microphoneUID,
+                       in: model.microphoneDevices) {
                     Text("已保存的麦克风不在当前设备列表中，录音会提示设备不可用。")
                         .font(.footnote).foregroundStyle(.orange)
                 }

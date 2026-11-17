@@ -204,23 +204,32 @@ func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64) 
 			break
 		}
 	}
-	if _, ok := meetingcore.ReplyRequest(false, latest != ""); !ok {
-		m.replyStatus = meetingcore.RepliesWait
-		m.mu.Unlock()
-		return errors.New("no completed meeting turn")
-	}
-	prior := meetingcore.ReplyPrior(m.prior, latest)
-	serial := m.replies.Next()
-	m.replyStatus = meetingcore.RepliesPreparing
-	m.mu.Unlock()
 	_, epoch, paused := m.runtime.Snapshot()
-	if paused {
+	if status, ok := meetingcore.ReplyRequest(paused, latest != ""); !ok {
+		if status != "" {
+			m.replyStatus = status
+		}
+		m.mu.Unlock()
 		return context.Canceled
 	}
+	turn := m.lastFinal
+	// Automatic final-turn and manual requests must not race to infer the
+	// same speech. A successful automatic batch is never inferred twice.
+	if !m.replies.MayStartTurn(turn, expectedTurn != 0) {
+		m.mu.Unlock()
+		return nil
+	}
+	// Acquire cancellation ownership while holding the meeting lock: an older
+	// goroutine cannot arrive late and cancel the newer turn's reply request.
 	ctx, cancel, ok := m.runtime.ReplyContext(epoch, meetingcore.ReplyTimeout)
 	if !ok {
+		m.mu.Unlock()
 		return context.Canceled
 	}
+	prior := meetingcore.ReplyPrior(m.prior, latest)
+	serial := m.replies.StartTurn(turn)
+	m.replyStatus = meetingcore.RepliesPreparing
+	m.mu.Unlock()
 	defer cancel()
 	stopParent := context.AfterFunc(parent, cancel)
 	defer stopParent()
@@ -239,12 +248,25 @@ func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64) 
 			m.mu.Unlock()
 		})
 	}, nil)
+	if err == nil {
+		complete := false
+		for _, line := range batch.Lines {
+			complete = complete || line.Complete && strings.TrimSpace(line.English) != ""
+		}
+		if !complete {
+			err = errors.New("meeting provider returned no completed suggestions")
+		}
+	}
 	m.mu.Lock()
 	if m.replies.Current(serial) && m.runtime.Active(epoch) {
 		m.replies.DiscardPartial()
-		if err != nil {
+		m.replies.FinishTurn(serial, err == nil && ctx.Err() == nil)
+		switch {
+		case errors.Is(ctx.Err(), context.Canceled):
+			m.replyStatus = meetingcore.WorkCanceled
+		case err != nil:
 			m.replyStatus = meetingcore.RepliesFailed
-		} else {
+		default:
 			m.replyStatus = ""
 		}
 	}
@@ -270,6 +292,9 @@ func (m *bridgeMeeting) cancelWork() {
 }
 
 func (m *bridgeMeeting) refine(parent context.Context, index int, instruction string) error {
+	if index < 0 || index >= 3 {
+		return errors.New("invalid reply index")
+	}
 	m.mu.Lock()
 	chosen := m.replies.Displayed.Lines[index]
 	source := m.replies.Displayed.Source
@@ -295,6 +320,10 @@ func (m *bridgeMeeting) runExpression(parent context.Context, query meetingcore.
 	stopParent := context.AfterFunc(parent, cancel)
 	defer stopParent()
 	m.mu.Lock()
+	if !m.runtime.CurrentExpression(epoch, serial) {
+		m.mu.Unlock()
+		return context.Canceled
+	}
 	m.expressionStatus = meetingcore.ExpressionLabel(query.Mode)
 	m.mu.Unlock()
 	var expression meetingcore.Line
@@ -311,6 +340,8 @@ func (m *bridgeMeeting) runExpression(parent context.Context, query meetingcore.
 		if err == nil && expression.English != "" {
 			m.expression = expression
 			m.expressionStatus = ""
+		} else if errors.Is(ctx.Err(), context.Canceled) {
+			m.expressionStatus = meetingcore.WorkCanceled
 		} else {
 			m.expressionStatus = meetingcore.ExpressGenerateFailed
 		}

@@ -112,3 +112,34 @@ func TestReplyBatchAppliesKnownProtocolLines(t *testing.T) {
 		t.Fatal("unknown protocol changed a reply batch")
 	}
 }
+
+func TestReplyWorkCoalescesAutomaticAndManualAndAllowsExplicitRetry(t *testing.T) {
+	var state ReplyState
+	if !state.MayStartTurn(17, true) {
+		t.Fatal("first automatic turn rejected")
+	}
+	first := state.StartTurn(17)
+	if state.MayStartTurn(17, true) || state.MayStartTurn(17, false) {
+		t.Fatal("duplicate inference allowed during an active turn")
+	}
+	next := state.StartTurn(18)
+	state.FinishTurn(first, true)
+	if !state.WorkActive || state.WorkTurn != 18 || state.CompletedTurn == 17 {
+		t.Fatal("stale completion changed current work")
+	}
+	state.FinishTurn(next, true)
+	if state.MayStartTurn(18, true) || !state.MayStartTurn(18, false) ||
+		!state.MayStartTurn(19, true) {
+		t.Fatal("completed turn should suppress automatic repeats but allow a manual refresh")
+	}
+	retry := state.StartTurn(18)
+	state.FinishTurn(retry, false)
+	if !state.MayStartTurn(18, false) {
+		t.Fatal("failed manual request could not be retried")
+	}
+	state.StartTurn(19)
+	state.ResetWork()
+	if state.WorkActive || !state.MayStartTurn(19, false) {
+		t.Fatal("cancellation left the reply state permanently busy")
+	}
+}
