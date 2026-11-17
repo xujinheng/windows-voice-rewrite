@@ -270,7 +270,7 @@ func emitLimits(moduleRoot string) (string, error) {
 		return "", fmt.Errorf("no url schemes")
 	}
 	var b strings.Builder
-	b.WriteString(sourceNote("voice-rewrite/internal/core/config, shortcut, jsonl, and logfile"))
+	b.WriteString(sourceNote("voice-rewrite/internal/core/config, meeting, shortcut, jsonl, and logfile"))
 	b.WriteString("import Foundation\n\npublic enum ContractLimits {\n")
 	for _, item := range want {
 		value, ok := values[item.goName]
@@ -331,6 +331,23 @@ func emitLimits(moduleRoot string) (string, error) {
 			return "", fmt.Errorf("missing meeting control %s", item.goName)
 		}
 		b.WriteString("    public static let " + item.swift + " = " + value + "\n")
+	}
+	hud, err := parseFile(filepath.Join(moduleRoot, "internal", "core", "meeting", "hud.go"))
+	if err != nil {
+		return "", err
+	}
+	labels := stringConsts(hud)
+	for _, item := range []struct{ goName, swift string }{
+		{"CaptionFocusTitle", "meetingCaptionsFocusTitle"},
+		{"CaptionFullTitle", "meetingCaptionsFullTitle"},
+		{"ExpressionExpandTitle", "meetingExpressionExpandTitle"},
+		{"ExpressionCollapseTitle", "meetingExpressionCollapseTitle"},
+	} {
+		value, ok := labels[item.goName]
+		if !ok {
+			return "", fmt.Errorf("missing meeting title %s", item.goName)
+		}
+		b.WriteString("    public static let " + item.swift + " = " + strconv.Quote(value) + "\n")
 	}
 	shortcut, err := parseFile(filepath.Join(moduleRoot, "internal", "core", "shortcut", "shortcut.go"))
 	if err != nil {

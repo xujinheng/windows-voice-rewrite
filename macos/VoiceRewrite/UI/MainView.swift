@@ -212,12 +212,14 @@ private struct MeetingView: View {
                 .font(.footnote).foregroundStyle(.secondary)
                 .accessibilityIdentifier("meeting_status")
             HStack {
-                Button(model.meetingCaptionsOnly ? "完整视图" : "专注字幕") {
+                Button(model.meetingCaptionsOnly
+                    ? ContractLimits.meetingCaptionsFullTitle : ContractLimits.meetingCaptionsFocusTitle) {
                     model.toggleMeetingCaptionsOnly()
                 }
                 .disabled(!model.meetingActive || model.meetingBusy)
                 .accessibilityIdentifier("meeting_focus_captions")
-                Button(model.meetingExpressionExpanded ? "收起英文" : "放大英文") {
+                Button(model.meetingExpressionExpanded
+                    ? ContractLimits.meetingExpressionCollapseTitle : ContractLimits.meetingExpressionExpandTitle) {
                     model.toggleMeetingExpressionExpanded()
                 }
                 .disabled(!model.meetingActive || model.meetingBusy || model.meetingCaptionsOnly)

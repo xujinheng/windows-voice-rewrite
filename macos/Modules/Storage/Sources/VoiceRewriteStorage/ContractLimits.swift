@@ -1,4 +1,4 @@
-// Source: voice-rewrite/internal/core/config, shortcut, jsonl, and logfile
+// Source: voice-rewrite/internal/core/config, meeting, shortcut, jsonl, and logfile
 import Foundation
 
 public enum ContractLimits {
@@ -21,6 +21,10 @@ public enum ContractLimits {
     public static let meetingASRModes = [meetingASRMultipart, meetingASRLlamaPrefix]
     public static let meetingButtonCaptions = 7101
     public static let meetingButtonExpression = 7115
+    public static let meetingCaptionsFocusTitle = "专注字幕"
+    public static let meetingCaptionsFullTitle = "完整视图"
+    public static let meetingExpressionExpandTitle = "放大英文"
+    public static let meetingExpressionCollapseTitle = "收起英文"
     public static let macDictationShortcut = "Ctrl+Alt+R"
     public static let macRewriteShortcut = "Ctrl+Alt+E"
     public static let macTextEditShortcut = "Ctrl+Alt+T"
