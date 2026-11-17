@@ -17,6 +17,19 @@ public struct MicrophoneInputDevice: Identifiable, Equatable, Sendable {
     public let name: String
 }
 
+/// Native capture boundary. A deterministic CI device can exercise the real
+/// hotkey-to-UI-to-Helper path without requesting hardware permissions.
+/// Production always uses MicrophoneRecorder; this protocol is not a second
+/// recording implementation.
+@MainActor
+public protocol VoiceRecordingDevice: AnyObject {
+    var permissionStatus: MicrophonePermissionStatus { get }
+    var rmsLevel: Float { get }
+    func start(deviceUID: String, maximumSeconds: Int) async throws
+    func stop() async throws -> Data
+    func cancel()
+}
+
 /// Captures the selected macOS microphone through AVAudioEngine.
 /// No simulated device, ASR, network work or Go integration lives in this package.
 ///
@@ -24,7 +37,7 @@ public struct MicrophoneInputDevice: Identifiable, Equatable, Sendable {
 /// suitable for base64 encoding as `transcribe.pcm_base64` by the host integration.
 /// Lifecycle state belongs to the main actor; blocking CoreAudio calls run on a worker.
 @MainActor
-public final class MicrophoneRecorder {
+public final class MicrophoneRecorder: VoiceRecordingDevice {
     private enum State {
         case idle, starting, recording, stopping, failed(MicrophoneError)
     }
