@@ -2,15 +2,13 @@ package clipboard
 
 import "time"
 
-// Receipt-based restoration is shared behavior; native hosts own the board,
-// event callbacks and the actual timing loop.
+// Values here are the single source for native pasteboard timing.
 const (
-	PasteReceiptQuietMilliseconds = 200
-	PasteReceiptMaxMilliseconds   = 8000
-	PasteReceiptPollMilliseconds  = 100
-	// Legacy Windows paste remains at its proven v0.10 wait until its native
-	// delayed-rendering backend provides real clipboard read receipts.
-	WindowsPasteWaitMilliseconds = 250
+	PasteReceiptQuietMilliseconds   = 200
+	PasteReceiptMinimumMilliseconds = 700
+	PasteReceiptMaxMilliseconds     = 3000
+	PasteReceiptPollMilliseconds    = 100
+	WindowsPasteWaitMilliseconds    = 250
 )
 
 type PasteReceipt struct {
@@ -19,12 +17,11 @@ type PasteReceipt struct {
 	HasRead       bool
 }
 
-// RestoreReady waits for a quiet period after the last real consumer read.
-// If no read is seen, keep the transcript available until the bounded
-// timeout rather than restoring stale clipboard text before a slow editor reads.
+// An eager clipboard manager may fetch the promised text before the target
+// handles Cmd+V. Keep it available for the minimum dwell even with a receipt.
+// One promised-data callback is not proof of subsequent consumer reads.
 func RestoreReady(state PasteReceipt) bool {
-	if state.HasRead && state.SinceLastRead >= PasteReceiptQuietMilliseconds*time.Millisecond {
-		return true
-	}
-	return state.Elapsed >= PasteReceiptMaxMilliseconds*time.Millisecond
+	return state.Elapsed >= PasteReceiptMaxMilliseconds*time.Millisecond ||
+		(state.Elapsed >= PasteReceiptMinimumMilliseconds*time.Millisecond &&
+			state.HasRead && state.SinceLastRead >= PasteReceiptQuietMilliseconds*time.Millisecond)
 }

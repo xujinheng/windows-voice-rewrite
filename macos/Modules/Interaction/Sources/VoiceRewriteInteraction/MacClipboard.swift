@@ -31,9 +31,14 @@ public final class MacClipboardBoard: ClipboardReadReceiptBoard, @unchecked Send
     private let board: NSPasteboard
     private let ownerType = NSPasteboard.PasteboardType("com.voicerewrite.interaction.temp-owner")
     private let maxBackupBytes = 8 * 1024 * 1024
+    private let providerLock = NSLock()
     private var provider: PasteTextProvider?
 
-    public func lastTextReadAt() -> TimeInterval? { provider?.lastReadAt }
+    public func lastTextReadAt() -> TimeInterval? {
+        providerLock.lock()
+        defer { providerLock.unlock() }
+        return provider?.lastReadAt
+    }
 
     public init(board: NSPasteboard = .general) { self.board = board }
 
@@ -73,7 +78,9 @@ public final class MacClipboardBoard: ClipboardReadReceiptBoard, @unchecked Send
         }
         board.clearContents()
         guard board.writeObjects([item]) else { throw ClipboardFailure.writeFailed }
+        providerLock.lock()
         provider = nextProvider
+        providerLock.unlock()
         return board.changeCount
     }
 
@@ -98,7 +105,9 @@ public final class MacClipboardBoard: ClipboardReadReceiptBoard, @unchecked Send
         }
         board.clearContents()
         if !items.isEmpty, !board.writeObjects(items) { throw ClipboardFailure.restoreFailed }
+        providerLock.lock()
         provider = nil
+        providerLock.unlock()
     }
 }
 

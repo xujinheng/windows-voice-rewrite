@@ -3,6 +3,7 @@ import Foundation
 /// All edits must be authorized against a captured target. Go's may_attempt_replace is not authorization.
 public enum InteractionFailure: Error, Equatable, Sendable {
     case accessibilityPermissionDenied
+    case keyboardEventPermissionDenied
     case noFrontmostApplication
     case noFocusedElement
     case selectionUnavailable

@@ -61,9 +61,47 @@ final class NativeClipboardReceiptTests: XCTestCase {
         XCTAssertNil(board.lastTextReadAt())
     }
 
+    func testFastReceiverReadBeforeReceiptRegistration() async throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.setString("original", forType: .string))
+        let board = MacClipboardBoard(board: pasteboard)
+        let lease = ClipboardProtector(board: board)
+        let token = try lease.beginTemporaryText("speech")
+        // The event was posted and the destination consumed the promised text
+        // before the clipboard restoration callback could be registered.
+        let postingStartedAt = ProcessInfo.processInfo.systemUptime - 1.0
+        XCTAssertEqual(pasteboard.string(forType: .string), "speech")
+        XCTAssertNotNil(board.lastTextReadAt())
+        lease.restoreAfterPaste(token, postingStartedAt: postingStartedAt)
+        try await Task.sleep(nanoseconds: 450_000_000)
+        XCTAssertEqual(pasteboard.string(forType: .string), "original")
+    }
+
+    func testReceiptRequiresMinimumVisibilityAndQuietPeriod() {
+        XCTAssertFalse(PasteTiming.restoreReady(elapsed: 0.4, sinceLastRead: 0.3, hasRead: true))
+        XCTAssertFalse(PasteTiming.restoreReady(elapsed: 0.9, sinceLastRead: 0.01, hasRead: true))
+        XCTAssertTrue(PasteTiming.restoreReady(elapsed: 0.9, sinceLastRead: 0.3, hasRead: true))
+        XCTAssertFalse(PasteTiming.restoreReady(elapsed: 2.9, sinceLastRead: nil, hasRead: false))
+        XCTAssertTrue(PasteTiming.restoreReady(elapsed: 3.0, sinceLastRead: nil, hasRead: false))
+    }
+
+    func testDeliveryStatesMatchGoCore() {
+        XCTAssertEqual(DeliveryState.blocked.rawValue, 0)
+        XCTAssertEqual(DeliveryState.sentUnverified.rawValue, 1)
+        XCTAssertEqual(DeliveryState.confirmed.rawValue, 2)
+        XCTAssertEqual(DeliveryState.uncertain.rawValue, 3)
+        XCTAssertTrue(DeliveryState.blocked.requiresManualResult)
+        XCTAssertFalse(DeliveryState.sentUnverified.requiresManualResult)
+        XCTAssertFalse(DeliveryState.confirmed.requiresManualResult)
+        XCTAssertTrue(DeliveryState.uncertain.requiresManualResult)
+    }
+
     func testReceiptTimingsComeFromSharedGoCore() {
         XCTAssertEqual(PasteTiming.quietMilliseconds, 200)
-        XCTAssertEqual(PasteTiming.maxMilliseconds, 8000)
+        XCTAssertEqual(PasteTiming.minimumMilliseconds, 700)
+        XCTAssertEqual(PasteTiming.maxMilliseconds, 3000)
         XCTAssertEqual(PasteTiming.pollMilliseconds, 100)
     }
 }
@@ -336,6 +374,37 @@ final class ClipboardTests: XCTestCase {
         XCTAssertEqual(board.restores, 1)
     }
 
+    func testSecondDictationWaitsForClipboardLease() async throws {
+        let board = FakeClipboard(), protector = ClipboardProtector(board: board)
+        let first = try protector.beginTemporaryText("first")
+        let queued = Task {
+            try await protector.beginWhenAvailable("second", stillValid: { true })
+        }
+        try await Task.sleep(nanoseconds: 120_000_000)
+        XCTAssertEqual(board.current.items[0]["text"], Data("first".utf8))
+        try protector.finish(first)
+        let second = try await queued.value
+        XCTAssertTrue(protector.isOwned(second))
+        XCTAssertEqual(board.current.items[0]["text"], Data("second".utf8))
+        try protector.finish(second)
+    }
+
+    func testCancelledQueuedDictationDoesNotChangeClipboard() async throws {
+        let board = FakeClipboard(), protector = ClipboardProtector(board: board)
+        let first = try protector.beginTemporaryText("first")
+        let queued = Task {
+            try await protector.beginWhenAvailable("second", stillValid: { false })
+        }
+        do {
+            _ = try await queued.value
+            XCTFail("cancelled work acquired a lease")
+        } catch {
+            XCTAssertEqual(error as? InteractionFailure, .cancelled)
+        }
+        XCTAssertEqual(board.current.items[0]["text"], Data("first".utf8))
+        try protector.finish(first)
+    }
+
     func testOwnershipLostNeverClobbersUserClipboard() async throws {
         let board = FakeClipboard(), protector = ClipboardProtector(board: board)
         let lease = try protector.beginTemporaryText("secret")
@@ -375,6 +444,24 @@ final class ClipboardTests: XCTestCase {
 }
 
 final class TextWriteVerificationTests: XCTestCase {
+    func testBrowserSelectionUsesVerifiedValueWhenAXSelectedTextMissing() {
+        let range = VoiceRewriteInteraction.TextRange(location: 1, length: 2)
+        XCTAssertEqual(TextWriteVerification.selectedText(
+            reported: nil, fullValue: "A😀B", range: range), "😀")
+        XCTAssertEqual(TextWriteVerification.selectedText(
+            reported: "", fullValue: "A😀B", range: range), "😀")
+        XCTAssertNil(TextWriteVerification.selectedText(
+            reported: "wrong", fullValue: "A😀B", range: range))
+        XCTAssertNil(TextWriteVerification.selectedText(
+            reported: nil, fullValue: "A😀B",
+            range: VoiceRewriteInteraction.TextRange(location: 2, length: 1)))
+        XCTAssertNil(TextWriteVerification.selectedText(
+            reported: nil, fullValue: nil, range: range))
+        XCTAssertEqual(TextWriteVerification.selectedText(
+            reported: "ok", fullValue: nil,
+            range: VoiceRewriteInteraction.TextRange(location: 0, length: 2)), "ok")
+    }
+
     func testMissingAXValueCannotConfirmRewrite() {
         XCTAssertNil(TextWriteVerification.expectedValue(
             original: nil, selectedText: "",

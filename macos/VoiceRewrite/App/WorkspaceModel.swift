@@ -991,11 +991,14 @@ final class WorkspaceModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self, self.resultGeneration.accepts(token) else { return }
                 do {
-                    try await self.dictationDelivery.deliver(text, to: insertion, stillValid: {
+                    let outcome = try await self.dictationDelivery.deliver(text, to: insertion, stillValid: {
                         self.resultGeneration.accepts(token)
                     })
-                    DiagnosticLog.note("stage=dictation_delivery status=sent_unverified")
-                    self.applyTask(dictationInsertFollowUp(succeeded: true, status: "", manualTitle: "", text: text))
+                    guard self.resultGeneration.accepts(token) else { return }
+                    DiagnosticLog.note("stage=dictation_delivery status=\(outcome)")
+                    self.applyTask(dictationInsertFollowUp(
+                        succeeded: !outcome.requiresManualResult,
+                        status: "", manualTitle: ResultCopy.dictationWriteUnconfirmed, text: text))
                 } catch {
                     DiagnosticLog.note("stage=dictation_delivery status=failed code=\(insertionDiagnosticCode(error))")
                     self.applyTask(dictationInsertFollowUp(

@@ -22,7 +22,7 @@ let driver = CarbonHotKeyDriver { shortcut, foregroundPID in
                 generation: generation, intent: .replaceSelection)
             // Perform ASR/LLM off of the UI/AX path; retain both target and generation.
             // let asrText = try await recognizeSpeech()
-            // try await session.insertIfCurrent(target, text: asrText, generation: generation)
+            // try await session.replaceIfCurrent(target, with: asrText, generation: generation)
         } catch {
             // Show an error, e.g. permission denied, stale snapshot, unsupported AX.
         }
@@ -42,9 +42,9 @@ try hotkeys.register(.init(keyCode: 15, modifiers: [.command, .shift]))
 
 Ordinary dictation posts a single Cmd+V with the original application still active. AX is optional and only assists with detecting focused-field changes and protected inputs. Without AX the host cannot guarantee that the original text field remains focused inside the same application. The user chooses this compatibility-oriented behavior. There is no automatic retry after a paste event.
 
-The native pasteboard provides text lazily and records a receipt when the destination requests it. Restoration is delayed until reads have been quiet for 200ms, or a bounded 8-second timeout. The original clipboard is restored only while the temporary lease is still owned. A new dictation arriving during another paste lease can use direct Unicode input instead.
+The native pasteboard provides text lazily and records a receipt when the destination requests it. Restoration waits at least 700ms after the paste event starts and then until the delayed text read is quiet for 200ms; it is bounded by a 3-second timeout. The original clipboard is restored only while the temporary lease is still owned. Concurrent dictations queue for the same clipboard paste path; direct Unicode is used only when existing clipboard formats cannot be restored.
 
-The temporary pasteboard transaction captures all representations of all items (up to a bounded total size) and refuses data it cannot restore. It includes an owner marker and checks `changeCount` before restoring. When another process changes the clipboard, its content is left alone. Temporary contents are tagged transient/concealed for cooperative clipboard managers; those tags are conventions, not a privacy guarantee. If the original clipboard has unrepresentable types or the target cannot be verified, no paste is attempted. Results remain visible in the macOS app with a manual copy button.
+The temporary pasteboard transaction captures all representations of all items (up to a bounded total size) and refuses data it cannot restore. It includes an owner marker and checks `changeCount` before restoring. When another process changes the clipboard, its content is left alone. Temporary contents are tagged transient/concealed for cooperative clipboard managers; those tags are conventions, not a privacy guarantee. If the original clipboard has unrepresentable types, normal dictation uses Unicode event injection; an unavailable target or event-posting permission prevents automatic delivery. Results remain visible in the macOS app with a manual copy button.
 
 Cross-process event delivery and AX observations are not atomic. A focus change between the final check and a queued input event remains a platform risk. Dictation paste delivery is best effort; unsupported AX targeting or unsafe clipboard snapshots may still require manual copying. Explicit rewriting requires full AX confirmation. Physical-device acceptance is required before claiming per-application compatibility.
 
@@ -69,5 +69,5 @@ Platform-neutral authorization, lifecycle, clipboard and text-verification tests
 ### Remaining risks and boundaries
 
 * AX target identity, notifications, and full-value support vary by app. Unsupported observation or unverifiable paste is denied; untested applications can remain unsupported. CI compilation does not establish real editor compatibility.
-* macOS has no atomic compare-and-replace across the host and external application. AX notifications may be late and queued keyboard events may reach an app after focus changes. Guarded writes are best effort, not a guarantee against every external race. Strict zero-risk environments must disable cross-app writing.
+* macOS has no atomic compare-and-replace across the host and external application. AX notifications may be late and queued keyboard events may reach an app after focus changes. Guarded writes are best effort, not a guarantee against every external race. Keyboard event injection is preflighted and successful event posting remains unverified until the target responds.
 * If a process crashes, the OS releases Carbon registrations; graceful host termination should explicitly call `shutdown`. Native app lifecycle and UI integration are outside this module.

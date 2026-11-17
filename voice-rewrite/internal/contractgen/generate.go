@@ -53,6 +53,11 @@ func Generate(moduleRoot string) (map[string]string, error) {
 		return nil, fmt.Errorf("paste timing: %w", err)
 	}
 	out[filepath.Join(repo, "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/PasteTiming.swift")] = paste
+	delivery, err := emitDelivery(filepath.Join(core, "delivery", "delivery.go"))
+	if err != nil {
+		return nil, fmt.Errorf("delivery: %w", err)
+	}
+	out[filepath.Join(repo, "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/DeliveryState.swift")] = delivery
 	logPath := filepath.Join(repo, "macos/VoiceRewrite/App/DiagnosticLog.swift")
 	logText, err := emitDiagnosticLog(logPath, filepath.Join(core, "logfile", "rotate.go"))
 	if err != nil {
@@ -81,7 +86,7 @@ func emitPasteTiming(path string) (string, error) {
 	for _, spec := range constSpecs(file) {
 		values[spec.name] = spec.value
 	}
-	names := []string{"PasteReceiptQuietMilliseconds", "PasteReceiptMaxMilliseconds", "PasteReceiptPollMilliseconds"}
+	names := []string{"PasteReceiptQuietMilliseconds", "PasteReceiptMinimumMilliseconds", "PasteReceiptMaxMilliseconds", "PasteReceiptPollMilliseconds"}
 	for _, name := range names {
 		if values[name] == "" {
 			return "", fmt.Errorf("missing %s", name)
@@ -90,8 +95,39 @@ func emitPasteTiming(path string) (string, error) {
 	return sourceNote("voice-rewrite/internal/core/clipboard") +
 		"import Foundation\n\npublic enum PasteTiming {\n" +
 		"    public static let quietMilliseconds = " + values[names[0]] + "\n" +
-		"    public static let maxMilliseconds = " + values[names[1]] + "\n" +
-		"    public static let pollMilliseconds = " + values[names[2]] + "\n}\n", nil
+		"    public static let minimumMilliseconds = " + values[names[1]] + "\n" +
+		"    public static let maxMilliseconds = " + values[names[2]] + "\n" +
+		"    public static let pollMilliseconds = " + values[names[3]] + "\n" +
+		"    public static func restoreReady(elapsed: TimeInterval, sinceLastRead: TimeInterval?, hasRead: Bool) -> Bool {\n" +
+		"        elapsed >= Double(maxMilliseconds) / 1000 ||\n" +
+		"            (elapsed >= Double(minimumMilliseconds) / 1000 && hasRead &&\n" +
+		"             (sinceLastRead ?? 0) >= Double(quietMilliseconds) / 1000)\n" +
+		"    }\n}\n", nil
+}
+
+func emitDelivery(path string) (string, error) {
+	file, err := parseFile(path)
+	if err != nil {
+		return "", err
+	}
+	values := map[string]string{}
+	for _, spec := range constSpecs(file) {
+		values[spec.name] = spec.value
+	}
+	names := []string{"Blocked", "SentUnverified", "Confirmed", "Uncertain"}
+	for _, name := range names {
+		if values[name] == "" {
+			return "", fmt.Errorf("missing delivery state %s", name)
+		}
+	}
+	return sourceNote("voice-rewrite/internal/core/delivery") +
+		"import Foundation\n\npublic enum DeliveryState: Int, Sendable {\n" +
+		"    case blocked = " + values[names[0]] + "\n" +
+		"    case sentUnverified = " + values[names[1]] + "\n" +
+		"    case confirmed = " + values[names[2]] + "\n" +
+		"    case uncertain = " + values[names[3]] + "\n" +
+		"    public var requiresManualResult: Bool { self == .blocked || self == .uncertain }\n" +
+		"}\n", nil
 }
 
 func emitSideHold(path string) (string, error) {

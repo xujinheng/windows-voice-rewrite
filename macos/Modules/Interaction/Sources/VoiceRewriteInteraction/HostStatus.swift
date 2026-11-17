@@ -5,8 +5,8 @@ public func captureStatus(_ error: Error, password: String) -> String {
         return "读取外部文本框失败：\(error.localizedDescription)"
     }
     switch failure {
-    case .accessibilityPermissionDenied:
-        return "缺少辅助功能权限；请授权当前 VoiceRewrite.app 并重新打开"
+    case .accessibilityPermissionDenied, .keyboardEventPermissionDenied:
+        return "缺少系统键盘操作权限；请在辅助功能中授权 VoiceRewrite 并重新打开"
     case .noFrontmostApplication, .noFocusedElement, .notEditable, .selectionUnavailable:
         return "未识别到可编辑文本框或光标；请先点击目标软件的输入框"
     case .invalidSelection:
@@ -51,8 +51,8 @@ public func insertionStatus(_ error: Error, rewrite: Bool, passwordRewrite: Stri
             return "请先松开听写快捷键再尝试输入"
         case .timedOut:
             return "录音或识别时间超过目标锁定期限；未插入，结果可复制"
-        case .accessibilityPermissionDenied:
-            return "缺少辅助功能权限；请重新授权当前 VoiceRewrite.app"
+        case .accessibilityPermissionDenied, .keyboardEventPermissionDenied:
+            return "没有发送键盘事件的系统权限；请在辅助功能中授权 VoiceRewrite 后重试"
         default:
             return "目标或选区验证失败；未发起写入，结果可复制"
         }
@@ -70,7 +70,7 @@ public func insertionDiagnosticCode(_ error: Error) -> String {
         case .applicationChanged, .focusChanged: return "focus_changed"
         case .selectionChanged: return "selection_changed"
         case .writeNotConfirmed: return "write_attempted_unconfirmed"
-        case .accessibilityPermissionDenied: return "permission_denied"
+        case .accessibilityPermissionDenied, .keyboardEventPermissionDenied: return "permission_denied"
         case .secureField: return "secure_field"
         case .timedOut, .cancelled, .staleGeneration, .staleSnapshot: return "task_inactive"
         default: return "capture_or_target_failed"
@@ -175,7 +175,7 @@ public func recordingIdle() -> String { "未录音" }
 
 public func dictationRequestingMicrophone() -> String { "正在申请麦克风权限并启动录音" }
 
-public func dictationCaretLocked() -> String { "已锁定原应用光标及选区；识别后将复核目标" }
+public func dictationCaretLocked() -> String { "已记录原应用；识别后将尝试向其输入文字" }
 
 public func dictationNoTarget() -> String {
     "未指定外部文本框；本次录音仅显示识别结果。请在目标软件中按配置的听写快捷键开始听写"
@@ -189,7 +189,7 @@ public func dictationProcessing() -> String { "正在处理语音" }
 
 public func dictationRecognized() -> String { "语音识别已完成" }
 
-public func dictationInserted() -> String { "已向原输入框发送文字" }
+public func dictationInserted() -> String { "已发送输入指令；请以目标输入框实际内容为准" }
 
 public func dictationRecognizeFailed(_ detail: String) -> String { "识别失败：\(detail)" }
 
