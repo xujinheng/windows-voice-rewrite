@@ -160,6 +160,7 @@ final class WorkspaceModel: ObservableObject {
     private var activeVoiceSelection: (snapshot: SelectionSnapshot, generation: UInt64)?
     private var activeVoiceTargetPID: Int32?
     private var hotKeyDriver: CarbonHotKeyDriver?
+    private var rightModifierDriver: RightModifierHoldDriver?
     private var shortcutCaptureActive = false
     private var hotKeys: HotKeyRegistry?
     private var sideMouse: SideMouseButtonDriver?
@@ -326,6 +327,7 @@ final class WorkspaceModel: ObservableObject {
             ? accessibilityGranted()
             : accessibilityNeeded()
         refreshSideMouse()
+        if accessibilityAuthorized && rightModifierDriver == nil { registerHotKeys() }
     }
 
     private func registerHotKeys() {
@@ -378,6 +380,50 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    /// Register a listen-only macOS modifier tap without touching Carbon's
+    /// key-combination registry. Installing the tap first keeps old bindings
+    /// active when permissions are missing.
+    private func makeRightModifierDriver() throws -> RightModifierHoldDriver {
+        let driver = rightModifierDriver ?? RightModifierHoldDriver(
+            onHold: { [weak self] key, pid in
+                guard let self, let bound = self.activeShortcutPlan else { return }
+                if key == bound.modifierDictation {
+                    self.keyboardPressed(.dictation, targetPID: pid)
+                } else if key == bound.modifierRewrite {
+                    self.keyboardPressed(.rewrite, targetPID: pid)
+                }
+            },
+            onRelease: { [weak self] key in
+                guard let self, let bound = self.activeShortcutPlan else { return }
+                if key == bound.modifierDictation {
+                    self.keyboardReleased(.dictation)
+                } else if key == bound.modifierRewrite {
+                    self.keyboardReleased(.rewrite)
+                }
+            },
+            onCancel: { [weak self] in self?.cancelRightModifierVoice() },
+            onFault: { [weak self] error in
+                self?.interactionStatus = "右侧快捷键监听失败：\(error.localizedDescription)"
+            }
+        )
+        try driver.start()
+        return driver
+    }
+
+    private func cancelRightModifierVoice() {
+        guard keyboardGate.action != nil else { return }
+        keyboardGate.clear()
+        keyboardHoldSequence &+= 1
+        if meetingActive {
+            if meetingVoiceRecording || meetingVoiceStarting {
+                cancelMeetingVoiceStart()
+                dismissIndicator()
+            }
+        } else if isRecording || isStarting {
+            cancelCurrent()
+        }
+    }
+
     /// Keep working global shortcuts registered until every new key succeeds.
     @discardableResult
     private func register(dictation: ShortcutBinding, rewrite: ShortcutBinding) -> Bool {
@@ -390,7 +436,10 @@ final class WorkspaceModel: ObservableObject {
         let label = voiceShortcutPlanLabel(
             dictation: MacShortcut.display(dictation.normalized),
             rewrite: MacShortcut.display(rewrite.normalized))
+        let needsModifier = next.modifierDictation != nil || next.modifierRewrite != nil
+        var candidate: RightModifierHoldDriver?
         do {
+            if needsModifier { candidate = try makeRightModifierDriver() }
             if let registry = hotKeys {
                 try registry.replace(with: next.keyboard)
             } else {
@@ -400,28 +449,47 @@ final class WorkspaceModel: ObservableObject {
             }
             activeShortcutPlan = next
             keyboardHoldEnabled = next.recordMode == "hold"
+            if let candidate {
+                candidate.setBindings(dictation: next.modifierDictation, rewrite: next.modifierRewrite)
+                candidate.setSuspended(shortcutCaptureActive)
+                candidate.setVoicePaused(voicePaused)
+                rightModifierDriver = candidate
+            } else {
+                rightModifierDriver?.shutdown()
+                rightModifierDriver = nil
+            }
             sideMouse?.setBindings(shortcutCaptureBindings())
             interactionStatus = label
             return true
         } catch {
+            if rightModifierDriver == nil { candidate?.shutdown() }
             interactionStatus = "快捷键注册失败：\(error.localizedDescription)；原快捷键保持有效"
             return false
         }
     }
 
     private func restoreShortcutPlan(_ previous: MacShortcutPlan?) {
-        guard let registry = hotKeys else {
-            if let previous, let restored = try? createHotKeyRegistry(plan: previous) {
-                hotKeyDriver = restored.0
-                hotKeys = restored.1
-                activeShortcutPlan = previous
-                sideMouse?.setBindings(shortcutCaptureBindings())
-            }
-            return
-        }
         do {
-            try registry.replace(with: previous?.keyboard ?? [])
+            if let registry = hotKeys {
+                try registry.replace(with: previous?.keyboard ?? [])
+            } else if let previous {
+                let (driver, registry) = try createHotKeyRegistry(plan: previous)
+                hotKeyDriver = driver
+                hotKeys = registry
+            }
             activeShortcutPlan = previous
+            keyboardHoldEnabled = previous?.recordMode == "hold"
+            if let previous,
+               previous.modifierDictation != nil || previous.modifierRewrite != nil {
+                let driver = try makeRightModifierDriver()
+                driver.setBindings(dictation: previous.modifierDictation, rewrite: previous.modifierRewrite)
+                driver.setSuspended(shortcutCaptureActive)
+                driver.setVoicePaused(voicePaused)
+                rightModifierDriver = driver
+            } else {
+                rightModifierDriver?.shutdown()
+                rightModifierDriver = nil
+            }
             sideMouse?.setBindings(shortcutCaptureBindings())
         } catch {
             interactionStatus = "无法恢复原快捷键：\(error.localizedDescription)"
@@ -556,6 +624,7 @@ final class WorkspaceModel: ObservableObject {
     func setShortcutCaptureActive(_ active: Bool) {
         guard shortcutCaptureActive != active else { return }
         shortcutCaptureActive = active
+        rightModifierDriver?.setSuspended(active)
         sideMouse?.setBindings(shortcutCaptureBindings())
     }
 
@@ -568,11 +637,14 @@ final class WorkspaceModel: ObservableObject {
     func refreshSideMouse() {
         accessibilityAuthorized = InteractionSession.accessibilityPermissionGranted()
         guard accessibilityAuthorized else {
+            rightModifierDriver?.shutdown()
+            rightModifierDriver = nil
             sideMouse?.shutdown()
             sideMouse = nil
             sideMouseStatus = sideMouseAccessibilityDenied()
             return
         }
+        if rightModifierDriver == nil { registerHotKeys() }
         let isFreshStart = sideMouse == nil
         let driver = sideMouse ?? SideMouseButtonDriver(
             bindings: shortcutCaptureBindings(),
@@ -642,6 +714,7 @@ final class WorkspaceModel: ObservableObject {
             stopMeeting(reason: "语音已暂停；会议采集已结束")
         }
         sideMouse?.setVoicePaused(voicePaused)
+        rightModifierDriver?.setVoicePaused(voicePaused)
         dismissPreviewIndicator()
         if let status = turn.sideStatus {
             sideMouseStatus = status
@@ -2487,6 +2560,8 @@ final class WorkspaceModel: ObservableObject {
         sideMouseStatus = sideMouseStopped()
         hotKeys?.shutdown()
         hotKeyDriver?.shutdown()
+        rightModifierDriver?.shutdown()
+        rightModifierDriver = nil
         hotKeys = nil
         hotKeyDriver = nil
         activeShortcutPlan = nil
