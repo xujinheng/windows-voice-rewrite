@@ -15,7 +15,7 @@ enum MeetingReaderLayout {
         let numbers = value.split(separator: ",").compactMap { Double($0) }
         guard numbers.count == 6, numbers.allSatisfy({ $0.isFinite && $0 >= 0 && $0 <= 10000 }),
               numbers.contains(where: { $0 > 0 }) else { return defaults }
-        return numbers.map(CGFloat.init)
+        return numbers.map { CGFloat($0) }
     }
 
     static func encode(_ values: [CGFloat]) -> String {
@@ -56,6 +56,7 @@ enum MeetingReaderLayout {
     }
 }
 
+@MainActor
 private struct ReaderSnapshot {
     let captions: [MeetingCaptionRow]
     let replies: [MeetingReplyRow]
@@ -170,7 +171,7 @@ struct MeetingReaderView: View {
             }
         }
         .padding(12)
-        .frame(minWidth: embedded ? 590 : 700, minHeight: embedded ? 625 : 735)
+        .frame(minWidth: embedded ? 590 : 600, minHeight: embedded ? 625 : 720)
         .onAppear { weights = MeetingReaderLayout.decode(savedWeights) }
         .onChange(of: model.meetingActive) { _, active in
             if !active {
@@ -234,7 +235,7 @@ struct MeetingReaderView: View {
             .fill(Color(nsColor: .separatorColor).opacity(0.6))
             .frame(height: 10)
             .overlay {
-                Capsule().fill(.secondary.opacity(0.65))
+                Capsule().fill(Color.secondary.opacity(0.65))
                     .frame(width: 42, height: 2)
             }
             .contentShape(Rectangle())
