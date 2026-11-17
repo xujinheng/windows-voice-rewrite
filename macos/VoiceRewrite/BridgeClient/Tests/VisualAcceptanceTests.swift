@@ -40,7 +40,7 @@ final class VisualAcceptanceTests: XCTestCase {
         let nativePlatform = "macos-x64"
         #endif
         let platform = environment["VOICEREWRITE_ACCEPTANCE_PLATFORM"] ?? nativePlatform
-        let directory = repository.appendingPathComponent("acceptance-output/\\(platform)",
+        let directory = repository.appendingPathComponent("acceptance-output/\(platform)",
             isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var captures: [Capture] = []
