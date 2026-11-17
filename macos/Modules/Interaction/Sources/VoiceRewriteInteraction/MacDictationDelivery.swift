@@ -85,7 +85,14 @@ public final class MacDictationDelivery {
         }
     }
 
+    private func requireKeyboardEventPermission() throws {
+        guard CGPreflightPostEventAccess() else {
+            throw InteractionFailure.keyboardEventPermissionDenied
+        }
+    }
+
     private func postPaste() throws {
+        try requireKeyboardEventPermission()
         guard let source = CGEventSource(stateID: .hidSystemState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false) else {
@@ -100,13 +107,16 @@ public final class MacDictationDelivery {
     /// Direct Unicode is a fallback *before* a paste is posted, when the
     /// clipboard cannot be faithfully snapshotted or another lease is active.
     /// Never retry after a possibly delivered paste.
-    private func typeUnicode(_ text: String, to target: MacDictationTarget) throws {
+    private func typeUnicode(_ text: String, to target: MacDictationTarget,
+                             stillValid: () -> Bool) throws {
+        try requireKeyboardEventPermission()
         guard let source = CGEventSource(stateID: .hidSystemState) else {
             throw InteractionFailure.unsupportedNativeWrite
         }
         let units = Array(text.utf16)
         var offset = 0
         while offset < units.count {
+            guard stillValid() else { throw InteractionFailure.cancelled }
             try revalidate(target)
             var end = min(offset + 16, units.count)
             if end < units.count && end > offset &&
@@ -141,28 +151,45 @@ public final class MacDictationDelivery {
     }
 
     public func deliver(_ text: String, to target: MacDictationTarget,
-                        stillValid: () -> Bool) async throws {
+                        stillValid: () -> Bool) async throws -> DeliveryState {
         guard !text.isEmpty else { throw InteractionFailure.invalidSelection }
         try await waitForModifierRelease(stillValid: stillValid)
         guard stillValid() else { throw InteractionFailure.cancelled }
         try revalidate(target)
+        // Only unavailable clipboard formats justify using a different input
+        // mechanism. A concurrent paste must wait for its existing lease.
+        // Never switch methods solely because another transcript is pending.
         let lease: UUID
-        do {
-            lease = try clipboard.beginTemporaryText(text)
-        } catch ClipboardFailure.snapshotUnavailable {
-            try typeUnicode(text, to: target)
-            return
-        } catch ClipboardFailure.busy {
-            try typeUnicode(text, to: target)
-            return
+        let deadline = ProcessInfo.processInfo.systemUptime +
+            Double(PasteTiming.maxMilliseconds + PasteTiming.minimumMilliseconds) / 1000
+        while true {
+            guard stillValid() else { throw InteractionFailure.cancelled }
+            try revalidate(target)
+            do {
+                lease = try clipboard.beginTemporaryText(text)
+                break
+            } catch ClipboardFailure.busy {
+                guard ProcessInfo.processInfo.systemUptime < deadline else {
+                    throw ClipboardFailure.busy
+                }
+                try await Task.sleep(nanoseconds: 50_000_000)
+            } catch ClipboardFailure.snapshotUnavailable {
+                try typeUnicode(text, to: target, stillValid: stillValid)
+                return .sentUnverified
+            }
         }
         do {
             try revalidate(target)
             guard clipboard.isOwned(lease) else { throw ClipboardFailure.ownershipLost }
+            guard stillValid() else { throw InteractionFailure.cancelled }
+            // Start before posting: a fast editor may read the promised text
+            // synchronously, before CGEvent.post returns.
+            let postingStartedAt = ProcessInfo.processInfo.systemUptime
             try postPaste()
             // A queued Cmd+V is not a consumption receipt. Prefer a real paste
             // read notification; otherwise retain the transcript until timeout.
-            clipboard.restoreAfterPaste(lease)
+            clipboard.restoreAfterPaste(lease, postingStartedAt: postingStartedAt)
+            return .sentUnverified
         } catch {
             try? clipboard.finish(lease)
             throw error
