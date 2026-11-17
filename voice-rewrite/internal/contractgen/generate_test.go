@@ -81,16 +81,16 @@ func TestGenerateHostFilesFromCore(t *testing.T) {
 	}
 	limits := first[filepath.Join(filepath.Dir(root), "macos/Modules/Storage/Sources/VoiceRewriteStorage/ContractLimits.swift")]
 	for _, marker := range []string{
-        "maxSystemPromptBytes", "defaultRecordMode", "defaultExitShortcut",
-        "minResponseTokens", "maxResponseTokens", "defaultMaxResponseTokens",
-        "maxSelectedRunes", "defaultMaxSelectedRunes", "defaultCopyAttempts",
-        "defaultCopyTimeoutMS",
-    } {
-        if !strings.Contains(limits, marker) {
-            t.Fatalf("settings contract missing %s", marker)
-        }
-    }
-    if strings.Contains(limits, "macTextEditShortcut") {
+		"maxSystemPromptBytes", "defaultRecordMode", "defaultExitShortcut",
+		"minResponseTokens", "maxResponseTokens", "defaultMaxResponseTokens",
+		"maxSelectedRunes", "defaultMaxSelectedRunes", "defaultCopyAttempts",
+		"defaultCopyTimeoutMS",
+	} {
+		if !strings.Contains(limits, marker) {
+			t.Fatalf("settings contract missing %s", marker)
+		}
+	}
+	if strings.Contains(limits, "macTextEditShortcut") {
 		t.Fatal("third global macOS keyboard shortcut was regenerated")
 	}
 	if !strings.Contains(limits, "func canonicalEndpoints") || !strings.Contains(limits, "func storedCredentialTooLong") || !strings.Contains(limits, "trimmed.contains(\"://\")") || !strings.Contains(limits, "func baseURLEscapesOK") || !strings.Contains(limits, "\"%25\"") {
