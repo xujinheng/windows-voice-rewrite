@@ -29,6 +29,12 @@ public final class MicrophoneRecorder {
         case idle, starting, recording, stopping, failed(MicrophoneError)
     }
 
+    // One owner for all native CoreAudio start/stop/reset operations.
+    // Parallel teardown and restart on the same physical input can deadlock
+    // drivers or crash AVAudioEngine. Conversion has its own separate queue.
+    private nonisolated static let audioLifecycle = DispatchQueue(
+        label: "com.xujinheng.VoiceRewrite.audio.lifecycle", qos: .userInitiated)
+
     private var state: State = .idle
     private var recordingID: UUID?
     private var recordingDeviceUID = ""
@@ -167,7 +173,7 @@ public final class MicrophoneRecorder {
             // They must not run on the key/indicator AppKit event loop.
             let prepared = try await withCheckedThrowingContinuation {
                 (continuation: CheckedContinuation<(AVAudioEngine, CapturePipeline), Error>) in
-                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                Self.audioLifecycle.async { [weak self] in
                     do {
                         let pair = try Self.prepareEngine(deviceUID: deviceUID, attempt: attempt) { id, reason in
                             Task { @MainActor [weak self] in
@@ -358,7 +364,7 @@ public final class MicrophoneRecorder {
     }
 
     private nonisolated static func cleanupEngineAsync(_ instance: AVAudioEngine, hasTap: Bool) {
-        DispatchQueue.global(qos: .userInitiated).async {
+        Self.audioLifecycle.async {
             closeEngine(instance, hasTap: hasTap)
         }
     }
@@ -382,7 +388,7 @@ public final class MicrophoneRecorder {
         hasTap = false
         guard let stoppedEngine else { return }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            DispatchQueue.global(qos: .userInitiated).async {
+            Self.audioLifecycle.async {
                 Self.closeEngine(stoppedEngine, hasTap: removeTap)
                 continuation.resume()
             }
