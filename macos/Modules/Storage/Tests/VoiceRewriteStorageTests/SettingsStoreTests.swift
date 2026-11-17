@@ -56,8 +56,8 @@ final class SettingsStoreTests: XCTestCase {
         }
         try JSONSerialization.data(withJSONObject: json).write(to: file)
         let migrated = try store.load()
-        XCTAssertEqual(migrated.dictationShortcut, "Ctrl+Alt+R")
-        XCTAssertEqual(migrated.rewriteShortcut, "Ctrl+Alt+E")
+        XCTAssertEqual(migrated.dictationShortcut, "RightCtrl")
+        XCTAssertEqual(migrated.rewriteShortcut, "RightOption")
         XCTAssertEqual(migrated.textModel, "text-model")
         XCTAssertEqual(migrated.microphoneUID, "recording-device-uid")
         XCTAssertEqual(migrated.meetingASRMode, ContractLimits.defaultMeetingASRMode)
