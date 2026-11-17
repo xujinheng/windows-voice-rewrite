@@ -1,8 +1,8 @@
 # Qwen3-ASR OneClick
 
-Windows launcher for `llama-server.exe` with audio transcription and streamed chat continuation APIs.
+Shared Go launcher/proxy for `llama-server` on Windows and macOS with audio transcription, streamed chat continuation and tokenization APIs. Windows provides the command-line OneClick executable; macOS also offers a standalone native SwiftUI launcher built from the same Go module. See [macOS OneClick launcher](../macos/OneClickLauncher/README.md) for local GGUF selection, Metal/CPU controls, start/stop/restart and connection steps.
 
-## Configure
+## Configure on Windows
 
 1. Download `llama.cpp` for Windows from [official releases](https://github.com/ggml-org/llama.cpp/releases). Use a build supporting Qwen3-ASR audio input, assistant prefilling, streaming chat completions, and the tokenization APIs below. The launcher does not bundle or pin llama.cpp.
 2. Obtain a compatible Qwen3-ASR GGUF and matching `mmproj` GGUF.
@@ -14,7 +14,7 @@ Default proxy endpoint: `http://127.0.0.1:8081/v1`. Default backend: `http://127
 
 For VoiceRewrite's default ASR endpoint (`http://127.0.0.1:8080/v1`), start from [config.voicerewrite.example.json](config.voicerewrite.example.json), which uses port 8082 for the backend.
 
-The launcher can attach to an existing server. GPU acceleration is configurable; CPU fallback requires `allow_cpu: true`. The default launch arguments use 99 GPU layers, an 8192-token context, and one inference slot (`-np 1`). GPU memory must accommodate the ASR model, audio encoder, context, and any other resident models. Keep the unauthenticated API bound to loopback.
+The launcher can attach to an existing server. GPU acceleration is configurable; CPU fallback requires `allow_cpu: true` (or zero GPU layers). Windows checks CUDA devices, while macOS checks Metal devices when a GPU launch is requested. The default launch arguments use 99 GPU layers, an 8192-token context, and one inference slot (`-np 1`). GPU memory must accommodate the ASR model, audio encoder, context, and any other resident models. Keep the unauthenticated API bound to loopback.
 
 ## API contract
 
