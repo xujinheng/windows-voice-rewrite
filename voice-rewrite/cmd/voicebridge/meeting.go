@@ -414,12 +414,21 @@ func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64, 
 // View actions use the same authoritative Go HUD transition function as
 // Windows. The macOS host only decides how to lay out native SwiftUI panes.
 func (m *bridgeMeeting) applyViewButton(id int) bool {
-	if id != meetingcore.ButtonCaptions && id != meetingcore.ButtonExpression {
+	if id != 0 && id != meetingcore.ButtonCaptions && id != meetingcore.ButtonExpression {
 		return false
 	}
-	action, _ := meetingcore.CommandFor(id)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if id == 0 {
+		// An explicitly requested auto-focus uses the same portable policy as
+		// Windows. The host only sends this when its reader is not scrolling old
+		// history or frozen; no bridge timer may steal the user's reading focus.
+		m.view.CaptionsOnly, m.view.ExpressionExpanded =
+			meetingcore.ExpressionFocus(m.expression.Complete,
+				m.expression.English != "", m.view.CaptionsOnly, m.view.ExpressionExpanded)
+		return true
+	}
+	action, _ := meetingcore.CommandFor(id)
 	m.view, _ = meetingcore.ApplyCommand(m.view, action, 0)
 	return true
 }
