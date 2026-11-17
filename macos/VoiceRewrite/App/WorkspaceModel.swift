@@ -993,6 +993,7 @@ final class WorkspaceModel: ObservableObject {
         let generation = resultGeneration.begin()
         sideDictationPreflight = SideDictationPreflight(generation: generation, targetPID: targetPID)
         isStarting = true
+        armProcessingWatchdog(token: generation, seconds: 30, stage: "microphone_start")
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -1003,11 +1004,13 @@ final class WorkspaceModel: ObservableObject {
                       self.resultGeneration.accepts(generation) else { return }
                 current.ready = true
                 self.sideDictationPreflight = current
+                self.finishProcessingWatchdog()
                 if current.held { self.promoteSideDictation(current) }
             } catch {
                 guard let current = self.sideDictationPreflight,
                       current.generation == generation else { return }
                 self.sideDictationPreflight = nil
+                self.finishProcessingWatchdog()
                 self.isStarting = false
                 if current.held {
                     let failed = dictationMicrophoneReady(started: false, tokenValid: true,
@@ -1024,6 +1027,7 @@ final class WorkspaceModel: ObservableObject {
     private func cancelUnconfirmedSideDictation() {
         guard let current = sideDictationPreflight, !current.held else { return }
         sideDictationPreflight = nil
+        finishProcessingWatchdog()
         _ = resultGeneration.begin()
         microphone.cancel()
         isStarting = false
@@ -1034,27 +1038,37 @@ final class WorkspaceModel: ObservableObject {
               preflight.ready, preflight.held,
               resultGeneration.accepts(preflight.generation) else { return }
         sideDictationPreflight = nil
-        var snapshot: MacDictationTarget?
-        var failure: String?
-        if let pid = preflight.targetPID, pid > 0 {
-            do {
-                snapshot = try dictationDelivery.capture(processID: pid)
-            } catch {
-                DiagnosticLog.note("stage=dictation_capture status=failed code=\(insertionDiagnosticCode(error))")
-                failure = captureStatus(error, password: ResultCopy.passwordDictation)
+        // The speculative microphone is ready, but another application's
+        // AX service may be blocked. Capture its target off-main, retaining the
+        // "starting" state so an early side-button release is honored.
+        armProcessingWatchdog(token: preflight.generation, seconds: 20, stage: "dictation_capture")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            var snapshot: MacDictationTarget?
+            var failure: String?
+            if let pid = preflight.targetPID, pid > 0 {
+                do {
+                    snapshot = try await self.dictationDelivery.captureAsync(processID: pid)
+                } catch {
+                    guard self.resultGeneration.accepts(preflight.generation) else { return }
+                    DiagnosticLog.note("stage=dictation_capture status=failed code=\(insertionDiagnosticCode(error))")
+                    failure = captureStatus(error, password: ResultCopy.passwordDictation)
+                }
             }
+            guard self.resultGeneration.accepts(preflight.generation) else { return }
+            self.finishProcessingWatchdog()
+            let arm = dictationArm(hasTarget: (preflight.targetPID ?? 0) > 0,
+                                  tokenValid: true, captured: snapshot != nil,
+                                  captureFailure: failure)
+            if let status = arm.interactionStatus { self.interactionStatus = status }
+            if arm.keepInsert { self.activeInsert = snapshot }
+            let ready = dictationMicrophoneReady(started: true, tokenValid: true, failure: "")
+            self.isRecording = true
+            self.isStarting = false
+            self.showIndicator(phase: .recording, mode: "听写", pending: false)
+            if let status = ready.recordingStatus { self.recordingStatus = status }
+            self.stopWhenSideMouseReleased(.dictation)
         }
-        let arm = dictationArm(hasTarget: (preflight.targetPID ?? 0) > 0,
-                              tokenValid: true, captured: snapshot != nil,
-                              captureFailure: failure)
-        if let status = arm.interactionStatus { interactionStatus = status }
-        if arm.keepInsert { activeInsert = snapshot }
-        let ready = dictationMicrophoneReady(started: true, tokenValid: true, failure: "")
-        isRecording = true
-        isStarting = false
-        showIndicator(phase: .recording, mode: "听写", pending: false)
-        if let status = ready.recordingStatus { recordingStatus = status }
-        stopWhenSideMouseReleased(.dictation)
     }
 
     func refreshMeetingSources() {
