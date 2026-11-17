@@ -13,6 +13,10 @@ final class CapturePipeline: @unchecked Sendable {
     private var pendingFrames = 0
     private var failure: MicrophoneError?
     private var measuredRMS: Float = 0
+    // The audio callback advances this heartbeat even for digital silence.
+    // A dead/removed input device can stop callbacks without delivering an
+    // AVAudioEngineConfigurationChange notification.
+    private var lastCaptureAt = ProcessInfo.processInfo.systemUptime
     private let queueLimitFrames: Int
     private let converter: NativeAudioConverter
     private var encoded = PCM16Buffer()
@@ -34,6 +38,19 @@ final class CapturePipeline: @unchecked Sendable {
         return measuredRMS
     }
 
+    /// Pure liveness threshold for tests. Silence is valid input: only the
+    /// absence of callbacks is a failure, never a low RMS reading.
+    static func isStalled(lastBufferAt: TimeInterval, now: TimeInterval,
+                          threshold: TimeInterval = 8) -> Bool {
+        now >= lastBufferAt && now - lastBufferAt >= threshold
+    }
+
+    func hasStalled(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return phase == .accepting && isStalled(lastBufferAt: lastCaptureAt, now: now)
+    }
+
     func enqueue(_ buffer: AVAudioPCMBuffer) {
         let count = Int(buffer.frameLength)
         guard count > 0 else { return }
@@ -48,6 +65,7 @@ final class CapturePipeline: @unchecked Sendable {
             return
         }
         pendingFrames += count
+        lastCaptureAt = ProcessInfo.processInfo.systemUptime
         lock.unlock()
 
         // Engine formats are required to be noninterleaved Float32 at start().
