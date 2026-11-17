@@ -130,10 +130,18 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/acceptance.xcresult" \
             -only-testing:VoiceRewriteTests/VisualAcceptanceTests test 2>&1 |
             tee "acceptance-output/logs/$VOICEREWRITE_ACCEPTANCE_PLATFORM-xctest.txt"
-          test -f "$VOICEREWRITE_ACCEPTANCE_DIR/manifest.json"
+          echo "Acceptance manifest path: $VOICEREWRITE_ACCEPTANCE_DIR"
+          find acceptance-output -maxdepth 3 -type f -print | sort
+          test -f "$VOICEREWRITE_ACCEPTANCE_DIR/manifest.json" || {
+            echo "::error::XCTest did not write expected manifest"; exit 1;
+          }
+          echo "Runner architecture: $(uname -m); expected: ${{ matrix.native }}"
           test "$(uname -m)" = '${{ matrix.native }}'
           app="$RUNNER_TEMP/acceptance-build/Build/Products/Debug/VoiceRewrite.app"
-          test -x "$app/Contents/MacOS/voicebridge"
+          ls -l "$app/Contents/MacOS/" || true
+          test -x "$app/Contents/MacOS/voicebridge" || {
+            echo "::error::Xcode acceptance build has no bundled voicebridge"; exit 1;
+          }
           file "$app/Contents/MacOS/VoiceRewrite" "$app/Contents/MacOS/voicebridge" |
             tee "acceptance-output/logs/$VOICEREWRITE_ACCEPTANCE_PLATFORM-arch.txt"
       - name: Exercise native Interaction clipboard, focus and shortcut adapters
