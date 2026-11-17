@@ -68,6 +68,15 @@ public enum MacModifierKey: String, CaseIterable, Equatable, Sendable {
         }
     }
 
+    /// NSEvent flags for the same modifier family, used by key-learning UI.
+    public var captureFlag: NSEvent.ModifierFlags {
+        switch self {
+        case .leftControl, .rightControl: return .control
+        case .leftOption, .rightOption: return .option
+        case .leftCommand, .rightCommand: return .command
+        }
+    }
+
     public var displayName: String {
         switch self {
         case .leftControl: return "左 Control（长按）"
