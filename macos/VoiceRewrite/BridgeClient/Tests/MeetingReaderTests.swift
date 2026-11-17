@@ -120,4 +120,20 @@ final class MeetingReaderTests: XCTestCase {
         }
     }
 
+    func testRestoredMeetingWindowStaysOnConnectedScreen() {
+        let primary = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let left = CGRect(x: -1920, y: 0, width: 1920, height: 1080)
+        let onLeft = CGRect(x: -1600, y: 120, width: 780, height: 840)
+        XCTAssertEqual(MeetingReaderLayout.restoredFrame(onLeft, displays: [primary, left]), onLeft)
+        let disconnected = MeetingReaderLayout.restoredFrame(onLeft, displays: [primary])
+        XCTAssertEqual(disconnected.minX, 0)
+        XCTAssertEqual(disconnected.width, 780)
+        XCTAssertEqual(disconnected.height, 840)
+        let partiallyOffscreen = CGRect(x: 1300, y: 850, width: 780, height: 840)
+        let clamped = MeetingReaderLayout.restoredFrame(partiallyOffscreen, displays: [primary])
+        XCTAssertEqual(clamped.maxX, primary.maxX)
+        XCTAssertEqual(clamped.maxY, primary.maxY)
+    }
+
+
 }
