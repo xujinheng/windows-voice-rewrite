@@ -379,7 +379,11 @@ func processRequest(ctx context.Context, req request) response {
 			}
 			return providerFailure(req.ID, "model_list_failed", "无法读取模型列表；请检查服务地址和 API Key", err)
 		}
-		return success(req.ID, map[string]any{"models": models})
+		truncated := len(models) > 100
+		if truncated {
+			models = models[:100]
+		}
+		return success(req.ID, map[string]any{"models": models, "truncated": truncated})
 	case "probe_asr":
 		message := serviceprobe.ProbeModel(ctx, "ASR", cfg.ASRBaseURL, cfg.ASRAPIKey, cfg.ASRModel)
 		return success(req.ID, map[string]string{"kind": "ASR", "message": message})
