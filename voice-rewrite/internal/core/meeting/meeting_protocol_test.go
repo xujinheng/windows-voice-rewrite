@@ -211,7 +211,7 @@ func TestMeetingPartialReplyAndNoThinking(t *testing.T) {
 	cfg.TextModel = "qwen"
 	cfg.MeetingTerms = "Milvus"
 	var got []Line
-	err := Complete(context.Background(), cfg, Query{Mode: "replies", Latest: "What should we check?"}, func(l Line) { got = append(got, l) })
+	err := Complete(context.Background(), cfg, Query{Mode: "replies", Latest: "What should we check in Milvus?"}, func(l Line) { got = append(got, l) })
 	if err != nil || len(got) < 2 || got[0].Complete || !got[len(got)-1].Complete {
 		t.Fatalf("%#v %v", got, err)
 	}

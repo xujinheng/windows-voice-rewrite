@@ -401,9 +401,8 @@ func (s *bridgeServer) meetingTask(ctx context.Context, req request) response {
 	case "meeting_replies":
 		err = m.runReplies(ctx, 0)
 	case "meeting_refine":
-		if req.ReplyIndex < 0 || req.ReplyIndex > 2 ||
-			!meetingcore.ValidInstruction(req.Instruction) {
-			return failure(req.ID, "invalid_request", "请选择回复并输入 2000 字以内的调整指令")
+		if _, ok := meetingcore.AcceptRefine(req.ReplyIndex, req.Instruction); !ok {
+			return failure(req.ID, "invalid_request", "请选择回复并输入 600 字以内的调整指令")
 		}
 		err = m.refine(ctx, req.ReplyIndex, req.Instruction)
 	case "meeting_express":

@@ -40,7 +40,7 @@ func TestPrepareQuerySeparatesLiteralSpeechFromIntentAndRelevantHistory(t *testi
 		t.Fatalf("caption should see vocabulary but not a transcript recap: %+v", caption)
 	}
 	replies := PrepareQuery(cfg, Query{Mode: "replies", Latest: "Should we proceed?", Prior: prior})
-	if len(replies.Prior) != 2 || replies.Terms != cfg.MeetingTerms || replies.Background != cfg.MeetingBackground {
+	if len(replies.Prior) != 2 || replies.Terms != "" || replies.Background != cfg.MeetingBackground {
 		t.Fatalf("requested replies must preserve bounded user profile: %+v", replies)
 	}
 }
@@ -141,5 +141,28 @@ func TestCompleteInjectsOnlyRelevantGlossaryIntoExpressAndCompose(t *testing.T) 
 				t.Fatalf("unrelated background/history leaked into %s: %+v", mode, captured)
 			}
 		})
+	}
+}
+
+func TestPrepareQueryReplyAndRefineContextIsTaskSpecific(t *testing.T) {
+	cfg := coreconfig.Defaults()
+	cfg.MeetingBackground = "Do not assume our team has approved the release."
+	cfg.MeetingTerms = "米尔沃斯 = Milvus\nAPI = Application Programming Interface"
+	replies := PrepareQuery(cfg, Query{Mode: "replies", Latest: "What is the API status?",
+		Prior: []string{"We mentioned Milvus in the prior discussion."}})
+	if replies.Terms != cfg.MeetingTerms || len(replies.Prior) != 1 {
+		t.Fatalf("relevant reply context missing: %+v", replies)
+	}
+	unrelated := PrepareQuery(cfg, Query{Mode: "replies", Latest: "Is it raining?",
+		Prior: []string{"We are discussing the weather."}})
+	if unrelated.Terms != "" {
+		t.Fatalf("unrelated glossary polluted a reply: %+v", unrelated)
+	}
+	refine := PrepareQuery(cfg, Query{Mode: "refine",
+		SelectedReply: "We need to check the API.", UserPoints: "make it shorter",
+		Prior: []string{"Unrelated prior: we guarantee shipment tomorrow."}})
+	if len(refine.Prior) != 0 || refine.Background != "" ||
+		refine.Terms != "API = Application Programming Interface" {
+		t.Fatalf("refinement inherited unrelated facts: %+v", refine)
 	}
 }

@@ -307,8 +307,8 @@ func TestMeetingAssistantRejectsInvalidRequestsBeforeInference(t *testing.T) {
 		{"no-final", "meeting_replies", "", meetingcore.RepliesWait, 0},
 		{"blank-compose", "meeting_compose", "　 \t ", "2000", 0},
 		{"long-compose", "meeting_compose", strings.Repeat("字", 2001), "2000", 0},
-		{"blank-refine", "meeting_refine", " \t ", "2000", 0},
-		{"long-refine", "meeting_refine", strings.Repeat("a", 2001), "2000", 0},
+		{"blank-refine", "meeting_refine", " \t ", "600", 0},
+		{"long-refine", "meeting_refine", strings.Repeat("a", 601), "600", 0},
 		{"no-selection", "meeting_refine", "make it shorter", "完整", 0},
 	}
 	for _, tc := range cases {
