@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -199,6 +201,18 @@ func TestBridgeMeetingRapidStopJoinsAudioConsumer(t *testing.T) {
 		m, err := newBridgeMeeting(parsed)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if n == 0 {
+			_, epoch, _ := m.runtime.Snapshot()
+			if err := m.setPaused(true); err != nil {
+				t.Fatal(err)
+			}
+			if err := m.setPaused(false); err != nil {
+				t.Fatal(err)
+			}
+			if err := m.runReplies(context.Background(), 1, epoch); !errors.Is(err, context.Canceled) {
+				t.Fatalf("automatic reply from stale epoch was admitted: %v", err)
+			}
 		}
 		if err := m.setPaused(n%2 == 0); err != nil {
 			t.Fatal(err)
