@@ -5,9 +5,9 @@ import VoiceRewriteInteraction
 /// A card only delegates an explicitly authorized edit to InteractionSession.
 @MainActor
 struct ResultCardApplyAction {
-    let isBusy: () -> Bool
-    let perform: () async throws -> Void
-    let cancel: () -> Void
+    let isBusy: @MainActor () -> Bool
+    let perform: @MainActor () async throws -> Void
+    let cancel: @MainActor () -> Void
 }
 
 enum ResultCardApplyFailure: Error {
@@ -32,6 +32,7 @@ final class ResultCardActionSession: ObservableObject {
     @Published private(set) var note = ""
     @Published private(set) var isClosed = false
     @Published private(set) var attempted = false
+    @Published private(set) var isApplying = false
     private let applyAction: ResultCardApplyAction?
 
     var hasApplyAction: Bool { applyAction != nil }
@@ -50,7 +51,10 @@ final class ResultCardActionSession: ObservableObject {
             return
         }
         attempted = true
+        isApplying = true
+        defer { isApplying = false }
         note = ResultApplyCopy.checking
+        guard !Task.isCancelled, !isClosed else { return }
         do {
             try await applyAction.perform()
             guard !isClosed else { return }
@@ -59,7 +63,7 @@ final class ResultCardActionSession: ObservableObject {
             guard !isClosed else { return }
             switch error {
             case ResultCardApplyFailure.editorClosed,
-                 InteractionFailure.noFrontmostApplication, InteractionFailure.noFocusedElement:
+                 InteractionFailure.noFrontmostApplication:
                 note = ResultApplyCopy.editorClosed
             case ResultCardApplyFailure.unconfirmed, InteractionFailure.writeNotConfirmed:
                 note = ResultApplyCopy.unconfirmed
@@ -94,6 +98,7 @@ final class ResultCardPanel {
     private var localMonitor: Any?
     private var title = ""
     private var session: ResultCardActionSession?
+    private var applyWork: Task<Void, Never>?
 
     func present(title: String, text: String, applyAction: ResultCardApplyAction? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -109,6 +114,8 @@ final class ResultCardPanel {
     }
 
     func dismiss() {
+        applyWork?.cancel()
+        applyWork = nil
         session?.close()
         session = nil
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
@@ -119,14 +126,17 @@ final class ResultCardPanel {
     }
 
     private func copy() {
-        guard let session, panel?.isVisible == true else { return }
+        guard let session, panel?.isVisible == true, !session.isApplying else { return }
         NSPasteboard.general.clearContents()
         session.copyCompleted(NSPasteboard.general.setString(session.text, forType: .string))
     }
 
     private func apply() {
-        guard let session, panel?.isVisible == true else { return }
-        Task { await session.apply() }
+        guard let session, panel?.isVisible == true, applyWork == nil else { return }
+        applyWork = Task { [weak self] in
+            await session.apply()
+            if self?.session === session { self?.applyWork = nil }
+        }
     }
 
     private func show(on panel: NSPanel, width: CGFloat, height: CGFloat) {
@@ -321,6 +331,7 @@ struct ResultCardView: View {
                     .foregroundStyle(session.canApply ? palette.text : palette.accentText)
             }
             .buttonStyle(.plain)
+            .disabled(session.isApplying)
             .position(x: CGFloat(copy.x) + CGFloat(copy.w) / 2,
                       y: CGFloat(copy.y) + CGFloat(copy.h) / 2)
             .accessibilityIdentifier("result-card-copy")
