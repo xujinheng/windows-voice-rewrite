@@ -82,6 +82,10 @@ func TestMeetingAssistantReplyHandoffRefineComposeAndCancellation(t *testing.T) 
 		t.Fatal(err)
 	}
 	defer m.stop()
+	// This test exercises explicitly enabled automatic turn suggestions.
+	m.mu.Lock()
+	m.replies.AutomaticEnabled = true
+	m.mu.Unlock()
 
 	m.mu.Lock()
 	m.captions = []meetingcore.Caption{{ID: 1, Source: "first meeting statement", Final: true}}
@@ -217,6 +221,10 @@ func TestMeetingReplyCoalescesConcurrentRequestsAndAvoidsRepeatInference(t *test
 		t.Fatal(err)
 	}
 	defer m.stop()
+	// This test exercises explicitly enabled automatic turn suggestions.
+	m.mu.Lock()
+	m.replies.AutomaticEnabled = true
+	m.mu.Unlock()
 	m.mu.Lock()
 	m.captions = []meetingcore.Caption{{ID: 5, Source: "latest", Final: true}}
 	m.prior = []string{"latest"}
@@ -405,6 +413,10 @@ func TestMeetingReplyHandoffAllowsIncompleteFirstWithReadySecondAndTip(t *testin
 		t.Fatal(err)
 	}
 	defer m.stop()
+	// This test exercises explicitly enabled automatic turn suggestions.
+	m.mu.Lock()
+	m.replies.AutomaticEnabled = true
+	m.mu.Unlock()
 	for turn := uint64(1); turn <= 3; turn++ {
 		m.mu.Lock()
 		m.captions = append(m.captions, meetingcore.Caption{
@@ -476,6 +488,10 @@ func TestMeetingReplyServiceOutageKeepsReadableChoiceAndAllowsRetry(t *testing.T
 		t.Fatal(err)
 	}
 	defer m.stop()
+	// This test exercises explicitly enabled automatic turn suggestions.
+	m.mu.Lock()
+	m.replies.AutomaticEnabled = true
+	m.mu.Unlock()
 	for turn := uint64(1); turn <= 2; turn++ {
 		m.mu.Lock()
 		m.captions = append(m.captions, meetingcore.Caption{ID: turn, Source: "spoken context", Final: true})

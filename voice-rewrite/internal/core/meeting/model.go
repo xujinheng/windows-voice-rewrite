@@ -177,23 +177,7 @@ func Complete(ctx context.Context, cfg coreconfig.Config, query Query, emit func
 	if err != nil {
 		return err
 	}
-	query.Background, query.Terms = cfg.MeetingBackground, cfg.MeetingTerms
-	if query.Mode == "caption" || query.Mode == "express" {
-		// Pure translation and factual answers must not be anchored to old
-		// project conversation or profile instructions.
-		query.Prior = nil
-		if query.Mode != "caption" {
-			query.Background, query.Terms = "", ""
-		}
-	} else if query.Mode == "compose" {
-		if !UsesConversationContext(query.UserPoints) {
-			query.Prior = nil
-			query.Background, query.Terms = "", ""
-		}
-		if len(query.Prior) > 3 {
-			query.Prior = query.Prior[len(query.Prior)-3:]
-		}
-	}
+	query = PrepareQuery(cfg, query)
 	prompt, err := json.Marshal(query)
 	if err != nil {
 		return err
