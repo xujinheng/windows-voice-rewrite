@@ -28,6 +28,10 @@ final class RecordingIndicatorController {
     private var onAutoDismiss: () -> Void = {}
     private var smoothed = 0.0
 
+    /// Allocate the non-activating AppKit/SwiftUI panel once at launch.
+    /// A cold NSHostingView layout must not delay the first Hold indicator.
+    func prepare() { ensurePanel() }
+
     func present(
         _ snapshot: IndicatorSnapshot,
         levelSource: @escaping () -> Double,
