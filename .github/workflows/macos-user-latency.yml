@@ -1,0 +1,61 @@
+name: macOS user-perceived latency
+on:
+  pull_request:
+    paths:
+      - 'macos/**'
+      - 'voice-rewrite/**'
+      - 'scripts/**'
+      - '.github/workflows/macos-user-latency.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+concurrency:
+  group: user-latency-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  user-latency:
+    name: User journey latency (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: voice-rewrite/go.mod
+      - name: Enable deterministic end-to-end user journey
+        run: |
+          set -euo pipefail
+          mkdir -p performance-output
+          touch performance-output/.enabled
+          echo "Mac architecture: $(uname -m)"
+          echo "Environment: synthetic audio + local ASR fixture + NSTextView editor"
+      - name: Run production hold-to-paste user journey 12 times
+        run: |
+          set -euo pipefail
+          xcodebuild -project macos/VoiceRewrite.xcodeproj \
+            -scheme VoiceRewrite \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -parallel-testing-enabled NO \
+            -derivedDataPath "$RUNNER_TEMP/voice-latency-derived" \
+            -only-testing:VoiceRewriteTests/BridgeClientTests/testOfflineKeyboardToVisibleTextLatency \
+            test
+      - name: Upload per-architecture user-perceived latency
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: user-latency-${{ matrix.arch }}
+          path: performance-output/macos-${{ matrix.arch }}/journey.json
+          retention-days: 30
+          if-no-files-found: warn
