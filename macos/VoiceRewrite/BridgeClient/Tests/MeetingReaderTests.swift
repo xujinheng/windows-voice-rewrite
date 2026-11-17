@@ -2,6 +2,13 @@ import XCTest
 @testable import VoiceRewrite
 
 final class MeetingReaderTests: XCTestCase {
+    func testOfflineMeetingDemoCommandLineOptIn() {
+        XCTAssertTrue(MeetingDemoLaunch.requested(arguments: ["/Applications/VoiceRewrite", "--meeting-demo"]))
+        XCTAssertFalse(MeetingDemoLaunch.requested(arguments: ["/Applications/VoiceRewrite", "--other-option"]))
+        XCTAssertFalse(MeetingDemoLaunch.requested(arguments: ["/Applications/VoiceRewrite"]))
+        XCTAssertFalse(MeetingDemoLaunch.requested(arguments: []))
+    }
+
     func testStructuredMeetingProfileRoundTripAndLegacyPreservation() {
         var fields = MeetingProfileFields(background: "existing project notes",
                                           terms: "p99 = latency")
