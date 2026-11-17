@@ -21,6 +21,20 @@ Double-click VoiceRewrite.app in Finder, or use `open "$APP"`. The bundled Helpe
 
 GitHub Actions runs `swift test` in Microphone, Storage and Interaction and `xcodebuild test` in the application project on macos-15. When the tests pass, CI uploads **two native developer builds**: `VoiceRewrite-macOS-arm64-Dev` for Apple Silicon (M1/M2/M3/M4 and newer M-series) and `VoiceRewrite-macOS-x64-Dev` for Intel Mac (x86_64). Each artifact contains a ZIP of `VoiceRewrite.app` plus its SHA-256 checksum. The app and bundled `voicebridge` are verified for the matching architecture on their respective macOS 15 runners. Choose the ZIP that matches your Mac's CPU; both are **ad-hoc signed developer builds**, not notarized releases.
 
+## Signed distribution
+
+The `macOS signed distribution` workflow builds separate Apple Silicon and Intel
+apps, signs the nested Go helper and native app with Developer ID Application,
+submits the signed ZIP for Apple notarization, staples the returned ticket, and
+uploads a checksum alongside each verified ZIP. Configure the repository secret
+`MACOS_DEVELOPER_ID_P12_BASE64` (base64-encoded P12 certificate),
+`MACOS_DEVELOPER_ID_P12_PASSWORD`, `APPLE_NOTARY_APPLE_ID`,
+`APPLE_NOTARY_APP_PASSWORD`, and repository variables
+`MACOS_DEVELOPER_ID_IDENTITY` and `APPLE_TEAM_ID` before invoking that workflow.
+Without those credentials only the ad-hoc signed CI developer builds are available.
+A signed/notarized build keeps a stable app identity for macOS permission prompts;
+it does not bypass microphone or Accessibility authorization.
+
 ## Use
 
 1. In Settings, enter **base** URLs for ASR and LLM services, e.g. `http://127.0.0.1:8080/v1` and `http://127.0.0.1:1234/v1`, and their model names. API keys are optional for local services that support unauthenticated HTTP requests. If required by your provider, enter its ASR or LLM key in the corresponding secure field and click Save. Keys are persisted only in Keychain; nonsecret settings are stored in a private Application Support JSON file. Each operation accesses only its own provider's key. A missing key is sent as an empty string (no Bearer header); a locked or inaccessible Keychain produces a visible error rather than an unprotected fallback.
