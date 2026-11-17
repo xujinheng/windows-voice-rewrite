@@ -68,6 +68,8 @@ final class SessionHistoryTests: XCTestCase {
                                  processing: false, meetingActive: false,
                                  connectionFailed: true, phase: phase)
         }
+        XCTAssertEqual(MenuBarStatus.title(paused: false, recording: false, starting: false,
+            processing: false, meetingActive: false, connectionFailed: true), "服务连接失败 · 查看诊断")
         XCTAssertEqual(title(.processing), "正在识别")
         XCTAssertEqual(title(.processing, mode: "改写"), "正在识别指令")
         XCTAssertEqual(title(.rewriting), "正在改写")
