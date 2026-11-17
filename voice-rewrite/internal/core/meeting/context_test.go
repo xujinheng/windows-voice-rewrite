@@ -31,6 +31,10 @@ func TestPrepareQuerySeparatesLiteralSpeechFromIntentAndRelevantHistory(t *testi
 		relevant.Terms != "API = Application Programming Interface" {
 		t.Fatalf("meeting references should use relevant context and glossary: %+v", relevant)
 	}
+	referenced := PrepareQuery(cfg, Query{Mode: "compose", UserPoints: "我想讨论这个方案的风险", Prior: []string{"We could deploy Milvus this month"}})
+	if referenced.Terms != "米尔沃斯 = Milvus" {
+		t.Fatalf("referenced history should resolve its named entities: %+v", referenced)
+	}
 	caption := PrepareQuery(cfg, Query{Mode: "caption", Latest: "Zhang Wei delivered.", Prior: prior})
 	if len(caption.Prior) != 0 || caption.Terms != cfg.MeetingTerms || caption.Background != cfg.MeetingBackground {
 		t.Fatalf("caption should see vocabulary but not a transcript recap: %+v", caption)
