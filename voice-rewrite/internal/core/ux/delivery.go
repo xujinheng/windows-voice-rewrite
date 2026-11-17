@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/delivery"
+	"voicerewrite/internal/core/indicator"
 )
 
 const (
