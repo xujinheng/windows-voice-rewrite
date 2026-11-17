@@ -18,6 +18,7 @@ final class SettingsStoreTests: XCTestCase {
         var settings = MacSettings.defaults
         settings.textModel = "text-model"
         settings.maxRecordSeconds = 90
+        settings.microphoneUID = "recording-device-uid"
         try store.save(settings)
         XCTAssertEqual(try store.load(), settings)
         let file = dir.appendingPathComponent("settings.json")
@@ -25,7 +26,7 @@ final class SettingsStoreTests: XCTestCase {
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(Set(json.keys), [
             "asr_base_url", "llm_base_url", "asr_model", "text_model", "max_record_seconds",
-            "dictation_shortcut", "rewrite_shortcut", "text_edit_shortcut",
+            "dictation_shortcut", "rewrite_shortcut", "text_edit_shortcut", "microphone_uid",
         ])
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: dir.path)[.posixPermissions] as? NSNumber)?.intValue, 0o700)
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber)?.intValue, 0o600)
@@ -39,6 +40,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(migrated.rewriteShortcut, "Ctrl+Alt+E")
         XCTAssertEqual(migrated.textEditShortcut, "Ctrl+Alt+T")
         XCTAssertEqual(migrated.textModel, "text-model")
+        XCTAssertEqual(migrated.microphoneUID, "recording-device-uid")
     }
 
     func testInvalidJSONAndUnknownSecretFieldsAreRejected() throws {

@@ -70,6 +70,21 @@ struct SettingsView: View {
                     .accessibilityIdentifier("probe_llm_status")
             }
             Section("快捷键与设备") {
+                HStack {
+                    Picker("麦克风输入设备", selection: $model.settings.microphoneUID) {
+                        Text("系统默认麦克风").tag("")
+                        ForEach(model.microphoneDevices) { device in
+                            Text(device.name).tag(device.id)
+                        }
+                    }
+                    .accessibilityIdentifier("microphone_device")
+                    Button("刷新设备") { model.refreshMicrophoneDevices() }
+                }
+                if !model.settings.microphoneUID.isEmpty &&
+                   !model.microphoneDevices.contains(where: { $0.id == model.settings.microphoneUID }) {
+                    Text("已保存的麦克风不在当前设备列表中，录音会提示设备不可用。")
+                        .font(.footnote).foregroundStyle(.orange)
+                }
                 Stepper("最长录音：\(model.settings.maxRecordSeconds) 秒",
                         value: $model.settings.maxRecordSeconds, in: MacSettings.recordSeconds)
                     .accessibilityIdentifier("max_record_seconds")
@@ -114,6 +129,7 @@ struct SettingsView: View {
             model.markConnectionProbeStale(.selectedTask)
             model.invalidateDiscoveredModels(.selectedTask)
         }
+        .onAppear { model.refreshMicrophoneDevices() }
         .formStyle(.grouped)
     }
 }

@@ -35,6 +35,7 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var connection: Connection = .disconnected
     @Published private(set) var recordingStatus = recordingIdle()
     @Published private(set) var microphonePermission: MicrophonePermissionStatus = .notDetermined
+    @Published private(set) var microphoneDevices: [MicrophoneInputDevice] = []
     @Published private(set) var serviceStatus = helperNotYetConnected()
     @Published private(set) var asrProbeStatus = ServiceProbeCopy.idle
     @Published private(set) var llmProbeStatus = ServiceProbeCopy.idle
@@ -127,6 +128,10 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    func refreshMicrophoneDevices() {
+        microphoneDevices = MicrophoneRecorder.availableDevices()
+    }
+
     func refreshMicrophonePermission() {
         microphonePermission = microphone.permissionStatus
     }
@@ -138,6 +143,7 @@ final class WorkspaceModel: ObservableObject {
 
     func launch() {
         refreshMicrophonePermission()
+        refreshMicrophoneDevices()
         DiagnosticLog.note("应用已启动")
         if case .disconnected = connection { connect() }
         if hotKeys == nil { registerHotKeys() }
@@ -772,7 +778,7 @@ final class WorkspaceModel: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                try await self.microphone.start()
+                try await self.microphone.start(deviceUID: self.settings.microphoneUID)
                 guard self.meetingGeneration.accepts(token), self.meetingActive else {
                     self.microphone.cancel()
                     return
@@ -1141,7 +1147,7 @@ final class WorkspaceModel: ObservableObject {
                     return
                 }
                 if captured.startMicrophone {
-                    try await microphone.start()
+                    try await microphone.start(deviceUID: settings.microphoneUID)
                     let ready = rewriteVoiceMicrophoneReady(tokenValid: resultGeneration.accepts(token))
                     if ready.beginRecording {
                         activeVoiceSelection = (snapshot, next)
@@ -1198,7 +1204,7 @@ final class WorkspaceModel: ObservableObject {
             }
             guard arm.startMicrophone else { return }
             do {
-                try await microphone.start()
+                try await microphone.start(deviceUID: settings.microphoneUID)
                 let ready = dictationMicrophoneReady(started: true, tokenValid: resultGeneration.accepts(token), failure: "")
                 if ready.cancelMicrophone {
                     microphone.cancel()

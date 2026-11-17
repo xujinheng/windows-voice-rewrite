@@ -7,6 +7,7 @@ public struct MacSettings: Codable, Equatable, Sendable {
     public var llmBaseURL: String
     public var asrModel: String
     public var textModel: String
+    public var microphoneUID: String
     public var maxRecordSeconds: Int
     public var dictationShortcut: String
     public var rewriteShortcut: String
@@ -17,6 +18,7 @@ public struct MacSettings: Codable, Equatable, Sendable {
         case llmBaseURL = "llm_base_url"
         case asrModel = "asr_model"
         case textModel = "text_model"
+        case microphoneUID = "microphone_uid"
         case maxRecordSeconds = "max_record_seconds"
         case dictationShortcut = "dictation_shortcut"
         case rewriteShortcut = "rewrite_shortcut"
@@ -29,6 +31,7 @@ public struct MacSettings: Codable, Equatable, Sendable {
         asrModel: String = ContractLimits.defaultASRModel,
         textModel: String = ContractLimits.defaultTextModel,
         maxRecordSeconds: Int = ContractLimits.defaultRecordSeconds,
+        microphoneUID: String = "",
         dictationShortcut: String = ContractLimits.macDictationShortcut,
         rewriteShortcut: String = ContractLimits.macRewriteShortcut,
         textEditShortcut: String = ContractLimits.macTextEditShortcut
@@ -38,6 +41,7 @@ public struct MacSettings: Codable, Equatable, Sendable {
         self.asrModel = asrModel
         self.textModel = textModel
         self.maxRecordSeconds = maxRecordSeconds
+        self.microphoneUID = microphoneUID
         self.dictationShortcut = dictationShortcut
         self.rewriteShortcut = rewriteShortcut
         self.textEditShortcut = textEditShortcut
@@ -70,6 +74,7 @@ public struct MacSettings: Codable, Equatable, Sendable {
         llmBaseURL = endpoints.llmBaseURL
         asrModel = endpoints.asrModel
         textModel = endpoints.textModel
+        guard microphoneUID.utf8.count <= 512 else { throw SettingsError.invalidValues }
         if !Self.recordSeconds.contains(maxRecordSeconds) {
             maxRecordSeconds = ContractLimits.defaultRecordSeconds
         }
@@ -94,6 +99,7 @@ public struct MacSettings: Codable, Equatable, Sendable {
             "rewrite_shortcut": ContractLimits.macRewriteShortcut,
             "text_edit_shortcut": ContractLimits.macTextEditShortcut,
         ]
+        if values["microphone_uid"] == nil { values["microphone_uid"] = "" }
         for (key, value) in shortcutDefaults where values[key] == nil {
             values[key] = value
         }
