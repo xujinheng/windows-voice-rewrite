@@ -352,8 +352,8 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
                                          : InteractionFailure.systemError(support.rawValue)
         }
 
-        // Only paste when the entire original value and UTF-16 range can be verified.
-        // Unsupported web editors without readable AXValue remain preview/copy only.
+        // Selected-text rewriting requires an exact original AXValue and UTF-16 range.
+        // Dictation already took its separate single-shot paste path.
         try guardedPaste(text, expected: expected, expectedValue: expectedValue, confirmDelivery: true)
     }
 
