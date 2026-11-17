@@ -523,10 +523,19 @@ private struct HistoryReaderText: NSViewRepresentable {
         let oldCount = coordinator.count
         if editor.string != text {
             let previouslyFollowing = following
+            let oldOffset = scroller.contentView.bounds.origin
             coordinator.updating = true
             editor.string = text
+            if previouslyFollowing {
+                scrollToEnd(scroller)
+            } else {
+                // Updating the NSTextStorage can change its document height.
+                // Restore the reader's prior viewport rather than tracking a new turn.
+                let limit = max(0, editor.frame.height - scroller.contentView.bounds.height)
+                scroller.contentView.scroll(to: NSPoint(x: oldOffset.x, y: min(oldOffset.y, limit)))
+                scroller.reflectScrolledClipView(scroller.contentView)
+            }
             coordinator.updating = false
-            if previouslyFollowing { scrollToEnd(scroller) }
         } else if following && !coordinator.wasFollowing {
             scrollToEnd(scroller)
         }
