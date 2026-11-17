@@ -569,7 +569,7 @@ func emitSettings() (string, error) {
 	bindings, actions, status := settingsMaps()
 	var b strings.Builder
 	b.WriteString(sourceNote("voice-rewrite/internal/contract"))
-	b.WriteString("import SwiftUI\nimport VoiceRewriteStorage\n\nstruct SettingsView: View {\n")
+	b.WriteString("import SwiftUI\nimport VoiceRewriteStorage\nimport Microphone\n\nstruct SettingsView: View {\n")
 	b.WriteString("    @ObservedObject var model: WorkspaceModel\n\n    var body: some View {\n        Form {\n")
 	for _, page := range contract.Sections() {
 		controls := contract.PageControls(page.ID, contract.MacOS)
@@ -645,7 +645,8 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
                     Button("刷新设备") { model.refreshMicrophoneDevices() }
                 }
                 if !model.settings.microphoneUID.isEmpty &&
-                   !model.microphoneDevices.contains(where: { $0.id == model.settings.microphoneUID }) {
+                   MicrophoneRecorder.selectionUnavailable(model.settings.microphoneUID,
+                       in: model.microphoneDevices) {
                     Text("已保存的麦克风不在当前设备列表中，录音会提示设备不可用。")
                         .font(.footnote).foregroundStyle(.orange)
                 }
