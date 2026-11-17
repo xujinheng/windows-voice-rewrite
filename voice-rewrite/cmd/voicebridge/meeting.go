@@ -72,6 +72,7 @@ type bridgeMeeting struct {
 	view               meetingcore.HUDFlags
 	replyStatus        string
 	expression         meetingcore.Line
+	expressionSource   string
 	expressionStatus   string
 }
 
@@ -509,6 +510,7 @@ func (m *bridgeMeeting) runExpression(parent context.Context, query meetingcore.
 	if m.runtime.CurrentExpression(epoch, serial) {
 		if err == nil && expression.English != "" {
 			m.expression = expression
+			m.expressionSource = query.UserPoints
 			m.expressionStatus = ""
 		} else if errors.Is(ctx.Err(), context.Canceled) {
 			m.expressionStatus = meetingcore.WorkCanceled
@@ -553,7 +555,7 @@ func (m *bridgeMeeting) snapshot() map[string]any {
 		"reply_pending":     m.replies.PendingAvailable, "reply_status": m.replyStatus,
 		"captions_only": m.view.CaptionsOnly, "expression_expanded": m.view.ExpressionExpanded,
 		"expression": m.expression.English, "expression_chinese": m.expression.Chinese,
-		"expression_status": m.expressionStatus,
+		"expression_source": m.expressionSource, "expression_status": m.expressionStatus,
 		"session_id":        m.id, "status": m.status,
 		"level": m.level, "captions": captions,
 		"history_trimmed": m.historyTrimmed,
