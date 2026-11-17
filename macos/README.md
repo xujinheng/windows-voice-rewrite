@@ -64,6 +64,26 @@ show the release page when available; they do not install software.
 
 To dictate into another app, focus its editable text field and trigger Mouse4 or Ctrl+Option+R **without returning to VoiceRewrite**. A preselected range is replaced by the transcript. The VoiceRewrite window's Start Microphone Recording button records for preview only because clicking it changes the foreground target. Cross-app insertion requires the original foreground application to remain active. Ordinary dictation does not require readable AX text values, caret ranges or text-change notifications: it sends one native paste even to browser editors with incomplete Accessibility support. AX is retained for selected-text editing and helps reject known secure fields or changed focused elements when available. With AX unavailable, a change of focus *within* the same application cannot always be detected; dictation is deliberately optimized for input compatibility rather than exact caret verification. Before sending keyboard events, the app checks macOS event-posting permission and reports denial rather than claiming an insert. Sent events remain unverified until the target editor provides evidence. A paste event can be accepted without the target editor consuming it; session history retains the transcript.
 
+## Settings and recording modes
+
+The Settings view has three pages: Speech Recognition, AI Writing and Shortcuts & Devices.
+Each page retains unsaved values while navigating. The navigation rail and Save, Advanced
+and Close actions remain visible while the settings body scrolls. **Record a key** accepts
+a keyboard chord or a physical Mouse4/Mouse5 event, and Esc cancels recording a binding.
+Dictation and selected-text rewrite each have one voice shortcut; the separate **global exit
+shortcut** terminates the app and is not a third voice operation. Duplicate or unsupported
+bindings are refused rather than replacing an already active global shortcut.
+
+The default **Hold** mode stops microphone recording on key release, while the keyboard-only
+**Toggle** mode stops after the next press. Side mouse buttons continue to use hold
+behavior; change the dictation and rewrite bindings to keyboard chords before selecting
+Toggle. The Advanced panel provides recording duration (1–180 seconds), Meeting recognition,
+the system prompt, response token limit and selection length limit. Windows-specific
+clipboard-copy retry controls are not exposed on macOS, which uses native Accessibility
+and pasteboard behavior. Advanced settings save with the other nonsecret settings in
+Application Support; Meeting background and terminology remain preserved. Model discovery
+and connection probes are separate, and a successful probe does not confirm editor insertion.
+
 ## Microphone permission recovery
 
 When **开始麦克风录音** reports microphone access denied, the recording has not reached ASR. Quit VoiceRewrite, open **System Settings → Privacy & Security → Microphone**, enable the **current VoiceRewrite app**, then relaunch it. The dashboard now links to that settings pane and refreshes authorization when the app becomes active. A previously denied request cannot show another system prompt without changing the system authorization.
