@@ -1,15 +1,79 @@
 import AppKit
 import SwiftUI
+import VoiceRewriteInteraction
+
+/// A card only delegates an explicitly authorized edit to InteractionSession.
+@MainActor
+struct ResultCardApplyAction {
+    let isBusy: @MainActor () -> Bool
+    let perform: @MainActor () async throws -> Void
+    let cancel: @MainActor () -> Void
+}
+
+enum ResultCardApplyFailure: Error {
+    case editorClosed
+    case unsafe
+    case unconfirmed
+}
+
+private enum ResultApplyCopy {
+    static let busy = "任务尚未结束，请稍后点击应用"
+    static let checking = "正在核验原选区并应用…"
+    static let unsafe = "无法安全替换，请使用复制结果"
+    static let editorClosed = "原编辑器已关闭，请使用复制结果"
+    static let confirmed = "已应用到原文"
+    static let unconfirmed = "写入结果未确认，请检查原文；仍可复制"
+}
 
 /// One result card owns its copy status; closing it invalidates later updates.
 @MainActor
 final class ResultCardActionSession: ObservableObject {
     let text: String
     @Published private(set) var note = ""
-    private(set) var isClosed = false
+    @Published private(set) var isClosed = false
+    @Published private(set) var attempted = false
+    @Published private(set) var isApplying = false
+    private let applyAction: ResultCardApplyAction?
 
-    init(text: String) {
+    var hasApplyAction: Bool { applyAction != nil }
+    var canApply: Bool { hasApplyAction && !attempted && !isClosed }
+
+    init(text: String, applyAction: ResultCardApplyAction? = nil) {
         self.text = text
+        self.applyAction = applyAction
+    }
+
+    /// A busy owner keeps the authorization; any attempt consumes it once.
+    func apply() async {
+        guard canApply, let applyAction else { return }
+        if applyAction.isBusy() {
+            note = ResultApplyCopy.busy
+            return
+        }
+        attempted = true
+        isApplying = true
+        defer { isApplying = false }
+        note = ResultApplyCopy.checking
+        guard !Task.isCancelled, !isClosed else { return }
+        do {
+            try await applyAction.perform()
+            guard !isClosed else { return }
+            note = ResultApplyCopy.confirmed
+        } catch {
+            guard !isClosed else { return }
+            switch error {
+            case ResultCardApplyFailure.editorClosed,
+                 InteractionFailure.noFrontmostApplication, InteractionFailure.noFocusedElement:
+                note = ResultApplyCopy.editorClosed
+            case ResultCardApplyFailure.unconfirmed, InteractionFailure.writeNotConfirmed:
+                note = ResultApplyCopy.unconfirmed
+            case is ClipboardFailure:
+                // An ownership/restore error can follow an already-posted paste.
+                note = ResultApplyCopy.unconfirmed
+            default:
+                note = ResultApplyCopy.unsafe
+            }
+        }
     }
 
     func copyCompleted(_ copied: Bool) {
@@ -18,7 +82,9 @@ final class ResultCardActionSession: ObservableObject {
     }
 
     func close() {
+        guard !isClosed else { return }
         isClosed = true
+        applyAction?.cancel()
     }
 }
 
@@ -32,13 +98,14 @@ final class ResultCardPanel {
     private var localMonitor: Any?
     private var title = ""
     private var session: ResultCardActionSession?
+    private var applyWork: Task<Void, Never>?
 
-    func present(title: String, text: String) {
+    func present(title: String, text: String, applyAction: ResultCardApplyAction? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         dismiss()
         self.title = title
-        session = ResultCardActionSession(text: trimmed)
+        session = ResultCardActionSession(text: trimmed, applyAction: applyAction)
         ensurePanel()
         guard let panel else { return }
         place(panel, idealHeight: ResultCardMetrics.height(unicodeScalars: trimmed.unicodeScalars.count))
@@ -47,6 +114,8 @@ final class ResultCardPanel {
     }
 
     func dismiss() {
+        applyWork?.cancel()
+        applyWork = nil
         session?.close()
         session = nil
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
@@ -57,9 +126,17 @@ final class ResultCardPanel {
     }
 
     private func copy() {
-        guard let session, panel?.isVisible == true else { return }
+        guard let session, panel?.isVisible == true, !session.isApplying else { return }
         NSPasteboard.general.clearContents()
         session.copyCompleted(NSPasteboard.general.setString(session.text, forType: .string))
+    }
+
+    private func apply() {
+        guard let session, panel?.isVisible == true, applyWork == nil else { return }
+        applyWork = Task { [weak self] in
+            await session.apply()
+            if self?.session === session { self?.applyWork = nil }
+        }
     }
 
     private func show(on panel: NSPanel, width: CGFloat, height: CGFloat) {
@@ -67,6 +144,7 @@ final class ResultCardPanel {
         panel.contentView = NSHostingView(rootView: ResultCardView(
             title: title, session: session, width: width, height: height,
             onCopy: { [weak self] in self?.copy() },
+            onApply: { [weak self] in self?.apply() },
             onClose: { [weak self] in self?.dismiss() }))
     }
 
@@ -135,10 +213,13 @@ final class ResultCardPanel {
         let width = Int32(frame.width.rounded())
         let window = ResultHitRect(left: 0, top: 0, right: width, bottom: height)
         let editor = ResultCardChrome.editor(width: width, height: height).hit
-        let buttons = [
+        var buttons = [
             ResultCardChrome.closeButton(width: width).hit,
             ResultCardChrome.copyButton(width: width, height: height).hit,
         ]
+        if session?.hasApplyAction == true {
+            buttons.append(ResultCardView.applyFrame(width: width, height: height).hit)
+        }
         if ResultCardMetrics.clickDismisses(x: localX, y: localY, window: window, editor: editor, buttons: buttons) {
             dismiss()
         }
@@ -153,6 +234,7 @@ struct ResultCardPalette {
     let border: Color
     let accent: Color
     let accentText: Color
+    let secondary: Color
 
     init(dark: Bool) {
         if dark {
@@ -163,6 +245,7 @@ struct ResultCardPalette {
             border = Color(red: 53/255, green: 57/255, blue: 72/255)
             accent = Color(red: 186/255, green: 174/255, blue: 255/255)
             accentText = Color(red: 16/255, green: 18/255, blue: 24/255)
+            secondary = Color(red: 41/255, green: 44/255, blue: 56/255)
         } else {
             background = Color(red: 248/255, green: 249/255, blue: 252/255)
             surface = .white
@@ -171,6 +254,7 @@ struct ResultCardPalette {
             border = Color(red: 229/255, green: 230/255, blue: 239/255)
             accent = Color(red: 114/255, green: 88/255, blue: 207/255)
             accentText = .white
+            secondary = Color(red: 240/255, green: 241/255, blue: 246/255)
         }
     }
 }
@@ -182,14 +266,22 @@ struct ResultCardView: View {
     let width: CGFloat
     let height: CGFloat
     let onCopy: () -> Void
+    let onApply: () -> Void
     let onClose: () -> Void
+
+    // Shared popup.ApplyButton is 116x33, 124 points left of Copy.
+    static func applyFrame(width: Int32, height: Int32) -> ResultRect {
+        let copy = ResultCardChrome.copyButton(width: width, height: height)
+        return ResultRect(x: copy.x - 124, y: copy.y, w: 116, h: copy.h)
+    }
 
     var body: some View {
         let palette = ResultCardPalette(dark: colorScheme == .dark)
         let note = session.note
-         let editor = ResultCardChrome.editor(width: Int32(width), height: Int32(height))
+        let editor = ResultCardChrome.editor(width: Int32(width), height: Int32(height))
         let close = ResultCardChrome.closeButton(width: Int32(width))
         let copy = ResultCardChrome.copyButton(width: Int32(width), height: Int32(height))
+        let apply = Self.applyFrame(width: Int32(width), height: Int32(height))
         let status = ResultCardChrome.note(width: Int32(width))
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -235,15 +327,29 @@ struct ResultCardView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .frame(width: CGFloat(copy.w), height: CGFloat(copy.h))
                     .background(RoundedRectangle(cornerRadius: 8)
-                        .fill(palette.accent))
-                    .overlay(RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.clear, lineWidth: 1))
-                    .foregroundStyle(palette.accentText)
+                        .fill(session.canApply ? palette.secondary : palette.accent))
+                    .foregroundStyle(session.canApply ? palette.text : palette.accentText)
             }
             .buttonStyle(.plain)
+            .disabled(session.isApplying)
             .position(x: CGFloat(copy.x) + CGFloat(copy.w) / 2,
                       y: CGFloat(copy.y) + CGFloat(copy.h) / 2)
             .accessibilityIdentifier("result-card-copy")
+            if session.hasApplyAction {
+                Button(action: onApply) {
+                    Text(ResultCopy.applyAction)
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: CGFloat(apply.w), height: CGFloat(apply.h))
+                        .background(RoundedRectangle(cornerRadius: 8)
+                            .fill(session.canApply ? palette.accent : palette.secondary))
+                        .foregroundStyle(session.canApply ? palette.accentText : palette.muted)
+                }
+                .buttonStyle(.plain)
+                .disabled(!session.canApply)
+                .position(x: CGFloat(apply.x) + CGFloat(apply.w) / 2,
+                          y: CGFloat(apply.y) + CGFloat(apply.h) / 2)
+                .accessibilityIdentifier("result-card-apply")
+            }
             Button(action: onClose) {
                 Text(ResultCopy.closeGlyph)
                     .font(.system(size: 21))
