@@ -158,6 +158,83 @@ final class BridgeClientTests: XCTestCase {
         wait(for: [hello, error], timeout: 10)
     }
 
+    func testQueuedPCMFramesAndLocalEncodingFailureDoNotKillBridge() throws {
+        let client = BridgeClient(executableURL: try bundledHelper())
+        try client.start()
+        defer { client.stop() }
+
+        let small = expectation(description: "PCM frame serialized in background")
+        client.sendPCM(operation: "hello", pcm: Data([0, 1, 2, 3]), id: "pcm-small") { result in
+            guard case .success(let reply) = result else {
+                XCTFail("small PCM frame was not delivered"); small.fulfill(); return
+            }
+            XCTAssertEqual(reply.id, "pcm-small")
+            XCTAssertTrue(reply.ok)
+            small.fulfill()
+        }
+
+        // A Base64 value larger than the JSONL limit must fail that request,
+        // not terminate the entire Helper session or strand its callback.
+        let tooLarge = expectation(description: "oversized PCM fails locally")
+        let audio = Data(repeating: 0, count: JSONLFramer.maximumFrameBytes * 3 / 4 + 128)
+        client.sendPCM(operation: "transcribe", pcm: audio, id: "pcm-too-large") { result in
+            if case .failure(.frameTooLarge) = result { /* expected */ }
+            else { XCTFail("expected frameTooLarge, got \(result)") }
+            tooLarge.fulfill()
+        }
+
+        let after = expectation(description: "bridge still usable")
+        client.send(operation: "hello", id: "after-large") { result in
+            XCTAssertEqual(try? result.get().result?["protocol"]?.int, 1)
+            after.fulfill()
+        }
+        wait(for: [small, tooLarge, after], timeout: 20)
+    }
+
+    func testCancelDuringPCMEncodingRetiresReplyAndAllowsLaterRequests() throws {
+        let client = BridgeClient(executableURL: try bundledHelper())
+        try client.start()
+        defer { client.stop() }
+        let cancelled = expectation(description: "queued large audio cancelled")
+        let audio = Data(repeating: 0, count: 2 << 20)
+        let id = client.sendPCM(operation: "transcribe", pcm: audio, id: "cancel-during-encoding") { result in
+            if case .failure(.cancelled) = result { /* expected */ }
+            else { XCTFail("request was not retired: \(result)") }
+            cancelled.fulfill()
+        }
+        XCTAssertTrue(client.cancel(id: id))
+
+        let healthy = expectation(description: "cancel did not jam serial writer")
+        client.send(operation: "hello", id: "after-cancel") { result in
+            XCTAssertTrue((try? result.get().ok) == true)
+            healthy.fulfill()
+        }
+        wait(for: [cancelled, healthy], timeout: 15)
+    }
+
+    func testRegistryLocalWriteErrorDoesNotDiscardOtherReplies() throws {
+        let registry = ReplyRegistry()
+        let failed = expectation(description: "only failed ID retired")
+        let survived = expectation(description: "other ID resolved")
+        try registry.register(id: "bad") { result in
+            if case .failure(.invalidRequest) = result { /* expected */ }
+            else { XCTFail("unexpected local failure") }
+            failed.fulfill()
+        }
+        try registry.register(id: "good") { result in
+            XCTAssertTrue((try? result.get().ok) == true)
+            survived.fulfill()
+        }
+        XCTAssertTrue(registry.contains(id: "bad"))
+        registry.fail(id: "bad", reason: .invalidRequest)
+        XCTAssertFalse(registry.contains(id: "bad"))
+        XCTAssertTrue(registry.contains(id: "good"))
+        let reply = try JSONDecoder().decode(BridgeReply.self,
+            from: Data(#"{"v":1,"id":"good","ok":true,"result":{"text":"ok"}}"#.utf8))
+        XCTAssertTrue(registry.resolve(reply))
+        wait(for: [failed, survived], timeout: 3)
+    }
+
     func testRealProcessTerminationAndCleanup() throws {
         let ended = expectation(description: "helper exit detected")
         let client = BridgeClient(executableURL: try bundledHelper()) { reason in
