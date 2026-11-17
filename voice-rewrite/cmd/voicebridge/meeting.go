@@ -127,7 +127,7 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 				m.prior = meetingcore.RememberPrior(m.prior, latest)
 				m.lastFinal = turn.ID
 				if strings.TrimSpace(latest) != "" {
-					go func(id uint64) { _ = m.runReplies(m.runtime.Context(), id) }(turn.ID)
+					go func(id, epoch uint64) { _ = m.runReplies(m.runtime.Context(), id, epoch) }(turn.ID, turn.Epoch)
 				}
 			}
 			m.status = meetingcore.ListeningPrompt
@@ -295,8 +295,13 @@ func (m *bridgeMeeting) stop() {
 	<-m.audioDone
 }
 
-func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64) error {
+func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64, expectedEpoch ...uint64) error {
 	m.mu.Lock()
+	_, epoch, paused := m.runtime.Snapshot()
+	if len(expectedEpoch) != 0 && expectedEpoch[0] != epoch {
+		m.mu.Unlock()
+		return context.Canceled
+	}
 	if expectedTurn != 0 && expectedTurn != m.lastFinal {
 		m.mu.Unlock()
 		return context.Canceled
@@ -308,7 +313,6 @@ func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64) 
 			break
 		}
 	}
-	_, epoch, paused := m.runtime.Snapshot()
 	if status, ok := meetingcore.ReplyRequest(paused, latest != ""); !ok {
 		if status != "" {
 			m.replyStatus = status
