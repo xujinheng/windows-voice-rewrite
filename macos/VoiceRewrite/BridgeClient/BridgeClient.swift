@@ -166,11 +166,14 @@ final class BridgeClient {
             }
         }
         try? handle.close()
-        child.waitUntilExit()
+        // A process can close stdout without exiting. Waiting for its termination
+        // here would strand every outstanding callback indefinitely. Retire
+        // requests immediately; failSession terminates a surviving child.
         state.sync {
             guard session == epoch else { return }
             let failure = readerError ??
-                (framer.hasPartialFrame ? .truncatedReply : .processExited(child.terminationStatus))
+                (framer.hasPartialFrame || child.isRunning
+                    ? .truncatedReply : .processExited(child.terminationStatus))
             failSession(session, reason: failure)
         }
     }
