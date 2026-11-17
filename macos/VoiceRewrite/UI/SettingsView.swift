@@ -5,7 +5,9 @@ import VoiceRewriteStorage
 import Microphone
 
 struct SettingsView: View {
+    @Environment(\.dismiss) private var dismiss
     @ObservedObject var model: WorkspaceModel
+    var onClose: (() -> Void)? = nil
     @State private var selectedPage = "speech"
     @State private var showAdvanced = false
     @State private var captureTarget: String?
@@ -215,7 +217,7 @@ struct SettingsView: View {
                 }
                 .accessibilityIdentifier("advanced")
                 Spacer()
-                Button("关闭") { NSApp.keyWindow?.close() }
+                Button("关闭") { if let onClose { onClose() } else { dismiss() } }
                     .accessibilityIdentifier("close")
             }
             .padding(.horizontal, 20)
