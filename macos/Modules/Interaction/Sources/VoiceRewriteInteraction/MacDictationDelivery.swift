@@ -175,12 +175,15 @@ public final class MacDictationDelivery {
         return expected
     }
 
-    private nonisolated func matchesReadback(_ expected: String, target: MacDictationTarget) -> Bool {
+    private nonisolated func matchesReadback(
+        _ expected: String, target: MacDictationTarget,
+        foregroundPID: Int32?, secureInput: Bool
+    ) -> Bool {
         guard let original = target.focusedElement,
               DictationTargetPolicy.maySend(
                 capturedPID: target.processID,
-                foregroundPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
-                secureInput: IsSecureEventInputEnabled()),
+                foregroundPID: foregroundPID,
+                secureInput: secureInput),
               let current = focusedElement(in: target.processID),
               CFEqual(original, current), !secureField(current),
               DictationTargetPolicy.sameWindow(
@@ -209,8 +212,11 @@ public final class MacDictationDelivery {
         guard let expected else { return .sentUnverified }
         for attempt in 0..<3 {
             guard stillValid(), !Task<Never, Never>.isCancelled else { return .sentUnverified }
+            let foreground = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            let secure = IsSecureEventInputEnabled()
             let confirmed = await Task.detached(priority: .utility) { [self] in
-                matchesReadback(expected, target: target)
+                matchesReadback(expected, target: target,
+                    foregroundPID: foreground, secureInput: secure)
             }.value
             if confirmed { return .confirmed }
             if attempt < 2 {
