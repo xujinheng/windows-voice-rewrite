@@ -14,6 +14,13 @@ public struct MacSettings: Codable, Equatable, Sendable {
     public var maxRecordSeconds: Int
     public var dictationShortcut: String
     public var rewriteShortcut: String
+    public var recordMode: String
+    public var exitShortcut: String
+    public var systemPrompt: String
+    public var maxResponseTokens: Int
+    public var maxSelectedRunes: Int
+    public var selectionCopyAttempts: Int
+    public var selectionCopyTimeoutMS: Int
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case asrBaseURL = "asr_base_url"
@@ -27,6 +34,13 @@ public struct MacSettings: Codable, Equatable, Sendable {
         case maxRecordSeconds = "max_record_seconds"
         case dictationShortcut = "dictation_shortcut"
         case rewriteShortcut = "rewrite_shortcut"
+        case recordMode = "record_mode"
+        case exitShortcut = "hotkey_exit"
+        case systemPrompt = "system_prompt"
+        case maxResponseTokens = "max_response_tokens"
+        case maxSelectedRunes = "max_selected_characters"
+        case selectionCopyAttempts = "selection_copy_attempts"
+        case selectionCopyTimeoutMS = "selection_copy_timeout_ms"
     }
 
     public init(
@@ -40,7 +54,14 @@ public struct MacSettings: Codable, Equatable, Sendable {
         maxRecordSeconds: Int = ContractLimits.defaultRecordSeconds,
         microphoneUID: String = "",
         dictationShortcut: String = ContractLimits.macDictationShortcut,
-        rewriteShortcut: String = ContractLimits.macRewriteShortcut
+        rewriteShortcut: String = ContractLimits.macRewriteShortcut,
+        recordMode: String = ContractLimits.defaultRecordMode,
+        exitShortcut: String = ContractLimits.defaultExitShortcut,
+        systemPrompt: String = "",
+        maxResponseTokens: Int = ContractLimits.defaultMaxResponseTokens,
+        maxSelectedRunes: Int = ContractLimits.defaultMaxSelectedRunes,
+        selectionCopyAttempts: Int = ContractLimits.defaultCopyAttempts,
+        selectionCopyTimeoutMS: Int = ContractLimits.defaultCopyTimeoutMS
     ) {
         self.asrBaseURL = asrBaseURL
         self.llmBaseURL = llmBaseURL
@@ -53,6 +74,13 @@ public struct MacSettings: Codable, Equatable, Sendable {
         self.microphoneUID = microphoneUID
         self.dictationShortcut = dictationShortcut
         self.rewriteShortcut = rewriteShortcut
+        self.recordMode = recordMode
+        self.exitShortcut = exitShortcut
+        self.systemPrompt = systemPrompt
+        self.maxResponseTokens = maxResponseTokens
+        self.maxSelectedRunes = maxSelectedRunes
+        self.selectionCopyAttempts = selectionCopyAttempts
+        self.selectionCopyTimeoutMS = selectionCopyTimeoutMS
     }
 
     public static let defaults = MacSettings()
@@ -95,6 +123,21 @@ public struct MacSettings: Codable, Equatable, Sendable {
         }
         dictationShortcut = normalizedShortcut(dictationShortcut, fallback: ContractLimits.macDictationShortcut)
         rewriteShortcut = normalizedShortcut(rewriteShortcut, fallback: ContractLimits.macRewriteShortcut)
+        exitShortcut = normalizedShortcut(exitShortcut, fallback: ContractLimits.defaultExitShortcut)
+        guard recordMode == "hold" || recordMode == "toggle",
+              systemPrompt.utf8.count <= 16384 else { throw SettingsError.invalidValues }
+        if !(ContractLimits.minResponseTokens...ContractLimits.maxResponseTokens).contains(maxResponseTokens) {
+            maxResponseTokens = ContractLimits.defaultMaxResponseTokens
+        }
+        if !(1...ContractLimits.maxSelectedRunes).contains(maxSelectedRunes) {
+            maxSelectedRunes = ContractLimits.defaultMaxSelectedRunes
+        }
+        if !(ContractLimits.minCopyAttempts...ContractLimits.maxCopyAttempts).contains(selectionCopyAttempts) {
+            selectionCopyAttempts = ContractLimits.defaultCopyAttempts
+        }
+        if !(ContractLimits.minCopyTimeoutMS...ContractLimits.maxCopyTimeoutMS).contains(selectionCopyTimeoutMS) {
+            selectionCopyTimeoutMS = ContractLimits.defaultCopyTimeoutMS
+        }
     }
 
     private func normalizedShortcut(_ value: String, fallback: String) -> String {
@@ -116,6 +159,13 @@ public struct MacSettings: Codable, Equatable, Sendable {
         if values["microphone_uid"] == nil { values["microphone_uid"] = "" }
         if values["meeting_background"] == nil { values["meeting_background"] = "" }
         if values["meeting_terms"] == nil { values["meeting_terms"] = "" }
+        if values["record_mode"] == nil { values["record_mode"] = ContractLimits.defaultRecordMode }
+        if values["hotkey_exit"] == nil { values["hotkey_exit"] = ContractLimits.defaultExitShortcut }
+        if values["system_prompt"] == nil { values["system_prompt"] = "" }
+        if values["max_response_tokens"] == nil { values["max_response_tokens"] = ContractLimits.defaultMaxResponseTokens }
+        if values["max_selected_characters"] == nil { values["max_selected_characters"] = ContractLimits.defaultMaxSelectedRunes }
+        if values["selection_copy_attempts"] == nil { values["selection_copy_attempts"] = ContractLimits.defaultCopyAttempts }
+        if values["selection_copy_timeout_ms"] == nil { values["selection_copy_timeout_ms"] = ContractLimits.defaultCopyTimeoutMS }
         if values["meeting_asr_mode"] == nil {
             values["meeting_asr_mode"] = ContractLimits.defaultMeetingASRMode
         }
