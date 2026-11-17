@@ -620,6 +620,11 @@ func settingsMaps() (bindings, actions, status map[string]string) {
 		"microphone":         "model.settings.microphoneUID",
 		"rewrite_shortcut":   "model.settings.rewriteShortcut",
 		"dictation_shortcut": "model.settings.dictationShortcut",
+		"exit_shortcut":      "model.settings.exitShortcut",
+		"record_mode":        "model.settings.recordMode",
+		"system_prompt":      "model.settings.systemPrompt",
+		"max_response_tokens": "model.settings.maxResponseTokens",
+		"max_selected_characters": "model.settings.maxSelectedRunes",
 	}
 	actions = map[string]string{
 		"probe_asr": "model.checkASRService()",
@@ -673,7 +678,7 @@ func emitSettings() (string, error) {
 		b.WriteString(strconv.Quote(page.ID) + " {\n")
 		b.WriteString("                                Text(" + strconv.Quote(page.Section) + ").font(.headline)\n")
 		for _, control := range contract.PageControls(page.ID, contract.MacOS) {
-			if strings.HasPrefix(control.ID, "capture_") || control.ID == "max_record_seconds" || control.ID == "record_note" || control.ID == "meeting_asr_mode" {
+			if strings.HasPrefix(control.ID, "capture_") || control.ID == "max_record_seconds" || control.ID == "record_note" || control.ID == "meeting_asr_mode" || control.ID == "system_prompt" || control.ID == "max_response_tokens" || control.ID == "max_selected_characters" || control.ID == "selection_copy_attempts" || control.ID == "selection_copy_timeout_ms" {
 				continue
 			}
 			if control.Kind == contract.Shortcut {
@@ -688,6 +693,8 @@ func emitSettings() (string, error) {
 				captureID := "capture_dictation"
 				if control.ID == "rewrite_shortcut" {
 					captureID = "capture_rewrite"
+				} else if control.ID == "exit_shortcut" {
+					captureID = "capture_exit"
 				}
 				capture, ok := contract.Find(captureID)
 				if !ok || !capture.VisibleOn(contract.MacOS) {
@@ -703,7 +710,7 @@ func emitSettings() (string, error) {
 		}
 		if page.ID == "input" {
 			b.WriteString("                                if !captureStatus.isEmpty {\n                                    Text(captureStatus).font(.footnote).foregroundStyle(.secondary)\n                                        .accessibilityIdentifier(\"capture_status\")\n                                }\n                                if showAdvanced {\n                                    Divider()\n                                    Text(\"高级配置\").font(.headline)\n")
-			for _, id := range []string{"max_record_seconds", "record_note", "meeting_asr_mode"} {
+			for _, id := range []string{"max_record_seconds", "record_note", "meeting_asr_mode", "system_prompt", "max_response_tokens", "max_selected_characters", "selection_copy_attempts", "selection_copy_timeout_ms"} {
 				control, ok := contract.Find(id)
 				if !ok || !control.VisibleOn(contract.MacOS) {
 					return "", fmt.Errorf("advanced control %s", id)
@@ -766,11 +773,17 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 			return "", err
 		}
 		line := "                TextField(" + strconv.Quote(control.Label) + ", text: $" + binding + ")\n                    " + id + "\n"
+		if control.ID == "system_prompt" {
+			line = "                Text(\"System Prompt\").font(.subheadline)\n                TextEditor(text: $model.settings.systemPrompt)\n                    .frame(minHeight: 96)\n                    " + id + "\n"
+		}
 		if control.ID == "asr_model" || control.ID == "text_model" {
 			line += renderModelDiscovery(control.ID)
 		}
 		return line, nil
 	case contract.Choice:
+		if control.ID == "record_mode" {
+			return "                Picker(\"录音模式\", selection: $model.settings.recordMode) {\n                    Text(\"按住录音（Hold）\").tag(\"hold\")\n                    Text(\"再按停止（Toggle）\").tag(\"toggle\")\n                }\n                .accessibilityIdentifier(\"record_mode\")\n", nil
+		}
 		if control.ID == "meeting_asr_mode" {
 			return "                Picker(\"会议语音识别方式\", selection: $model.settings.meetingASRMode) {\n                    Text(ContractLimits.meetingASRMultipartTitle).tag(ContractLimits.meetingASRMultipart)\n                    Text(ContractLimits.meetingASRLlamaPrefixTitle).tag(ContractLimits.meetingASRLlamaPrefix)\n                }\n                .accessibilityIdentifier(\"meeting_asr_mode\")\n", nil
 		}
@@ -804,18 +817,26 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 		}
 		return "                SecureField(" + strconv.Quote(control.Hint) + ", text: $" + binding + ")\n                    .accessibilityLabel(" + strconv.Quote(control.Label) + ")\n                    " + id + "\n", nil
 	case contract.Stepper:
-		if control.ID != "max_record_seconds" {
+		if control.ID != "max_record_seconds" && control.ID != "max_response_tokens" && control.ID != "max_selected_characters" {
 			return "", fmt.Errorf("stepper %s has no renderer", control.ID)
 		}
 		if _, err := requiredBinding(control, bindings); err != nil {
 			return "", err
 		}
+		if control.ID == "max_response_tokens" {
+			return "                Stepper(\"响应 Token 上限：\\(model.settings.maxResponseTokens)\", value: $model.settings.maxResponseTokens, in: ContractLimits.minResponseTokens...ContractLimits.maxResponseTokens, step: 64)\n                    " + id + "\n", nil
+		}
+		if control.ID == "max_selected_characters" {
+			return "                Stepper(\"选区字符上限：\\(model.settings.maxSelectedRunes)\", value: $model.settings.maxSelectedRunes, in: 1...ContractLimits.maxSelectedRunes, step: 100)\n                    " + id + "\n", nil
+		}
 		return "                Stepper(\"" + control.Label + "：\\(model.settings.maxRecordSeconds) 秒\",\n                        value: $model.settings.maxRecordSeconds, in: MacSettings.recordSeconds)\n                    " + id + "\n", nil
 	case contract.Button:
-		if control.ID == "capture_rewrite" || control.ID == "capture_dictation" {
+		if control.ID == "capture_rewrite" || control.ID == "capture_dictation" || control.ID == "capture_exit" {
 			target := "dictation_shortcut"
 			if control.ID == "capture_rewrite" {
 				target = "rewrite_shortcut"
+			} else if control.ID == "capture_exit" {
+				target = "exit_shortcut"
 			}
 			return "                Button(captureTarget == " + strconv.Quote(target) + " ? " + strconv.Quote(contract.WaitingForShortcut) + " : " + strconv.Quote(control.Label) + ") { beginCapture(" + strconv.Quote(target) + ") }\n                    " + id + "\n", nil
 		}
