@@ -219,6 +219,7 @@ public final class MicrophoneRecorder {
                 }
             }
             recordingDeviceUID = deviceUID
+            processor.markStarted()
             state = .recording
             // This supervisor is independent of CoreAudio callback delivery.
             // A frozen device may deliver neither buffers nor an interruption
