@@ -259,6 +259,8 @@ func (m *bridgeMeeting) feed(pcm []byte, expectedEpoch uint64) error {
 	case m.source.packets <- pcm:
 		return nil
 	default:
+		m.dropped++
+		m.status = meetingcore.DroppedWork
 		return errMeetingBusy
 	}
 }
@@ -285,6 +287,9 @@ func (m *bridgeMeeting) setPaused(paused bool) error {
 	if m.runtime.SetPaused(paused) {
 		m.discardPacketsLocked()
 		m.level = 0
+		// A new capture epoch must not display old inference latency.
+		m.asrFirstMS, m.asrDoneMS = 0, 0
+		m.translationFirstMS, m.translationDoneMS = 0, 0
 		m.replies.ResetWork()
 		m.captions = meetingcore.KeepCompletedCaptions(m.captions)
 		if clear, status := meetingcore.CancelPresentation(m.expression.Complete, m.expressionStatus); clear {
