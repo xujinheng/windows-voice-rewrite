@@ -48,13 +48,13 @@ final class ResultCardActionSession: ObservableObject {
     }
 
     func applyIfAuthorized() async {
-        guard !isClosed, !isApplying, let apply else { return }
+        guard !isClosed, !isApplying, !Task.isCancelled, let apply else { return }
         isApplying = true
         note = "正在核验原选区并应用…"
         defer { isApplying = false }
 
         let permission = await apply.revalidate()
-        guard !isClosed else { return }
+        guard !isClosed, !Task.isCancelled else { return }
         switch permission {
         case .busy:
             note = "任务尚未结束，请稍后点击应用"
@@ -66,7 +66,7 @@ final class ResultCardActionSession: ObservableObject {
             // The replace closure must repeat target, selection, and epoch checks
             // immediately before the native write to avoid a focus-change race.
             let receipt = await apply.replace(text)
-            guard !isClosed else { return }
+            guard !isClosed, !Task.isCancelled else { return }
             switch receipt {
             case .confirmedWrite:
                 note = "已确认替换原选区"
@@ -93,6 +93,7 @@ final class ResultCardPanel {
     private var localMonitor: Any?
     private var title = ""
     private var session: ResultCardActionSession?
+    private var applyTask: Task<Void, Never>?
 
     func present(title: String, text: String, apply: ResultCardApply? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -102,13 +103,14 @@ final class ResultCardPanel {
         session = ResultCardActionSession(text: trimmed, apply: apply)
         ensurePanel()
         guard let panel else { return }
-        show(on: panel)
-        place(panel, height: ResultCardMetrics.height(unicodeScalars: trimmed.unicodeScalars.count))
+        place(panel, idealHeight: ResultCardMetrics.height(unicodeScalars: trimmed.unicodeScalars.count))
         panel.orderFrontRegardless()
         installMonitors()
     }
 
     func dismiss() {
+        applyTask?.cancel()
+        applyTask = nil
         session?.close()
         session = nil
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
@@ -126,14 +128,16 @@ final class ResultCardPanel {
 
     private func apply() {
         guard let session, session.apply != nil, panel?.isVisible == true else { return }
-        Task { @MainActor in await session.applyIfAuthorized() }
+        applyTask = Task { @MainActor [weak self] in
+            await session.applyIfAuthorized()
+            if self?.session === session { self?.applyTask = nil }
+        }
     }
 
-    private func show(on panel: NSPanel) {
+    private func show(on panel: NSPanel, width: CGFloat, height: CGFloat) {
         guard let session else { return }
-        let height = ResultCardMetrics.height(unicodeScalars: session.text.unicodeScalars.count)
         panel.contentView = NSHostingView(rootView: ResultCardView(
-            title: title, session: session, width: ResultCardMetrics.width, height: height,
+            title: title, session: session, width: width, height: height,
             onCopy: { [weak self] in self?.copy() },
             onApply: { [weak self] in self?.apply() },
             onClose: { [weak self] in self?.dismiss() }))
@@ -157,18 +161,21 @@ final class ResultCardPanel {
         panel = created
     }
 
-    private func place(_ panel: NSPanel, height: CGFloat) {
+    private func place(_ panel: NSPanel, idealHeight: CGFloat) {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+        let width = min(ResultCardMetrics.width, max(1, visible.width))
+        let height = min(idealHeight, max(1, visible.height))
         let area = DesktopWorkArea(
             left: Int32(visible.minX.rounded()), top: Int32(visible.minY.rounded()),
             right: Int32(visible.maxX.rounded()), bottom: Int32(visible.maxY.rounded()))
         let (x, y) = area.clamp(
             x: Int32((mouse.x + 18).rounded()),
             y: Int32((mouse.y - 22 - height).rounded()),
-            width: Int32(ResultCardMetrics.width), height: Int32(height))
-        panel.setFrame(NSRect(x: CGFloat(x), y: CGFloat(y), width: ResultCardMetrics.width, height: height), display: true)
+            width: Int32(width), height: Int32(height))
+        panel.setFrame(NSRect(x: CGFloat(x), y: CGFloat(y), width: width, height: height), display: true)
+        show(on: panel, width: width, height: height)
     }
 
     private func installMonitors() {
