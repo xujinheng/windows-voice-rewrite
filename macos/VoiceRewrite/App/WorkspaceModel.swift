@@ -161,6 +161,7 @@ final class WorkspaceModel: ObservableObject {
     private var processingWatchdog: Task<Void, Never>?
     private var activeInsert: MacDictationTarget?
     private var activeVoiceSelection: (snapshot: SelectionSnapshot, generation: UInt64)?
+    private var activeSelectionGeneration: UInt64?
     private var activeVoiceTargetPID: Int32?
     private var hotKeyDriver: CarbonHotKeyDriver?
     private var rightModifierDriver: MacModifierHoldDriver?
@@ -2116,6 +2117,10 @@ final class WorkspaceModel: ObservableObject {
         if let old = activeVoiceSelection {
             Task { await interaction.cancelTask(generation: old.generation) }
         }
+        if let generation = activeSelectionGeneration {
+            Task { await interaction.cancelTask(generation: generation) }
+        }
+        activeSelectionGeneration = nil
         activeVoiceSelection = nil
         activeVoiceTargetPID = nil
         isVoiceSelectionRecording = false
@@ -2289,6 +2294,7 @@ final class WorkspaceModel: ObservableObject {
                     interactionStatus = rewriteCapturingSelection()
                     let generation = try await interaction.beginTask(targetProcessID: voiceTargetPID)
                     selectionGeneration = generation
+                    activeSelectionGeneration = generation
                     let snapshot = try await interaction.captureSelection(
                         generation: generation, intent: .replaceSelection)
                     guard resultGeneration.accepts(token) else {
@@ -2393,6 +2399,11 @@ final class WorkspaceModel: ObservableObject {
             guard let self else { return }
             do {
                 let generation = try await interaction.beginTask(targetProcessID: pid)
+                guard resultGeneration.accepts(token) else {
+                    await interaction.cancelTask(generation: generation)
+                    return
+                }
+                activeSelectionGeneration = generation
                 let snapshot = try await interaction.captureSelection(
                     generation: generation, intent: .replaceSelection)
                 let step = typedSelectionAfterCapture(
@@ -2432,6 +2443,7 @@ final class WorkspaceModel: ObservableObject {
 
     private func cancelSelectionCue(_ cue: SelectionCue, generation: UInt64?) async {
         if cue.cancelTask, let generation {
+            if activeSelectionGeneration == generation { activeSelectionGeneration = nil }
             await interaction.cancelTask(generation: generation)
         }
     }
