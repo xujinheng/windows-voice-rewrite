@@ -154,6 +154,8 @@ final class WorkspaceModel: ObservableObject {
     private let dictationDelivery = MacDictationDelivery()
     private var store: SettingsStore?
     private var bridge: BridgeClient?
+    private var helperStartupWatchdog: Task<Void, Never>?
+    static let helperStartupTimeoutSeconds: UInt64 = 15
     private var helloGeneration = ResultGeneration()
     private var resultGeneration = ResultGeneration()
     private var probeGeneration = ResultGeneration()
@@ -299,6 +301,8 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func connect() {
+        helperStartupWatchdog?.cancel()
+        helperStartupWatchdog = nil
         if meetingActive || meetingStarting || meetingSessionID != nil { stopMeeting() }
         let token = helloGeneration.begin()
         _ = updateCheck.begin()
@@ -326,6 +330,23 @@ final class WorkspaceModel: ObservableObject {
             }
         }
         bridge = client
+        // Handy's audio-worker postmortem highlights that a successful launch
+        // is not proof the pipeline can reply. Bound both cold spawn and hello;
+        // stale sessions never regain ownership after the deadline.
+        helperStartupWatchdog = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(
+                    nanoseconds: Self.helperStartupTimeoutSeconds * 1_000_000_000)
+            } catch { return }
+            guard let self, self.helloGeneration.accepts(token),
+                  self.bridge === client else { return }
+            guard case .connecting = self.connection else { return }
+            DiagnosticLog.note("stage=helper_hello status=timeout")
+            _ = self.helloGeneration.begin()
+            self.bridge = nil
+            client.stop()
+            self.applyHelperConnection(.handshakeFailed)
+        }
         // Process.run() can synchronously block AppKit for hundreds of
         // milliseconds on a cold launch. Spawn off-main; fence stale connects.
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -2660,6 +2681,8 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func applyHelperConnection(_ event: HelperConnection) {
+        helperStartupWatchdog?.cancel()
+        helperStartupWatchdog = nil
         let effect = helperConnectionEffect(event, helperName: ContractLimits.helperName, helperVersion: ContractLimits.protocolVersion)
         if let label = effect.connectedLabel {
             connection = .connected(label)
