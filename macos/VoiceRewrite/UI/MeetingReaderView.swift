@@ -205,6 +205,9 @@ struct MeetingReaderView: View {
         }
         .padding(12)
         .frame(minWidth: embedded ? 590 : 600, minHeight: embedded ? 625 : 550)
+        // Native macOS off-screen capture used to show black transparent gutters.
+        // Match the Windows HUD's opaque neutral canvas in both real NSPanel and CI.
+        .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { weights = MeetingReaderLayout.decode(savedWeights) }
         .onChange(of: model.meetingActive) { _, active in
             if !active {
@@ -807,7 +810,7 @@ final class MeetingReaderWindowController: NSObject, NSWindowDelegate {
         }
         meeting = model
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 780, height: 840),
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 720),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false)
@@ -816,7 +819,7 @@ final class MeetingReaderWindowController: NSObject, NSWindowDelegate {
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.minSize = NSSize(width: 680, height: 610)
+        panel.minSize = NSSize(width: 600, height: 590)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = NSHostingView(rootView:
             MeetingReaderView(model: model, embedded: false))

@@ -776,7 +776,7 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 		if err != nil {
 			return "", err
 		}
-		line := "                TextField(" + strconv.Quote(control.Label) + ", text: $" + binding + ")\n                    " + id + "\n"
+		line := "                HStack(spacing: 12) {\n                    Text(" + strconv.Quote(control.Label) + ")\n                        .font(.system(size: 13))\n                        .frame(width: 112, alignment: .leading)\n                    TextField(" + strconv.Quote(control.Label) + ", text: $" + binding + ")\n                        .textFieldStyle(.roundedBorder)\n                        " + id + "\n                }\n"
 		if control.ID == "system_prompt" {
 			line = "                Text(\"System Prompt\").font(.subheadline)\n                TextEditor(text: $model.settings.systemPrompt)\n                    .frame(minHeight: 96)\n                    " + id + "\n"
 		}
@@ -819,7 +819,7 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 		if err != nil {
 			return "", err
 		}
-		return "                SecureField(" + strconv.Quote(control.Hint) + ", text: $" + binding + ")\n                    .accessibilityLabel(" + strconv.Quote(control.Label) + ")\n                    " + id + "\n", nil
+		return "                HStack(spacing: 12) {\n                    Text(" + strconv.Quote(control.Label) + ")\n                        .font(.system(size: 13))\n                        .frame(width: 112, alignment: .leading)\n                    SecureField(" + strconv.Quote(control.Hint) + ", text: $" + binding + ")\n                        .textFieldStyle(.roundedBorder)\n                        .accessibilityLabel(" + strconv.Quote(control.Label) + ")\n                        " + id + "\n                }\n", nil
 	case contract.Stepper:
 		if control.ID != "max_record_seconds" && control.ID != "max_response_tokens" && control.ID != "max_selected_characters" {
 			return "", fmt.Errorf("stepper %s has no renderer", control.ID)
