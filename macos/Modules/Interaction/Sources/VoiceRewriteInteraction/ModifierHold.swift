@@ -38,6 +38,15 @@ public enum MacModifierKey: String, CaseIterable, Hashable, Sendable {
         }
     }
 
+    /// Accept a physical key-down from either side without consulting the
+    /// separate CGEventSource key-state cache. That cache is not an atomic
+    /// snapshot of the flagsChanged event and can reject right-hand keys.
+    public static func captureCandidate(keyCode: Int64, flags: CGEventFlags) -> MacModifierKey? {
+        guard let key = MacModifierKey(keyCode: keyCode) else { return nil }
+        let ordinary: CGEventFlags = [.maskCommand, .maskShift, .maskControl, .maskAlternate]
+        return flags.intersection(ordinary) == key.groupFlag ? key : nil
+    }
+
     public var keyCode: Int64 {
         switch self {
         case .leftControl: return 59
@@ -184,6 +193,7 @@ public final class MacModifierHoldDriver {
     private var rewrite: MacModifierKey?
     private var suspended = false
     private var paused = false
+    private var captureKey: (@MainActor (MacModifierKey) -> Void)?
 
     public init(threshold: TimeInterval = SideHold.threshold,
                 onHold: @escaping @MainActor (MacModifierKey, Int32?) -> Void,
@@ -202,6 +212,12 @@ public final class MacModifierHoldDriver {
         if state.clear() != nil { onCancel() }
         self.dictation = dictation
         self.rewrite = rewrite
+    }
+
+    /// Learn modifiers through the same listen-only global tap as Hold.
+    /// Captures may proceed even while the ordinary voice Hold is suspended.
+    public func setCapture(_ callback: (@MainActor (MacModifierKey) -> Void)?) {
+        captureKey = callback
     }
 
     public func setSuspended(_ value: Bool) {
@@ -263,6 +279,13 @@ public final class MacModifierHoldDriver {
                 do { try self.start() }
                 catch { self.onFault(.eventTapUnavailable) }
             }
+            return Unmanaged.passUnretained(event)
+        }
+        if type == .flagsChanged, captureKey != nil,
+           let key = MacModifierKey.captureCandidate(
+               keyCode: event.getIntegerValueField(.keyboardEventKeycode),
+               flags: event.flags) {
+            DispatchQueue.main.async { [weak self] in self?.captureKey?(key) }
             return Unmanaged.passUnretained(event)
         }
         guard !suspended, !paused else { return Unmanaged.passUnretained(event) }
