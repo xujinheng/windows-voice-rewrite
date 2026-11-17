@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// One child process, one serialized writer, one serialized state machine.
 /// Transport callbacks are always delivered on the main queue. stdout is protocol-only;
@@ -13,7 +14,6 @@ final class BridgeClient {
     private let replies = ReplyRegistry()
     private var process: Process?
     private var launching = false
-    private var writingID: String?
     private var input: Pipe?
     private var epoch: UInt64 = 0
 
@@ -128,31 +128,13 @@ final class BridgeClient {
                 if let pcm { payload["pcm_base64"] = .string(pcm.base64EncodedString()) }
                 let line = try BridgeRequest(id: id, operation: operation, fields: payload).line()
                 // Cancellation/reconnect may have happened while encoding.
-                guard self?.state.sync(execute: {
-                    guard let self, self.epoch == session,
-                          self.replies.contains(id: id) else { return false }
-                    self.writingID = id
-                    return true
-                }) == true else { return }
-                // The Helper may stop consuming stdin without closing it.
-                // An indefinitely blocked pipe writer would prevent all later
-                // requests/cancellations. Recycle the session after a finite
-                // *transport* stall; model inference is not on this deadline.
-                DispatchQueue.global(qos: .utility).asyncAfter(
-                    deadline: .now() + (self?.writeTimeout ?? 10)
-                ) { [weak self] in
-                    self?.state.async { [weak self] in
-                        guard let self, self.epoch == session,
-                              self.writingID == id else { return }
-                        self.failSession(session, reason: .writeFailed)
-                    }
-                }
-                try stdin.fileHandleForWriting.write(contentsOf: line)
-                self?.state.async { [weak self] in
-                    guard let self, self.epoch == session,
-                          self.writingID == id else { return }
-                    self.writingID = nil
-                }
+                guard let self else { return }
+                // No Foundation FileHandle.write(contentsOf:) here: it blocks
+                // inside a full pipe and may also block close()/stop().
+                // Nonblocking writes bound *actual native I/O*, not just the
+                // callback state, so the serial writer is eventually reusable.
+                try self.writeFrame(line, to: stdin.fileHandleForWriting,
+                                    session: session, id: id)
             } catch {
                 let failure = (error as? BridgeFailure)
                 self?.state.async { [weak self] in
@@ -166,6 +148,57 @@ final class BridgeClient {
             }
         }
         return id
+    }
+
+    /// Writes a whole JSONL frame without ever waiting indefinitely on a
+    /// child which has stopped consuming stdin. A partial frame must never be
+    /// abandoned due only to request cancellation: it would corrupt the next
+    /// frame. A timed-out partial write instead invalidates the entire session.
+    private func writeFrame(_ data: Data, to handle: FileHandle,
+                            session: UInt64, id: String) throws {
+        let fd = handle.fileDescriptor
+        let flags = fcntl(fd, F_GETFL)
+        guard flags >= 0, fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0,
+              fcntl(fd, F_SETNOSIGPIPE, 1) == 0 else {
+            throw BridgeFailure.writeFailed
+        }
+        let expires = ProcessInfo.processInfo.systemUptime + max(0.1, writeTimeout)
+        try data.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress else { return }
+            var sent = 0
+            while sent < raw.count {
+                let valid = state.sync { epoch == session }
+                guard valid else { throw BridgeFailure.cancelled }
+                // Safe to drop a *not yet started* canceled frame. Once any
+                // byte has been sent, preserve framing even on cancel.
+                if sent == 0 {
+                    let wanted = state.sync { replies.contains(id: id) }
+                    guard wanted else { throw BridgeFailure.cancelled }
+                }
+                let written = Darwin.write(
+                    fd, base.advanced(by: sent), min(64 * 1024, raw.count - sent))
+                if written > 0 {
+                    sent += written
+                    continue
+                }
+                if written == 0 { throw BridgeFailure.writeFailed }
+                let code = errno
+                if code == EINTR { continue }
+                guard code == EAGAIN || code == EWOULDBLOCK else {
+                    throw BridgeFailure.writeFailed
+                }
+                guard ProcessInfo.processInfo.systemUptime < expires else {
+                    throw BridgeFailure.writeFailed
+                }
+                var descriptor = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+                let result = Darwin.poll(&descriptor, 1, 25)
+                if result < 0 && errno != EINTR { throw BridgeFailure.writeFailed }
+                if result > 0 &&
+                    (descriptor.revents & Int16(POLLERR | POLLHUP | POLLNVAL)) != 0 {
+                    throw BridgeFailure.writeFailed
+                }
+            }
+        }
     }
 
     /// Retires the original ID immediately, so a late success can never reach the UI.
@@ -184,7 +217,6 @@ final class BridgeClient {
         let previous: (Process?, Pipe?) = state.sync {
             epoch &+= 1
             launching = false
-            writingID = nil
             let previous = (process, input)
             process = nil
             input = nil
@@ -224,6 +256,12 @@ final class BridgeClient {
         // A process can close stdout without exiting. Waiting for its termination
         // here would strand every outstanding callback indefinitely. Retire
         // requests immediately; failSession terminates a surviving child.
+        // NSTask can report isRunning for a brief period after its stdout
+        // reaches EOF. Give the termination observer a bounded opportunity to
+        // update; never use waitUntilExit() (it can hang on a live child).
+        if readerError == nil && !framer.hasPartialFrame && child.isRunning {
+            Thread.sleep(forTimeInterval: 0.15)
+        }
         state.sync {
             guard session == epoch else { return }
             let failure = readerError ??
