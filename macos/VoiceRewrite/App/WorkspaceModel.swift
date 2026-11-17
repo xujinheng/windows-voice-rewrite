@@ -12,6 +12,13 @@ struct MeetingCaptionRow: Identifiable, Equatable {
     let final: Bool
 }
 
+struct MeetingReplyRow: Identifiable, Equatable {
+    let id: Int
+    let english: String
+    let chinese: String
+    let complete: Bool
+}
+
 @MainActor
 final class WorkspaceModel: ObservableObject {
     enum Connection: Equatable {
@@ -60,6 +67,19 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var meetingCaptions: [MeetingCaptionRow] = []
     @Published private(set) var meetingStarting = false
     @Published private(set) var meetingActive = false
+    @Published private(set) var meetingReplies: [MeetingReplyRow] = []
+    @Published private(set) var meetingReplyPending = false
+    @Published private(set) var meetingReplyStatus = ""
+    @Published private(set) var meetingReplySource = ""
+    @Published private(set) var meetingExpression = ""
+    @Published private(set) var meetingExpressionChinese = ""
+    @Published private(set) var meetingExpressionStatus = ""
+    @Published private(set) var meetingBusy = false
+    @Published private(set) var meetingVoiceRecording = false
+    @Published private(set) var meetingVoiceStarting = false
+    @Published var meetingSelectedIndex = 0
+    @Published var meetingInput = ""
+    @Published var meetingRefineInput = ""
     private var historyStore = SessionHistory()
     private var updateCheck = ResultGeneration()
 
@@ -68,6 +88,9 @@ final class WorkspaceModel: ObservableObject {
     private var meetingGeneration = ResultGeneration()
     private var meetingSessionID: String?
     private var meetingPendingPackets = 0
+    private var meetingSnapshotPending = false
+    private var meetingRequestID: String?
+    private var meetingVoiceASRID: String?
     private let recordingIndicator = RecordingIndicatorController()
     private var indicatorSnapshot = IndicatorSnapshot()
     private var sideGate = SideVoiceGate()
@@ -519,6 +542,13 @@ final class WorkspaceModel: ObservableObject {
         meetingStarting = true
         meetingStatus = "正在准备会议识别…"
         meetingCaptions = []
+        meetingReplies = []
+        meetingReplyPending = false
+        meetingReplyStatus = ""
+        meetingExpression = ""
+        meetingExpressionChinese = ""
+        meetingExpressionStatus = ""
+        meetingSelectedIndex = 0
         bridge.send(operation: "meeting_start", fields: ["config": config]) { [weak self] reply in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -579,19 +609,23 @@ final class WorkspaceModel: ObservableObject {
         Task { @MainActor [weak self] in
             while let self, self.meetingSessionID == id,
                   self.meetingGeneration.accepts(token), self.meetingActive {
+                guard !self.meetingSnapshotPending else {
+                    try? await Task.sleep(nanoseconds: 450_000_000)
+                    continue
+                }
+                self.meetingSnapshotPending = true
                 self.bridge?.send(operation: "meeting_snapshot", fields: [
                     "session_id": .string(id),
                 ]) { [weak self] reply in
                     Task { @MainActor [weak self] in
                         guard let self, self.meetingSessionID == id,
                               self.meetingGeneration.accepts(token) else { return }
+                        self.meetingSnapshotPending = false
                         guard case .success(let response) = reply, response.ok else {
                             self.stopMeeting(reason: "会议处理已断开")
                             return
                         }
-                        if let status = response.result?["status"]?.string {
-                            self.meetingStatus = status
-                        }
+                        self.applyMeetingSnapshot(response.result ?? [:])
                         if case .array(let values)? = response.result?["captions"] {
                             self.meetingCaptions = values.compactMap { value in
                                 guard case .object(let item) = value,
@@ -609,8 +643,192 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    private func applyMeetingSnapshot(_ values: [String: JSONValue]) {
+        if let status = values["status"]?.string { meetingStatus = status }
+        if let status = values["reply_status"]?.string { meetingReplyStatus = status }
+        if let status = values["expression_status"]?.string { meetingExpressionStatus = status }
+        if let value = values["expression"]?.string { meetingExpression = value }
+        if let value = values["expression_chinese"]?.string { meetingExpressionChinese = value }
+        if let source = values["reply_source"]?.string { meetingReplySource = source }
+        meetingReplyPending = values["reply_pending"]?.boolValue == true
+        if case .array(let items)? = values["replies"] {
+            meetingReplies = items.enumerated().compactMap { index, value in
+                guard case .object(let row) = value,
+                      let english = row["english"]?.string,
+                      let chinese = row["chinese"]?.string else { return nil }
+                return MeetingReplyRow(id: index, english: english,
+                    chinese: chinese, complete: row["complete"]?.boolValue == true)
+            }
+        }
+    }
+
+    private func meetingAction(_ operation: String, fields: [String: JSONValue] = [:]) {
+        guard meetingActive, !meetingBusy, let id = meetingSessionID, let bridge else { return }
+        meetingBusy = true
+        let token = meetingGeneration.latest
+        var payload = fields
+        payload["session_id"] = .string(id)
+        meetingRequestID = bridge.send(operation: operation, fields: payload) { [weak self] result in
+            Task { @MainActor [weak self] in
+                guard let self, self.meetingSessionID == id,
+                      self.meetingGeneration.accepts(token) else { return }
+                self.meetingRequestID = nil
+                self.meetingBusy = false
+                switch result {
+                case .success(let response) where response.ok:
+                    self.applyMeetingSnapshot(response.result ?? [:])
+                case .success(let response):
+                    self.meetingExpressionStatus = response.error?.userText ?? "会议处理失败，请重试"
+                case .failure:
+                    self.meetingExpressionStatus = "会议处理已取消或连接已断开"
+                }
+            }
+        }
+    }
+
+    func requestMeetingReplies() {
+        meetingAction("meeting_replies")
+    }
+
+    func acceptMeetingReplies() {
+        guard meetingActive, meetingReplyPending, let id = meetingSessionID, let bridge else { return }
+        let token = meetingGeneration.latest
+        bridge.send(operation: "meeting_accept", fields: ["session_id": .string(id)]) { [weak self] result in
+            Task { @MainActor [weak self] in
+                guard let self, self.meetingSessionID == id,
+                      self.meetingGeneration.accepts(token) else { return }
+                if case .success(let response) = result, response.ok {
+                    self.applyMeetingSnapshot(response.result ?? [:])
+                    self.meetingSelectedIndex = 0
+                }
+            }
+        }
+    }
+
+    func refineMeetingReply() {
+        guard meetingReplies.contains(where: {
+            $0.id == meetingSelectedIndex && $0.complete && !$0.english.isEmpty
+        }) else { return }
+        let instruction = meetingRefineInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !instruction.isEmpty else { return }
+        meetingAction("meeting_refine", fields: [
+            "reply_index": .number(Double(meetingSelectedIndex)),
+            "instruction": .string(instruction),
+        ])
+    }
+
+    func composeMeetingText() {
+        let input = meetingInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !input.isEmpty else { return }
+        meetingAction("meeting_compose", fields: ["instruction": .string(input)])
+    }
+
+    func toggleMeetingVoice() {
+        if meetingVoiceRecording {
+            meetingVoiceRecording = false
+            meetingBusy = true
+            let token = meetingGeneration.latest
+            let id = meetingSessionID
+            meetingExpressionStatus = "正在识别你的语音…"
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let pcm = try await self.microphone.stop()
+                    guard self.meetingGeneration.accepts(token), self.meetingSessionID == id,
+                          let bridge = self.bridge else { return }
+                    let config = try self.requestConfig(for: .transcribe)
+                    self.meetingVoiceASRID = bridge.send(operation: "transcribe", fields: [
+                        "config": config,
+                        "pcm_base64": .string(pcm.base64EncodedString()),
+                    ]) { [weak self] result in
+                        Task { @MainActor [weak self] in
+                            guard let self, self.meetingGeneration.accepts(token),
+                                  self.meetingSessionID == id else { return }
+                            self.meetingVoiceASRID = nil
+                            self.meetingBusy = false
+                            guard case .success(let response) = result, response.ok,
+                                  let words = response.result?["text"]?.string,
+                                  !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                                self.meetingExpressionStatus = "语音识别失败或未听到有效内容"
+                                return
+                            }
+                            self.meetingInput = words
+                            self.composeMeetingText()
+                        }
+                    }
+                } catch {
+                    guard self.meetingGeneration.accepts(token), self.meetingSessionID == id else { return }
+                    self.meetingBusy = false
+                    self.meetingExpressionStatus = "麦克风录音失败，请检查输入设备与权限"
+                }
+            }
+            return
+        }
+        guard meetingActive, !meetingBusy, !meetingVoiceStarting,
+              !isRecording, !isStarting, !isProcessing else { return }
+        meetingVoiceStarting = true
+        meetingExpressionStatus = "正在启动麦克风…"
+        let token = meetingGeneration.latest
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await self.microphone.start()
+                guard self.meetingGeneration.accepts(token), self.meetingActive else {
+                    self.microphone.cancel()
+                    return
+                }
+                self.meetingVoiceRecording = true
+                self.meetingExpressionStatus = "正在录制想表达的内容；再次点击结束"
+            } catch {
+                if self.meetingGeneration.accepts(token) {
+                    self.meetingExpressionStatus = "无法启动麦克风，请检查权限与设备"
+                }
+            }
+            self.meetingVoiceStarting = false
+            self.refreshMicrophonePermission()
+        }
+    }
+
+    func cancelMeetingWork() {
+        if meetingVoiceRecording || meetingVoiceStarting {
+            microphone.cancel()
+            meetingVoiceRecording = false
+            meetingVoiceStarting = false
+        }
+        if let id = meetingVoiceASRID { bridge?.cancel(id: id) }
+        meetingVoiceASRID = nil
+        if let id = meetingRequestID { bridge?.cancel(id: id) }
+        meetingRequestID = nil
+        meetingBusy = false
+        guard let id = meetingSessionID else { return }
+        bridge?.send(operation: "meeting_cancel", fields: ["session_id": .string(id)]) { _ in }
+        meetingExpressionStatus = "处理已取消"
+    }
+
+    func copyMeetingReply() {
+        guard let row = meetingReplies.first(where: { $0.id == meetingSelectedIndex }),
+              row.complete, !row.english.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(row.english, forType: .string)
+    }
+
+    func copyMeetingExpression() {
+        guard !meetingExpression.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(meetingExpression, forType: .string)
+    }
+
     func stopMeeting(reason: String = "会议采集已停止") {
         _ = meetingGeneration.begin()
+        if meetingVoiceRecording || meetingVoiceStarting { microphone.cancel() }
+        meetingVoiceRecording = false
+        meetingVoiceStarting = false
+        if let id = meetingVoiceASRID { bridge?.cancel(id: id) }
+        meetingVoiceASRID = nil
+        if let id = meetingRequestID { bridge?.cancel(id: id) }
+        meetingRequestID = nil
+        meetingBusy = false
+        meetingSnapshotPending = false
         meetingStarting = false
         meetingActive = false
         meetingPendingPackets = 0
@@ -880,6 +1098,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func toggleVoiceSelectedText(from targetPID: Int32?) {
+        guard !meetingVoiceRecording && !meetingVoiceStarting else { return }
         let decision = rewriteToggle(
             paused: voicePaused, recording: isRecording, voiceSelection: isVoiceSelectionRecording,
             starting: isStarting, processing: isProcessing, targetPID: targetPID)
@@ -952,6 +1171,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func startRecording(targetPID: Int32?) {
+        guard !meetingVoiceRecording && !meetingVoiceStarting else { return }
         invalidatePending()
         let token = resultGeneration.begin()
         isStarting = true
