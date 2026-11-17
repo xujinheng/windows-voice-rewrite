@@ -95,7 +95,7 @@ public protocol AccessibilityClient: Sendable {
 
 public enum SelectionIntent: Equatable, Sendable {
     case replaceSelection
-    case insertAtCaret
+    case dictation
 }
 
 /// Constructor intentionally internal: an LLM or caller cannot mint a valid snapshot.
