@@ -1912,9 +1912,12 @@ final class WorkspaceModel: ObservableObject {
                             // *before* the synchronous native verification/write.
                             try await self.interaction.replaceIfCurrent(
                                 snapshot, with: text, generation: generation)
-                            if self.resultGeneration.accepts(token) {
-                                self.interactionStatus = rewriteReplaced()
+                            // A cancellation racing the OS write must never
+                            // re-certify a stale card or start another send.
+                            guard self.resultGeneration.accepts(token) else {
+                                throw ResultCardApplyFailure.unconfirmed
                             }
+                            self.interactionStatus = rewriteReplaced()
                         } catch {
                             if self.resultGeneration.accepts(token) {
                                 self.interactionStatus = insertionStatus(
