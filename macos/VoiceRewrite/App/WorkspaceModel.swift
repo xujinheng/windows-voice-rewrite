@@ -1404,7 +1404,7 @@ final class WorkspaceModel: ObservableObject {
         if let epoch = values["epoch"]?.int, epoch > 0 { meetingAudioEpoch = epoch }
         if let version = values["profile_version"]?.int { meetingProfileVersion = version }
         if let paused = values["capture_paused"]?.boolValue, !meetingCaptureSwitching {
-            meetingCapturePaused = paused
+            if meetingCapturePaused != paused { meetingCapturePaused = paused }
         }
         if let status = values["status"]?.string {
             // The existing Meeting status line surfaces shared Go Core metrics
@@ -1426,19 +1426,20 @@ final class WorkspaceModel: ObservableObject {
             if meetingStatus != next { meetingStatus = next }
         }
         if let trimmed = values["history_trimmed"]?.int { meetingHistoryTrimmed = trimmed }
-        if let status = values["reply_status"]?.string { meetingReplyStatus = status }
-        if let status = values["expression_status"]?.string { meetingExpressionStatus = status }
-        if let value = values["expression"]?.string { meetingExpression = value }
-        if let value = values["expression_chinese"]?.string { meetingExpressionChinese = value }
-        if let source = values["expression_source"]?.string { meetingExpressionSource = source }
-        if let source = values["reply_source"]?.string { meetingReplySource = source }
-        if let tip = values["reply_tip"]?.string { meetingReplyTip = tip }
-        meetingReplyPending = values["reply_pending"]?.boolValue == true
+        if let status = values["reply_status"]?.string, meetingReplyStatus != status { meetingReplyStatus = status }
+        if let status = values["expression_status"]?.string, meetingExpressionStatus != status { meetingExpressionStatus = status }
+        if let value = values["expression"]?.string, meetingExpression != value { meetingExpression = value }
+        if let value = values["expression_chinese"]?.string, meetingExpressionChinese != value { meetingExpressionChinese = value }
+        if let source = values["expression_source"]?.string, meetingExpressionSource != source { meetingExpressionSource = source }
+        if let source = values["reply_source"]?.string, meetingReplySource != source { meetingReplySource = source }
+        if let tip = values["reply_tip"]?.string, meetingReplyTip != tip { meetingReplyTip = tip }
+        let pending = values["reply_pending"]?.boolValue == true
+        if meetingReplyPending != pending { meetingReplyPending = pending }
         if let captionsOnly = values["captions_only"]?.boolValue {
-            meetingCaptionsOnly = captionsOnly
+            if meetingCaptionsOnly != captionsOnly { meetingCaptionsOnly = captionsOnly }
         }
         if let expanded = values["expression_expanded"]?.boolValue {
-            meetingExpressionExpanded = expanded
+            if meetingExpressionExpanded != expanded { meetingExpressionExpanded = expanded }
         }
         if case .array(let items)? = values["replies"] {
             let incoming: [MeetingReplyRow] = items.enumerated().compactMap { index, value in
