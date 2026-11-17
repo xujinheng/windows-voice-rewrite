@@ -5,6 +5,7 @@ import VoiceRewriteStorage
 struct MainView: View {
     @ObservedObject var model: WorkspaceModel
     @State private var selectedTab = 0
+    @State private var showInlineResults = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -97,8 +98,10 @@ struct MainView: View {
                     Button("重新检测鼠标侧键") { model.refreshSideMouse() }
                 }
 
-                GroupBox("语音识别结果") {
-                    resultView(model.transcription, empty: "录音并调用用户配置的 ASR 服务后显示真实结果。")
+                DisclosureGroup("本次语音结果（可选详情）", isExpanded: $showInlineResults) {
+                    GroupBox("语音识别结果") {
+                        resultView(model.transcription, empty: "录音并调用用户配置的 ASR 服务后显示真实结果。")
+                    }
                 }
 
                 GroupBox("选区改写") {
@@ -114,7 +117,9 @@ struct MainView: View {
                             .font(.footnote).foregroundStyle(.secondary)
                         Text("语音选区模式需要先在目标应用选中文字；录音中不得改变目标、焦点或选区，否则只保留预览。")
                             .font(.footnote).foregroundStyle(.secondary)
-                        resultView(model.processedText, empty: "这里显示真实模型结果；未经授权不会更改其他应用文本。")
+                        if showInlineResults {
+                            resultView(model.processedText, empty: "这里显示真实模型结果；未经授权不会更改其他应用文本。")
+                        }
                     }
                 }
 

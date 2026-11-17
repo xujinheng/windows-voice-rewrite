@@ -294,7 +294,7 @@ struct ResultCardView: View {
             Rectangle().fill(palette.border).frame(width: width - 32, height: 1)
                 .position(x: width / 2, y: height - 56)
             Text(title)
-                .font(.system(size: 17, weight: .bold))
+                .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(palette.text)
                 .lineLimit(1)
                 .frame(width: note.isEmpty ? CGFloat(close.x - 34) : CGFloat(status.x - 24), alignment: .leading)
@@ -312,7 +312,7 @@ struct ResultCardView: View {
             }
             ScrollView {
                 Text(session.text)
-                    .font(.system(size: 15))
+                    .font(.system(size: 16))
                     .textSelection(.enabled)
                     .foregroundStyle(palette.text)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -324,7 +324,7 @@ struct ResultCardView: View {
             .accessibilityIdentifier("result-card-body")
             Button(action: onCopy) {
                 Text(ResultCopy.copyAction)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .frame(width: CGFloat(copy.w), height: CGFloat(copy.h))
                     .background(RoundedRectangle(cornerRadius: 8)
                         .fill(session.canApply ? palette.secondary : palette.accent))
@@ -338,7 +338,7 @@ struct ResultCardView: View {
             if session.hasApplyAction {
                 Button(action: onApply) {
                     Text(ResultCopy.applyAction)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .frame(width: CGFloat(apply.w), height: CGFloat(apply.h))
                         .background(RoundedRectangle(cornerRadius: 8)
                             .fill(session.canApply ? palette.accent : palette.secondary))

@@ -14,6 +14,12 @@ struct SettingsView: View {
     @State private var captureStatus = ""
     @State private var captureMonitor: Any?
 
+    init(model: WorkspaceModel, onClose: (() -> Void)? = nil, initialPage: String = "speech") {
+        self.model = model
+        self.onClose = onClose
+        self._selectedPage = State(initialValue: ["speech", "writing", "input"].contains(initialPage) ? initialPage : "speech")
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
@@ -259,7 +265,8 @@ struct SettingsView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 12)
         }
-        .frame(minWidth: 540, minHeight: 480)
+        .frame(minWidth: 480, minHeight: 420)
+        .background(Color(nsColor: .windowBackgroundColor))
         .onChange(of: model.settings.asrBaseURL) { _, _ in
             model.markConnectionProbeStale(.transcribe)
             model.invalidateDiscoveredModels(.transcribe)

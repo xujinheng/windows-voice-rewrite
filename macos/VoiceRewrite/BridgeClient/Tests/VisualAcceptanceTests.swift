@@ -22,7 +22,7 @@ final class VisualAcceptanceTests: XCTestCase {
     }
 
     @MainActor
-    func testProductionViewStateScreenshots() throws {
+    func testProductionViewStateScreenshots() async throws {
         let environment = ProcessInfo.processInfo.environment
         // Xcode does not reliably forward the parent process environment to its
         // XCTest runner. A repository-local sentinel scopes capture to this CI job.
@@ -47,8 +47,14 @@ final class VisualAcceptanceTests: XCTestCase {
 
         func store<V: View>(_ state: String, fixture: String, theme: String,
                              width: CGFloat, height: CGFloat, content: V) throws {
+            // SwiftUI must be hosted by an AppKit window for reliable CI painting.
             let view = NSHostingView(rootView: content)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = view
             view.frame = NSRect(x: 0, y: 0, width: width, height: height)
+            window.orderFrontRegardless()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.06))
             view.layoutSubtreeIfNeeded()
             view.displayIfNeeded()
             guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
@@ -60,6 +66,7 @@ final class VisualAcceptanceTests: XCTestCase {
                 XCTFail("Empty PNG for \(state)")
                 return
             }
+            window.orderOut(nil)
             let name = state.replacingOccurrences(of: ".", with: "-") + "-" + theme + ".png"
             try data.write(to: directory.appendingPathComponent(name), options: .atomic)
             let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.png")
@@ -70,9 +77,12 @@ final class VisualAcceptanceTests: XCTestCase {
         }
 
         let model = WorkspaceModel() // no launch(), mic, permissions or helper connection
-        try store("settings.speech", fixture: "default-settings-v1", theme: "light",
-                  width: 980, height: 700,
-                  content: SettingsView(model: model).environment(\.colorScheme, .light))
+        for page in ["speech", "writing", "input"] {
+            try store("settings.\(page)", fixture: "default-settings-v1", theme: "light",
+                      width: 860, height: 530,
+                      content: SettingsView(model: model, initialPage: page)
+                          .environment(\.colorScheme, .light))
+        }
 
         let started = Date(timeIntervalSince1970: 100)
         let phases: [(String, IndicatorPhase, Bool)] = [
@@ -99,22 +109,70 @@ final class VisualAcceptanceTests: XCTestCase {
         let text = "这是 VoiceRewrite 的真实结果卡片。\n\n使用本地模型可以完成：\n• 改写与润色\n• 翻译与总结\n• 对选中文本提问\n\n所有内容均为视觉验收用的固定示例文字。"
         for theme in ["light", "dark"] {
             let card = ResultCardActionSession(text: text)
+            let height = CGFloat(ResultCardMetrics.height(unicodeScalars: text.unicodeScalars.count))
             try store("result.copy", fixture: "result-v1", theme: theme,
-                      width: ResultCardMetrics.width, height: 340,
+                      width: ResultCardMetrics.width, height: height,
                       content: ResultCardView(title: "AI 回答", session: card,
-                          width: ResultCardMetrics.width, height: 340,
+                          width: ResultCardMetrics.width, height: height,
                           onCopy: {}, onApply: {}, onClose: {})
                       .environment(\.colorScheme, theme == "dark" ? .dark : .light))
         }
 
-        // Empty Meeting is not equivalent to the populated Windows demo.
+        // The empty state is not a substitute for Windows's populated demo.
         try store("meeting.empty", fixture: "empty-meeting-v1", theme: "light",
                   width: 850, height: 800,
                   content: MeetingReaderView(model: model, embedded: false)
                       .environment(\.colorScheme, .light))
+
+        // Exercise the actual Go Core offline fixture through bundled voicebridge.
+        // No microphone, ScreenCaptureKit or cloud model calls are made.
+        model.connect()
+        defer { model.shutdown() }
+        for _ in 0..<80 {
+            if case .connected = model.connection { break }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        guard case .connected = model.connection else {
+            XCTFail("Go voicebridge is unavailable for populated Meeting screenshots")
+            return
+        }
+        model.startMeetingDemo()
+        for _ in 0..<80 {
+            if model.meetingDemoActive { break }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        guard model.meetingDemoActive, !model.meetingCaptions.isEmpty else {
+            XCTFail("Go Core did not return the populated Meeting demo fixture")
+            return
+        }
+        let fontKey = "meeting.reader.fontSize"
+        let previousFont = UserDefaults.standard.object(forKey: fontKey)
+        defer {
+            if let previousFont { UserDefaults.standard.set(previousFont, forKey: fontKey) }
+            else { UserDefaults.standard.removeObject(forKey: fontKey) }
+        }
+        UserDefaults.standard.set(16, forKey: fontKey)
+        func storeMeeting(_ state: String) throws {
+            try store(state, fixture: "populated-demo-v1", theme: "light",
+                      width: 850, height: 800,
+                      content: MeetingReaderView(model: model, embedded: false)
+                          .environment(\.colorScheme, .light))
+        }
+        try storeMeeting("meeting.full")
+        model.toggleMeetingCaptionsOnly()
+        XCTAssertTrue(model.meetingCaptionsOnly)
+        try storeMeeting("meeting.focus")
+        model.toggleMeetingCaptionsOnly()
+        model.toggleMeetingExpressionExpanded()
+        XCTAssertTrue(model.meetingExpressionExpanded)
+        try storeMeeting("meeting.expanded")
+        model.toggleMeetingExpressionExpanded()
+        UserDefaults.standard.set(22, forKey: fontKey)
+        try storeMeeting("meeting.large-type")
+
         let manifest = Manifest(platform: platform, captures: captures)
         try JSONEncoder().encode(manifest).write(
             to: directory.appendingPathComponent("manifest.json"), options: .atomic)
-        XCTAssertEqual(captures.count, 9)
+        XCTAssertEqual(captures.count, 15)
     }
 }

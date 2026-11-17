@@ -648,7 +648,7 @@ func emitSettings() (string, error) {
 	bindings, actions, status := settingsMaps()
 	var b strings.Builder
 	b.WriteString(sourceNote("voice-rewrite/internal/contract"))
-	b.WriteString("import SwiftUI\nimport AppKit\nimport VoiceRewriteStorage\nimport Microphone\n\nstruct SettingsView: View {\n    @Environment(\\.dismiss) private var dismiss\n    @ObservedObject var model: WorkspaceModel\n    var onClose: (() -> Void)? = nil\n    @State private var selectedPage = \"speech\"\n    @State private var showAdvanced = false\n    @State private var captureTarget: String?\n    @State private var captureStatus = \"\"\n    @State private var captureMonitor: Any?\n\n    var body: some View {\n        VStack(spacing: 0) {\n            HStack(spacing: 0) {\n                VStack(alignment: .leading, spacing: 12) {\n                    Text(\"VoiceRewrite\").font(.title3.bold())\n                    Text(\"设置分类\").font(.caption).foregroundStyle(.secondary)\n")
+	b.WriteString("import SwiftUI\nimport AppKit\nimport VoiceRewriteStorage\nimport Microphone\n\nstruct SettingsView: View {\n    @Environment(\\.dismiss) private var dismiss\n    @ObservedObject var model: WorkspaceModel\n    var onClose: (() -> Void)? = nil\n    @State private var selectedPage = \"speech\"\n    @State private var showAdvanced = false\n    @State private var captureTarget: String?\n    @State private var captureStatus = \"\"\n    @State private var captureMonitor: Any?\n\n    init(model: WorkspaceModel, onClose: (() -> Void)? = nil, initialPage: String = \"speech\") {\n        self.model = model\n        self.onClose = onClose\n        self._selectedPage = State(initialValue: [\"speech\", \"writing\", \"input\"].contains(initialPage) ? initialPage : \"speech\")\n    }\n\n    var body: some View {\n        VStack(spacing: 0) {\n            HStack(spacing: 0) {\n                VStack(alignment: .leading, spacing: 12) {\n                    Text(\"VoiceRewrite\").font(.title3.bold())\n                    Text(\"设置分类\").font(.caption).foregroundStyle(.secondary)\n")
 	for _, page := range contract.Pages() {
 		b.WriteString("                    Button(" + strconv.Quote(page.Title) + ") { selectPage(" + strconv.Quote(page.ID) + ") }\n")
 		b.WriteString("                        .buttonStyle(.plain)\n")
@@ -746,7 +746,7 @@ func emitSettings() (string, error) {
 		return "", fmt.Errorf("footer labels out of sync")
 	}
 	b.WriteString("            Text(\"API Key 为可选项；需要认证时先保存再检测。连接检测共用 Windows 的 Go Core 规则：ASR 发送生成的静音 WAV，LLM 查询 /models，不发送用户录音或文本。密钥仅保存在 Keychain。\")\n                .font(.footnote).foregroundStyle(.secondary)\n                .accessibilityIdentifier(\"save_note\")\n")
-	b.WriteString("                .padding(.horizontal, 20)\n                .padding(.bottom, 12)\n        }\n        .frame(minWidth: 540, minHeight: 480)\n")
+	b.WriteString("                .padding(.horizontal, 20)\n                .padding(.bottom, 12)\n        }\n        .frame(minWidth: 480, minHeight: 420)\n        .background(Color(nsColor: .windowBackgroundColor))\n")
 	for _, control := range contract.Controls() {
 		if control.StaleProbe == "" || !control.VisibleOn(contract.MacOS) {
 			continue

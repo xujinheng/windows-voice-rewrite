@@ -127,7 +127,7 @@ func TestGenerateHostFilesFromCore(t *testing.T) {
 		}
 	}
 	holdText := first[filepath.Join(filepath.Dir(root), "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/SideHold.swift")]
-	if !strings.Contains(holdText, "0.280") {
+	if !strings.Contains(holdText, "0.250") {
 		t.Fatal("side hold was not generated from the Go duration")
 	}
 }

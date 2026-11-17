@@ -3,6 +3,16 @@ import VoiceRewriteInteraction
 @testable import VoiceRewrite
 
 final class MacShortcutTests: XCTestCase {
+    func testFirstLaunchSettingsRequirementEndsOnlyAfterSaving() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let settings = folder.appendingPathComponent("settings.json")
+        XCTAssertTrue(InitialSetup.required(settingsFile: settings))
+        try Data("{}".utf8).write(to: settings)
+        XCTAssertFalse(InitialSetup.required(settingsFile: settings))
+    }
+
     func testDefaultShortcutsUseTheSameKeysAsTheFixedCarbonBindings() {
         let dictation = MacShortcut.hotKey(key: "R", ctrl: true, alt: true, shift: false)
         let spoken = MacShortcut.hotKey(key: "E", ctrl: true, alt: true, shift: false)

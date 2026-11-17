@@ -1236,12 +1236,26 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func toggleMeetingCaptionsOnly() {
+        // Offline demo has a Go Core snapshot but deliberately no live session ID.
+        // Its reader controls must still work without opening capture/inference.
+        if meetingDemoActive {
+            meetingCaptionsOnly.toggle()
+            if meetingCaptionsOnly { meetingExpressionExpanded = false }
+            meetingPresentationRevision &+= 1
+            return
+        }
         meetingAction("meeting_view", fields: [
             "button_id": .number(Double(ContractLimits.meetingButtonCaptions)),
         ])
     }
 
     func toggleMeetingExpressionExpanded() {
+        if meetingDemoActive {
+            if meetingCaptionsOnly { meetingCaptionsOnly = false }
+            meetingExpressionExpanded.toggle()
+            meetingPresentationRevision &+= 1
+            return
+        }
         meetingAction("meeting_view", fields: [
             "button_id": .number(Double(ContractLimits.meetingButtonExpression)),
         ])

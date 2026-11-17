@@ -1,78 +1,11 @@
 import SwiftUI
 import AppKit
-import Carbon.HIToolbox
 
 enum MeetingDemoLaunch {
     static func requested(arguments: [String]) -> Bool {
         arguments.dropFirst().contains("--meeting-demo")
     }
 }
-
-/// An independent *quit* action, not a third dictation/rewrite shortcut.
-/// Use a distinct Carbon ID so the voice-hotkey handler cannot treat this event
-/// as one of its two registered voice actions.
-private let exitHotKeySignature: OSType = 0x5652_4558 // 'VREX'
-private let exitHotKeyID: UInt32 = 0xFFFF_FF10
-private let exitHotKeyHandler: EventHandlerUPP = { _, event, _ in
-    guard let event else { return OSStatus(eventNotHandledErr) }
-    var identifier = EventHotKeyID()
-    let status = GetEventParameter(event, EventParamName(kEventParamDirectObject),
-                                   EventParamType(typeEventHotKeyID), nil,
-                                   MemoryLayout<EventHotKeyID>.size, nil, &identifier)
-    guard status == noErr else { return OSStatus(eventNotHandledErr) }
-    // Leave the two voice shortcuts to their own Carbon handler.
-    guard identifier.signature == exitHotKeySignature,
-          identifier.id == exitHotKeyID else { return OSStatus(eventNotHandledErr) }
-    DispatchQueue.main.async { NSApp.terminate(nil) }
-    return noErr
-}
-
-@MainActor
-final class GlobalExitHotKey {
-    static let defaultBinding = "Ctrl+Alt+F10"
-    private var eventHandler: EventHandlerRef?
-    private var hotKey: EventHotKeyRef?
-
-    /// The settings owner can pass the saved canonical binding here once
-    /// the independently configurable exit setting is added.
-    func register(canonical: String) -> Bool {
-        guard let binding = ShortcutBinding(canonical: canonical),
-              !binding.mouse,
-              let shortcut = MacShortcut.hotKey(key: binding.key, ctrl: binding.ctrl,
-                                                alt: binding.alt, shift: binding.shift) else { return false }
-        stop()
-        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
-                                 eventKind: UInt32(kEventHotKeyPressed))
-        var handler: EventHandlerRef?
-        let installed = InstallEventHandler(GetApplicationEventTarget(), exitHotKeyHandler,
-                                            1, &spec, nil, &handler)
-        guard installed == noErr, let handler else { return false }
-        eventHandler = handler
-
-        var flags: UInt32 = 0
-        if shortcut.modifiers.contains(.control) { flags |= UInt32(controlKey) }
-        if shortcut.modifiers.contains(.option) { flags |= UInt32(optionKey) }
-        if shortcut.modifiers.contains(.shift) { flags |= UInt32(shiftKey) }
-        let identifier = EventHotKeyID(signature: exitHotKeySignature, id: exitHotKeyID)
-        var registration: EventHotKeyRef?
-        let registered = RegisterEventHotKey(shortcut.keyCode, flags, identifier,
-                                             GetApplicationEventTarget(), 0, &registration)
-        guard registered == noErr, let registration else {
-            stop()
-            return false
-        }
-        hotKey = registration
-        return true
-    }
-
-    func stop() {
-        if let hotKey { UnregisterEventHotKey(hotKey) }
-        hotKey = nil
-        if let eventHandler { RemoveEventHandler(eventHandler) }
-        eventHandler = nil
-    }
-}
-
 
 /// The model is owned by the application, not by an optional workspace window.
 @MainActor
@@ -85,7 +18,6 @@ private final class VoiceRewriteRuntime {
 @MainActor
 final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
     private(set) var didLaunchWorkspace = false
-    private let exitHotKey = GlobalExitHotKey()
 
     func launchWorkspaceOnce(_ launch: () -> Void) {
         guard !didLaunchWorkspace else { return }
@@ -99,21 +31,22 @@ final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let needsInitialSetup = InitialSetup.required
         launchWorkspaceOnce {
             let model = VoiceRewriteRuntime.shared.model
             model.onUpdateCheckCompleted = { [weak self] status, page in
                 self?.presentUpdateCheck(status: status, page: page)
             }
             model.launch(demo: MeetingDemoLaunch.requested(arguments: CommandLine.arguments))
-            if !exitHotKey.register(canonical: model.settings.exitShortcut) {
-                DiagnosticLog.note("stage=global_exit_hotkey status=failed")
-            }
         }
         // macOS 14 automatically constructs a SwiftUI Window scene on launch.
         // Order it out; an explicit menu click or Finder reopen shows it again.
         DispatchQueue.main.async {
             for window in NSApp.windows where window.title == "VoiceRewrite" && !(window is NSPanel) {
                 window.orderOut(nil)
+            }
+            if needsInitialSetup {
+                InitialSetupWindowController.shared.show(model: VoiceRewriteRuntime.shared.model)
             }
         }
     }
@@ -125,7 +58,6 @@ final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        exitHotKey.stop()
         VoiceRewriteRuntime.shared.model.shutdown()
     }
 
@@ -196,6 +128,35 @@ enum InitialSetup {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
         return required(settingsFile: support.appendingPathComponent("VoiceRewrite/settings.json"))
+    }
+}
+
+/// First use opens connection settings like Windows; later launches remain in menu bar.
+@MainActor
+final class InitialSetupWindowController {
+    static let shared = InitialSetupWindowController()
+    private var window: NSWindow?
+
+    func show(model: WorkspaceModel) {
+        if let window, window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 860, height: 530),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered, defer: false)
+        window.title = "VoiceRewrite · 连接设置"
+        window.minSize = NSSize(width: 480, height: 420)
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: SettingsView(
+            model: model, onClose: { [weak self] in self?.window?.close() }))
+        window.center()
+        self.window = window
+        NSApp.setActivationPolicy(.regular)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 
