@@ -72,11 +72,11 @@ const (
 )
 
 var (
-	uxGetWindowText  = user32.NewProc("GetWindowTextW")
-	uxSetTextColor   = gdi32.NewProc("SetTextColor")
-	uxSetBkMode      = gdi32.NewProc("SetBkMode")
-	uxWindowCallback = syscall.NewCallback(uxSettingsWndProc)
-	uxActiveSettings *uxSettings
+	uxGetWindowText        = user32.NewProc("GetWindowTextW")
+	uxSetTextColor         = gdi32.NewProc("SetTextColor")
+	uxSetBkMode            = gdi32.NewProc("SetBkMode")
+	uxWindowCallback       = syscall.NewCallback(uxSettingsWndProc)
+	uxActiveSettings       *uxSettings
 	uxModelRequestSequence atomic.Uint64
 )
 
