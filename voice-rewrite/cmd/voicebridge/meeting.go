@@ -454,6 +454,14 @@ func (m *bridgeMeeting) refine(parent context.Context, index int, instruction st
 		SelectedReply: chosen.English, UserPoints: instruction, Latest: source})
 }
 
+// express uses the shared literal-English mode, not the proactive compose mode.
+func (m *bridgeMeeting) express(parent context.Context, transcript string) error {
+	if !meetingcore.ValidInstruction(transcript) {
+		return errors.New("invalid literal expression request")
+	}
+	return m.runExpression(parent, meetingcore.Query{Mode: "express", UserPoints: transcript})
+}
+
 func (m *bridgeMeeting) compose(parent context.Context, instruction string) error {
 	if !meetingcore.ValidInstruction(instruction) {
 		return errors.New("invalid expression request")
