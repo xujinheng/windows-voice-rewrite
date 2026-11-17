@@ -65,10 +65,10 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 		return nil, err
 	}
 	m := &bridgeMeeting{
-		id: hex.EncodeToString(key[:]),
+		id:      hex.EncodeToString(key[:]),
 		runtime: meetingcore.NewSessionRuntime(),
-		source: &meetingPacketSource{packets: make(chan []byte, 12)},
-		status: "正在监听应用音频",
+		source:  &meetingPacketSource{packets: make(chan []byte, 12)},
+		status:  "正在监听应用音频",
 	}
 	m.pipeline = meetingcore.NewPipeline(m.runtime, meetingcore.PipelineHooks{
 		Transcribe: func(ctx context.Context, state *meetingcore.ASRState, turn meetingcore.AudioTurn, emit func(string)) (string, error) {
