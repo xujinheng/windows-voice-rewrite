@@ -19,21 +19,30 @@ open -R "$APP"
 
 Double-click VoiceRewrite.app in Finder, or use `open "$APP"`. The bundled Helper is built to the active Debug architecture and signed ad hoc. It launches directly via Foundation `Process` and `Pipe`, never a shell or an external network port.
 
-GitHub Actions runs `swift test` in Microphone, Storage and Interaction and `xcodebuild test` in the application project on macos-15. When the tests pass, CI uploads **two native developer builds**: `VoiceRewrite-macOS-arm64-Dev` for Apple Silicon (M1/M2/M3/M4 and newer M-series) and `VoiceRewrite-macOS-x64-Dev` for Intel Mac (x86_64). Each artifact contains both an app ZIP and a drag-to-Applications DMG, each with an independently verifiable SHA-256 checksum. The app and bundled `voicebridge` are verified for the matching architecture on their respective macOS 15 runners. Choose the ZIP or DMG matching your Mac's CPU. The DMG includes an Applications shortcut for Finder installation. These are **ad-hoc signed developer builds**, not notarized releases; macOS Gatekeeper may block launching a downloaded development build.
+GitHub Actions tests the native Swift packages and Xcode app on Apple Silicon and Intel runners. On `main` it uploads **development-only** ZIP and DMG archives named `VoiceRewrite-<app-version>-macOS-arm64-Dev` and `VoiceRewrite-<app-version>-macOS-x64-Dev`, each with its own `.sha256` file. The verifier extracts the ZIP, mounts the DMG, checks its Applications drag target, executable permissions, exact architecture, bundled `voicebridge`, app bundle version and ad-hoc code signatures. CI also checks that mismatched architectures, versions and missing helpers are rejected. **Dev is not Developer ID signed or notarized**; a successful build does not imply an unrestricted Gatekeeper launch or permission stability.
 
-## Signed distribution
+## Signed distribution and GitHub Releases
 
-The `macOS signed distribution` workflow builds separate Apple Silicon and Intel
-apps, signs the nested Go helper and native app with Developer ID Application,
-submits the signed ZIP for Apple notarization, staples the returned ticket, and
-uploads verifiable ZIP and DMG packages plus their checksums. The signed DMG is separately submitted for notarization and stapled. Configure the repository secret
-`MACOS_DEVELOPER_ID_P12_BASE64` (base64-encoded P12 certificate),
-`MACOS_DEVELOPER_ID_P12_PASSWORD`, `APPLE_NOTARY_APPLE_ID`,
-`APPLE_NOTARY_APP_PASSWORD`, and repository variables
-`MACOS_DEVELOPER_ID_IDENTITY` and `APPLE_TEAM_ID` before invoking that workflow.
-Without those credentials only the ad-hoc signed CI developer builds are available. The signed distribution workflow is manually invoked; its availability does not prove that the required credentials are configured or notarization has succeeded.
-A signed/notarized build keeps a stable app identity for macOS permission prompts;
-it does not bypass microphone or Accessibility authorization.
+`.github/workflows/macos-distribution.yml` is the **single existing macOS signing/distribution workflow**, triggered on version tags (`vMAJOR.MINOR.PATCH`) or manually. It builds each architecture separately (never an unverified universal binary), signs the nested `voicebridge` and app with Developer ID Application and Hardened Runtime (including the microphone entitlement), submits the app to Apple, checks an explicit `Accepted` response, staples the app, creates the ZIP using that stapled app, and reuses `scripts/package-macos-dmg.sh` to make the drag-and-drop DMG. The DMG is also notarized and stapled. Archives are extracted/mounted and checked before upload, and DMG checksums are calculated **after** stapling.
+
+The resulting files are `VoiceRewrite-<version>-macOS-arm64-Notarized.{zip,dmg}` and `VoiceRewrite-<version>-macOS-x64-Notarized.{zip,dmg}`, plus their four `.sha256` sidecars. On a version tag, the workflow **appends** the validated artifacts to the GitHub Release created by the existing Windows release job, retaining Windows' curated release notes and filenames. If that Release is unavailable, the verified macOS files remain in Actions artifacts and the upload job reports a failure; it does not create an uncurated Release.
+
+Repository secrets required: `MACOS_DEVELOPER_ID_P12_BASE64` (base64 Developer ID Application P12), `MACOS_DEVELOPER_ID_P12_PASSWORD`, `APPLE_NOTARY_APPLE_ID` and `APPLE_NOTARY_APP_PASSWORD` (app-specific password). Repository variables: `MACOS_DEVELOPER_ID_IDENTITY` (full certificate name) and `APPLE_TEAM_ID`. A hosted macOS runner with Xcode, Go and Apple notarization network access is also required. With missing credentials, signing jobs are **skipped** and no Notarized artifact or Release asset is generated. Developer downloads are available only from the separate development CI builds; no signing or notarization is claimed.
+
+Verify any download in the same directory as its checksum:
+
+```sh
+shasum -a 256 -c VoiceRewrite-<version>-macOS-<arm64-or-x64>-<Dev-or-Notarized>.dmg.sha256
+```
+
+The script `scripts/verify-macos-package.sh` can additionally validate an extracted app, ZIP or mounted DMG on macOS (including the stapled ticket and Gatekeeper assessment for Notarized packages).
+
+## Install, upgrade and uninstall
+
+1. Choose **arm64** for Apple Silicon or **x64** for Intel. Download the matching DMG and verify the adjacent checksum. Open the DMG and drag **VoiceRewrite.app** onto its **Applications** shortcut. ZIP users can extract the app and move it to `/Applications` manually. Do not run duplicate copies from Downloads or the mounted DMG.
+2. To upgrade, quit VoiceRewrite using its menu bar menu (closing its window does not quit it). Open the newer DMG and drag the app to Applications, choosing **Replace** in Finder. Relaunch from that stable location. Do not overwrite an app while the helper is active. Keep the same distribution identity for permission continuity; developer and Developer ID builds may require macOS to authorize them separately.
+3. On first use, grant **Microphone** in System Settings → Privacy & Security for voice recording, **Accessibility** for external editor input and auxiliary mouse buttons, and possibly **Input Monitoring** depending on macOS/input device. Enable **Screen & System Audio Recording** only when using Meeting capture. Restart the app after permission changes if macOS requires it. These grants are not automatic and can be refused.
+4. To uninstall, quit from the menu bar and move `/Applications/VoiceRewrite.app` to Trash. **Uninstalling does not erase user settings or Keychain secrets.** Nonsecret configuration remains at `~/Library/Application Support/VoiceRewrite/settings.json` (and any related data in that directory). If a full data removal is intended, manually remove that folder and the `com.xujinheng.VoiceRewrite` generic-password entries from Keychain Access. Only do so after any desired backup; the deletion is not reversible from the app.
 
 ## Menu bar and window lifecycle
 
