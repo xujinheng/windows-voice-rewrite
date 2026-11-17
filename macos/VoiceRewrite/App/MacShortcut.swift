@@ -12,12 +12,7 @@ struct ShortcutBinding {
     init?(canonical: String) {
         // Dedicated macOS flagsChanged bindings; they are not Carbon hotkeys.
         let trimmed = canonical.trimmingCharacters(in: .whitespacesAndNewlines)
-        let modifier: RightModifierKey?
-        switch trimmed.lowercased() {
-        case "rightctrl", "rightcontrol": modifier = .control
-        case "rightoption", "rightalt": modifier = .option
-        default: modifier = nil
-        }
+        let modifier = MacModifierKey(canonical: trimmed)
         if let modifier {
             normalized = modifier.rawValue
             key = modifier.rawValue
@@ -29,7 +24,7 @@ struct ShortcutBinding {
         }
         let parts = canonical.split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }
         guard let last = parts.last, !last.isEmpty,
-              !["rightctrl", "rightcontrol", "rightoption", "rightalt"].contains(last.lowercased()) else { return nil }
+              MacModifierKey(canonical: String(last)) == nil else { return nil }
         var ctrl = false
         var alt = false
         var shift = false
@@ -73,15 +68,15 @@ struct MacShortcutPlan: Equatable {
     let dictation: HotKeyShortcut?
     let rewrite: HotKeyShortcut?
     let exit: HotKeyShortcut?
-    let modifierDictation: RightModifierKey?
-    let modifierRewrite: RightModifierKey?
+    let modifierDictation: MacModifierKey?
+    let modifierRewrite: MacModifierKey?
     let recordMode: String
     let sideButtons: SideMouseBindings
 
     init?(dictation: ShortcutBinding, rewrite: ShortcutBinding,
           exit: ShortcutBinding? = nil, recordMode: String = "hold") {
-        let modifierDictation = RightModifierKey(rawValue: dictation.key)
-        let modifierRewrite = RightModifierKey(rawValue: rewrite.key)
+        let modifierDictation = MacModifierKey(rawValue: dictation.key)
+        let modifierRewrite = MacModifierKey(rawValue: rewrite.key)
         guard recordMode == "hold" || recordMode == "toggle",
               recordMode != "toggle" || (!dictation.mouse && !rewrite.mouse &&
                                          modifierDictation == nil && modifierRewrite == nil),
@@ -157,11 +152,8 @@ enum MacShortcut {
     }
 
     static func display(_ canonical: String) -> String {
-        switch canonical {
-        case "RightCtrl": return "右 Control（长按）"
-        case "RightOption": return "右 Option（长按）"
-        default: return canonical.replacingOccurrences(of: "Alt", with: "Option")
-        }
+        if let modifier = MacModifierKey(canonical: canonical) { return modifier.displayName }
+        return canonical.replacingOccurrences(of: "Alt", with: "Option")
     }
 
     private static let functionKeyCodes: Set<UInt32> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]
