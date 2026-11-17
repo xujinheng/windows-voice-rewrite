@@ -20,6 +20,31 @@ import (
 	"voicerewrite/internal/core/ux"
 )
 
+func TestTranscribeBudgetMatchesAudioLength(t *testing.T) {
+	// Short audio gets a bounded service wait rather than the former 220s
+	// default, but long clips retain the multi-chunk upper bound.
+	cases := []struct {
+		seconds int
+		want    time.Duration
+	}{
+		{1, 65 * time.Second},
+		{10, 65 * time.Second},
+		{30, 105 * time.Second},
+		{60, 165 * time.Second},
+		{180, 220 * time.Second},
+	}
+	for _, tc := range cases {
+		pcmBytes := tc.seconds * 32000
+		encodedLength := base64.StdEncoding.EncodedLen(pcmBytes)
+		if got := transcribeBudget(encodedLength); got != tc.want {
+			t.Errorf("%ds: got %s, want %s", tc.seconds, got, tc.want)
+		}
+	}
+	if got := transcribeBudget(-1); got != 65*time.Second {
+		t.Fatalf("invalid size: got %s", got)
+	}
+}
+
 type bridgeHarness struct {
 	t       *testing.T
 	in      *io.PipeWriter
