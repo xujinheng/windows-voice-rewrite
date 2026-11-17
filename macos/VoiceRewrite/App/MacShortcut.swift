@@ -12,7 +12,13 @@ struct ShortcutBinding {
     init?(canonical: String) {
         // Dedicated macOS flagsChanged bindings; they are not Carbon hotkeys.
         let trimmed = canonical.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let modifier = RightModifierKey(rawValue: trimmed) {
+        let modifier: RightModifierKey?
+        switch trimmed.lowercased() {
+        case "rightctrl", "rightcontrol": modifier = .control
+        case "rightoption", "rightalt": modifier = .option
+        default: modifier = nil
+        }
+        if let modifier {
             normalized = modifier.rawValue
             key = modifier.rawValue
             mouse = false
