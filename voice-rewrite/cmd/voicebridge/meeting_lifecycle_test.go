@@ -16,6 +16,7 @@ import (
 
 	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
+	meetingcore "voicerewrite/internal/core/meeting"
 )
 
 func TestBridgeMeetingPauseResumeAndSessionIsolation(t *testing.T) {
@@ -210,9 +211,19 @@ func TestBridgeMeetingRapidStopJoinsAudioConsumer(t *testing.T) {
 			t.Fatal(err)
 		}
 		if n == 0 {
+			m.mu.Lock()
+			m.captions = []meetingcore.Caption{
+				{ID: 7, Source: "completed", Final: true},
+				{ID: 8, Source: "outdated partial", Final: false},
+			}
+			m.mu.Unlock()
 			_, epoch, _ := m.runtime.Snapshot()
 			if err := m.setPaused(true); err != nil {
 				t.Fatal(err)
+			}
+			remaining := m.snapshot()["captions"].([]map[string]any)
+			if len(remaining) != 1 || remaining[0]["source"] != "completed" {
+				t.Fatalf("pause retained stale provisional caption: %#v", remaining)
 			}
 			if err := m.setPaused(false); err != nil {
 				t.Fatal(err)
