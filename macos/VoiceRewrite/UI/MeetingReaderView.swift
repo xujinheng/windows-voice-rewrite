@@ -74,6 +74,11 @@ enum MeetingReaderLayout {
                       width: width, height: height)
     }
 
+    static func shouldFocusExpression(_ english: String, lastFocused: String, following: Bool,
+                                      frozen: Bool, active: Bool, busy: Bool) -> Bool {
+        !english.isEmpty && english != lastFocused && following && !frozen && active && !busy
+    }
+
     // A completed current turn remains fixed until the next utterance arrives.
     // Interim ASR text must never appear in the independently scrolled history.
     static func split(_ captions: [MeetingCaptionRow]) -> (current: MeetingCaptionRow?, history: [MeetingCaptionRow]) {
@@ -120,6 +125,7 @@ struct MeetingReaderView: View {
     @State private var frozen: ReaderSnapshot?
     @State private var following = true
     @State private var unread = 0
+    @State private var lastFocusedExpression = ""
     @State private var showProfile = false
 
     private var captions: [MeetingCaptionRow] { frozen?.captions ?? model.meetingCaptions }
@@ -201,6 +207,7 @@ struct MeetingReaderView: View {
                 frozen = nil
                 following = true
                 unread = 0
+                lastFocusedExpression = ""
             } else if savedCaptionsFocus != model.meetingCaptionsOnly {
                 model.toggleMeetingCaptionsOnly()
             }
@@ -208,14 +215,22 @@ struct MeetingReaderView: View {
         .onChange(of: model.meetingCaptionsOnly) { _, value in
             if model.meetingActive { savedCaptionsFocus = value }
         }
-        .onChange(of: model.meetingExpression) { old, new in
-            // Do not steal focus from a frozen view or someone reading history.
-            guard frozen == nil, following, !new.isEmpty, new != old else { return }
-            model.focusMeetingExpressionIfReadingLatest()
-        }
+        .onChange(of: model.meetingExpression) { _, _ in requestExpressionFocusIfReady() }
+        .onChange(of: model.meetingBusy) { _, _ in requestExpressionFocusIfReady() }
+        .onChange(of: following) { _, _ in requestExpressionFocusIfReady() }
+        .onChange(of: frozen == nil) { _, _ in requestExpressionFocusIfReady() }
         .sheet(isPresented: $showProfile) {
             MeetingProfileDraftView(model: model)
         }
+    }
+
+    private func requestExpressionFocusIfReady() {
+        let current = model.meetingExpression
+        guard MeetingReaderLayout.shouldFocusExpression(current,
+            lastFocused: lastFocusedExpression, following: following,
+            frozen: frozen != nil, active: model.meetingActive, busy: model.meetingBusy) else { return }
+        lastFocusedExpression = current
+        model.focusMeetingExpressionIfReadingLatest()
     }
 
     private var toolbar: some View {
