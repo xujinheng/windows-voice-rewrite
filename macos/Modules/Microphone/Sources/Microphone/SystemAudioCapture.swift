@@ -48,6 +48,27 @@ public struct SystemAudioStartGate {
     }
 }
 
+/// Maximum number of 200 ms PCM packets awaiting the main actor. A blocked
+/// GUI must not let the ScreenCaptureKit delivery queue grow without bound.
+public struct SystemAudioDeliveryGate {
+    public private(set) var pending = 0
+    public let limit: Int
+
+    public init(limit: Int = 8) {
+        self.limit = limit
+    }
+
+    public mutating func reserve(active: Bool) -> Bool {
+        guard active, pending < limit else { return false }
+        pending += 1
+        return true
+    }
+
+    public mutating func complete() {
+        pending = max(0, pending - 1)
+    }
+}
+
 @MainActor
 public final class SystemAudioCapture {
     private var stream: SCStream?
@@ -257,7 +278,7 @@ private final class SystemAudioReceiver: NSObject, SCStreamOutput, SCStreamDeleg
     private let stateLock = NSLock()
     private var active = true
     private var canceled = false
-    private var pendingDeliveries = 0
+    private var deliveryGate = SystemAudioDeliveryGate()
     private var converter: NativeAudioConverter?
     private var currentFormat: AVAudioFormat?
     private var pending = Data()
@@ -302,14 +323,12 @@ private final class SystemAudioReceiver: NSObject, SCStreamOutput, SCStreamDeleg
     private func reserveDelivery() -> Bool {
         stateLock.lock()
         defer { stateLock.unlock() }
-        guard active, pendingDeliveries < 8 else { return false }
-        pendingDeliveries += 1
-        return true
+        return deliveryGate.reserve(active: active)
     }
 
     private func completeDelivery() {
         stateLock.lock()
-        pendingDeliveries = max(0, pendingDeliveries - 1)
+        deliveryGate.complete()
         stateLock.unlock()
     }
 
