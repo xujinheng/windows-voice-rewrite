@@ -54,21 +54,16 @@ struct ShortcutBinding {
 struct MacShortcutPlan: Equatable {
     let dictation: HotKeyShortcut?
     let rewrite: HotKeyShortcut?
-    let textEdit: HotKeyShortcut?
     let sideButtons: SideMouseBindings
 
-    init?(dictation: ShortcutBinding, rewrite: ShortcutBinding, textEdit: ShortcutBinding) {
-        guard !textEdit.mouse else { return nil }
+    init?(dictation: ShortcutBinding, rewrite: ShortcutBinding) {
         let dictationKey = dictation.mouse ? nil : MacShortcut.hotKey(
             key: dictation.key, ctrl: dictation.ctrl, alt: dictation.alt, shift: dictation.shift)
         let rewriteKey = rewrite.mouse ? nil : MacShortcut.hotKey(
             key: rewrite.key, ctrl: rewrite.ctrl, alt: rewrite.alt, shift: rewrite.shift)
-        let textKey = MacShortcut.hotKey(
-            key: textEdit.key, ctrl: textEdit.ctrl, alt: textEdit.alt, shift: textEdit.shift)
         guard (dictation.mouse || dictationKey != nil),
-              (rewrite.mouse || rewriteKey != nil),
-              let textKey else { return nil }
-        let keys = [dictationKey, rewriteKey, textKey].compactMap { $0 }
+              (rewrite.mouse || rewriteKey != nil) else { return nil }
+        let keys = [dictationKey, rewriteKey].compactMap { $0 }
         guard Set(keys).count == keys.count else { return nil }
 
         let explicitMouse = dictation.mouse || rewrite.mouse
@@ -88,12 +83,11 @@ struct MacShortcutPlan: Equatable {
               (!rewrite.mouse || button(rewrite) != nil) else { return nil }
         self.dictation = dictationKey
         self.rewrite = rewriteKey
-        self.textEdit = textKey
         self.sideButtons = mouse
     }
 
     var keyboard: [HotKeyShortcut] {
-        [dictation, rewrite, textEdit].compactMap { $0 }
+        [dictation, rewrite].compactMap { $0 }
     }
 
 }

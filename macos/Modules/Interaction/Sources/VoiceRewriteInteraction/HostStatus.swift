@@ -137,8 +137,8 @@ public func shortcutRestoreKeepsKeyboard(hasPrevious: Bool, sameKeyboard: Bool) 
     hasPrevious && sameKeyboard
 }
 
-public func shortcutPlanLabel(dictation: String, textEdit: String, rewrite: String) -> String {
-    "\(dictation) 听写；\(textEdit) 文本指令；\(rewrite) 语音修改选区"
+public func voiceShortcutPlanLabel(dictation: String, rewrite: String) -> String {
+    "\(dictation) 听写；\(rewrite) 语音修改选区"
 }
 
 public func shortcutParseFailure(transport: String?, userText: String?) -> String {

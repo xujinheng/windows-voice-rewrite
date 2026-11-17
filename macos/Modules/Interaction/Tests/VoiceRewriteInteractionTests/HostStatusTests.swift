@@ -76,7 +76,7 @@ final class HostStatusTests: XCTestCase {
         XCTAssertEqual(shortcutInstall(validPlan: true, sameKeyboard: false), .replace)
         XCTAssertTrue(shortcutRestoreKeepsKeyboard(hasPrevious: true, sameKeyboard: true))
         XCTAssertFalse(shortcutRestoreKeepsKeyboard(hasPrevious: false, sameKeyboard: true))
-        XCTAssertEqual(shortcutPlanLabel(dictation: "Option+R", textEdit: "Option+T", rewrite: "Option+E"), "Option+R 听写；Option+T 文本指令；Option+E 语音修改选区")
+        XCTAssertEqual(voiceShortcutPlanLabel(dictation: "Option+R", rewrite: "Option+E"), "Option+R 听写；Option+E 语音修改选区")
         XCTAssertEqual(shortcutSaveRejected(), "快捷键冲突或不受 macOS 支持；设置未保存")
         XCTAssertEqual(shortcutPlanRejected(), "快捷键冲突或不受 macOS 支持；原快捷键保持有效")
     }
