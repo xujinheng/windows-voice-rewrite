@@ -88,10 +88,10 @@ func emitPasteTiming(path string) (string, error) {
 		}
 	}
 	return sourceNote("voice-rewrite/internal/core/clipboard") +
-		"import Foundation\\n\\npublic enum PasteTiming {\\n" +
-		"    public static let quietMilliseconds = " + values[names[0]] + "\\n" +
-		"    public static let maxMilliseconds = " + values[names[1]] + "\\n" +
-		"    public static let pollMilliseconds = " + values[names[2]] + "\\n}\\n", nil
+		"import Foundation\n\npublic enum PasteTiming {\n" +
+		"    public static let quietMilliseconds = " + values[names[0]] + "\n" +
+		"    public static let maxMilliseconds = " + values[names[1]] + "\n" +
+		"    public static let pollMilliseconds = " + values[names[2]] + "\n}\n", nil
 }
 
 func emitSideHold(path string) (string, error) {
