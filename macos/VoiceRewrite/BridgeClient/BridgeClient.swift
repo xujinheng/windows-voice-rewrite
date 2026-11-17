@@ -11,6 +11,7 @@ final class BridgeClient {
     private let writer = DispatchQueue(label: "com.xujinheng.VoiceRewrite.bridge.writer")
     private let replies = ReplyRegistry()
     private var process: Process?
+    private var launching = false
     private var input: Pipe?
     private var epoch: UInt64 = 0
 
@@ -22,36 +23,56 @@ final class BridgeClient {
     var processID: Int32? { state.sync { process?.processIdentifier } }
 
     func start() throws {
-        try state.sync {
-            guard process == nil else { throw BridgeFailure.alreadyRunning }
-            guard executableURL.isFileURL,
-                  FileManager.default.isExecutableFile(atPath: executableURL.path) else {
-                throw BridgeFailure.helperMissing
-            }
-            let child = Process()
-            child.executableURL = executableURL
-            child.arguments = []
-            let stdin = Pipe()
-            let stdout = Pipe()
-            let stderr = Pipe()
-            child.standardInput = stdin
-            child.standardOutput = stdout
-            child.standardError = stderr
-            do { try child.run() }
-            catch { throw BridgeFailure.launchFailed(error.localizedDescription) }
-
+        guard executableURL.isFileURL,
+              FileManager.default.isExecutableFile(atPath: executableURL.path) else {
+            throw BridgeFailure.helperMissing
+        }
+        // Reserve a generation, then launch outside the state lock. Process.run()
+        // can block on macOS while dyld/Gatekeeper resolves a cold executable;
+        // no UI send/cancel/stop should ever wait for that lock.
+        let session: UInt64 = try state.sync {
+            guard process == nil && !launching else { throw BridgeFailure.alreadyRunning }
+            launching = true
             epoch &+= 1
-            let session = epoch
+            return epoch
+        }
+        let child = Process()
+        child.executableURL = executableURL
+        child.arguments = []
+        let stdin = Pipe()
+        let stdout = Pipe()
+        let stderr = Pipe()
+        child.standardInput = stdin
+        child.standardOutput = stdout
+        child.standardError = stderr
+        do {
+            try child.run()
+        } catch {
+            state.sync {
+                if epoch == session { launching = false }
+            }
+            throw BridgeFailure.launchFailed(error.localizedDescription)
+        }
+        let accepted: Bool = state.sync {
+            guard epoch == session && launching else { return false }
+            launching = false
             input = stdin
             process = child
-            DispatchQueue.global(qos: .userInitiated).async { [self] in
-                readReplies(from: stdout.fileHandleForReading, process: child, epoch: session)
-            }
+            return true
+        }
+        guard accepted else {
             DispatchQueue.global(qos: .utility).async {
-                let handle = stderr.fileHandleForReading
-                while !handle.availableData.isEmpty { /* discard */ }
-                try? handle.close()
+                if child.isRunning { child.terminate() }
             }
+            throw BridgeFailure.cancelled
+        }
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            readReplies(from: stdout.fileHandleForReading, process: child, epoch: session)
+        }
+        DispatchQueue.global(qos: .utility).async {
+            let handle = stderr.fileHandleForReading
+            while !handle.availableData.isEmpty { /* discard */ }
+            try? handle.close()
         }
     }
 
@@ -132,14 +153,17 @@ final class BridgeClient {
     func stop() {
         let previous: (Process?, Pipe?) = state.sync {
             epoch &+= 1
+            launching = false
             let previous = (process, input)
             process = nil
             input = nil
             replies.failAll(.cancelled)
             return previous
         }
-        if let child = previous.0, child.isRunning { child.terminate() }
-        try? previous.1?.fileHandleForWriting.close()
+        DispatchQueue.global(qos: .utility).async {
+            if let child = previous.0, child.isRunning { child.terminate() }
+            try? previous.1?.fileHandleForWriting.close()
+        }
     }
 
     private func readReplies(from handle: FileHandle, process child: Process, epoch session: UInt64) {
