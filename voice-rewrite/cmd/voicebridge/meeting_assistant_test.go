@@ -445,3 +445,64 @@ func TestMeetingReplyHandoffAllowsIncompleteFirstWithReadySecondAndTip(t *testin
 		}
 	}
 }
+
+func TestMeetingReplyServiceOutageKeepsReadableChoiceAndAllowsRetry(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		if n == 2 {
+			http.Error(w, "upstream temporarily offline", http.StatusServiceUnavailable)
+			return
+		}
+		text := "ONE\tPreviously accepted.\t之前的答案。"
+		if n == 3 {
+			text = "TWO\tCould we confirm the latest figure?\t能确认最新数字吗？"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{map[string]any{
+				"finish_reason": "stop",
+				"message":       map[string]string{"content": text},
+			}},
+		})
+	}))
+	defer srv.Close()
+
+	cfg := coreconfig.Defaults()
+	cfg.LLMBaseURL = srv.URL + "/v1"
+	cfg.TextModel = "test-model"
+	m, err := newBridgeMeeting(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.stop()
+	for turn := uint64(1); turn <= 2; turn++ {
+		m.mu.Lock()
+		m.captions = append(m.captions, meetingcore.Caption{ID: turn, Source: "spoken context", Final: true})
+		m.prior = meetingcore.RememberPrior(m.prior, "spoken context")
+		m.lastFinal = turn
+		m.mu.Unlock()
+		err = m.runReplies(context.Background(), turn)
+		if turn == 1 && err != nil || turn == 2 && err == nil {
+			t.Fatalf("unexpected reply outcome turn %d: %v", turn, err)
+		}
+	}
+	failed := m.snapshot()
+	if failed["reply_status"] != meetingcore.RepliesFailed ||
+		failed["reply_pending"] != false ||
+		failed["reply_first_ready"] != 0 {
+		t.Fatalf("outage corrupted the finished reply: %#v", failed)
+	}
+	if err := m.runReplies(context.Background(), 0); err != nil {
+		t.Fatal("manual retry after outage:", err)
+	}
+	if !m.acceptReplies() {
+		t.Fatal("recovered batch was not offered")
+	}
+	recovered := m.snapshot()
+	if recovered["reply_first_ready"] != 1 ||
+		recovered["reply_status"] != "" ||
+		calls.Load() != 3 {
+		t.Fatalf("service recovery did not publish a new complete reply: %#v, calls %d", recovered, calls.Load())
+	}
+}
