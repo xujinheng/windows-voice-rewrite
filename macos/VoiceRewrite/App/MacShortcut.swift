@@ -28,7 +28,8 @@ struct ShortcutBinding {
             return
         }
         let parts = canonical.split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }
-        guard let last = parts.last, !last.isEmpty else { return nil }
+        guard let last = parts.last, !last.isEmpty,
+              !["rightctrl", "rightcontrol", "rightoption", "rightalt"].contains(last.lowercased()) else { return nil }
         var ctrl = false
         var alt = false
         var shift = false
