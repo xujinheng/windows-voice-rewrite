@@ -311,6 +311,21 @@ private final class FakeHotKeyDriver: HotKeyDriver {
 }
 
 final class HotKeyTests: XCTestCase {
+    func testCarbonKeyReleaseDebouncesAndDoesNotReplayAfterUnregister() {
+        var ledger = HotKeyPressState()
+        let first = HotKeyToken(id: 1), second = HotKeyToken(id: 2)
+        XCTAssertTrue(ledger.transition(first, pressed: true))
+        XCTAssertFalse(ledger.transition(first, pressed: true))
+        XCTAssertTrue(ledger.transition(second, pressed: true))
+        XCTAssertTrue(ledger.transition(first, pressed: false))
+        XCTAssertFalse(ledger.transition(first, pressed: false))
+        ledger.forget(second)
+        XCTAssertFalse(ledger.transition(second, pressed: false))
+        XCTAssertTrue(ledger.transition(first, pressed: true))
+        ledger.clear()
+        XCTAssertFalse(ledger.transition(first, pressed: false))
+    }
+
     func testRegisterDuplicateConflictAndRelease() async throws {
         try await MainActor.run {
         let driver = FakeHotKeyDriver(), registry = HotKeyRegistry(driver: driver)
