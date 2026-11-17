@@ -31,6 +31,10 @@ func TestBridgeMeetingLifecycleAndStalePackets(t *testing.T) {
 		t.Fatalf("meeting start: %#v", reply)
 	}
 	session := object(t, reply.Result)["session_id"].(string)
+	epoch, ok := object(t, reply.Result)["audio_epoch"].(float64)
+	if !ok || epoch != 1 {
+		t.Fatalf("Meeting start did not advertise the initial PCM epoch: %#v", reply.Result)
+	}
 	if len(session) != 32 {
 		t.Fatalf("invalid session token: %q", session)
 	}
@@ -42,6 +46,13 @@ func TestBridgeMeetingLifecycleAndStalePackets(t *testing.T) {
 		"pcm_base64": base64.StdEncoding.EncodeToString([]byte{1, 2})})
 	if got := h.receive(); got.OK || got.Error.Code != "invalid_pcm" {
 		t.Fatalf("accepted partial PCM frame: %#v", got)
+	}
+	h.send(map[string]any{"v": 1, "id": "future-epoch", "op": "meeting_feed",
+		"session_id": session, "audio_epoch": uint64(epoch) + 1,
+		"pcm_base64": base64.StdEncoding.EncodeToString(make([]byte, audio.FrameBytes))})
+	if got := h.receive(); !got.OK || object(t, got.Result)["accepted"] != false ||
+		object(t, got.Result)["stale_epoch"] != true {
+		t.Fatalf("wrong-epoch PCM reached the audio consumer: %#v", got)
 	}
 	h.send(map[string]any{"v": 1, "id": "other", "op": "meeting_feed", "session_id": "old",
 		"pcm_base64": base64.StdEncoding.EncodeToString(make([]byte, audio.FrameBytes))})
