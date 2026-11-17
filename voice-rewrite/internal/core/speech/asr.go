@@ -133,7 +133,9 @@ func newASRRequestWithPrompt(ctx context.Context, cfg coreconfig.Config, pcm []b
 		return nil, e
 	}
 	if prompt != "" {
-		if e = w.WriteField("prompt", prompt); e != nil { return nil, e }
+		if e = w.WriteField("prompt", prompt); e != nil {
+			return nil, e
+		}
 	}
 	if e = w.Close(); e != nil {
 		return nil, e
