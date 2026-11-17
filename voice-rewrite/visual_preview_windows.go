@@ -3,6 +3,7 @@
 package main
 
 import (
+	"os"
 	"runtime"
 	"unsafe"
 
@@ -15,7 +16,20 @@ import (
 func runRecordingVisualPreview() {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	showHandyStatus(nil, "听写", indicator.Recording, 0x56525348)
+	// These fixed states use the native Win32 painter. They do not start
+	// microphone capture, request permission or perform model inference.
+	switch os.Getenv("VOICEREWRITE_VISUAL_STATE") {
+	case "preview":
+		showPendingHandyStatus("听写")
+	case "processing":
+		showHandyStatus(nil, "听写", indicator.Processing, 0x56525348)
+	case "failure":
+		showHandyStatus(nil, "听写", indicator.Error, 0x56525348)
+	case "success-event-sent":
+		showHandyStatus(nil, "听写", indicator.Success, 0x56525348)
+	default:
+		showHandyStatus(nil, "听写", indicator.Recording, 0x56525348)
+	}
 	defer closeHandyStatus()
 	if activeHandyStatus == nil {
 		return
