@@ -200,7 +200,7 @@ private final class SystemAudioReceiver: NSObject, SCStreamOutput, SCStreamDeleg
             currentFormat = format
         }
         guard let converter else { throw MicrophoneError.converterUnavailable }
-        var encoded = PCM16Buffer()
+        var encoded = PCM16Buffer(reserveFrames: 16_384)
         try converter.consume(owned, into: &encoded)
         if encoded.frameCount == 0 { return }
         pending.append(try encoded.finish())
