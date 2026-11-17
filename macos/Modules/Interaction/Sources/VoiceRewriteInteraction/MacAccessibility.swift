@@ -278,7 +278,7 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
     }
 
     private func guardedPaste(_ text: String, expected: SelectionObservation,
-                              expectedValue: String?, confirmDelivery: Bool) throws {
+                              expectedValue: String) throws {
         let lease = try pasteboard.beginTemporaryText(text)
         do {
             // Clipboard staging is externally visible. Revalidate again after staging.
@@ -286,20 +286,9 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
             guard pasteboard.isOwned(lease) else { throw ClipboardFailure.ownershipLost }
             try postPaste(expected: expected)
 
-            // Dispatching Cmd+V only queues the event. Restore after the
-            // receiving app has had time to consume the clipboard, without
-            // blocking the interaction actor or re-sending the keystroke.
-            if !confirmDelivery {
-                let board = pasteboard
-                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1.0) {
-                    // A newer clipboard owner is never overwritten.
-                    try? board.finish(lease)
-                }
-                return
-            }
-            guard let expectedValue else { throw InteractionFailure.unsupportedNativeWrite }
+            // An explicit selected-text rewrite is not a best-effort insertion.
+            // Confirm the expected complete value before reporting success.
             let confirmed = confirmWrite(target, expected: expected, expectedValue: expectedValue)
-            // Never overwrite a user or clipboard manager's newer clipboard contents.
             try pasteboard.finish(lease)
             if !confirmed { throw InteractionFailure.writeNotConfirmed }
         } catch {
@@ -309,28 +298,14 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         }
     }
 
-    func writeSelectedText(_ text: String, expected: SelectionObservation, intent: SelectionIntent) throws {
+    func writeSelectedText(_ text: String, expected: SelectionObservation) throws {
         let target = try revalidate(expected)
-        let baseline: String?
-        if intent == .dictation {
-            // Some monitored editors intermittently refuse AXValue reads.
-            baseline = try? wholeValue(target)
-        } else {
-            baseline = try wholeValue(target)
-        }
-        let expectedValue = TextWriteVerification.expectedValue(
+        let baseline = try wholeValue(target)
+        guard let expectedValue = TextWriteVerification.expectedValue(
             original: baseline, selectedText: expected.selectedText,
-            range: expected.range, replacement: text)
-        if intent == .dictation {
-            // A readable value must agree with the selected UTF-16 range.
-            // Editors without AXValue can use a monitored, single-shot paste.
-            if baseline != nil && expectedValue == nil {
-                throw InteractionFailure.unsupportedNativeWrite
-            }
-            try guardedPaste(text, expected: expected, expectedValue: expectedValue, confirmDelivery: false)
-            return
+            range: expected.range, replacement: text) else {
+            throw InteractionFailure.unsupportedNativeWrite
         }
-        guard let expectedValue else { throw InteractionFailure.unsupportedNativeWrite }
 
         var settable = DarwinBoolean(false)
         let support = AXUIElementIsAttributeSettable(
@@ -361,8 +336,7 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         }
 
         // Selected-text rewriting requires an exact original AXValue and UTF-16 range.
-        // Dictation already took its separate single-shot paste path.
-        try guardedPaste(text, expected: expected, expectedValue: expectedValue, confirmDelivery: true)
+        try guardedPaste(text, expected: expected, expectedValue: expectedValue)
     }
 
     func stopMonitoring() {
