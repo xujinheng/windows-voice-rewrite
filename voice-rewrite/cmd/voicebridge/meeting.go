@@ -260,13 +260,14 @@ func (m *bridgeMeeting) cancelWork() {
 func (m *bridgeMeeting) refine(parent context.Context, index int, instruction string) error {
 	m.mu.Lock()
 	chosen := m.replies.Displayed.Lines[index]
+	source := m.replies.Displayed.Source
 	m.mu.Unlock()
 	if !chosen.Complete || !meetingcore.RefineMayRun(chosen.English, false) ||
 		len([]rune(instruction)) > 2000 || strings.TrimSpace(instruction) == "" {
 		return errors.New("invalid reply refinement")
 	}
 	return m.runExpression(parent, meetingcore.Query{Mode: "refine",
-		SelectedReply: chosen.English, UserPoints: instruction, Latest: m.replies.Displayed.Source})
+		SelectedReply: chosen.English, UserPoints: instruction, Latest: source})
 }
 
 func (m *bridgeMeeting) compose(parent context.Context, instruction string) error {
