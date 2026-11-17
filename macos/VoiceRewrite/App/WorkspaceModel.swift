@@ -252,7 +252,6 @@ final class WorkspaceModel: ObservableObject {
         showStartupDemoOnConnect = demo
         refreshMicrophonePermission()
         refreshMicrophoneDevices()
-        refreshKeyboardDevices()
         DiagnosticLog.note("应用已启动")
         if case .disconnected = connection { connect() }
         if hotKeys == nil { registerHotKeys() }
