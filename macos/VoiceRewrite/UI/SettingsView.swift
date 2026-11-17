@@ -12,6 +12,22 @@ struct SettingsView: View {
                     .accessibilityIdentifier("asr_base_url")
                 TextField("模型 ID", text: $model.settings.asrModel)
                     .accessibilityIdentifier("asr_model")
+                HStack {
+                    Button("发现模型") { model.discoverModels(for: .transcribe) }
+                        .disabled(model.isDiscoveringASRModels)
+                        .accessibilityIdentifier("discover_asr_models")
+                    Menu("选择发现的模型") {
+                        ForEach(model.asrAvailableModels, id: \.self) { id in
+                            Button(id) { model.settings.asrModel = id }
+                        }
+                    }
+                    .disabled(model.asrAvailableModels.isEmpty)
+                    .accessibilityIdentifier("select_asr_model")
+                }
+                if !model.asrModelDiscoveryStatus.isEmpty {
+                    Text(model.asrModelDiscoveryStatus).font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("asr_models_status")
+                }
                 SecureField("ASR API Key（本地服务可留空；留空保留旧值）", text: $model.asrKeyInput)
                     .accessibilityLabel("API Key")
                     .accessibilityIdentifier("asr_api_key")
@@ -27,6 +43,22 @@ struct SettingsView: View {
                     .accessibilityIdentifier("llm_base_url")
                 TextField("模型 ID", text: $model.settings.textModel)
                     .accessibilityIdentifier("text_model")
+                HStack {
+                    Button("发现模型") { model.discoverModels(for: .selectedTask) }
+                        .disabled(model.isDiscoveringLLMModels)
+                        .accessibilityIdentifier("discover_llm_models")
+                    Menu("选择发现的模型") {
+                        ForEach(model.llmAvailableModels, id: \.self) { id in
+                            Button(id) { model.settings.textModel = id }
+                        }
+                    }
+                    .disabled(model.llmAvailableModels.isEmpty)
+                    .accessibilityIdentifier("select_llm_model")
+                }
+                if !model.llmModelDiscoveryStatus.isEmpty {
+                    Text(model.llmModelDiscoveryStatus).font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("llm_models_status")
+                }
                 SecureField("LLM API Key（本地服务可留空；留空保留旧值）", text: $model.llmKeyInput)
                     .accessibilityLabel("API Key")
                     .accessibilityIdentifier("llm_api_key")
@@ -64,12 +96,24 @@ struct SettingsView: View {
                     .accessibilityIdentifier("save_note")
             }
         }
-        .onChange(of: model.settings.asrBaseURL) { _, _ in model.markConnectionProbeStale(.transcribe) }
+        .onChange(of: model.settings.asrBaseURL) { _, _ in
+            model.markConnectionProbeStale(.transcribe)
+            model.invalidateDiscoveredModels(.transcribe)
+        }
         .onChange(of: model.settings.asrModel) { _, _ in model.markConnectionProbeStale(.transcribe) }
-        .onChange(of: model.asrKeyInput) { _, _ in model.markConnectionProbeStale(.transcribe) }
-        .onChange(of: model.settings.llmBaseURL) { _, _ in model.markConnectionProbeStale(.selectedTask) }
+        .onChange(of: model.asrKeyInput) { _, _ in
+            model.markConnectionProbeStale(.transcribe)
+            model.invalidateDiscoveredModels(.transcribe)
+        }
+        .onChange(of: model.settings.llmBaseURL) { _, _ in
+            model.markConnectionProbeStale(.selectedTask)
+            model.invalidateDiscoveredModels(.selectedTask)
+        }
         .onChange(of: model.settings.textModel) { _, _ in model.markConnectionProbeStale(.selectedTask) }
-        .onChange(of: model.llmKeyInput) { _, _ in model.markConnectionProbeStale(.selectedTask) }
+        .onChange(of: model.llmKeyInput) { _, _ in
+            model.markConnectionProbeStale(.selectedTask)
+            model.invalidateDiscoveredModels(.selectedTask)
+        }
         .formStyle(.grouped)
     }
 }
