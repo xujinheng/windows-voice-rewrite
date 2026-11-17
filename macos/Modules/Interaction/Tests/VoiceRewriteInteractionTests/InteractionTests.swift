@@ -61,6 +61,23 @@ final class NativeClipboardReceiptTests: XCTestCase {
         XCTAssertNil(board.lastTextReadAt())
     }
 
+    func testNativePasteboardRejectsStaleSnapshotWithoutOverwritingNewClipboard() throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.setString("original", forType: .string))
+        let board = MacClipboardBoard(board: pasteboard)
+        let snapshot = try board.capture()
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.setString("new owner", forType: .string))
+
+        XCTAssertThrowsError(try board.installTemporaryText(
+            "dictation", owner: UUID(), expectedChangeCount: snapshot.changeCount)) {
+            XCTAssertEqual($0 as? ClipboardFailure, .snapshotUnavailable)
+        }
+        XCTAssertEqual(pasteboard.string(forType: .string), "new owner")
+    }
+
     func testFastReceiverReadBeforeReceiptRegistration() async throws {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
