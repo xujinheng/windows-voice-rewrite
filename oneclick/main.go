@@ -391,7 +391,7 @@ func run(o options) error {
 	}
 	if !o.attach {
 		if info, err := os.Stat(o.llamaPath); err != nil || info.IsDir() {
-		return fmt.Errorf("llama-server not found at %s; choose an executable llama-server and retry", o.llamaPath)
+			return fmt.Errorf("llama-server not found at %s; choose an executable llama-server and retry", o.llamaPath)
 		}
 	}
 	if !o.attach {
