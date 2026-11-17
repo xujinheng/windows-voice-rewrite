@@ -1,42 +1,15 @@
 import AppKit
 import SwiftUI
 
-// The native interaction layer owns both checks: the original editor/selection
-// must be revalidated on every click and checked again immediately before writing.
-enum ResultApplyAuthorization: Equatable {
-    case authorized
-    case busy
-    case editorClosed
-    case unsafe
-}
-
-enum ResultApplyReceipt: Equatable {
-    case confirmedWrite
-    case eventSent
-    case busy
-    case editorClosed
-    case unsafe
-}
-
-// Apply belongs only to a live editable selection with a captured original target
-// and task generation. Preview, history, and dictation cards expose copy only.
-struct ResultCardApply {
-    let revalidate: @MainActor () async -> ResultApplyAuthorization
-    let replace: @MainActor (String) async -> ResultApplyReceipt
-}
-
+/// One result card owns its copy status; closing it invalidates later updates.
 @MainActor
 final class ResultCardActionSession: ObservableObject {
     let text: String
-    let apply: ResultCardApply?
     @Published private(set) var note = ""
-    @Published private(set) var isApplying = false
-    @Published private(set) var mayApply = true
     private(set) var isClosed = false
 
-    init(text: String, apply: ResultCardApply? = nil) {
+    init(text: String) {
         self.text = text
-        self.apply = apply
     }
 
     func copyCompleted(_ copied: Bool) {
@@ -46,43 +19,6 @@ final class ResultCardActionSession: ObservableObject {
 
     func close() {
         isClosed = true
-    }
-
-    func applyIfAuthorized() async {
-        guard !isClosed, !isApplying, mayApply, !Task.isCancelled, let apply else { return }
-        isApplying = true
-        note = "正在核验原选区并应用…"
-        defer { isApplying = false }
-
-        let permission = await apply.revalidate()
-        guard !isClosed, !Task.isCancelled else { return }
-        switch permission {
-        case .busy:
-            note = "任务尚未结束，请稍后点击应用"
-        case .editorClosed:
-            note = "原编辑窗口已关闭 · 请复制结果"
-        case .unsafe:
-            note = "无法安全替换，请使用复制结果"
-        case .authorized:
-            // The replace closure must repeat target, selection, and epoch checks
-            // immediately before the native write to avoid a focus-change race.
-            let receipt = await apply.replace(text)
-            guard !isClosed, !Task.isCancelled else { return }
-            switch receipt {
-            case .confirmedWrite:
-                mayApply = false
-                note = "已确认替换原选区"
-            case .eventSent:
-                mayApply = false
-                note = "已发送粘贴指令 · 请确认是否写入"
-            case .busy:
-                note = "任务尚未结束，请稍后点击应用"
-            case .editorClosed:
-                note = "原编辑窗口已关闭 · 请复制结果"
-            case .unsafe:
-                note = "无法安全替换，请使用复制结果"
-            }
-        }
     }
 }
 
@@ -96,14 +32,13 @@ final class ResultCardPanel {
     private var localMonitor: Any?
     private var title = ""
     private var session: ResultCardActionSession?
-    private var applyTask: Task<Void, Never>?
 
-    func present(title: String, text: String, apply: ResultCardApply? = nil) {
+    func present(title: String, text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         dismiss()
         self.title = title
-        session = ResultCardActionSession(text: trimmed, apply: apply)
+        session = ResultCardActionSession(text: trimmed)
         ensurePanel()
         guard let panel else { return }
         place(panel, idealHeight: ResultCardMetrics.height(unicodeScalars: trimmed.unicodeScalars.count))
@@ -112,8 +47,6 @@ final class ResultCardPanel {
     }
 
     func dismiss() {
-        applyTask?.cancel()
-        applyTask = nil
         session?.close()
         session = nil
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
@@ -129,22 +62,11 @@ final class ResultCardPanel {
         session.copyCompleted(NSPasteboard.general.setString(session.text, forType: .string))
     }
 
-    private func apply() {
-        guard let session, session.apply != nil, !session.isApplying, session.mayApply,
-              applyTask == nil,
-              panel?.isVisible == true else { return }
-        applyTask = Task { @MainActor [weak self] in
-            await session.applyIfAuthorized()
-            if self?.session === session { self?.applyTask = nil }
-        }
-    }
-
     private func show(on panel: NSPanel, width: CGFloat, height: CGFloat) {
         guard let session else { return }
         panel.contentView = NSHostingView(rootView: ResultCardView(
             title: title, session: session, width: width, height: height,
             onCopy: { [weak self] in self?.copy() },
-            onApply: { [weak self] in self?.apply() },
             onClose: { [weak self] in self?.dismiss() }))
     }
 
@@ -213,15 +135,10 @@ final class ResultCardPanel {
         let width = Int32(frame.width.rounded())
         let window = ResultHitRect(left: 0, top: 0, right: width, bottom: height)
         let editor = ResultCardChrome.editor(width: width, height: height).hit
-        var buttons = [
+        let buttons = [
             ResultCardChrome.closeButton(width: width).hit,
             ResultCardChrome.copyButton(width: width, height: height).hit,
         ]
-        if session?.apply != nil {
-            let copy = ResultCardChrome.copyButton(width: width, height: height)
-            buttons.append(ResultHitRect(
-                left: copy.x - 124, top: copy.y, right: copy.x - 8, bottom: copy.y + copy.h))
-        }
         if ResultCardMetrics.clickDismisses(x: localX, y: localY, window: window, editor: editor, buttons: buttons) {
             dismiss()
         }
@@ -265,14 +182,12 @@ struct ResultCardView: View {
     let width: CGFloat
     let height: CGFloat
     let onCopy: () -> Void
-    let onApply: () -> Void
     let onClose: () -> Void
 
     var body: some View {
         let palette = ResultCardPalette(dark: colorScheme == .dark)
         let note = session.note
-        let canApply = session.apply != nil
-        let editor = ResultCardChrome.editor(width: Int32(width), height: Int32(height))
+         let editor = ResultCardChrome.editor(width: Int32(width), height: Int32(height))
         let close = ResultCardChrome.closeButton(width: Int32(width))
         let copy = ResultCardChrome.copyButton(width: Int32(width), height: Int32(height))
         let status = ResultCardChrome.note(width: Int32(width))
@@ -315,29 +230,15 @@ struct ResultCardView: View {
             .position(x: CGFloat(editor.x) + CGFloat(editor.w) / 2,
                       y: CGFloat(editor.y) + CGFloat(editor.h) / 2)
             .accessibilityIdentifier("result-card-body")
-            if canApply {
-                Button(action: onApply) {
-                    Text(ResultCopy.applyAction)
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 116, height: CGFloat(copy.h))
-                        .background(RoundedRectangle(cornerRadius: 8).fill(palette.accent))
-                        .foregroundStyle(palette.accentText)
-                }
-                .buttonStyle(.plain)
-                .disabled(session.isApplying || !session.mayApply)
-                .position(x: CGFloat(copy.x - 124 + 58),
-                          y: CGFloat(copy.y) + CGFloat(copy.h) / 2)
-                .accessibilityIdentifier("result-card-apply")
-            }
             Button(action: onCopy) {
                 Text(ResultCopy.copyAction)
                     .font(.system(size: 12, weight: .semibold))
                     .frame(width: CGFloat(copy.w), height: CGFloat(copy.h))
                     .background(RoundedRectangle(cornerRadius: 8)
-                        .fill(canApply ? palette.surface : palette.accent))
+                        .fill(palette.accent))
                     .overlay(RoundedRectangle(cornerRadius: 8)
-                        .stroke(canApply ? palette.border : .clear, lineWidth: 1))
-                    .foregroundStyle(canApply ? palette.text : palette.accentText)
+                        .stroke(Color.clear, lineWidth: 1))
+                    .foregroundStyle(palette.accentText)
             }
             .buttonStyle(.plain)
             .position(x: CGFloat(copy.x) + CGFloat(copy.w) / 2,
