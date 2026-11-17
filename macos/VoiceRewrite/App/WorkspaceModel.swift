@@ -113,6 +113,7 @@ final class WorkspaceModel: ObservableObject {
     private var meetingPresentationRevision: UInt64 = 0
     private var meetingSessionID: String?
     private var meetingAudioEpoch = 1
+    private var showStartupDemoOnConnect = false
     private var meetingPendingPackets = 0
     private var meetingSnapshotPending = false
     private var meetingRequestID: String?
@@ -177,7 +178,8 @@ final class WorkspaceModel: ObservableObject {
         NSWorkspace.shared.open(url)
     }
 
-    func launch() {
+    func launch(demo: Bool = false) {
+        showStartupDemoOnConnect = demo
         refreshMicrophonePermission()
         refreshMicrophoneDevices()
         DiagnosticLog.note("应用已启动")
@@ -791,6 +793,10 @@ final class WorkspaceModel: ObservableObject {
                     }
                 }
                 self.meetingStatus = "离线演示 · 固定测试字幕，不采集 Zoom 或系统音频，不请求在线服务"
+                if self.showStartupDemoOnConnect {
+                    self.showStartupDemoOnConnect = false
+                    MeetingReaderWindowController.shared.open(model: self)
+                }
             }
         }
     }
@@ -1959,6 +1965,9 @@ final class WorkspaceModel: ObservableObject {
         }
         if effect.refreshShortcuts {
             refreshShortcutsFromCore()
+        }
+        if effect.connectedLabel != nil && showStartupDemoOnConnect {
+            startMeetingDemo()
         }
     }
 
