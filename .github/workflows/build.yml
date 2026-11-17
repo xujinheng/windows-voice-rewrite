@@ -72,6 +72,10 @@ jobs:
               (cd "macos/Modules/$module" && swift test)
             fi
           done
+      - name: Enable user-perceived latency measurements
+        run: |
+          mkdir -p performance-output
+          touch performance-output/.enabled
       - name: Build and test native macOS application
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         run: |
@@ -126,6 +130,14 @@ jobs:
           swift ../scripts/macos-bridge-probe.swift "$RUNNER_TEMP/voicebridge"
           GOOS=darwin GOARCH=amd64 go build ./cmd/voicebridge
           GOOS=darwin GOARCH=arm64 go build ./cmd/voicebridge
+      - name: Upload Apple Silicon user-journey latency report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: user-latency-arm64
+          path: performance-output/macos-arm64/journey.json
+          retention-days: 7
+          if-no-files-found: warn
   build-macos-intel:
     runs-on: macos-15-intel
     timeout-minutes: 35
@@ -136,6 +148,10 @@ jobs:
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
+      - name: Enable user-perceived latency measurements
+        run: |
+          mkdir -p performance-output
+          touch performance-output/.enabled
       - name: Build and test Intel macOS native app
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         run: |
@@ -178,6 +194,14 @@ jobs:
             ${{ runner.temp }}/VoiceRewrite-*-macOS-x64-Dev.dmg.sha256
           retention-days: 7
           if-no-files-found: error
+      - name: Upload Intel user-journey latency report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: user-latency-x64
+          path: performance-output/macos-x64/journey.json
+          retention-days: 7
+          if-no-files-found: warn
   build:
     runs-on: windows-latest
     timeout-minutes: 30
