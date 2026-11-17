@@ -12,14 +12,14 @@ const (
 type State uint8
 
 const (
-	Blocked State = 0
+	Blocked        State = 0
 	SentUnverified State = 1
-	Confirmed State = 2
-	Uncertain State = 3
+	Confirmed      State = 2
+	Uncertain      State = 3
 )
 
 type Result struct {
-	Kind Kind
+	Kind  Kind
 	State State
 }
 
