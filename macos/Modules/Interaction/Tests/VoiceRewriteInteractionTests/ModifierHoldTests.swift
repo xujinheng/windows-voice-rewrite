@@ -63,6 +63,34 @@ final class MacModifierHoldTests: XCTestCase {
         XCTAssertNil(state.release(.rightControl))
     }
 
+    func testHIDUsageCodesAndKeyboardIdentityFailClosed() {
+        let expected: [Int: MacModifierKey] = [
+            0xE0: .leftControl, 0xE4: .rightControl,
+            0xE2: .leftOption, 0xE6: .rightOption,
+            0xE3: .leftCommand, 0xE7: .rightCommand
+        ]
+        for (usage, key) in expected {
+            XCTAssertEqual(MacKeyboardHIDKey.modifier(usage: usage), key)
+        }
+        XCTAssertNil(MacKeyboardHIDKey.modifier(usage: 0x04)) // normal letter
+        XCTAssertNil(MacKeyboardHIDKey.modifier(usage: 0xE1)) // Shift
+        XCTAssertEqual(MacKeyboardDevice.identity(
+            vendor: 1452, product: 100, location: 0, serial: "", builtIn: true),
+            "builtin:1452:100:0")
+        XCTAssertEqual(MacKeyboardDevice.identity(
+            vendor: 111, product: 222, location: 4, serial: "abc", builtIn: false),
+            "serial:111:222:abc")
+        XCTAssertEqual(MacKeyboardDevice.identity(
+            vendor: 111, product: 222, location: 4, serial: "", builtIn: false),
+            "port:111:222:4")
+        XCTAssertNil(MacKeyboardDevice.identity(
+            vendor: 111, product: 222, location: 0, serial: "", builtIn: false))
+        XCTAssertTrue(MacKeyboardDevice(id: "a", name: "Internal", builtIn: true).title.contains("内建"))
+        XCTAssertTrue(MacKeyboardDevice(id: "b", name: "USB", builtIn: false).title.contains("外接"))
+        XCTAssertFalse(MacKeyboardDevice(id: "a", name: "Unknown", builtIn: false,
+                                         selectable: false).selectable)
+    }
+
     func testAllSixPhysicalKeysHaveUniqueCodesAndCanonicalNames() {
         let physical: [MacModifierKey: Int64] = [
             .leftControl: 59, .rightControl: 62,
