@@ -53,6 +53,7 @@ type request struct {
 	Shortcut       string          `json:"shortcut"`
 	TargetID       string          `json:"target_id"`
 	SessionID      string          `json:"session_id"`
+	AudioEpoch     uint64          `json:"audio_epoch"`
 	ReplyIndex     int             `json:"reply_index"`
 	ViewButton     int             `json:"button_id"`
 }
@@ -310,10 +311,12 @@ func (s *bridgeServer) meetingRequest(req request) response {
 		if m == nil || m.id != req.SessionID {
 			return failure(req.ID, "stale_meeting", "会议已停止或更换")
 		}
-		if err := m.feed(pcm); err != nil {
+		if err := m.feed(pcm, req.AudioEpoch); err != nil {
 			switch {
 			case errors.Is(err, errMeetingPaused):
-				return failure(req.ID, "meeting_paused", "会议采集已暂停")
+				return success(req.ID, map[string]any{"accepted": false, "paused": true})
+			case errors.Is(err, errMeetingStaleEpoch):
+				return success(req.ID, map[string]any{"accepted": false, "stale_epoch": true})
 			case errors.Is(err, context.Canceled):
 				return failure(req.ID, "stale_meeting", "会议已停止或更换")
 			default:
