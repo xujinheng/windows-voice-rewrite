@@ -767,13 +767,16 @@ final class WorkspaceModel: ObservableObject {
             return
         }
         let token = meetingGeneration.begin()
+        meetingStarting = true
         bridge.send(operation: "meeting_demo") { [weak self] result in
             Task { @MainActor [weak self] in
                 guard let self, self.meetingGeneration.accepts(token),
-                      !self.meetingActive && !self.meetingStarting else { return }
+                      !self.meetingActive && self.meetingStarting else { return }
+                self.meetingStarting = false
                 guard case .success(let reply) = result, reply.ok,
                       reply.result?["demo"]?.boolValue == true else {
                     self.meetingStatus = "无法读取本地离线演示数据"
+                    self.showStartupDemoOnConnect = false
                     return
                 }
                 self.meetingDemoActive = true
