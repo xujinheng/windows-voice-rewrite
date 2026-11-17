@@ -253,7 +253,7 @@ struct SettingsView: View {
                 Button(captureTarget == "exit_shortcut" ? "等待按键…" : "录入按键") { beginCapture("exit_shortcut") }
                     .accessibilityIdentifier("capture_exit")
                                 }
-                Text("可用 Ctrl+Alt+R、F8 或 Mouse4。macOS 的 Alt 即 Option；Mouse4 默认听写，Mouse5 默认改写。仅监听已绑定侧键，F21–F24 不可用；听写与改写不能绑定同一个按键。")
+                Text("Mac 默认长按右 Control 听写、长按右 Option 改写；松开结束。Mouse4 听写、Mouse5 改写保持不变。也可自行配置 Ctrl+Alt+R/E 或 F8。右侧单键需要辅助功能/输入监控权限，单独按住 250ms 才会触发；组合键不触发录音。")
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("input_note_macos")
                                 if !captureStatus.isEmpty {
@@ -359,8 +359,19 @@ struct SettingsView: View {
         captureTarget = id
         captureStatus = "正在监听按键… 按 Esc 取消"
         model.setShortcutCaptureActive(true)
-        captureMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .otherMouseDown]) { event in
+        captureMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .otherMouseDown, .flagsChanged]) { event in
             if event.type == .keyDown && event.isARepeat { return nil }
+            if event.type == .flagsChanged {
+                if event.keyCode == 62 && event.modifierFlags.contains(.control) {
+                    acceptCapture("RightCtrl")
+                    return nil
+                }
+                if event.keyCode == 61 && event.modifierFlags.contains(.option) {
+                    acceptCapture("RightOption")
+                    return nil
+                }
+                return event
+            }
             if event.type == .otherMouseDown {
                 if event.buttonNumber == 3 { acceptCapture("Mouse4"); return nil }
                 if event.buttonNumber == 4 { acceptCapture("Mouse5"); return nil }
@@ -372,7 +383,7 @@ struct SettingsView: View {
                 return nil
             }
             guard let candidate = Self.shortcutFromKey(event) else {
-                captureStatus = "请使用 Ctrl/Option 加字母数字，或 F1–F20"
+                captureStatus = "请长按右 Control/右 Option，或使用 Ctrl/Option 组合键、F1–F20"
                 return nil
             }
             acceptCapture(candidate)
