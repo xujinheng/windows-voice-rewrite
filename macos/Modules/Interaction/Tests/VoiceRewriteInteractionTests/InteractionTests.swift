@@ -48,6 +48,19 @@ private final class FakeUptime: @unchecked Sendable {
 
 #if os(macOS)
 final class NativeClipboardReceiptTests: XCTestCase {
+    func testDictationTargetPolicyChecksWindowWhenAvailableWithoutRequiringAX() {
+        XCTAssertTrue(DictationTargetPolicy.maySend(
+            capturedPID: 123, foregroundPID: 123, secureInput: false))
+        XCTAssertFalse(DictationTargetPolicy.maySend(
+            capturedPID: 123, foregroundPID: 456, secureInput: false))
+        XCTAssertFalse(DictationTargetPolicy.maySend(
+            capturedPID: 123, foregroundPID: 123, secureInput: true))
+        XCTAssertTrue(DictationTargetPolicy.sameWindow(captured: nil, current: 42))
+        XCTAssertTrue(DictationTargetPolicy.sameWindow(captured: 42, current: nil))
+        XCTAssertTrue(DictationTargetPolicy.sameWindow(captured: 42, current: 42))
+        XCTAssertFalse(DictationTargetPolicy.sameWindow(captured: 42, current: 99))
+    }
+
     func testLazyPasteboardReportsActualTextRead() throws {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

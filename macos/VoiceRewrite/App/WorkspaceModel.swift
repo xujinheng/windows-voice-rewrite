@@ -1885,13 +1885,16 @@ final class WorkspaceModel: ObservableObject {
                     guard self.resultGeneration.accepts(token) else { return }
                     DiagnosticLog.note("stage=dictation_delivery status=\(outcome)")
                     self.applyTask(dictationInsertFollowUp(
-                        succeeded: !outcome.requiresManualResult,
-                        status: "", manualTitle: ResultCopy.dictationWriteUnconfirmed, text: text))
+                        outcome: outcome,
+                        status: insertionStatus(InteractionFailure.writeNotConfirmed, rewrite: false,
+                                                passwordRewrite: ResultCopy.passwordRewrite,
+                                                passwordDictation: ResultCopy.passwordDictation),
+                        manualTitle: ResultCopy.dictationWriteUnconfirmed, text: text))
                 } catch {
                     guard self.resultGeneration.accepts(token) else { return }
                     DiagnosticLog.note("stage=dictation_delivery status=failed code=\(insertionDiagnosticCode(error))")
                     self.applyTask(dictationInsertFollowUp(
-                        succeeded: false,
+                        outcome: (error as? InteractionFailure) == .writeNotConfirmed ? .uncertain : .blocked,
                         status: insertionStatus(error, rewrite: false, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation),
                         manualTitle: ((error as? InteractionFailure) == .writeNotConfirmed || error is ClipboardFailure)
                             ? ResultCopy.dictationWriteUnconfirmed : ResultCopy.dictationCopyManually,

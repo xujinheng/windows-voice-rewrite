@@ -140,15 +140,22 @@ final class HostStatusTests: XCTestCase {
         XCTAssertEqual(dropped.phase, .error)
         XCTAssertFalse(dropped.cancelTask)
 
-        let inserted = dictationInsertFollowUp(succeeded: true, status: "失败", manualTitle: "请复制", text: "你好")
-        XCTAssertEqual(inserted.phase, .success)
-        XCTAssertEqual(inserted.interactionStatus, dictationInserted())
-        XCTAssertNil(inserted.cardTitle)
+        let confirmed = dictationInsertFollowUp(outcome: .confirmed, status: "失败", manualTitle: "请复制", text: "你好")
+        XCTAssertEqual(confirmed.phase, .success)
+        XCTAssertEqual(confirmed.interactionStatus, dictationInserted())
+        XCTAssertNil(confirmed.cardTitle)
 
-        let manual = dictationInsertFollowUp(succeeded: false, status: "失败", manualTitle: "请复制", text: "你好")
-        XCTAssertEqual(manual.phase, .fallback)
-        XCTAssertEqual(manual.cardTitle, "请复制")
-        XCTAssertEqual(manual.cardText, "你好")
+        let posted = dictationInsertFollowUp(outcome: .sentUnverified, status: "失败", manualTitle: "请复制", text: "你好")
+        XCTAssertEqual(posted.phase, .answer, "posting Cmd+V is not confirmed insertion")
+        XCTAssertEqual(posted.interactionStatus, dictationInserted())
+        XCTAssertNil(posted.cardText, "do not encourage a second paste after an uncertain delivery")
+
+        for outcome in [DeliveryState.blocked, .uncertain] {
+            let manual = dictationInsertFollowUp(outcome: outcome, status: "失败", manualTitle: "请复制", text: "你好")
+            XCTAssertEqual(manual.phase, .fallback)
+            XCTAssertEqual(manual.cardTitle, "请复制")
+            XCTAssertEqual(manual.cardText, "你好")
+        }
     }
 
     func testSelectedTaskFollowUpKeepsPreviewAndWriteApart() {

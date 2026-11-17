@@ -40,7 +40,7 @@ try hotkeys.register(.init(keyCode: 15, modifiers: [.command, .shift]))
 
 ### Cross-application insertion
 
-Ordinary dictation posts a single Cmd+V with the original application still active. AX is optional and only assists with detecting focused-field changes and protected inputs. Without AX the host cannot guarantee that the original text field remains focused inside the same application. The user chooses this compatibility-oriented behavior. There is no automatic retry after a paste event.
+Ordinary dictation posts a single Cmd+V with the original application still active. AX is optional: when the original focused control exposes AXValue and a valid UTF-16 selection, the host compares the complete value after posting to confirm insertion. Unsupported or unreadable AX controls still receive the native paste, but event posting alone is explicitly **unverified**, never reported as confirmed success. Without AX the host cannot guarantee that the original text field remains focused inside the same application. There is no automatic retry after a paste event. Direct Unicode fallback also treats a cancellation after its first emitted chunk as an uncertain partial write, not a clean failure.
 
 The native pasteboard provides text lazily and records a receipt when the destination requests it. Restoration waits at least 700ms after the paste event starts and then until the delayed text read is quiet for 200ms; it is bounded by a 3-second timeout. The original clipboard is restored only while the temporary lease is still owned. Concurrent dictations queue for the same clipboard paste path; direct Unicode is used only when existing clipboard formats cannot be restored.
 
