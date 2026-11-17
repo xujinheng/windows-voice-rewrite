@@ -214,7 +214,7 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
 
     func currentSelection() throws -> SelectionObservation { try read() }
 
-    private let pasteboard = ClipboardProtector(board: MacClipboardBoard())
+    private let pasteboard = MacClipboardTransactions.shared
 
     private func revalidate(_ expected: SelectionObservation) throws -> AXUIElement {
         let now = try read()
