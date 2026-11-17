@@ -55,7 +55,7 @@ jobs:
           VOICE_REWRITE_NATIVE_POPUP_TEST: '1'
         run: |
           New-Item -Force -ItemType Directory ../acceptance-output/logs | Out-Null
-          go test -count=1 -timeout 4m -run '^TestNativePopupPaintAndClose -v . *>&1 |
+          go test -count=1 -timeout 4m -run '^TestNativePopupPaintAndClose$' -v . *>&1 |
             Tee-Object ../acceptance-output/logs/windows-meeting-tests.txt
           if ($LASTEXITCODE -ne 0) { throw 'native popup E2E failed' }
       - name: Build production Windows GUI
