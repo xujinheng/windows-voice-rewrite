@@ -104,7 +104,9 @@ public final class ClipboardProtector: @unchecked Sendable {
         guard status.0 else { return }
         let quiet = Double(PasteTiming.quietMilliseconds) / 1000
         let timeout = Double(PasteTiming.maxMilliseconds) / 1000
-        if (status.1 != nil && now - status.1! >= quiet) || now - started >= timeout {
+        // Ignore eager clipboard-manager reads that precede the paste event.
+        let postPasteRead = status.1 != nil && status.1! >= started
+        if (postPasteRead && now - status.1! >= quiet) || now - started >= timeout {
             try? finish(id)
             return
         }
