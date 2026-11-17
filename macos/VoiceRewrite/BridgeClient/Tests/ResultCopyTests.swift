@@ -36,4 +36,121 @@ final class ResultCopyTests: XCTestCase {
             FailureCopy.status(prefix: "ASR 请求失败：", message: ResultCopy.noSpeech + " sk-secret"),
             "ASR 请求失败：" + ResultCopy.noSpeech + " sk-secret")
     }
+    @MainActor
+    func testApplyIsUnavailableWithoutAnExplicitOriginalSelection() async {
+        let card = ResultCardActionSession(text: "preview")
+        XCTAssertNil(card.apply)
+        await card.applyIfAuthorized()
+        XCTAssertTrue(card.note.isEmpty)
+        XCTAssertFalse(card.isApplying)
+    }
+
+    @MainActor
+    func testManualApplyMustRevalidateBeforeReplacing() async {
+        var checks = 0
+        var writes = 0
+        let card = ResultCardActionSession(text: "改写正文", apply: ResultCardApply(
+            revalidate: {
+                checks += 1
+                return .unsafe
+            },
+            replace: { _ in
+                writes += 1
+                return .confirmedWrite
+            }))
+        await card.applyIfAuthorized()
+        XCTAssertEqual(checks, 1)
+        XCTAssertEqual(writes, 0)
+        XCTAssertEqual(card.note, "无法安全替换，请使用复制结果")
+        XCTAssertFalse(card.isApplying)
+        await card.applyIfAuthorized()
+        XCTAssertEqual(checks, 2)
+        XCTAssertEqual(writes, 0)
+    }
+
+    @MainActor
+    func testManualApplyDifferentiatesSentEventFromConfirmedWrite() async {
+        var writes = [String]()
+        var confirmation: ResultApplyReceipt = .eventSent
+        let card = ResultCardActionSession(text: "文本", apply: ResultCardApply(
+            revalidate: { .authorized },
+            replace: { value in
+                writes.append(value)
+                return confirmation
+            }))
+        await card.applyIfAuthorized()
+        XCTAssertEqual(writes, ["文本"])
+        XCTAssertEqual(card.note, "已发送粘贴指令 · 请确认是否写入")
+        confirmation = .confirmedWrite
+        await card.applyIfAuthorized()
+        XCTAssertEqual(writes, ["文本", "文本"])
+        XCTAssertEqual(card.note, "已确认替换原选区")
+    }
+
+    @MainActor
+    func testClosedEditorAndBusySessionDoNotReplace() async {
+        for result: ResultApplyAuthorization in [.editorClosed, .busy] {
+            var writes = 0
+            let card = ResultCardActionSession(text: "正文", apply: ResultCardApply(
+                revalidate: { result },
+                replace: { _ in
+                    writes += 1
+                    return .confirmedWrite
+                }))
+            await card.applyIfAuthorized()
+            XCTAssertEqual(writes, 0)
+            XCTAssertFalse(card.note.isEmpty)
+        }
+    }
+
+    @MainActor
+    func testCancelDuringValidationPreventsLateWriteAndCopy() async {
+        var writes = 0
+        var card: ResultCardActionSession!
+        card = ResultCardActionSession(text: "正文", apply: ResultCardApply(
+            revalidate: {
+                card.close()
+                return .authorized
+            },
+            replace: { _ in
+                writes += 1
+                return .confirmedWrite
+            }))
+        await card.applyIfAuthorized()
+        XCTAssertEqual(writes, 0)
+        XCTAssertTrue(card.isClosed)
+        card.copyCompleted(true)
+        XCTAssertEqual(card.note, "正在核验原选区并应用…")
+    }
+
+    @MainActor
+    func testCopySuccessFailureAndApplyReceiptFailures() async {
+        let card = ResultCardActionSession(text: "正文", apply: ResultCardApply(
+            revalidate: { .authorized },
+            replace: { _ in .editorClosed }))
+        card.copyCompleted(true)
+        XCTAssertEqual(card.note, ResultCopy.copySucceeded)
+        card.copyCompleted(false)
+        XCTAssertEqual(card.note, ResultCopy.copyFailed)
+        await card.applyIfAuthorized()
+        XCTAssertEqual(card.note, "原编辑窗口已关闭 · 请复制结果")
+        XCTAssertFalse(card.isApplying)
+    }
+
+    func testApplyFrameMatchesSharedPopupRuleAndDoesNotDismiss() {
+        let width: Int32 = 476
+        let height: Int32 = 258
+        let copy = ResultCardChrome.copyButton(width: width, height: height)
+        let apply = ResultHitRect(left: copy.x - 124, top: copy.y,
+                                  right: copy.x - 8, bottom: copy.y + copy.h)
+        XCTAssertEqual(apply.left, width - 243)
+        XCTAssertEqual(apply.right - apply.left, 116)
+        XCTAssertEqual(apply.bottom - apply.top, 33)
+        let window = ResultHitRect(left: 0, top: 0, right: width, bottom: height)
+        let editor = ResultCardChrome.editor(width: width, height: height).hit
+        XCTAssertFalse(ResultCardMetrics.clickDismisses(
+            x: apply.left + 4, y: apply.top + 4, window: window,
+            editor: editor, buttons: [apply, copy.hit]))
+    }
+
 }
