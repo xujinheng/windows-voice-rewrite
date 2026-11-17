@@ -401,6 +401,8 @@ struct SettingsView: View {
             (id == "rewrite_shortcut" ? model.settings.rewriteKeyboardID : "")
         if !selectedDevice.isEmpty {
             model.captureKeyFromSelectedKeyboard(selectedDevice) { key in acceptCapture(key.rawValue) }
+        } else if id != "exit_shortcut" {
+            model.captureGlobalModifierKey { key in acceptCapture(key.rawValue) }
         }
         captureMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .otherMouseDown, .flagsChanged]) { event in
             if event.type == .keyDown && event.isARepeat { return nil }
@@ -409,11 +411,10 @@ struct SettingsView: View {
                    captureTarget == "rewrite_shortcut" && !model.settings.rewriteKeyboardID.isEmpty {
                     return event // wait for the selected HID keyboard, not a global NSEvent
                 }
-                guard let key = MacModifierKey(keyCode: Int64(event.keyCode)) else { return event }
-                let families: NSEvent.ModifierFlags = [.control, .option, .command, .shift]
-                guard event.modifierFlags.intersection(families) == key.captureFlag,
-                      !CGEventSource.keyState(.combinedSessionState, key: key.otherSideKeyCode) else {
-                    return event // release or multi-key chord is not a bare key
+                guard let key = MacModifierKey.captureCandidate(
+                    keyCode: Int64(event.keyCode),
+                    flags: CGEventFlags(rawValue: UInt64(event.modifierFlags.rawValue))) else {
+                    return event // key-up, or an ordinary shortcut with multiple modifiers
                 }
                 if captureTarget == "exit_shortcut" {
                     captureStatus = "退出快捷键不能使用单独的 Control/Option/Command，请选择组合键或功能键"
