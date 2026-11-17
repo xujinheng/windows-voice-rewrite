@@ -63,7 +63,7 @@ final class ResultCardActionSession: ObservableObject {
             guard !isClosed else { return }
             switch error {
             case ResultCardApplyFailure.editorClosed,
-                 InteractionFailure.noFrontmostApplication:
+                 InteractionFailure.noFrontmostApplication, InteractionFailure.noFocusedElement:
                 note = ResultApplyCopy.editorClosed
             case ResultCardApplyFailure.unconfirmed, InteractionFailure.writeNotConfirmed:
                 note = ResultApplyCopy.unconfirmed
