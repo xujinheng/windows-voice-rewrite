@@ -4,15 +4,19 @@ import VoiceRewriteStorage
 
 struct MainView: View {
     @ObservedObject var model: WorkspaceModel
+    @State private var selectedTab = 0
 
     var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             dashboard
                 .tabItem { Label("工作台", systemImage: "waveform") }
+                .tag(0)
             MeetingView(model: model)
                 .tabItem { Label("会议", systemImage: "person.2.wave.2") }
-            SettingsView(model: model)
+                .tag(1)
+            SettingsView(model: model, onClose: { selectedTab = 0 })
                 .tabItem { Label("设置", systemImage: "gearshape") }
+                .tag(2)
         }
         .padding(20)
     }
