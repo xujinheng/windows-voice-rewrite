@@ -143,7 +143,7 @@ func TestBridgeMeetingResumeRestartsSharedAudioStream(t *testing.T) {
 		h.send(map[string]any{"v": 1, "id": fmt.Sprintf("%s-%d", action, n),
 			"op": action, "session_id": sid})
 		if got := h.receive(); !got.OK {
-			t.Fatalf("%s: %#v", action, got)
+			t.Fatalf("%s: response=%#v error=%+v", action, got, got.Error)
 		}
 	}
 	pcm := make([]byte, 70*audio.FrameBytes)
