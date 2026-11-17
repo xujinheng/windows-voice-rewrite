@@ -32,8 +32,8 @@ final class PCM16BufferTests: XCTestCase {
     func testMaximumDurationAndOneSampleOverflow() throws {
         var pcm = PCM16Buffer()
         let chunk = Array(repeating: Float(0), count: 1_000)
-        for _ in 0..<960 { try pcm.append(chunk) }
-        XCTAssertEqual(pcm.frameCount, 960_000)
+        for _ in 0..<2_880 { try pcm.append(chunk) }
+        XCTAssertEqual(pcm.frameCount, 2_880_000)
         XCTAssertThrowsError(try pcm.append([0])) { error in
             XCTAssertEqual(error as? MicrophoneError, .durationExceeded)
         }

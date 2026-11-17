@@ -31,7 +31,7 @@ public enum MicrophoneError: Error, Equatable, LocalizedError {
         case .deviceConfigurationChanged: return "The microphone device or audio configuration changed during recording."
         case .recordingInterrupted: return "Microphone recording was interrupted."
         case .inputOverrun: return "Microphone processing could not keep up with live input."
-        case .durationExceeded: return "The maximum recording duration of 60 seconds was reached."
+        case .durationExceeded: return "The configured maximum recording duration was reached."
         case .invalidAudioSample: return "Microphone data contained invalid floating-point samples."
         case .noAudioCaptured: return "No microphone audio was captured."
         case .alreadyRecording: return "Microphone recording is already starting or active."
@@ -45,7 +45,8 @@ public enum MicrophoneError: Error, Equatable, LocalizedError {
 /// Input is already 16,000 Hz, mono Float32. This type does not generate audio.
 struct PCM16Buffer {
     static let sampleRate = 16_000
-    static let maximumSeconds = 60
+    // Native safety cap agrees with the portable Go Core's 180s bound.
+    static let maximumSeconds = 180
     static let maximumFrames = sampleRate * maximumSeconds
     static let maximumBytes = maximumFrames * MemoryLayout<Int16>.size
 

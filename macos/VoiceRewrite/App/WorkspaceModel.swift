@@ -817,7 +817,8 @@ final class WorkspaceModel: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                try await self.microphone.start(deviceUID: self.settings.microphoneUID)
+                try await self.microphone.start(deviceUID: self.settings.microphoneUID,
+                                               maximumSeconds: self.settings.maxRecordSeconds)
                 guard self.meetingGeneration.accepts(token),
                       self.meetingVoiceGeneration.accepts(voiceToken), self.meetingActive else {
                     self.microphone.cancel()
@@ -1197,7 +1198,8 @@ final class WorkspaceModel: ObservableObject {
                     return
                 }
                 if captured.startMicrophone {
-                    try await microphone.start(deviceUID: settings.microphoneUID)
+                    try await microphone.start(deviceUID: settings.microphoneUID,
+                                               maximumSeconds: settings.maxRecordSeconds)
                     let ready = rewriteVoiceMicrophoneReady(tokenValid: resultGeneration.accepts(token))
                     if ready.beginRecording {
                         activeVoiceSelection = (snapshot, next)
@@ -1254,7 +1256,8 @@ final class WorkspaceModel: ObservableObject {
             }
             guard arm.startMicrophone else { return }
             do {
-                try await microphone.start(deviceUID: settings.microphoneUID)
+                try await microphone.start(deviceUID: settings.microphoneUID,
+                                               maximumSeconds: settings.maxRecordSeconds)
                 let ready = dictationMicrophoneReady(started: true, tokenValid: resultGeneration.accepts(token), failure: "")
                 if ready.cancelMicrophone {
                     microphone.cancel()

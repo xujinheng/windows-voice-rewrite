@@ -281,14 +281,16 @@ func (m *bridgeMeeting) acceptReplies() bool {
 }
 
 func (m *bridgeMeeting) cancelWork() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Keep cancellation and reply admission atomic: a new request may not
+	// slip between canceling an old context and invalidating its generation.
 	m.runtime.CancelReply()
 	_, cancel, _, _ := m.runtime.NewExpression(time.Millisecond)
 	cancel()
-	m.mu.Lock()
 	m.replies.ResetWork()
 	m.replyStatus = meetingcore.WorkCanceled
 	m.expressionStatus = meetingcore.WorkCanceled
-	m.mu.Unlock()
 }
 
 func (m *bridgeMeeting) refine(parent context.Context, index int, instruction string) error {

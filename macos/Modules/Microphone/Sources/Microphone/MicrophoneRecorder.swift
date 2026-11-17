@@ -146,8 +146,11 @@ public final class MicrophoneRecorder {
         return permissionStatus
     }
 
-    public func start(deviceUID: String = "") async throws {
+    public func start(deviceUID: String = "", maximumSeconds: Int = 60) async throws {
         guard case .idle = state else { throw MicrophoneError.alreadyRecording }
+        // Host configuration owns the requested limit; native PCM bounds
+        // still protect against unexpectedly large inputs.
+        let duration = min(max(1, maximumSeconds), PCM16Buffer.maximumSeconds)
         state = .starting
         let attempt = UUID()
         recordingID = attempt
@@ -214,7 +217,7 @@ public final class MicrophoneRecorder {
             state = .recording
             deadline = Task { [weak self, id = processor.id] in
                 do {
-                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                    try await Task.sleep(nanoseconds: UInt64(duration) * 1_000_000_000)
                 } catch { return }
                 self?.handleFailure(id: id, error: .durationExceeded)
             }
