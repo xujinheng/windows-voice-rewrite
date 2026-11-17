@@ -260,6 +260,9 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == expected.processID else {
             throw InteractionFailure.applicationChanged
         }
+        guard CGPreflightPostEventAccess() else {
+            throw InteractionFailure.keyboardEventPermissionDenied
+        }
         guard let source = CGEventSource(stateID: .hidSystemState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false) else {
@@ -274,20 +277,29 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
     private func guardedPaste(_ text: String, expected: SelectionObservation,
                               expectedValue: String) throws {
         let lease = try pasteboard.beginTemporaryText(text)
+        var posted = false
         do {
             // Clipboard staging is externally visible. Revalidate again after staging.
             let target = try revalidate(expected)
             guard pasteboard.isOwned(lease) else { throw ClipboardFailure.ownershipLost }
+            let postingStartedAt = ProcessInfo.processInfo.systemUptime
             try postPaste(expected: expected)
+            posted = true
+            // The event is queued, not consumed. Even if readback fails, retain
+            // the staged text until the receiver reads or the bounded timeout.
+            // A new VoiceRewrite delivery must not overtake this clipboard lease.
+            pasteboard.restoreAfterPaste(lease, postingStartedAt: postingStartedAt)
 
             // An explicit selected-text rewrite is not a best-effort insertion.
             // Confirm the expected complete value before reporting success.
-            let confirmed = confirmWrite(target, expected: expected, expectedValue: expectedValue)
-            try pasteboard.finish(lease)
-            if !confirmed { throw InteractionFailure.writeNotConfirmed }
+            guard confirmWrite(target, expected: expected, expectedValue: expectedValue) else {
+                throw InteractionFailure.writeNotConfirmed
+            }
         } catch {
-            // A failed/uncertain paste may still have reached the target: never retry.
-            try? pasteboard.finish(lease)
+            // An unsuccessful *pre-post* stage is safe to roll back immediately.
+            // After posting, early restoration can discard the only paste payload.
+            // An uncertain paste must never be sent again automatically.
+            if !posted { try? pasteboard.finish(lease) }
             throw error
         }
     }
