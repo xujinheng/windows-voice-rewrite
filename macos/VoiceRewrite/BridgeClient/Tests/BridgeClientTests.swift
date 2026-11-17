@@ -242,6 +242,30 @@ final class BridgeClientTests: XCTestCase {
         wait(for: [failed, survived], timeout: 3)
     }
 
+    func testClosedStdoutWhileHelperStaysAliveDoesNotStrandCallbacks() throws {
+        let script = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voicebridge-eof-\(UUID().uuidString).sh")
+        try Data("#!/bin/sh\\nexec 1>&-\\nsleep 10\\n".utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+        defer { try? FileManager.default.removeItem(at: script) }
+
+        let ended = expectation(description: "stdout EOF retires session")
+        let client = BridgeClient(executableURL: script) { failure in
+            XCTAssertEqual(failure, .truncatedReply)
+            ended.fulfill()
+        }
+        try client.start()
+        defer { client.stop() }
+
+        let retired = expectation(description: "outstanding callback retired")
+        client.send(operation: "hello") { result in
+            if case .failure(.truncatedReply) = result { /* expected */ }
+            else { XCTFail("request was stranded after EOF: \(result)") }
+            retired.fulfill()
+        }
+        wait(for: [retired, ended], timeout: 5)
+    }
+
     func testRealProcessTerminationAndCleanup() throws {
         let ended = expectation(description: "helper exit detected")
         let client = BridgeClient(executableURL: try bundledHelper()) { reason in
