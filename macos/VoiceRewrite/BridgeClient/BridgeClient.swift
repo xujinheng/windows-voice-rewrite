@@ -145,7 +145,13 @@ final class BridgeClient {
                 let failure = (error as? BridgeFailure)
                 self.state.async { [weak self] in
                     guard let self, self.epoch == session else { return }
-                    if let failure {
+                    // A native pipe-write failure (including its deadline)
+                    // can leave part of a JSONL frame in stdin. Retire the
+                    // *entire session*, not just the current reply: later
+                    // requests cannot safely reuse a half-written stream.
+                    // A purely local encoding/frame-limit error, however,
+                    // must not disconnect unrelated pending requests.
+                    if let failure, failure != .writeFailed {
                         self.replies.fail(id: id, reason: failure)
                     } else {
                         self.failSession(session, reason: .writeFailed)
