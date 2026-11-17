@@ -26,7 +26,6 @@ const (
 const (
 	MacDictationShortcut = "Ctrl+Alt+R"
 	MacRewriteShortcut   = "Ctrl+Alt+E"
-	MacTextEditShortcut  = "Ctrl+Alt+T"
 )
 
 const (
