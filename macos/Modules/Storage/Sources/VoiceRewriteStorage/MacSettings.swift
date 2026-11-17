@@ -125,7 +125,7 @@ public struct MacSettings: Codable, Equatable, Sendable {
         rewriteShortcut = normalizedShortcut(rewriteShortcut, fallback: ContractLimits.macRewriteShortcut)
         exitShortcut = normalizedShortcut(exitShortcut, fallback: ContractLimits.defaultExitShortcut)
         guard recordMode == "hold" || recordMode == "toggle",
-              systemPrompt.utf8.count <= 16384 else { throw SettingsError.invalidValues }
+              systemPrompt.utf8.count <= ContractLimits.maxSystemPromptBytes else { throw SettingsError.invalidValues }
         if !(ContractLimits.minResponseTokens...ContractLimits.maxResponseTokens).contains(maxResponseTokens) {
             maxResponseTokens = ContractLimits.defaultMaxResponseTokens
         }
