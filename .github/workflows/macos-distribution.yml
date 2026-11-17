@@ -1,50 +1,98 @@
 name: macOS signed distribution
+
 on:
+  push:
+    tags: [v*]
   workflow_dispatch:
+
 permissions:
   contents: read
 
+# Tag-triggered builds append macOS assets to the existing curated Windows release.
+# Without Apple credentials this workflow skips signing: only the separately
+# labeled developer CI packages are available, never a counterfeit "notarized" ZIP.
 jobs:
+  credentials:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.gate.outputs.ready }}
+    steps:
+      - id: gate
+        env:
+          CERT: ${{ secrets.MACOS_DEVELOPER_ID_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+          SIGN_IDENTITY: ${{ vars.MACOS_DEVELOPER_ID_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_NOTARY_APP_PASSWORD }}
+          TEAM: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          if [[ -n "$CERT" && -n "$CERT_PASSWORD" && -n "$SIGN_IDENTITY" &&
+                -n "$APPLE_ID" && -n "$APPLE_PASSWORD" && -n "$TEAM" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "Developer ID and Apple notarization prerequisites present"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Apple credentials unavailable: signed/notarized jobs skipped. Only explicitly labeled developer packages can be built."
+          fi
+
   signed-macos:
+    needs: credentials
+    if: needs.credentials.outputs.ready == 'true'
     strategy:
       fail-fast: false
       matrix:
         include:
           - runner: macos-15
             arch: arm64
+            public_arch: arm64
           - runner: macos-15-intel
             arch: x86_64
+            public_arch: x64
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
-      - name: Require Apple signing and notarization credentials
-        env:
-          CERT: ${{ secrets.MACOS_DEVELOPER_ID_P12_BASE64 }}
-          CERT_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
-          SIGN_IDENTITY: ${{ vars.MACOS_DEVELOPER_ID_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_NOTARY_APP_PASSWORD }}
-          TEAM: ${{ vars.APPLE_TEAM_ID }}
+
+      - id: metadata
+        name: Derive version from tag or project
+        shell: bash
         run: |
           set -euo pipefail
-          for value in "$CERT" "$CERT_PASSWORD" "$SIGN_IDENTITY" "$APPLE_ID" "$APPLE_PASSWORD" "$TEAM"; do
-            if [[ -z "$value" ]]; then
-              echo "::error::Configure Developer ID signing and notarization secrets/variables before distributing."
-              exit 1
-            fi
-          done
-      - name: Build native app and bundled Go helper
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+              { echo "::error::macOS signed releases require vMAJOR.MINOR.PATCH tags"; exit 1; }
+          else
+            version="$(sed -n 's/^[[:space:]]*MARKETING_VERSION = \([0-9.]*\);/\1/p' macos/VoiceRewrite.xcodeproj/project.pbxproj | head -1)"
+            [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+              { echo "::error::Cannot determine development version"; exit 1; }
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "base=VoiceRewrite-$version-macOS-${{ matrix.public_arch }}-Notarized" >> "$GITHUB_OUTPUT"
+
+      - name: Build single-architecture native app and bundled Go helper
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+          ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           xcodebuild -project macos/VoiceRewrite.xcodeproj -scheme VoiceRewrite \
             -configuration Release -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/release-build" build
-      - name: Sign, notarize and staple native app
+            -derivedDataPath "$RUNNER_TEMP/release-build" \
+            ARCHS="$ARCH" ONLY_ACTIVE_ARCH=YES MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" build
+          app="$RUNNER_TEMP/release-build/Build/Products/Release/VoiceRewrite.app"
+          for executable in VoiceRewrite voicebridge; do
+            test -x "$app/Contents/MacOS/$executable"
+            test "$(lipo -archs "$app/Contents/MacOS/$executable")" = "$ARCH"
+          done
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$VERSION"
+
+      - name: Developer ID sign, notarize, staple and verify application
         env:
           CERT: ${{ secrets.MACOS_DEVELOPER_ID_P12_BASE64 }}
           CERT_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
@@ -52,50 +100,134 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_NOTARY_APP_PASSWORD }}
           TEAM: ${{ vars.APPLE_TEAM_ID }}
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+        shell: bash
         run: |
           set -euo pipefail
           app="$RUNNER_TEMP/release-build/Build/Products/Release/VoiceRewrite.app"
-          test -x "$app/Contents/MacOS/VoiceRewrite"
-          test -x "$app/Contents/MacOS/voicebridge"
-          test "$(lipo -archs "$app/Contents/MacOS/VoiceRewrite")" = "${{ matrix.arch }}"
-          test "$(lipo -archs "$app/Contents/MacOS/voicebridge")" = "${{ matrix.arch }}"
-          keychain="$RUNNER_TEMP/release-signing.keychain-db"
-          security create-keychain -p "$RUNNER_TEMP" "$keychain"
+          keychain="$RUNNER_TEMP/voicerewrite-release.keychain-db"
+          keychain_password="$(openssl rand -hex 32)"
+          cleanup() { security delete-keychain "$keychain" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          security create-keychain -p "$keychain_password" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$RUNNER_TEMP" "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
           security list-keychains -d user -s "$keychain"
           printf '%s' "$CERT" | base64 -D > "$RUNNER_TEMP/developer-id.p12"
           security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -P "$CERT_PASSWORD" -T /usr/bin/codesign
-          rm "$RUNNER_TEMP/developer-id.p12"
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$RUNNER_TEMP" "$keychain"
-          codesign --force --timestamp --options runtime --sign "$SIGN_IDENTITY" "$app/Contents/MacOS/voicebridge"
-          codesign --force --deep --timestamp --options runtime --sign "$SIGN_IDENTITY" "$app"
-          codesign --verify --deep --strict --verbose=2 "$app"
-          unsigned_zip="$RUNNER_TEMP/VoiceRewrite-notary-${{ matrix.arch }}.zip"
-          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$unsigned_zip"
-          xcrun notarytool submit "$unsigned_zip" --apple-id "$APPLE_ID" --team-id "$TEAM" \
-            --password "$APPLE_PASSWORD" --wait
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain"
+          security find-identity -v -p codesigning "$keychain"
+
+          # Sign leaf code before its enclosing app. No --deep --force blanket re-sign.
+          if [[ -d "$app/Contents/Frameworks" ]]; then
+            while IFS= read -r -d '' nested; do
+              codesign --force --timestamp --options runtime --sign "$SIGN_IDENTITY" "$nested"
+            done < <(find "$app/Contents/Frameworks" -depth \( -name '*.dylib' -o -name '*.framework' \) -print0)
+          fi
+          codesign --force --timestamp --options runtime --sign "$SIGN_IDENTITY" \
+            "$app/Contents/MacOS/voicebridge"
+          codesign --force --timestamp --options runtime --sign "$SIGN_IDENTITY" \
+            --entitlements scripts/macos-hardened.entitlements "$app"
+          bash scripts/verify-macos-package.sh app "$app" "$ARCH" "$VERSION" signed
+
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/app-for-notary.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/app-for-notary.zip" --apple-id "$APPLE_ID" \
+            --team-id "$TEAM" --password "$APPLE_PASSWORD" --wait --output-format json \
+            > "$RUNNER_TEMP/app-notary.json"
+          python3 - "$RUNNER_TEMP/app-notary.json" <<'PY'
+          import json, sys
+          result = json.load(open(sys.argv[1], encoding="utf-8"))
+          if result.get("status") != "Accepted":
+              sys.exit("Apple rejected app notarization: " + str(result.get("id")) + " (" + str(result.get("status")) + ")")
+          PY
           xcrun stapler staple "$app"
-          xcrun stapler validate "$app"
-          artifact="$RUNNER_TEMP/VoiceRewrite-macOS-${{ matrix.arch }}.zip"
-          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$artifact"
-          (cd "$RUNNER_TEMP" && shasum -a 256 "$(basename "$artifact")" > "$(basename "$artifact").sha256")
-          dmg="$RUNNER_TEMP/VoiceRewrite-macOS-${{ matrix.arch }}.dmg"
-          bash scripts/package-macos-dmg.sh "$app" "$dmg" "${{ matrix.arch }}"
+          bash scripts/verify-macos-package.sh app "$app" "$ARCH" "$VERSION" notarized
+
+      - name: Package and notarize ZIP and drag-install DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_NOTARY_APP_PASSWORD }}
+          TEAM: ${{ vars.APPLE_TEAM_ID }}
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+          BASE: ${{ steps.metadata.outputs.base }}
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/release-build/Build/Products/Release/VoiceRewrite.app"
+          mkdir -p "$RUNNER_TEMP/dist"
+          zip="$RUNNER_TEMP/dist/$BASE.zip"
+          dmg="$RUNNER_TEMP/dist/$BASE.dmg"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
+          (cd "$RUNNER_TEMP/dist" && shasum -a 256 "$(basename "$zip")" > "$(basename "$zip").sha256")
+          bash scripts/verify-macos-package.sh zip "$zip" "$ARCH" "$VERSION" notarized
+
+          bash scripts/package-macos-dmg.sh "$app" "$dmg" "$ARCH"
+          bash scripts/verify-macos-package.sh dmg "$dmg" "$ARCH" "$VERSION" signed
           xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --team-id "$TEAM" \
-            --password "$APPLE_PASSWORD" --wait
+            --password "$APPLE_PASSWORD" --wait --output-format json > "$RUNNER_TEMP/dmg-notary.json"
+          python3 - "$RUNNER_TEMP/dmg-notary.json" <<'PY'
+          import json, sys
+          result = json.load(open(sys.argv[1], encoding="utf-8"))
+          if result.get("status") != "Accepted":
+              sys.exit("Apple rejected DMG notarization: " + str(result.get("id")) + " (" + str(result.get("status")) + ")")
+          PY
           xcrun stapler staple "$dmg"
-          xcrun stapler validate "$dmg"
-          # Stapling changes the container bytes; refresh the verification checksum.
-          (cd "$RUNNER_TEMP" && shasum -a 256 "$(basename "$dmg")" > "$(basename "$dmg").sha256")
-          security delete-keychain "$keychain"
-      - name: Upload signed and notarized application
+          # Ticket stapling changes the DMG bytes; regenerate its hash afterwards.
+          (cd "$RUNNER_TEMP/dist" && shasum -a 256 "$(basename "$dmg")" > "$(basename "$dmg").sha256")
+          bash scripts/verify-macos-package.sh dmg "$dmg" "$ARCH" "$VERSION" notarized
+
+      - name: Upload only verified signed/notarized packages
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceRewrite-macOS-${{ matrix.arch }}-notarized
-          path: |
-            ${{ runner.temp }}/VoiceRewrite-macOS-${{ matrix.arch }}.zip
-            ${{ runner.temp }}/VoiceRewrite-macOS-${{ matrix.arch }}.zip.sha256
-            ${{ runner.temp }}/VoiceRewrite-macOS-${{ matrix.arch }}.dmg
-            ${{ runner.temp }}/VoiceRewrite-macOS-${{ matrix.arch }}.dmg.sha256
+          name: VoiceRewrite-macOS-${{ matrix.public_arch }}-Notarized
+          path: ${{ runner.temp }}/dist/*
+          retention-days: 30
           if-no-files-found: error
+
+  publish-macos:
+    needs: signed-macos
+    if: startsWith(github.ref, 'refs/tags/v') && needs.signed-macos.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: VoiceRewrite-macOS-*-Notarized
+          path: release-macos
+          merge-multiple: true
+      - name: Verify both architectures and all download hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          for arch in arm64 x64; do
+            base="VoiceRewrite-$version-macOS-$arch-Notarized"
+            for ext in zip dmg; do
+              test -s "release-macos/$base.$ext"
+              test -s "release-macos/$base.$ext.sha256"
+              (cd release-macos && shasum -a 256 -c "$base.$ext.sha256")
+            done
+          done
+          test "$(find release-macos -maxdepth 1 -type f | wc -l | tr -d ' ')" = 8
+      - name: Append to the curated Windows GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Windows' release job owns release notes and creates the Release.
+          # Never create an empty, uncurated Release from this workflow.
+          found=0
+          for attempt in $(seq 1 120); do
+            if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              found=1
+              break
+            fi
+            sleep 10
+          done
+          [[ "$found" == 1 ]] || { echo "::error::Windows curated Release not found; notarized packages remain in Actions artifacts"; exit 1; }
+          gh release upload "$GITHUB_REF_NAME" release-macos/* --repo "$GITHUB_REPOSITORY" --clobber
