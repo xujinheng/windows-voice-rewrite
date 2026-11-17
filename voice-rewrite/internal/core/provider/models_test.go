@@ -2,9 +2,11 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"strconv"
 	"testing"
 
 	coreconfig "voicerewrite/internal/core/config"
@@ -38,6 +40,25 @@ func TestListModelsValidatesAndBoundsUntrustedProviderData(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatalf("expected two model-list requests, got %d", calls)
+	}
+}
+
+func TestDiscoverModelUsesLateTextModelAfterManyASREntries(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		entries := make([]modelItem, 0, 151)
+		for i := range 150 {
+			entries = append(entries, modelItem{ID: "asr-" + strconv.Itoa(i)})
+		}
+		entries = append(entries, modelItem{ID: "chat-instruct-late"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": entries})
+	}))
+	defer srv.Close()
+	cfg := coreconfig.Defaults()
+	cfg.LLMBaseURL = srv.URL + "/v1"
+	cfg.TextModel = "auto"
+	got, err := DiscoverModel(context.Background(), cfg)
+	if err != nil || got != "chat-instruct-late" {
+		t.Fatalf("automatic model selection must inspect complete bounded HTTP response: %q %v", got, err)
 	}
 }
 
