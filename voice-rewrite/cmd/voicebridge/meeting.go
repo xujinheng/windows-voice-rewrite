@@ -5,8 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"sync"
 	"strings"
+	"sync"
 	"time"
 
 	"voicerewrite/internal/core/audio"
@@ -48,22 +48,22 @@ func (s *meetingPacketSource) Stream(ctx context.Context, started func(), push f
 }
 
 type bridgeMeeting struct {
-	id       string
-	runtime  *meetingcore.SessionRuntime
-	pipeline *meetingcore.Pipeline
-	source   *meetingPacketSource
-	config   coreconfig.Config
+	id        string
+	runtime   *meetingcore.SessionRuntime
+	pipeline  *meetingcore.Pipeline
+	source    *meetingPacketSource
+	config    coreconfig.Config
 	scheduler *meetingcore.Scheduler
 
-	mu       sync.Mutex
-	captions []meetingcore.Caption
-	prior    []string
-	status   string
-	level    int
-	lastFinal uint64
-	replies meetingcore.ReplyState
-	replyStatus string
-	expression meetingcore.Line
+	mu               sync.Mutex
+	captions         []meetingcore.Caption
+	prior            []string
+	status           string
+	level            int
+	lastFinal        uint64
+	replies          meetingcore.ReplyState
+	replyStatus      string
+	expression       meetingcore.Line
 	expressionStatus string
 }
 
@@ -73,11 +73,11 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 		return nil, err
 	}
 	m := &bridgeMeeting{
-		id:      hex.EncodeToString(key[:]),
-		runtime: meetingcore.NewSessionRuntime(),
-		source:  &meetingPacketSource{packets: make(chan []byte, 12)},
-		status:  "正在监听应用音频",
-		config: cfg,
+		id:        hex.EncodeToString(key[:]),
+		runtime:   meetingcore.NewSessionRuntime(),
+		source:    &meetingPacketSource{packets: make(chan []byte, 12)},
+		status:    "正在监听应用音频",
+		config:    cfg,
 		scheduler: &meetingcore.Scheduler{},
 	}
 	m.pipeline = meetingcore.NewPipeline(m.runtime, meetingcore.PipelineHooks{
@@ -92,13 +92,13 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 		},
 		Translate: func(ctx context.Context, job meetingcore.CaptionTask, emit func(string)) error {
 			return m.scheduler.Run(ctx, meetingcore.PriorityCaption, func(active context.Context) error {
-			return meetingcore.Complete(active, cfg, meetingcore.Query{
-				Mode: "caption", Latest: job.Latest, Prior: job.Prior,
-			}, func(line meetingcore.Line) {
-				if line.Kind == "ZH" {
-					emit(line.Chinese)
-				}
-			})
+				return meetingcore.Complete(active, cfg, meetingcore.Query{
+					Mode: "caption", Latest: job.Latest, Prior: job.Prior,
+				}, func(line meetingcore.Line) {
+					if line.Kind == "ZH" {
+						emit(line.Chinese)
+					}
+				})
 			}, nil)
 		},
 		OnTranscript: func(turn meetingcore.AudioTurn, latest, stable string) []string {
@@ -118,7 +118,9 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 			if turn.Final {
 				m.prior = meetingcore.RememberPrior(m.prior, latest)
 				m.lastFinal = turn.ID
-				if strings.TrimSpace(latest) != "" { go func(id uint64) { _ = m.runReplies(m.runtime.Context(), id) }(turn.ID) }
+				if strings.TrimSpace(latest) != "" {
+					go func(id uint64) { _ = m.runReplies(m.runtime.Context(), id) }(turn.ID)
+				}
 			}
 			m.status = "正在监听应用音频"
 			return prior
@@ -196,7 +198,7 @@ func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64) 
 		return context.Canceled
 	}
 	var latest string
-	for i := len(m.captions)-1; i >= 0; i-- {
+	for i := len(m.captions) - 1; i >= 0; i-- {
 		if m.captions[i].Final && strings.TrimSpace(m.captions[i].Source) != "" {
 			latest = m.captions[i].Source
 			break
@@ -212,9 +214,13 @@ func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64) 
 	m.replyStatus = meetingcore.RepliesPreparing
 	m.mu.Unlock()
 	_, epoch, paused := m.runtime.Snapshot()
-	if paused { return context.Canceled }
+	if paused {
+		return context.Canceled
+	}
 	ctx, cancel, ok := m.runtime.ReplyContext(epoch, meetingcore.ReplyTimeout)
-	if !ok { return context.Canceled }
+	if !ok {
+		return context.Canceled
+	}
 	defer cancel()
 	stopParent := context.AfterFunc(parent, cancel)
 	defer stopParent()
@@ -223,7 +229,9 @@ func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64) 
 		return meetingcore.Complete(active, m.config, meetingcore.Query{
 			Mode: "replies", Latest: latest, Prior: prior,
 		}, func(line meetingcore.Line) {
-			if active.Err() != nil { return }
+			if active.Err() != nil {
+				return
+			}
 			m.mu.Lock()
 			if m.runtime.Active(epoch) && m.replies.Current(serial) && batch.Apply(line) {
 				m.replies.Publish(serial, batch)
@@ -234,7 +242,11 @@ func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64) 
 	m.mu.Lock()
 	if m.replies.Current(serial) && m.runtime.Active(epoch) {
 		m.replies.DiscardPartial()
-		if err != nil { m.replyStatus = meetingcore.RepliesFailed } else { m.replyStatus = "" }
+		if err != nil {
+			m.replyStatus = meetingcore.RepliesFailed
+		} else {
+			m.replyStatus = ""
+		}
 	}
 	m.mu.Unlock()
 	return err
@@ -288,7 +300,9 @@ func (m *bridgeMeeting) runExpression(parent context.Context, query meetingcore.
 	var expression meetingcore.Line
 	err := m.scheduler.Run(ctx, meetingcore.PriorityExpress, func(active context.Context) error {
 		return meetingcore.Complete(active, m.config, query, func(line meetingcore.Line) {
-			if line.Kind == "SAY" && line.Complete { expression = line }
+			if line.Kind == "SAY" && line.Complete {
+				expression = line
+			}
 		})
 	}, nil)
 	m.mu.Lock()
@@ -323,7 +337,7 @@ func (m *bridgeMeeting) snapshot() map[string]any {
 		"reply_pending": m.replies.PendingAvailable, "reply_status": m.replyStatus,
 		"expression": m.expression.English, "expression_chinese": m.expression.Chinese,
 		"expression_status": m.expressionStatus,
-		"session_id": m.id, "status": m.status,
+		"session_id":        m.id, "status": m.status,
 		"level": m.level, "captions": captions,
 	}
 }

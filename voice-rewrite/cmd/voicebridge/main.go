@@ -52,7 +52,7 @@ type request struct {
 	Shortcut       string          `json:"shortcut"`
 	TargetID       string          `json:"target_id"`
 	SessionID      string          `json:"session_id"`
-	ReplyIndex    int             `json:"reply_index"`
+	ReplyIndex     int             `json:"reply_index"`
 }
 
 type bridgeError struct {
@@ -249,8 +249,12 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	} else if req.Op == "list_asr_models" || req.Op == "list_llm_models" {
 		timeout = 12 * time.Second
 	}
-	if req.Op == "meeting_replies" || req.Op == "meeting_refine" { timeout = 40 * time.Second }
-	if req.Op == "meeting_compose" { timeout = 60 * time.Second }
+	if req.Op == "meeting_replies" || req.Op == "meeting_refine" {
+		timeout = 40 * time.Second
+	}
+	if req.Op == "meeting_compose" {
+		timeout = 60 * time.Second
+	}
 	if req.Op == "selected_task" {
 		timeout = s.options.SelectedTimeout
 	} else if req.Op == "selected_voice_task" {
@@ -323,9 +327,13 @@ func (s *bridgeServer) meetingRequest(req request) response {
 		}
 		s.mu.Unlock()
 		if req.Op == "meeting_accept" {
-			if !m.acceptReplies() { return failure(req.ID, "no_pending_reply", "没有可切换的新建议") }
+			if !m.acceptReplies() {
+				return failure(req.ID, "no_pending_reply", "没有可切换的新建议")
+			}
 		}
-		if req.Op == "meeting_cancel" { m.cancelWork() }
+		if req.Op == "meeting_cancel" {
+			m.cancelWork()
+		}
 		return success(req.ID, m.snapshot())
 	}
 	return failure(req.ID, "unsupported_op", msgUnsupported)
@@ -383,8 +391,12 @@ func (s *bridgeServer) meetingTask(ctx context.Context, req request) response {
 		}
 		err = m.compose(ctx, req.Instruction)
 	}
-	if ctx.Err() != nil { return contextFailure(req.ID, ctx.Err()) }
-	if err != nil { return providerFailure(req.ID, "meeting_inference_failed", "会议英文生成失败；请检查 LLM 服务后重试", err) }
+	if ctx.Err() != nil {
+		return contextFailure(req.ID, ctx.Err())
+	}
+	if err != nil {
+		return providerFailure(req.ID, "meeting_inference_failed", "会议英文生成失败；请检查 LLM 服务后重试", err)
+	}
 	return success(req.ID, m.snapshot())
 }
 
