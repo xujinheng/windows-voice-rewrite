@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"voicerewrite/internal/core/audio"
+	coreconfig "voicerewrite/internal/core/config"
 	meetingcore "voicerewrite/internal/core/meeting"
 )
 
@@ -245,4 +246,35 @@ func TestBridgeMeetingViewUsesSharedHUDStateAndRejectsOtherButtons(t *testing.T)
 		t.Fatalf("shutdown: %#v", got)
 	}
 	h.close()
+}
+
+func TestBridgeMeetingSnapshotKeepsSessionReadingAndExplicitExpressionFocus(t *testing.T) {
+	m, err := newBridgeMeeting(coreconfig.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.stop()
+	m.mu.Lock()
+	for i := 1; i <= 80; i++ {
+		m.captions = append(m.captions, meetingcore.Caption{ID: uint64(i),
+			Source: fmt.Sprintf("utterance %d", i), Chinese: "译文", Final: true})
+	}
+	m.captions, m.historyTrimmed = meetingcore.BoundCaptionHistory(m.captions)
+	m.view.CaptionsOnly = true
+	m.expression = meetingcore.Line{English: "We can move forward.", Complete: true}
+	m.expressionSource = "我们可以继续。"
+	m.mu.Unlock()
+	before := m.snapshot()
+	if len(before["captions"].([]map[string]any)) != 80 ||
+		before["history_trimmed"] != 0 || before["expression_source"] != "我们可以继续。" {
+		t.Fatalf("bridge truncated 80 meeting turns: %#v", before)
+	}
+	if m.applyViewButton(0) {
+		t.Fatal("an absent button id must not trigger focus")
+	}
+	m.focusExpression()
+	after := m.snapshot()
+	if after["captions_only"] != false || after["expression_expanded"] != true {
+		t.Fatalf("new English result did not use shared focus policy: %#v", after)
+	}
 }
