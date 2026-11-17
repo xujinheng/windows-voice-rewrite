@@ -53,6 +53,7 @@ type request struct {
 	Shortcut       string          `json:"shortcut"`
 	TargetID       string          `json:"target_id"`
 	SessionID      string          `json:"session_id"`
+	AudioEpoch     uint64          `json:"audio_epoch"`
 	ReplyIndex     int             `json:"reply_index"`
 	ViewButton     int             `json:"button_id"`
 }
@@ -216,7 +217,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "selected_voice_task" && req.Op != "probe_asr" && req.Op != "probe_llm" && req.Op != "list_asr_models" && req.Op != "list_llm_models" && req.Op != "check_update" && req.Op != "meeting_replies" && req.Op != "meeting_refine" && req.Op != "meeting_compose" {
 		s.mu.Unlock()
 		switch req.Op {
-		case "meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop", "meeting_accept", "meeting_cancel", "meeting_view":
+		case "meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop", "meeting_pause", "meeting_resume", "meeting_accept", "meeting_cancel", "meeting_view":
 			s.send(s.meetingRequest(req))
 		case "hello":
 			s.send(success(req.ID, map[string]any{"name": jsonl.HelloName, "protocol": jsonl.Version}))
@@ -310,11 +311,20 @@ func (s *bridgeServer) meetingRequest(req request) response {
 		if m == nil || m.id != req.SessionID {
 			return failure(req.ID, "stale_meeting", "会议已停止或更换")
 		}
-		if err := m.feed(pcm); err != nil {
-			return failure(req.ID, "meeting_busy", "会议音频队列已满，已停止接收当前音频帧")
+		if err := m.feed(pcm, req.AudioEpoch); err != nil {
+			switch {
+			case errors.Is(err, errMeetingPaused):
+				return success(req.ID, map[string]any{"accepted": false, "paused": true})
+			case errors.Is(err, errMeetingStaleEpoch):
+				return success(req.ID, map[string]any{"accepted": false, "stale_epoch": true})
+			case errors.Is(err, context.Canceled):
+				return failure(req.ID, "stale_meeting", "会议已停止或更换")
+			default:
+				return failure(req.ID, "meeting_busy", "会议音频队列已满，已停止接收当前音频帧")
+			}
 		}
 		return success(req.ID, map[string]any{"accepted": true})
-	case "meeting_snapshot", "meeting_stop", "meeting_accept", "meeting_cancel", "meeting_view":
+	case "meeting_snapshot", "meeting_stop", "meeting_pause", "meeting_resume", "meeting_accept", "meeting_cancel", "meeting_view":
 		s.mu.Lock()
 		m := s.meeting
 		if m == nil || req.SessionID == "" || req.SessionID != m.id {
@@ -328,6 +338,11 @@ func (s *bridgeServer) meetingRequest(req request) response {
 			return success(req.ID, map[string]any{"stopped": true})
 		}
 		s.mu.Unlock()
+		if req.Op == "meeting_pause" || req.Op == "meeting_resume" {
+			if err := m.setPaused(req.Op == "meeting_pause"); err != nil {
+				return failure(req.ID, "stale_meeting", "会议已停止或更换")
+			}
+		}
 		if req.Op == "meeting_accept" {
 			if !m.acceptReplies() {
 				return failure(req.ID, "no_pending_reply", "没有可切换的新建议")
@@ -399,6 +414,9 @@ func (s *bridgeServer) meetingTask(ctx context.Context, req request) response {
 	}
 	if ctx.Err() != nil {
 		return contextFailure(req.ID, ctx.Err())
+	}
+	if m.runtime.Context().Err() != nil {
+		return failure(req.ID, "stale_meeting", "会议已停止或更换")
 	}
 	if err != nil {
 		switch {
