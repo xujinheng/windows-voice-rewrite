@@ -2093,6 +2093,12 @@ final class WorkspaceModel: ObservableObject {
             self.interactionStatus = self.recordingStatus
             self.asrProbeStatus = "ASR：本次请求超时"
             self.showIndicator(phase: .error, mode: self.indicatorSnapshot.mode, pending: false)
+            if stage == "dictation_delivery", let text = self.transcription, !text.isEmpty {
+                // Never retry a paste with an uncertain outcome. Preserve a
+                // copyable result even when native delivery doesn't return.
+                ResultCardPanel.shared.present(
+                    title: ResultCopy.dictationWriteUnconfirmed, text: text)
+            }
         }
     }
 
@@ -2610,11 +2616,15 @@ final class WorkspaceModel: ObservableObject {
         if let text = follow.insertText, let insertion, let token {
             Task { @MainActor [weak self] in
                 guard let self, self.resultGeneration.accepts(token) else { return }
+                self.isProcessing = true
+                self.armProcessingWatchdog(token: token, seconds: 20, stage: "dictation_delivery")
                 do {
                     let outcome = try await self.dictationDelivery.deliver(text, to: insertion, stillValid: {
                         self.resultGeneration.accepts(token)
                     })
                     guard self.resultGeneration.accepts(token) else { return }
+                    self.finishProcessingWatchdog()
+                    self.isProcessing = false
                     DiagnosticLog.note("stage=dictation_delivery status=\(outcome)")
                     self.applyTask(dictationInsertFollowUp(
                         outcome: outcome,
@@ -2624,6 +2634,8 @@ final class WorkspaceModel: ObservableObject {
                         manualTitle: ResultCopy.dictationWriteUnconfirmed, text: text))
                 } catch {
                     guard self.resultGeneration.accepts(token) else { return }
+                    self.finishProcessingWatchdog()
+                    self.isProcessing = false
                     DiagnosticLog.note("stage=dictation_delivery status=failed code=\(insertionDiagnosticCode(error))")
                     self.applyTask(dictationInsertFollowUp(
                         outcome: (error as? InteractionFailure) == .writeNotConfirmed ? .uncertain : .blocked,
@@ -2638,12 +2650,18 @@ final class WorkspaceModel: ObservableObject {
             let title = follow.cardTitle ?? ""
             Task { @MainActor [weak self] in
                 guard let self, self.resultGeneration.accepts(token) else { return }
+                self.isProcessing = true
+                self.armProcessingWatchdog(token: token, seconds: 20, stage: "selected_write")
                 do {
                     try await self.interaction.replaceIfCurrent(replacement.snapshot, with: text, generation: replacement.generation)
                     guard self.resultGeneration.accepts(token) else { return }
+                    self.finishProcessingWatchdog()
+                    self.isProcessing = false
                     self.applyTask(selectedWriteFollowUp(succeeded: true, status: "", cardTitle: title, text: text))
                 } catch {
                     guard self.resultGeneration.accepts(token) else { return }
+                    self.finishProcessingWatchdog()
+                    self.isProcessing = false
                     self.applyTask(selectedWriteFollowUp(
                         succeeded: false,
                         status: insertionStatus(error, rewrite: true, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation),
