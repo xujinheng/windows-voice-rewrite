@@ -40,4 +40,3 @@ func insertDictationText(hwnd, target uintptr, text string, valid func() bool) e
 	}
 	return nil // SendInput accepted; insertion cannot be proven in all editors.
 }
-
