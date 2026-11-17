@@ -335,33 +335,43 @@ func TestMeetingCancelDuringExpressionCannotOverwriteNewAnswer(t *testing.T) {
 		})
 	}))
 	defer srv.Close()
-	cfg := coreconfig.Defaults()
-	cfg.LLMBaseURL = srv.URL + "/v1"
-	cfg.TextModel = "test-model"
-	m, err := newBridgeMeeting(cfg)
-	if err != nil {
-		t.Fatal(err)
+
+	h := startBridge(t, defaultOptions())
+	cfg := configFor(srv.URL)
+	cfg["text_model"] = "test-model"
+	h.send(map[string]any{"v": 1, "id": "start", "op": "meeting_start", "config": cfg})
+	first := h.receive()
+	if !first.OK {
+		t.Fatalf("meeting start: %#v", first)
 	}
-	defer m.stop()
-	oldResult := make(chan error, 1)
-	go func() { oldResult <- m.compose(context.Background(), "old") }()
+	sid := object(t, first.Result)["session_id"].(string)
+	h.send(map[string]any{"v": 1, "id": "old", "op": "meeting_compose",
+		"session_id": sid, "instruction": "old"})
 	select {
 	case <-started:
 	case <-time.After(5 * time.Second):
-		t.Fatal("first expression never started")
+		t.Fatal("old expression never started")
 	}
-	m.cancelWork()
-	if err := m.compose(context.Background(), "new"); err != nil {
-		t.Fatal("replacement expression:", err)
+	h.send(map[string]any{"v": 1, "id": "cancel", "op": "meeting_cancel", "session_id": sid})
+	canceled := h.receiveIDs("old", "cancel")
+	if !canceled["cancel"].OK || canceled["old"].OK ||
+		canceled["old"].Error == nil || canceled["old"].Error.Code != "canceled" {
+		t.Fatalf("cancel did not acknowledge stale inference: %#v", canceled)
 	}
-	select {
-	case <-oldResult:
-	case <-time.After(5 * time.Second):
-		t.Fatal("canceled expression did not exit")
+	h.send(map[string]any{"v": 1, "id": "new", "op": "meeting_compose",
+		"session_id": sid, "instruction": "new"})
+	result := h.receive()
+	if result.ID != "new" || !result.OK {
+		t.Fatalf("replacement expression: %#v", result)
 	}
-	snapshot := m.snapshot()
+	snapshot := object(t, result.Result)
 	if snapshot["expression"] != "New approved answer." ||
 		snapshot["expression_status"] != "" {
-		t.Fatalf("stale expression corrupted the new answer: %#v", snapshot)
+		t.Fatalf("old callback replaced current answer: %#v", snapshot)
 	}
+	h.send(map[string]any{"v": 1, "id": "stop", "op": "meeting_stop", "session_id": sid})
+	if got := h.receive(); !got.OK {
+		t.Fatalf("stop: %#v", got)
+	}
+	h.close()
 }
