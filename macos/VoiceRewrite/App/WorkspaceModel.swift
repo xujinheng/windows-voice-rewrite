@@ -194,12 +194,14 @@ final class WorkspaceModel: ObservableObject {
     private var shortcutGeneration = ResultGeneration()
 
     init(
-        microphone: any VoiceRecordingDevice = MicrophoneRecorder(),
-        dictationDelivery: any DictationDelivering = MacDictationDelivery(),
+        microphone: (any VoiceRecordingDevice)? = nil,
+        dictationDelivery: (any DictationDelivering)? = nil,
         helperExecutableURL: URL? = nil
     ) {
-        self.microphone = microphone
-        self.dictationDelivery = dictationDelivery
+        // Default arguments are evaluated outside actor isolation in Swift 5;
+        // instantiate AppKit-bound dependencies inside this @MainActor init.
+        self.microphone = microphone ?? MicrophoneRecorder()
+        self.dictationDelivery = dictationDelivery ?? MacDictationDelivery()
         self.helperExecutableURL = helperExecutableURL
         do {
             let s = try SettingsStore()
