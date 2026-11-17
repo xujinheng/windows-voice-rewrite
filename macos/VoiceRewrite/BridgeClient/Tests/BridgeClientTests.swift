@@ -362,7 +362,16 @@ final class BridgeClientTests: XCTestCase {
                                                ofItemAtPath: fixture.path)
         defer { try? FileManager.default.removeItem(at: fixture) }
 
+        // A real on-screen AppKit editor, not a string variable standing in
+        // for UI. Only the permission-requiring cross-process paste is faked.
         let editor = NSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 100))
+        let editorWindow = NSWindow(
+            contentRect: NSRect(x: 80, y: 80, width: 400, height: 100),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        editorWindow.title = "VoiceRewrite CI target editor"
+        editorWindow.contentView = editor
+        editorWindow.orderFrontRegardless()
+        defer { editorWindow.orderOut(nil) }
         let mic = PerformanceFixtureMicrophone()
         let writer = PerformanceFixtureWriter(editor: editor)
         let model = WorkspaceModel(microphone: mic, dictationDelivery: writer,
@@ -425,8 +434,11 @@ final class BridgeClientTests: XCTestCase {
             try await waitUntil("inserted text #\(cycle)") {
                 editor.string.count == previous + text.count && !model.isProcessing
             }
+            editor.layoutSubtreeIfNeeded()
+            editor.displayIfNeeded()
             insertionTimes.append(
                 (ProcessInfo.processInfo.systemUptime - release) * 1000)
+            XCTAssertTrue(editorWindow.isVisible)
             XCTAssertEqual(editor.string, String(repeating: text, count: cycle + 1))
             XCTAssertFalse(mic.recording)
         }
