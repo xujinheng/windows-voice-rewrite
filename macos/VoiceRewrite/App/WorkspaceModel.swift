@@ -485,6 +485,7 @@ final class WorkspaceModel: ObservableObject {
                   self.keyboardGate.action == action else { return }
             self.keyboardGate.clear()
             self.keyboardHoldSequence &+= 1
+            self.hotKeyDriver?.resetHeldState()
             self.interactionStatus = "未收到录音快捷键松开事件，已结束本次录音"
             if self.meetingActive {
                 if self.meetingVoiceRecording { self.toggleMeetingVoice() }
@@ -555,7 +556,12 @@ final class WorkspaceModel: ObservableObject {
                 self?.sideMouseReleased(action)
             },
             onCancel: { [weak self] in
-                self?.cancelCurrent()
+                guard let self else { return }
+                if self.meetingActive {
+                    self.cancelMeetingSideHold()
+                } else {
+                    self.cancelCurrent()
+                }
             },
             onObservedButton: { [weak self] button in
                 let action = self?.activeShortcutPlan?.sideButtons.action(for: button) ?? SideMouseBindings().action(for: button)
@@ -605,6 +611,17 @@ final class WorkspaceModel: ObservableObject {
         if let status = turn.sideStatus {
             sideMouseStatus = status
         }
+    }
+
+    private func cancelMeetingSideHold() {
+        guard meetingSideAction != nil else { return }
+        meetingSideAction = nil
+        meetingSideReleasedDuringStart = false
+        _ = meetingVoiceGeneration.begin()
+        if meetingVoiceRecording || meetingVoiceStarting { microphone.cancel() }
+        meetingVoiceRecording = false
+        meetingVoiceStarting = false
+        meetingExpressionStatus = "鼠标侧键监听已中断；本次会议语音已取消"
     }
 
     private func sideMouseHeld(_ action: SideMouseAction, targetPID: Int32?) {

@@ -85,6 +85,12 @@ public final class CarbonHotKeyDriver: HotKeyDriver {
         }
     }
 
+    /// A lost OS key-up (sleep, keyboard disconnect, app activation change)
+    /// must not make the next press permanently invisible after the hold timeout.
+    public func resetHeldState() {
+        pressState.clear()
+    }
+
     /// Release all Carbon objects on app exit, even if registry teardown was skipped.
     public func shutdown() {
         for registration in registrations.values { UnregisterEventHotKey(registration.ref) }
