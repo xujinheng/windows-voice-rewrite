@@ -8,6 +8,47 @@ from pathlib import Path
 IDENTITY = ("state", "fixture", "theme", "locale", "scale")
 ALLOWED = {"windows", "macos-arm64", "macos-x64"}
 
+# The native evidence workflow has a fixed baseline. Pairing is deliberately
+# independent of pixel similarity; this only asserts that the expected view
+# states were captured by both hosts, for both Mac architectures.
+REQUIRED_CAPTURE_STATES = (
+    ("settings.speech", "default-settings-v1", "light"),
+    ("settings.writing", "default-settings-v1", "light"),
+    ("settings.input", "default-settings-v1", "light"),
+    ("pill.preview", "synthetic-dictation-v1", "dark"),
+    ("pill.recording", "synthetic-dictation-v1", "dark"),
+    ("pill.processing", "synthetic-dictation-v1", "dark"),
+    ("pill.failure", "synthetic-dictation-v1", "dark"),
+    ("pill.success-event-sent", "synthetic-dictation-v1", "dark"),
+    ("result.copy", "result-v1", "light"),
+    ("result.copy", "result-v1", "dark"),
+    ("meeting.full", "populated-demo-v1", "light"),
+    ("meeting.focus", "populated-demo-v1", "light"),
+    ("meeting.expanded", "populated-demo-v1", "light"),
+    ("meeting.large-type", "populated-demo-v1", "light"),
+)
+
+
+def require_complete_matrix(report):
+    """Fail CI if expected captures are missing, without claiming UX parity."""
+    expected_platforms = {"windows", "macos-arm64", "macos-x64"}
+    actual_platforms = set(report["platforms"])
+    if actual_platforms != expected_platforms:
+        raise ValueError(f"missing or unexpected capture platforms: {sorted(expected_platforms ^ actual_platforms)}")
+    expected = {(state, fixture, theme, "zh-CN", "logical-1x")
+                for state, fixture, theme in REQUIRED_CAPTURE_STATES}
+    for platform in ("macos-arm64", "macos-x64"):
+        actual = {tuple(row["identity"][key] for key in IDENTITY)
+                  for row in report["rows"]
+                  if row["platform"] == platform and row["status"] == "matched-for-review"}
+        missing = expected - actual
+        if missing:
+            labels = ", ".join(sorted(f"{state} ({theme})" for state, _, theme, _, _ in missing))
+            raise ValueError(f"{platform}: missing required Windows/Mac state pairs: {labels}")
+    # A complete simulated capture matrix is NOT physical device or visual approval.
+    return len(expected) * 2
+
+
 
 def validate_manifest(path):
     root = path.parent.resolve()
@@ -125,8 +166,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("manifests", nargs="+", type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--require-complete-matrix", action="store_true",
+                        help="fail CI unless all 28 baseline state pairs are present")
     args = parser.parse_args()
     report = generate(args.manifests, args.output)
+    if args.require_complete_matrix:
+        require_complete_matrix(report)
     print(json.dumps({k: v for k, v in report.items() if k != "rows"}, ensure_ascii=False))
 
 
