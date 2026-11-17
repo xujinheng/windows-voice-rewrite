@@ -2228,13 +2228,15 @@ final class WorkspaceModel: ObservableObject {
             var snapshot: MacDictationTarget?
             if let pid = targetPID, pid > 0 {
                 do {
-                    snapshot = try dictationDelivery.capture(processID: pid)
+                    snapshot = try await dictationDelivery.captureAsync(processID: pid)
                     captured = true
                 } catch {
+                    guard resultGeneration.accepts(token) else { return }
                     DiagnosticLog.note("stage=dictation_capture status=failed code=\(insertionDiagnosticCode(error))")
                     failure = captureStatus(error, password: ResultCopy.passwordDictation)
                 }
             }
+            guard resultGeneration.accepts(token) else { return }
             let arm = dictationArm(hasTarget: (targetPID ?? 0) > 0, tokenValid: resultGeneration.accepts(token), captured: captured, captureFailure: failure)
             if let status = arm.interactionStatus { interactionStatus = status }
             if arm.keepInsert, let snapshot {
