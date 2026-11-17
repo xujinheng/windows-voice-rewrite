@@ -13,6 +13,12 @@ public enum ContractLimits {
     public static let defaultLLMBaseURL = "http://127.0.0.1:1234/v1"
     public static let defaultASRModel = "whisper-1"
     public static let defaultTextModel = "auto"
+    public static let meetingASRMultipart = "multipart"
+    public static let meetingASRLlamaPrefix = "llama-prefix"
+    public static let defaultMeetingASRMode = "multipart"
+    public static let meetingASRMultipartTitle = "分段音频识别"
+    public static let meetingASRLlamaPrefixTitle = "累积音频 / 前缀续写"
+    public static let meetingASRModes = [meetingASRMultipart, meetingASRLlamaPrefix]
     public static let macDictationShortcut = "Ctrl+Alt+R"
     public static let macRewriteShortcut = "Ctrl+Alt+E"
     public static let macTextEditShortcut = "Ctrl+Alt+T"

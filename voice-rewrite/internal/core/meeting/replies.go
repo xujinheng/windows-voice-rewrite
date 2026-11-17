@@ -34,6 +34,9 @@ type ReplyState struct {
 	Displayed        ReplyBatch
 	Pending          ReplyBatch
 	PendingAvailable bool
+	WorkTurn         uint64
+	CompletedTurn    uint64
+	WorkActive       bool
 }
 
 // Next starts a new generation; a superseded pending batch is no longer
@@ -44,6 +47,31 @@ func (s *ReplyState) Next() uint64 {
 	s.PendingSerial = 0
 	s.PendingAvailable = false
 	return s.Generation
+}
+
+// MayStartTurn avoids duplicate automatic inference for a finished turn and
+// coalesces concurrent manual/automatic requests. Manual requests may explicitly
+// regenerate completed suggestions.
+func (s *ReplyState) MayStartTurn(turn uint64, automatic bool) bool {
+	return !(s.WorkActive && s.WorkTurn == turn) &&
+		!(automatic && s.CompletedTurn == turn)
+}
+
+func (s *ReplyState) StartTurn(turn uint64) uint64 {
+	serial := s.Next()
+	s.WorkTurn = turn
+	s.WorkActive = true
+	return serial
+}
+
+func (s *ReplyState) FinishTurn(serial uint64, succeeded bool) {
+	if !s.Current(serial) {
+		return
+	}
+	s.WorkActive = false
+	if succeeded {
+		s.CompletedTurn = s.WorkTurn
+	}
 }
 
 func (s *ReplyState) Current(serial uint64) bool {
@@ -97,4 +125,5 @@ func (s *ReplyState) DiscardPartial() {
 func (s *ReplyState) ResetWork() {
 	s.DiscardPartial()
 	s.Next()
+	s.WorkActive = false
 }

@@ -31,6 +31,7 @@ public final class MicrophoneRecorder {
 
     private var state: State = .idle
     private var recordingID: UUID?
+    private var recordingDeviceUID = ""
     private var engine: AVAudioEngine?
     private var pipeline: CapturePipeline?
     private var hasTap = false
@@ -58,18 +59,35 @@ public final class MicrophoneRecorder {
         }
         guard result == noErr else { return [] }
         return ids.compactMap { id in
-            var streams = AudioObjectPropertyAddress(
-                mSelector: kAudioDevicePropertyStreams,
-                mScope: kAudioDevicePropertyScopeInput,
-                mElement: kAudioObjectPropertyElementMain)
-            var streamBytes: UInt32 = 0
-            guard AudioObjectGetPropertyDataSize(id, &streams, 0, nil, &streamBytes) == noErr,
-                  streamBytes > 0,
+            guard inputDeviceUsable(id),
                   let uid = propertyString(id, selector: kAudioDevicePropertyDeviceUID),
                   let name = propertyString(id, selector: kAudioObjectPropertyName),
                   !uid.isEmpty else { return nil }
             return MicrophoneInputDevice(id: uid, name: name)
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /// An unplugged or output-only device cannot be offered as a recording target.
+    private static func inputDeviceUsable(_ device: AudioDeviceID) -> Bool {
+        var alive = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceIsAlive,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain)
+        var flag: UInt32 = 0
+        var flagBytes = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(device, &alive, 0, nil, &flagBytes, &flag) == noErr,
+              flag != 0 else { return false }
+        var streams = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreams,
+            mScope: kAudioDevicePropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        return AudioObjectGetPropertyDataSize(device, &streams, 0, nil, &size) == noErr && size > 0
+    }
+
+    /// A missing explicit choice is never silently substituted with the system default.
+    public nonisolated static func selectionUnavailable(_ uid: String, in devices: [MicrophoneInputDevice]) -> Bool {
+        !uid.isEmpty && !devices.contains(where: { $0.id == uid })
     }
 
     private static func propertyString(_ device: AudioDeviceID, selector: AudioObjectPropertySelector) -> String? {
@@ -96,7 +114,10 @@ public final class MicrophoneRecorder {
             return AudioObjectGetPropertyData(system, &address, 0, nil, &size, pointer)
         }
         guard result == noErr else { return nil }
-        return ids.first { propertyString($0, selector: kAudioDevicePropertyDeviceUID) == uid }
+        return ids.first {
+            inputDeviceUsable($0) &&
+            propertyString($0, selector: kAudioDevicePropertyDeviceUID) == uid
+        }
     }
 
     public var permissionStatus: MicrophonePermissionStatus {
@@ -125,8 +146,11 @@ public final class MicrophoneRecorder {
         return permissionStatus
     }
 
-    public func start(deviceUID: String = "") async throws {
+    public func start(deviceUID: String = "", maximumSeconds: Int = 60) async throws {
         guard case .idle = state else { throw MicrophoneError.alreadyRecording }
+        // Host configuration owns the requested limit; native PCM bounds
+        // still protect against unexpectedly large inputs.
+        let duration = min(max(1, maximumSeconds), PCM16Buffer.maximumSeconds)
         state = .starting
         let attempt = UUID()
         recordingID = attempt
@@ -186,10 +210,14 @@ public final class MicrophoneRecorder {
                 throw MicrophoneError.engineStartFailed
             }
             guard instance.isRunning else { throw MicrophoneError.engineStartFailed }
+            if !deviceUID.isEmpty && Self.deviceID(for: deviceUID) == nil {
+                throw MicrophoneError.noInputDevice
+            }
+            recordingDeviceUID = deviceUID
             state = .recording
             deadline = Task { [weak self, id = processor.id] in
                 do {
-                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                    try await Task.sleep(nanoseconds: UInt64(duration) * 1_000_000_000)
                 } catch { return }
                 self?.handleFailure(id: id, error: .durationExceeded)
             }
@@ -199,6 +227,7 @@ public final class MicrophoneRecorder {
                 pipeline?.cancel()
                 pipeline = nil
                 recordingID = nil
+                recordingDeviceUID = ""
                 state = .idle
             }
             throw error
@@ -219,6 +248,9 @@ public final class MicrophoneRecorder {
         }
         state = .stopping
         let engineWasRunning = engine?.isRunning == true
+        let deviceStillAvailable = recordingDeviceUID.isEmpty ||
+            Self.deviceID(for: recordingDeviceUID) != nil
+        recordingDeviceUID = ""
         teardownEngine()
         guard let processor = pipeline else {
             state = .idle
@@ -226,12 +258,12 @@ public final class MicrophoneRecorder {
             throw MicrophoneError.notRecording
         }
         let id = recordingID
-        guard engineWasRunning else {
+        guard engineWasRunning && deviceStillAvailable else {
             processor.cancel()
             pipeline = nil
             recordingID = nil
             state = .idle
-            throw MicrophoneError.recordingInterrupted
+            throw deviceStillAvailable ? MicrophoneError.recordingInterrupted : MicrophoneError.noInputDevice
         }
         do {
             let bytes = try await processor.finish()
@@ -253,6 +285,7 @@ public final class MicrophoneRecorder {
     /// Idempotent; discards captured bytes and rejects an in-flight start/stop.
     public func cancel() {
         recordingID = nil
+        recordingDeviceUID = ""
         teardownEngine()
         pipeline?.cancel()
         pipeline = nil
@@ -264,6 +297,7 @@ public final class MicrophoneRecorder {
         guard case .recording = state else { return }
         teardownEngine()
         pipeline?.cancel()
+        recordingDeviceUID = ""
         state = .failed(error)
     }
 

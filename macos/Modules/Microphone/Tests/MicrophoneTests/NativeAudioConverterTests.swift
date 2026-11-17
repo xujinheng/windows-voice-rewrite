@@ -57,6 +57,17 @@ final class NativeAudioConverterTests: XCTestCase {
                             frameSizes: Array(repeating: 441, count: 100))
     }
 
+    func testDisconnectedExplicitMicrophoneIsNotSilentlyReplaced() {
+        let devices = [
+            MicrophoneInputDevice(id: "mic-a", name: "Desk microphone"),
+            MicrophoneInputDevice(id: "mic-b", name: "Headset"),
+        ]
+        XCTAssertFalse(MicrophoneRecorder.selectionUnavailable("", in: []))
+        XCTAssertFalse(MicrophoneRecorder.selectionUnavailable("mic-a", in: devices))
+        XCTAssertTrue(MicrophoneRecorder.selectionUnavailable("unplugged-mic", in: devices))
+        XCTAssertTrue(MicrophoneRecorder.selectionUnavailable("mic-a", in: []))
+    }
+
     func testStereoMixDownProducesAudio() throws {
         let fmt = format(48_000, channels: 2)
         let converter = try NativeAudioConverter(inputFormat: fmt)

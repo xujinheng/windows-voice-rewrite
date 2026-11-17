@@ -300,6 +300,18 @@ func emitLimits(moduleRoot string) (string, error) {
 		}
 		b.WriteString("    public static let " + item.swift + " = " + strconv.Quote(value) + "\n")
 	}
+	// These values come from the canonical Go Meeting configuration, never
+	// from a second hand-maintained list in the native settings UI.
+	for _, item := range []struct{ name, value string }{
+		{"meetingASRMultipart", coreconfig.MeetingASRMultipart},
+		{"meetingASRLlamaPrefix", coreconfig.MeetingASRLlamaPrefix},
+		{"defaultMeetingASRMode", coreconfig.MeetingASRMultipart},
+		{"meetingASRMultipartTitle", coreconfig.MeetingASRModeTitle(coreconfig.MeetingASRMultipart)},
+		{"meetingASRLlamaPrefixTitle", coreconfig.MeetingASRModeTitle(coreconfig.MeetingASRLlamaPrefix)},
+	} {
+		b.WriteString("    public static let " + item.name + " = " + strconv.Quote(item.value) + "\n")
+	}
+	b.WriteString("    public static let meetingASRModes = [meetingASRMultipart, meetingASRLlamaPrefix]\n")
 	shortcut, err := parseFile(filepath.Join(moduleRoot, "internal", "core", "shortcut", "shortcut.go"))
 	if err != nil {
 		return "", err
@@ -569,7 +581,7 @@ func emitSettings() (string, error) {
 	bindings, actions, status := settingsMaps()
 	var b strings.Builder
 	b.WriteString(sourceNote("voice-rewrite/internal/contract"))
-	b.WriteString("import SwiftUI\nimport VoiceRewriteStorage\n\nstruct SettingsView: View {\n")
+	b.WriteString("import SwiftUI\nimport VoiceRewriteStorage\nimport Microphone\n\nstruct SettingsView: View {\n")
 	b.WriteString("    @ObservedObject var model: WorkspaceModel\n\n    var body: some View {\n        Form {\n")
 	for _, page := range contract.Sections() {
 		controls := contract.PageControls(page.ID, contract.MacOS)
@@ -645,7 +657,8 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
                     Button("刷新设备") { model.refreshMicrophoneDevices() }
                 }
                 if !model.settings.microphoneUID.isEmpty &&
-                   !model.microphoneDevices.contains(where: { $0.id == model.settings.microphoneUID }) {
+                   MicrophoneRecorder.selectionUnavailable(model.settings.microphoneUID,
+                       in: model.microphoneDevices) {
                     Text("已保存的麦克风不在当前设备列表中，录音会提示设备不可用。")
                         .font(.footnote).foregroundStyle(.orange)
                 }

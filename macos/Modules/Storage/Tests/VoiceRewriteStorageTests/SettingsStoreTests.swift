@@ -19,6 +19,7 @@ final class SettingsStoreTests: XCTestCase {
         settings.textModel = "text-model"
         settings.maxRecordSeconds = 90
         settings.microphoneUID = "recording-device-uid"
+        settings.meetingASRMode = ContractLimits.meetingASRMultipart
         try store.save(settings)
         XCTAssertEqual(try store.load(), settings)
         let file = dir.appendingPathComponent("settings.json")
@@ -27,6 +28,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(Set(json.keys), [
             "asr_base_url", "llm_base_url", "asr_model", "text_model", "max_record_seconds",
             "dictation_shortcut", "rewrite_shortcut", "text_edit_shortcut", "microphone_uid",
+            "meeting_asr_mode",
         ])
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: dir.path)[.posixPermissions] as? NSNumber)?.intValue, 0o700)
         XCTAssertEqual((try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? NSNumber)?.intValue, 0o600)
@@ -34,6 +36,7 @@ final class SettingsStoreTests: XCTestCase {
         json.removeValue(forKey: "dictation_shortcut")
         json.removeValue(forKey: "rewrite_shortcut")
         json.removeValue(forKey: "text_edit_shortcut")
+        json.removeValue(forKey: "meeting_asr_mode")
         try JSONSerialization.data(withJSONObject: json).write(to: file)
         let migrated = try store.load()
         XCTAssertEqual(migrated.dictationShortcut, "Ctrl+Alt+R")
@@ -41,6 +44,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(migrated.textEditShortcut, "Ctrl+Alt+T")
         XCTAssertEqual(migrated.textModel, "text-model")
         XCTAssertEqual(migrated.microphoneUID, "recording-device-uid")
+        XCTAssertEqual(migrated.meetingASRMode, ContractLimits.defaultMeetingASRMode)
     }
 
     func testInvalidJSONAndUnknownSecretFieldsAreRejected() throws {
@@ -60,6 +64,29 @@ final class SettingsStoreTests: XCTestCase {
         obj.removeValue(forKey: "llm_base_url")
         try JSONSerialization.data(withJSONObject: obj).write(to: file)
         XCTAssertThrowsError(try store.load()) { XCTAssertEqual($0 as? SettingsError, .invalidJSON) }
+    }
+
+    func testMeetingASRModeRejectsUnknownValues() throws {
+        let dir = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir.deletingLastPathComponent()) }
+        let store = SettingsStore(directory: dir)
+        XCTAssertEqual(MacSettings.defaults.meetingASRMode, ContractLimits.defaultMeetingASRMode)
+        var settings = MacSettings.defaults
+        settings.meetingASRMode = ContractLimits.meetingASRMultipart
+        try store.save(settings)
+        XCTAssertEqual(try store.load().meetingASRMode, ContractLimits.meetingASRMultipart)
+        settings.meetingASRMode = "not-a-mode"
+        XCTAssertThrowsError(try store.save(settings)) {
+            XCTAssertEqual($0 as? SettingsError, .invalidValues)
+        }
+        let file = dir.appendingPathComponent("settings.json")
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: file)) as? [String: Any])
+        object["meeting_asr_mode"] = "bad-mode"
+        try JSONSerialization.data(withJSONObject: object).write(to: file)
+        XCTAssertThrowsError(try store.load()) {
+            XCTAssertEqual($0 as? SettingsError, .invalidValues)
+        }
     }
 
     func testWriteFailureKeepsOldValidFileAndRemovesTemp() throws {

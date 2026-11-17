@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	coreconfig "voicerewrite/internal/core/config"
 	meetingcore "voicerewrite/internal/core/meeting"
@@ -183,4 +184,82 @@ func TestMeetingAssistantBridgeSessionAndValidation(t *testing.T) {
 		t.Fatalf("stale expression was accepted: %#v", result)
 	}
 	h.close()
+}
+
+func TestMeetingReplyCoalescesConcurrentRequestsAndAvoidsRepeatInference(t *testing.T) {
+	var calls atomic.Int32
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []any{map[string]any{
+					"message": map[string]string{"content": "ONE\tA good answer.\t一个好答案。"},
+				}},
+			})
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+	cfg := coreconfig.Defaults()
+	cfg.LLMBaseURL = srv.URL + "/v1"
+	cfg.TextModel = "test-model"
+	m, err := newBridgeMeeting(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.stop()
+	m.mu.Lock()
+	m.captions = []meetingcore.Caption{{ID: 5, Source: "latest", Final: true}}
+	m.prior = []string{"latest"}
+	m.lastFinal = 5
+	m.mu.Unlock()
+	done := make(chan error, 1)
+	go func() { done <- m.runReplies(context.Background(), 5) }()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first reply request never started")
+	}
+	if err := m.runReplies(context.Background(), 0); err != nil {
+		t.Fatal("duplicate manual request:", err)
+	}
+	close(release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal("initial reply:", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("reply did not finish")
+	}
+	if err := m.runReplies(context.Background(), 5); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("duplicate automatic turn inferred %d times", calls.Load())
+	}
+	if err := m.runReplies(context.Background(), 0); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("manual regeneration should be explicit, got %d calls", calls.Load())
+	}
+	m.cancelWork()
+	if err := m.runReplies(context.Background(), 0); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 3 {
+		t.Fatal("cancel left subsequent requests locked")
+	}
+	if err := m.refine(context.Background(), -1, "shorter"); err == nil {
+		t.Fatal("invalid reply index was not rejected")
+	}
 }
