@@ -13,7 +13,6 @@ final class BridgeClient {
     private var process: Process?
     private var input: Pipe?
     private var epoch: UInt64 = 0
-    private var framer = JSONLFramer()
 
     init(executableURL: URL, onExit: @escaping (BridgeFailure) -> Void = { _ in }) {
         self.executableURL = executableURL
@@ -43,7 +42,6 @@ final class BridgeClient {
 
             epoch &+= 1
             let session = epoch
-            framer = JSONLFramer()
             input = stdin
             process = child
             DispatchQueue.global(qos: .userInitiated).async { [self] in
@@ -57,32 +55,61 @@ final class BridgeClient {
         }
     }
 
-    /// IDs are caller chosen or UUIDs; an outstanding duplicate is rejected without
-    /// replacing the original completion. Calling from any thread is supported.
+    /// Payload construction (including PCM Base64/JSON) happens on the writer,
+    /// never on AppKit's main thread or while holding the bridge state queue.
     @discardableResult
     func send(operation: String, fields: [String: JSONValue] = [:],
               id: String = UUID().uuidString,
               completion: @escaping Completion) -> String {
-        state.sync {
+        enqueue(operation: operation, fields: fields, pcm: nil, id: id, completion: completion)
+    }
+
+    /// Pass raw PCM across the main-thread boundary; the large Base64 allocation
+    /// is owned by the background writer rather than the recording UI.
+    @discardableResult
+    func sendPCM(operation: String, pcm: Data, fields: [String: JSONValue] = [:],
+                 id: String = UUID().uuidString,
+                 completion: @escaping Completion) -> String {
+        enqueue(operation: operation, fields: fields, pcm: pcm, id: id, completion: completion)
+    }
+
+    private func enqueue(operation: String, fields: [String: JSONValue], pcm: Data?,
+                         id: String, completion: @escaping Completion) -> String {
+        let destination: (Pipe, UInt64)? = state.sync {
             guard let stdin = input, process != nil else {
                 DispatchQueue.main.async { completion(.failure(.notRunning)) }
-                return
+                return nil
             }
-            let line: Data
             do {
-                line = try BridgeRequest(id: id, operation: operation, fields: fields).line()
                 try replies.register(id: id, completion: completion)
             } catch {
-                let failure = (error as? BridgeFailure) ?? .invalidRequest
-                DispatchQueue.main.async { completion(.failure(failure)) }
-                return
+                DispatchQueue.main.async {
+                    completion(.failure((error as? BridgeFailure) ?? .invalidRequest))
+                }
+                return nil
             }
-            let session = epoch
-            writer.async { [weak self] in
-                do { try stdin.fileHandleForWriting.write(contentsOf: line) }
-                catch {
-                    self?.state.async { [weak self] in
-                        self?.failSession(session, reason: .writeFailed)
+            return (stdin, epoch)
+        }
+        guard let (stdin, session) = destination else { return id }
+        writer.async { [weak self] in
+            do {
+                var payload = fields
+                if let pcm { payload["pcm_base64"] = .string(pcm.base64EncodedString()) }
+                let line = try BridgeRequest(id: id, operation: operation, fields: payload).line()
+                // Cancellation/reconnect may have happened while encoding.
+                guard self?.state.sync(execute: {
+                    guard let self else { return false }
+                    return self.epoch == session && self.replies.contains(id: id)
+                }) == true else { return }
+                try stdin.fileHandleForWriting.write(contentsOf: line)
+            } catch {
+                let failure = (error as? BridgeFailure)
+                self?.state.async { [weak self] in
+                    guard let self, self.epoch == session else { return }
+                    if let failure {
+                        self.replies.fail(id: id, reason: failure)
+                    } else {
+                        self.failSession(session, reason: .writeFailed)
                     }
                 }
             }
@@ -103,47 +130,47 @@ final class BridgeClient {
 
     /// Called at app termination and before reconnecting. No outstanding callback survives.
     func stop() {
-        state.sync {
+        let previous: (Process?, Pipe?) = state.sync {
             epoch &+= 1
-            let child = process
-            let oldInput = input
+            let previous = (process, input)
             process = nil
             input = nil
             replies.failAll(.cancelled)
-            if let child, child.isRunning { child.terminate() }
-            try? oldInput?.fileHandleForWriting.close()
+            return previous
         }
+        if let child = previous.0, child.isRunning { child.terminate() }
+        try? previous.1?.fileHandleForWriting.close()
     }
 
     private func readReplies(from handle: FileHandle, process child: Process, epoch session: UInt64) {
+        // Framing and JSON decoding can be expensive for Meeting snapshots.
+        // Do them on this reader thread, not under the queue used by UI send().
+        var framer = JSONLFramer()
         var readerError: BridgeFailure?
         while true {
-                let chunk = handle.availableData
-                if chunk.isEmpty { break }
-                let failure: BridgeFailure? = state.sync {
-                    guard session == epoch else { return .cancelled }
-                    do {
-                        for line in try framer.append(chunk) {
-                            let reply = try JSONDecoder().decode(BridgeReply.self, from: line)
-                            try reply.validate()
-                            replies.resolve(reply) // unknown/retired IDs are ignored
-                        }
-                        return nil
-                    } catch {
-                        return (error as? BridgeFailure) ?? .invalidReply
+            let chunk = handle.availableData
+            if chunk.isEmpty { break }
+            do {
+                for line in try framer.append(chunk) {
+                    let reply = try JSONDecoder().decode(BridgeReply.self, from: line)
+                    try reply.validate()
+                    state.async { [weak self] in
+                        guard let self, self.epoch == session else { return }
+                        self.replies.resolve(reply)
                     }
                 }
-                if let failure {
-                    readerError = failure
-                    if child.isRunning { child.terminate() }
-                    break
-                }
+            } catch {
+                readerError = (error as? BridgeFailure) ?? .invalidReply
+                if child.isRunning { child.terminate() }
+                break
             }
+        }
         try? handle.close()
         child.waitUntilExit()
         state.sync {
             guard session == epoch else { return }
-            let failure = readerError ?? (framer.hasPartialFrame ? .truncatedReply : .processExited(child.terminationStatus))
+            let failure = readerError ??
+                (framer.hasPartialFrame ? .truncatedReply : .processExited(child.terminationStatus))
             failSession(session, reason: failure)
         }
     }
@@ -157,8 +184,10 @@ final class BridgeClient {
         process = nil
         input = nil
         replies.failAll(reason)
-        if let child, child.isRunning { child.terminate() }
-        try? oldInput?.fileHandleForWriting.close()
+        DispatchQueue.global(qos: .utility).async {
+            if let child, child.isRunning { child.terminate() }
+            try? oldInput?.fileHandleForWriting.close()
+        }
         DispatchQueue.main.async { [onExit] in onExit(reason) }
     }
 }
