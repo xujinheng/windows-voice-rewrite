@@ -2083,7 +2083,8 @@ final class WorkspaceModel: ObservableObject {
         processingWatchdog = Task { @MainActor [weak self] in
             do { try await Task.sleep(nanoseconds: seconds * 1_000_000_000) }
             catch { return }
-            guard let self, self.resultGeneration.accepts(token), self.isProcessing else { return }
+            guard let self, self.resultGeneration.accepts(token),
+                  (self.isProcessing || self.isStarting) else { return }
             DiagnosticLog.note("stage=voice_\(stage) status=timeout")
             self.processingWatchdog = nil
             self.invalidatePending()
@@ -2160,6 +2161,7 @@ final class WorkspaceModel: ObservableObject {
         invalidatePending()
         let token = resultGeneration.begin()
         isStarting = true
+        armProcessingWatchdog(token: token, seconds: 30, stage: "microphone_start")
         // Like Windows Hold, capture the selection on release rather than
         // delaying the microphone startup with an AX request on key-down.
         showIndicator(phase: .selection, mode: "改写", pending: false)
@@ -2174,6 +2176,7 @@ final class WorkspaceModel: ObservableObject {
                     isStarting = false
                     return
                 }
+                finishProcessingWatchdog()
                 activeVoiceTargetPID = pid
                 isVoiceSelectionRecording = true
                 isRecording = true
@@ -2182,6 +2185,7 @@ final class WorkspaceModel: ObservableObject {
             } catch {
                 guard resultGeneration.accepts(token) else { return }
                 microphone.cancel()
+                finishProcessingWatchdog()
                 interactionStatus = rewriteCaptureStatus(error, password: ResultCopy.passwordSelection)
                 showIndicator(phase: .error, mode: "改写", pending: false)
             }
@@ -2196,6 +2200,7 @@ final class WorkspaceModel: ObservableObject {
         invalidatePending()
         let token = resultGeneration.begin()
         isStarting = true
+        armProcessingWatchdog(token: token, seconds: 30, stage: "microphone_start")
         recordingStatus = dictationRequestingMicrophone()
         // A pending pill must not wait for AX focus probes or AVAudioEngine start.
         // It becomes an active recording indicator only after the engine starts.
@@ -2222,6 +2227,7 @@ final class WorkspaceModel: ObservableObject {
             }
             guard arm.startMicrophone else {
                 guard resultGeneration.accepts(token) else { return }
+                finishProcessingWatchdog()
                 isStarting = false
                 finishKeyboardStart(.dictation)
                 return
@@ -2234,11 +2240,13 @@ final class WorkspaceModel: ObservableObject {
                     microphone.cancel()
                     return
                 }
+                finishProcessingWatchdog()
                 isRecording = true
                 showIndicator(phase: .recording, mode: "听写", pending: false)
                 if let status = ready.recordingStatus { recordingStatus = status }
             } catch {
                 guard resultGeneration.accepts(token) else { return }
+                finishProcessingWatchdog()
                 let ready = dictationMicrophoneReady(started: false, tokenValid: true, failure: error.localizedDescription)
                 if let status = ready.recordingStatus { recordingStatus = status }
                 if ready.showError {
