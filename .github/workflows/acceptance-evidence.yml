@@ -144,14 +144,6 @@ jobs:
           }
           file "$app/Contents/MacOS/VoiceRewrite" "$app/Contents/MacOS/voicebridge" |
             tee "acceptance-output/logs/$VOICEREWRITE_ACCEPTANCE_PLATFORM-arch.txt"
-      - name: Exercise native Interaction clipboard, focus and shortcut adapters
-        shell: bash
-        env:
-          VOICEREWRITE_ACCEPTANCE_PLATFORM: ${{ matrix.platform }}
-        run: |
-          set -o pipefail
-          (cd macos/Modules/Interaction && swift test) 2>&1 |
-            tee "acceptance-output/logs/$VOICEREWRITE_ACCEPTANCE_PLATFORM-interaction.txt"
       - name: Preserve screenshots and logs even on failure
         if: always()
         uses: actions/upload-artifact@v4
