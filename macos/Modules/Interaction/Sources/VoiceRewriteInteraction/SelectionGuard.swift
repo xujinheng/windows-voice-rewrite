@@ -89,11 +89,11 @@ public struct SelectionObservation: Sendable {
 public protocol AccessibilityClient: Sendable {
     func captureMonitoredSelection() throws -> SelectionObservation
     func currentSelection() throws -> SelectionObservation
-    func writeSelectedText(_ text: String, expected: SelectionObservation) throws
+    func writeSelectedText(_ text: String, expected: SelectionObservation, intent: SelectionIntent) throws
     func stopMonitoring()
 }
 
-public enum SelectionIntent: Sendable {
+public enum SelectionIntent: Equatable, Sendable {
     case replaceSelection
     case insertAtCaret
 }
@@ -180,10 +180,9 @@ public actor InteractionSession {
         switch intent {
         case .replaceSelection:
             guard reading.range.length > 0 else { throw InteractionFailure.invalidSelection }
-        case .insertAtCaret:
-            guard reading.range.length == 0, reading.selectedText.isEmpty else {
-                throw InteractionFailure.invalidSelection
-            }
+        case .dictation:
+            // Dictation inserts at the caret or replaces the existing selection.
+            break
         }
     }
 
@@ -218,7 +217,7 @@ public actor InteractionSession {
 
     public func insertIfCurrent(_ snapshot: SelectionSnapshot,
                                 text: String, generation token: UInt64) throws {
-        guard snapshot.intent == .insertAtCaret else { throw InteractionFailure.invalidSelection }
+        guard snapshot.intent == .dictation else { throw InteractionFailure.invalidSelection }
         try applyIfCurrent(snapshot, text: text, generation: token)
     }
 
@@ -245,6 +244,6 @@ public actor InteractionSession {
         }
         // No suspension point before native revalidation and either AX or guarded paste.
         // An unconfirmed paste is single-use and never retried automatically.
-        try client.writeSelectedText(text, expected: current)
+        try client.writeSelectedText(text, expected: current, intent: snapshot.intent)
     }
 }
