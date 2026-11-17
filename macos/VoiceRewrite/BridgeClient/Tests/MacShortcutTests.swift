@@ -26,13 +26,13 @@ final class MacShortcutTests: XCTestCase {
     }
 
     func testDefaultKeyboardPlanPreservesBothMouseSideButtons() throws {
-        let dictation = try XCTUnwrap(ShortcutBinding(canonical: "RightCtrl"))
+        let dictation = try XCTUnwrap(ShortcutBinding(canonical: "RightCommand"))
         let rewrite = try XCTUnwrap(ShortcutBinding(canonical: "RightOption"))
         let plan = try XCTUnwrap(MacShortcutPlan(dictation: dictation, rewrite: rewrite))
         XCTAssertEqual(plan.keyboard.count, 0)
-        XCTAssertEqual(plan.modifierDictation, .rightControl)
+        XCTAssertEqual(plan.modifierDictation, .rightCommand)
         XCTAssertEqual(plan.modifierRewrite, .rightOption)
-        XCTAssertEqual(MacShortcut.display("RightCtrl"), "右 Control（长按）")
+        XCTAssertEqual(MacShortcut.display("RightCommand"), "右 Command（长按）")
         XCTAssertEqual(MacShortcut.display("RightOption"), "右 Option（长按）")
         XCTAssertEqual(plan.sideButtons.action(for: 3), .dictation)
         XCTAssertEqual(plan.sideButtons.action(for: 4), .rewrite)

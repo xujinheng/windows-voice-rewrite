@@ -1,4 +1,5 @@
 import XCTest
+import CoreGraphics
 @testable import VoiceRewriteInteraction
 
 #if os(macOS)
@@ -61,6 +62,51 @@ final class MacModifierHoldTests: XCTestCase {
         XCTAssertTrue(state.activate(.rightControl, token: second))
         XCTAssertEqual(state.clear(), .rightControl)
         XCTAssertNil(state.release(.rightControl))
+    }
+
+    func testLeftAndRightModifierCaptureFromFlagChanges() {
+        // The event's physical keycode identifies the side. Do not ask the
+        // asynchronous CGEventSource cache if the opposite key is down.
+        for key in MacModifierKey.allCases {
+            XCTAssertEqual(
+                MacModifierKey.captureCandidate(keyCode: key.keyCode, flags: key.groupFlag),
+                key, "must learn \(key.rawValue) from its own flagsChanged event")
+            XCTAssertNil(MacModifierKey.captureCandidate(keyCode: key.keyCode, flags: []))
+            XCTAssertNil(MacModifierKey.captureCandidate(
+                keyCode: key.keyCode, flags: key.groupFlag.union(.maskShift)))
+            XCTAssertNil(MacModifierKey.captureCandidate(
+                keyCode: key.keyCode, flags: key.groupFlag.union(
+                    key == .leftCommand || key == .rightCommand ? .maskAlternate : .maskCommand)))
+        }
+        XCTAssertNil(MacModifierKey.captureCandidate(keyCode: 0, flags: .maskControl))
+        XCTAssertNil(MacModifierKey.captureCandidate(keyCode: 56, flags: .maskShift))
+        XCTAssertEqual(MacModifierKey.captureCandidate(keyCode: 54, flags: .maskCommand), .rightCommand)
+        XCTAssertEqual(MacModifierKey.captureCandidate(keyCode: 61, flags: .maskAlternate), .rightOption)
+        XCTAssertEqual(MacModifierKey.captureCandidate(keyCode: 62, flags: .maskControl), .rightControl)
+    }
+
+    func testPhysicalModifierSideTransitionsDoNotConflateOppositeKeys() {
+        var physical = MacPhysicalModifierState()
+        XCTAssertTrue(physical.update(.leftCommand, flags: .maskCommand))
+        XCTAssertEqual(physical.pressed, [.leftCommand])
+        XCTAssertTrue(physical.update(.rightCommand, flags: .maskCommand))
+        XCTAssertEqual(physical.pressed, [.leftCommand, .rightCommand])
+        // Right Command release still has the Command family flag while left is held.
+        XCTAssertFalse(physical.update(.rightCommand, flags: .maskCommand))
+        XCTAssertEqual(physical.pressed, [.leftCommand])
+        XCTAssertFalse(physical.update(.leftCommand, flags: []))
+        XCTAssertTrue(physical.pressed.isEmpty)
+
+        for key in MacModifierKey.allCases {
+            XCTAssertTrue(physical.update(key, flags: key.groupFlag))
+            XCTAssertEqual(physical.pressed, [key])
+            XCTAssertFalse(physical.update(key, flags: []))
+            XCTAssertTrue(physical.pressed.isEmpty)
+        }
+        // A stray release without a known down edge is not a key press.
+        XCTAssertFalse(physical.update(.rightOption, flags: []))
+        physical.reset()
+        XCTAssertTrue(physical.pressed.isEmpty)
     }
 
     func testHIDUsageCodesAndKeyboardIdentityFailClosed() {

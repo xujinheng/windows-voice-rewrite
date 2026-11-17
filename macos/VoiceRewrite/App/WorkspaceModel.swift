@@ -209,8 +209,28 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    /// Listen for individual modifier keys across the OS in capture mode.
+    /// The settings window's local NSEvent monitor remains a fallback when
+    /// Accessibility has not yet been granted.
+    func captureGlobalModifierKey(_ onKey: @escaping @MainActor (MacModifierKey) -> Void) {
+        do {
+            let driver = try makeModifierHoldDriver()
+            driver.setCapture(onKey)
+            rightModifierDriver = driver
+        } catch {
+            interactionStatus = "全局按键监听不可用，请检查辅助功能权限：\(error.localizedDescription)"
+        }
+    }
+
     func stopKeyboardDeviceCapture() {
         keyboardHID?.capture(deviceID: nil, onKey: nil)
+        rightModifierDriver?.setCapture(nil)
+        let needsGlobalHold = (activeShortcutPlan?.modifierDictation != nil && activeDictationKeyboardID.isEmpty) ||
+            (activeShortcutPlan?.modifierRewrite != nil && activeRewriteKeyboardID.isEmpty)
+        if !needsGlobalHold {
+            rightModifierDriver?.shutdown()
+            rightModifierDriver = nil
+        }
     }
 
     private func getKeyboardHID() -> MacKeyboardHIDMonitor {

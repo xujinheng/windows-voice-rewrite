@@ -58,7 +58,7 @@ final class SettingsStoreTests: XCTestCase {
         }
         try JSONSerialization.data(withJSONObject: json).write(to: file)
         let migrated = try store.load()
-        XCTAssertEqual(migrated.dictationShortcut, "RightCtrl")
+        XCTAssertEqual(migrated.dictationShortcut, "RightCommand")
         XCTAssertEqual(migrated.rewriteShortcut, "RightOption")
         XCTAssertEqual(migrated.textModel, "text-model")
         XCTAssertEqual(migrated.microphoneUID, "recording-device-uid")
@@ -106,7 +106,7 @@ final class SettingsStoreTests: XCTestCase {
         obj["rewrite_shortcut"] = "Ctrl+Alt+E"
         let old = try JSONSerialization.data(withJSONObject: obj)
         let updated = try MacSettings.decodeStrict(old)
-        XCTAssertEqual(updated.dictationShortcut, "RightCtrl")
+        XCTAssertEqual(updated.dictationShortcut, "RightCommand")
         XCTAssertEqual(updated.rewriteShortcut, "RightOption")
 
         obj["rewrite_shortcut"] = "Ctrl+Alt+F8"
@@ -119,6 +119,28 @@ final class SettingsStoreTests: XCTestCase {
         let toggle = try MacSettings.decodeStrict(JSONSerialization.data(withJSONObject: obj))
         XCTAssertEqual(toggle.dictationShortcut, "Ctrl+Alt+R")
         XCTAssertEqual(toggle.rewriteShortcut, "Ctrl+Alt+E")
+    }
+
+    func testPriorDefaultRightControlMigratesOnlyWhenUnscoped() throws {
+        let encoded = try JSONEncoder().encode(MacSettings.defaults)
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        json["dictation_shortcut"] = "RightCtrl"
+        json["rewrite_shortcut"] = "RightOption"
+        json["record_mode"] = "hold"
+        let old = try MacSettings.decodeStrict(JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(old.dictationShortcut, "RightCommand")
+        XCTAssertEqual(old.rewriteShortcut, "RightOption")
+
+        json["dictation_keyboard_id"] = "serial:1234:5678:right-ctrl"
+        let scoped = try MacSettings.decodeStrict(JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(scoped.dictationShortcut, "RightCtrl")
+        XCTAssertEqual(scoped.dictationKeyboardID, "serial:1234:5678:right-ctrl")
+
+        json["dictation_keyboard_id"] = ""
+        json["rewrite_shortcut"] = "LeftOption"
+        let customized = try MacSettings.decodeStrict(JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(customized.dictationShortcut, "RightCtrl")
+        XCTAssertEqual(customized.rewriteShortcut, "LeftOption")
     }
 
     func testMeetingProfileRejectsExcessUnicodeScalars() throws {

@@ -24,7 +24,7 @@ const (
 
 // macOS settings defaults. Windows defaults stay Mouse4, Mouse5, and Ctrl+Alt+F10.
 const (
-	MacDictationShortcut = "RightCtrl"
+	MacDictationShortcut = "RightCommand"
 	MacRewriteShortcut   = "RightOption"
 )
 

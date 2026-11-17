@@ -38,6 +38,15 @@ public enum MacModifierKey: String, CaseIterable, Hashable, Sendable {
         }
     }
 
+    /// Accept a physical key-down from either side without consulting the
+    /// separate CGEventSource key-state cache. That cache is not an atomic
+    /// snapshot of the flagsChanged event and can reject right-hand keys.
+    public static func captureCandidate(keyCode: Int64, flags: CGEventFlags) -> MacModifierKey? {
+        guard let key = MacModifierKey(keyCode: keyCode) else { return nil }
+        let ordinary: CGEventFlags = [.maskCommand, .maskShift, .maskControl, .maskAlternate]
+        return flags.intersection(ordinary) == key.groupFlag ? key : nil
+    }
+
     public var keyCode: Int64 {
         switch self {
         case .leftControl: return 59
@@ -87,6 +96,26 @@ public enum MacModifierKey: String, CaseIterable, Hashable, Sendable {
         case .rightCommand: return "右 Command（长按）"
         }
     }
+}
+
+/// Tracks actual left/right transitions as they arrive from the Quartz
+/// event tap. Aggregate event flags cannot say which side is down; relying
+/// on the unrelated event source key-state cache can reject right-side keys.
+public struct MacPhysicalModifierState: Sendable {
+    public private(set) var pressed: Set<MacModifierKey> = []
+
+    public init() {}
+
+    /// True only on the physical down edge. A later event from the same key
+    /// is its release, even if the other side still sets the family flag.
+    public mutating func update(_ key: MacModifierKey, flags: CGEventFlags) -> Bool {
+        if pressed.remove(key) != nil { return false }
+        guard flags.contains(key.groupFlag) else { return false }
+        pressed.insert(key)
+        return true
+    }
+
+    public mutating func reset() { pressed.removeAll() }
 }
 
 /// A single physical modifier only becomes voice input after a deliberate hold.
@@ -180,10 +209,12 @@ public final class MacModifierHoldDriver {
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var state = MacModifierHoldState()
+    private var physicalState = MacPhysicalModifierState()
     private var dictation: MacModifierKey?
     private var rewrite: MacModifierKey?
     private var suspended = false
     private var paused = false
+    private var captureKey: (@MainActor (MacModifierKey) -> Void)?
 
     public init(threshold: TimeInterval = SideHold.threshold,
                 onHold: @escaping @MainActor (MacModifierKey, Int32?) -> Void,
@@ -202,6 +233,12 @@ public final class MacModifierHoldDriver {
         if state.clear() != nil { onCancel() }
         self.dictation = dictation
         self.rewrite = rewrite
+    }
+
+    /// Learn modifiers through the same listen-only global tap as Hold.
+    /// Captures may proceed even while the ordinary voice Hold is suspended.
+    public func setCapture(_ callback: (@MainActor (MacModifierKey) -> Void)?) {
+        captureKey = callback
     }
 
     public func setSuspended(_ value: Bool) {
@@ -245,6 +282,8 @@ public final class MacModifierHoldDriver {
     }
 
     public func shutdown() {
+        physicalState.reset()
+        captureKey = nil
         if state.clear() != nil { onCancel() }
         if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
         if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
@@ -255,6 +294,7 @@ public final class MacModifierHoldDriver {
 
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            physicalState.reset()
             if state.clear() != nil {
                 DispatchQueue.main.async { [weak self] in self?.onCancel() }
             }
@@ -265,6 +305,18 @@ public final class MacModifierHoldDriver {
             }
             return Unmanaged.passUnretained(event)
         }
+        // Update physical side tracking even while the voice Hold is paused
+        // for Settings capture. A second Command/Option/Control of the same
+        // family must not be mistaken for a single-key gesture.
+        let physicalKey: MacModifierKey? = type == .flagsChanged
+            ? MacModifierKey(keyCode: event.getIntegerValueField(.keyboardEventKeycode)) : nil
+        let down = physicalKey.map { physicalState.update($0, flags: event.flags) } ?? false
+        if type == .flagsChanged, down, physicalState.pressed.count == 1,
+           let key = physicalKey, captureKey != nil,
+           MacModifierKey.captureCandidate(keyCode: key.keyCode, flags: event.flags) == key {
+            DispatchQueue.main.async { [weak self] in self?.captureKey?(key) }
+            return Unmanaged.passUnretained(event)
+        }
         guard !suspended, !paused else { return Unmanaged.passUnretained(event) }
         if type == .keyDown {
             if state.interrupt() != nil {
@@ -273,36 +325,33 @@ public final class MacModifierHoldDriver {
             return Unmanaged.passUnretained(event)
         }
         guard type == .flagsChanged else { return Unmanaged.passUnretained(event) }
-        let code = event.getIntegerValueField(.keyboardEventKeycode)
-        guard let key = MacModifierKey(keyCode: code) else {
+        guard let key = physicalKey else {
             if state.interrupt() != nil {
                 DispatchQueue.main.async { [weak self] in self?.onCancel() }
             }
             return Unmanaged.passUnretained(event)
         }
-        let flags = event.flags
-        // A flagsChanged event uses the physical virtual keycode to identify
-        // which side moved. The aggregate flags cannot identify that side.
-        // For the held key, this event is its release even if the other side
-        // of the same modifier remains pressed.
         if state.held == key {
             if let released = state.release(key) {
                 DispatchQueue.main.async { [weak self] in self?.onRelease(released) }
             }
             return Unmanaged.passUnretained(event)
         }
-        guard flags.contains(key.groupFlag) else {
-            return Unmanaged.passUnretained(event)
-        }
+        guard down else { return Unmanaged.passUnretained(event) }
         guard dictation == key || rewrite == key else {
             if state.interrupt() != nil {
                 DispatchQueue.main.async { [weak self] in self?.onCancel() }
             }
             return Unmanaged.passUnretained(event)
         }
-        let ordinaryModifierFlags: CGEventFlags = [.maskCommand, .maskShift, .maskControl, .maskAlternate]
-        let alone = flags.intersection(ordinaryModifierFlags) == key.groupFlag &&
-            !CGEventSource.keyState(.combinedSessionState, key: key.otherSideKeyCode)
+        if state.held != nil {
+            if state.interrupt() != nil {
+                DispatchQueue.main.async { [weak self] in self?.onCancel() }
+            }
+            return Unmanaged.passUnretained(event)
+        }
+        let alone = physicalState.pressed.count == 1 &&
+            MacModifierKey.captureCandidate(keyCode: key.keyCode, flags: event.flags) == key
         if let token = state.press(key, unmodified: alone) {
             let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
             DispatchQueue.main.asyncAfter(deadline: .now() + threshold) { [weak self] in

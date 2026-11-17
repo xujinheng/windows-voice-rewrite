@@ -184,7 +184,7 @@ func TestMacKeyboardDefaultsStayKeyboardShortcuts(t *testing.T) {
 		}
 		seen[binding.Key] = true
 	}
-	if MacDictationShortcut != "RightCtrl" || MacRewriteShortcut != "RightOption" {
+	if MacDictationShortcut != "RightCommand" || MacRewriteShortcut != "RightOption" {
 		t.Fatalf("mac defaults %s %s", MacDictationShortcut, MacRewriteShortcut)
 	}
 }

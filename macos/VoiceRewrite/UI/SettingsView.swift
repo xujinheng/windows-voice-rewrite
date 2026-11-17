@@ -254,7 +254,7 @@ struct SettingsView: View {
                 Button(captureTarget == "exit_shortcut" ? "等待按键…" : "录入按键") { beginCapture("exit_shortcut") }
                     .accessibilityIdentifier("capture_exit")
                                 }
-                Text("快捷键可直接录入左/右 Control、左/右 Option、左/右 Command 六个单键；单独按住 250ms 开始、松开结束，正常组合键不被拦截。Mouse4 听写、Mouse5 改写保留，亦可配置 Ctrl+Option 组合键。默认右 Control 听写、右 Option 改写；MacBook Pro/Air 内建键盘没有右 Control，可在这里改为右 Command 或左 Control。退出快捷键必须使用功能键或组合键。")
+                Text("快捷键可直接录入左/右 Control、左/右 Option、左/右 Command 六个单键；单独按住 250ms 开始、松开结束，正常组合键不被拦截。Mouse4 听写、Mouse5 改写保留，亦可配置 Ctrl+Option 组合键。默认右 Command 听写、右 Option 改写，MacBook Pro/Air 内建键盘均可使用。录入时能区分左/右修饰键；外接键盘仍可自定义右 Control。退出快捷键必须使用功能键或组合键。")
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("input_note_macos")
                                 HStack {
@@ -401,6 +401,8 @@ struct SettingsView: View {
             (id == "rewrite_shortcut" ? model.settings.rewriteKeyboardID : "")
         if !selectedDevice.isEmpty {
             model.captureKeyFromSelectedKeyboard(selectedDevice) { key in acceptCapture(key.rawValue) }
+        } else if id != "exit_shortcut" {
+            model.captureGlobalModifierKey { key in acceptCapture(key.rawValue) }
         }
         captureMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .otherMouseDown, .flagsChanged]) { event in
             if event.type == .keyDown && event.isARepeat { return nil }
@@ -409,11 +411,10 @@ struct SettingsView: View {
                    captureTarget == "rewrite_shortcut" && !model.settings.rewriteKeyboardID.isEmpty {
                     return event // wait for the selected HID keyboard, not a global NSEvent
                 }
-                guard let key = MacModifierKey(keyCode: Int64(event.keyCode)) else { return event }
-                let families: NSEvent.ModifierFlags = [.control, .option, .command, .shift]
-                guard event.modifierFlags.intersection(families) == key.captureFlag,
-                      !CGEventSource.keyState(.combinedSessionState, key: key.otherSideKeyCode) else {
-                    return event // release or multi-key chord is not a bare key
+                guard let key = MacModifierKey.captureCandidate(
+                    keyCode: Int64(event.keyCode),
+                    flags: CGEventFlags(rawValue: UInt64(event.modifierFlags.rawValue))) else {
+                    return event // key-up, or an ordinary shortcut with multiple modifiers
                 }
                 if captureTarget == "exit_shortcut" {
                     captureStatus = "退出快捷键不能使用单独的 Control/Option/Command，请选择组合键或功能键"
