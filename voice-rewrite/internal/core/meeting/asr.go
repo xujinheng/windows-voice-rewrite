@@ -25,11 +25,19 @@ type ASRState struct{ raw, fixed string }
 func asrProfileHint(cfg coreconfig.Config) string {
 	terms := []rune(strings.TrimSpace(cfg.MeetingTerms))
 	background := []rune(strings.TrimSpace(cfg.MeetingBackground))
-	if len(terms) > 600 { terms = terms[:600] }
-	if len(background) > 200 { background = background[:200] }
+	if len(terms) > 600 {
+		terms = terms[:600]
+	}
+	if len(background) > 200 {
+		background = background[:200]
+	}
 	var parts []string
-	if len(terms) != 0 { parts = append(parts, "Vocabulary: "+string(terms)) }
-	if len(background) != 0 { parts = append(parts, "Topic: "+string(background)) }
+	if len(terms) != 0 {
+		parts = append(parts, "Vocabulary: "+string(terms))
+	}
+	if len(background) != 0 {
+		parts = append(parts, "Topic: "+string(background))
+	}
 	return strings.Join(parts, "\n")
 }
 
