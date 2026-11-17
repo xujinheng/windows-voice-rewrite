@@ -93,7 +93,7 @@ func Controls() []Control {
 		{ID: "selection_copy_attempts", Page: "input", Label: "选区复制重试次数（Windows 专用）", Kind: Note, Platform: MacOS, Gap: "#148"},
 		{ID: "selection_copy_timeout_ms", Page: "input", Label: "选区复制超时由 Windows 剪贴板适配器使用；macOS 使用 AX 和原生粘贴板时序。", Kind: Note, Platform: MacOS, Gap: "#148"},
 		{ID: "input_note_windows", Page: "input", Label: "语音指令用于改写/解释/问答；更换按键或设备后需重启软件。", Kind: Note, Platform: Windows, Gap: "#61 #69"},
-		{ID: "input_note_macos", Page: "input", Label: "可用 Ctrl+Alt+R、F8 或 Mouse4。macOS 的 Alt 即 Option；Mouse4 默认听写，Mouse5 默认改写。仅监听已绑定侧键，F21–F24 不可用；听写与改写不能绑定同一个按键。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
+		{ID: "input_note_macos", Page: "input", Label: "Mac 默认长按右 Control 听写、长按右 Option 改写；松开结束。Mouse4 听写、Mouse5 改写保持不变。也可自行配置 Ctrl+Alt+R/E 或 F8。右侧单键需要辅助功能/输入监控权限，单独按住 250ms 才会触发；组合键不触发录音。注意：MacBook Pro 内建键盘通常没有右 Control，右 Control 需要外接键盘。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
 
 		{ID: "save", Page: "save", Label: "保存设置", Kind: Button},
 		{ID: "advanced", Page: "save", Label: "高级配置", Kind: Button},

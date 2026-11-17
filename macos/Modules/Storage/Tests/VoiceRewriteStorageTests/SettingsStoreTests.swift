@@ -56,8 +56,8 @@ final class SettingsStoreTests: XCTestCase {
         }
         try JSONSerialization.data(withJSONObject: json).write(to: file)
         let migrated = try store.load()
-        XCTAssertEqual(migrated.dictationShortcut, "Ctrl+Alt+R")
-        XCTAssertEqual(migrated.rewriteShortcut, "Ctrl+Alt+E")
+        XCTAssertEqual(migrated.dictationShortcut, "RightCtrl")
+        XCTAssertEqual(migrated.rewriteShortcut, "RightOption")
         XCTAssertEqual(migrated.textModel, "text-model")
         XCTAssertEqual(migrated.microphoneUID, "recording-device-uid")
         XCTAssertEqual(migrated.meetingASRMode, ContractLimits.defaultMeetingASRMode)
@@ -70,6 +70,28 @@ final class SettingsStoreTests: XCTestCase {
         let saved = try XCTUnwrap(JSONSerialization.jsonObject(
             with: Data(contentsOf: file)) as? [String: Any])
         XCTAssertNil(saved["text_edit_shortcut"])
+    }
+
+    func testOldMacDefaultPairUpgradesButUserCustomBindingsRemain() throws {
+        let original = try JSONEncoder().encode(MacSettings.defaults)
+        var obj = try XCTUnwrap(JSONSerialization.jsonObject(with: original) as? [String: Any])
+        obj["dictation_shortcut"] = "Ctrl+Alt+R"
+        obj["rewrite_shortcut"] = "Ctrl+Alt+E"
+        let old = try JSONSerialization.data(withJSONObject: obj)
+        let updated = try MacSettings.decodeStrict(old)
+        XCTAssertEqual(updated.dictationShortcut, "RightCtrl")
+        XCTAssertEqual(updated.rewriteShortcut, "RightOption")
+
+        obj["rewrite_shortcut"] = "Ctrl+Alt+F8"
+        let custom = try MacSettings.decodeStrict(JSONSerialization.data(withJSONObject: obj))
+        XCTAssertEqual(custom.dictationShortcut, "Ctrl+Alt+R")
+        XCTAssertEqual(custom.rewriteShortcut, "Ctrl+Alt+F8")
+
+        obj["rewrite_shortcut"] = "Ctrl+Alt+E"
+        obj["record_mode"] = "toggle"
+        let toggle = try MacSettings.decodeStrict(JSONSerialization.data(withJSONObject: obj))
+        XCTAssertEqual(toggle.dictationShortcut, "Ctrl+Alt+R")
+        XCTAssertEqual(toggle.rewriteShortcut, "Ctrl+Alt+E")
     }
 
     func testMeetingProfileRejectsExcessUnicodeScalars() throws {

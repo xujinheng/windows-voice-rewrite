@@ -10,8 +10,26 @@ struct ShortcutBinding {
     var shift: Bool
 
     init?(canonical: String) {
+        // Dedicated macOS flagsChanged bindings; they are not Carbon hotkeys.
+        let trimmed = canonical.trimmingCharacters(in: .whitespacesAndNewlines)
+        let modifier: RightModifierKey?
+        switch trimmed.lowercased() {
+        case "rightctrl", "rightcontrol": modifier = .control
+        case "rightoption", "rightalt": modifier = .option
+        default: modifier = nil
+        }
+        if let modifier {
+            normalized = modifier.rawValue
+            key = modifier.rawValue
+            mouse = false
+            ctrl = false
+            alt = false
+            shift = false
+            return
+        }
         let parts = canonical.split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }
-        guard let last = parts.last, !last.isEmpty else { return nil }
+        guard let last = parts.last, !last.isEmpty,
+              !["rightctrl", "rightcontrol", "rightoption", "rightalt"].contains(last.lowercased()) else { return nil }
         var ctrl = false
         var alt = false
         var shift = false
@@ -55,19 +73,25 @@ struct MacShortcutPlan: Equatable {
     let dictation: HotKeyShortcut?
     let rewrite: HotKeyShortcut?
     let exit: HotKeyShortcut?
+    let modifierDictation: RightModifierKey?
+    let modifierRewrite: RightModifierKey?
     let recordMode: String
     let sideButtons: SideMouseBindings
 
     init?(dictation: ShortcutBinding, rewrite: ShortcutBinding,
           exit: ShortcutBinding? = nil, recordMode: String = "hold") {
+        let modifierDictation = RightModifierKey(rawValue: dictation.key)
+        let modifierRewrite = RightModifierKey(rawValue: rewrite.key)
         guard recordMode == "hold" || recordMode == "toggle",
-              recordMode != "toggle" || (!dictation.mouse && !rewrite.mouse) else { return nil }
-        let dictationKey = dictation.mouse ? nil : MacShortcut.hotKey(
+              recordMode != "toggle" || (!dictation.mouse && !rewrite.mouse &&
+                                         modifierDictation == nil && modifierRewrite == nil),
+              modifierDictation == nil || modifierDictation != modifierRewrite else { return nil }
+        let dictationKey = (dictation.mouse || modifierDictation != nil) ? nil : MacShortcut.hotKey(
             key: dictation.key, ctrl: dictation.ctrl, alt: dictation.alt, shift: dictation.shift)
-        let rewriteKey = rewrite.mouse ? nil : MacShortcut.hotKey(
+        let rewriteKey = (rewrite.mouse || modifierRewrite != nil) ? nil : MacShortcut.hotKey(
             key: rewrite.key, ctrl: rewrite.ctrl, alt: rewrite.alt, shift: rewrite.shift)
-        guard (dictation.mouse || dictationKey != nil),
-              (rewrite.mouse || rewriteKey != nil) else { return nil }
+        guard (dictation.mouse || dictationKey != nil || modifierDictation != nil),
+              (rewrite.mouse || rewriteKey != nil || modifierRewrite != nil) else { return nil }
         let exitKey = exit.flatMap { binding in
             binding.mouse ? nil : MacShortcut.hotKey(key: binding.key, ctrl: binding.ctrl,
                                                      alt: binding.alt, shift: binding.shift)
@@ -94,6 +118,8 @@ struct MacShortcutPlan: Equatable {
         self.dictation = dictationKey
         self.rewrite = rewriteKey
         self.exit = exitKey
+        self.modifierDictation = modifierDictation
+        self.modifierRewrite = modifierRewrite
         self.recordMode = recordMode
         self.sideButtons = mouse
     }
@@ -131,7 +157,11 @@ enum MacShortcut {
     }
 
     static func display(_ canonical: String) -> String {
-        canonical.replacingOccurrences(of: "Alt", with: "Option")
+        switch canonical {
+        case "RightCtrl": return "右 Control（长按）"
+        case "RightOption": return "右 Option（长按）"
+        default: return canonical.replacingOccurrences(of: "Alt", with: "Option")
+        }
     }
 
     private static let functionKeyCodes: Set<UInt32> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90]

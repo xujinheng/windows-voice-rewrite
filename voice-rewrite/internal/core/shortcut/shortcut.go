@@ -24,8 +24,8 @@ const (
 
 // macOS settings defaults. Windows defaults stay Mouse4, Mouse5, and Ctrl+Alt+F10.
 const (
-	MacDictationShortcut = "Ctrl+Alt+R"
-	MacRewriteShortcut   = "Ctrl+Alt+E"
+	MacDictationShortcut = "RightCtrl"
+	MacRewriteShortcut   = "RightOption"
 )
 
 const (
@@ -176,6 +176,10 @@ func Parse(raw string) (string, uint32, uint32, bool, error) {
 		return "Mouse5", 0, 0, true, nil
 	case "pause", "break":
 		return "Pause", noRepeat, 0x13, false, nil
+	case "rightctrl", "rightcontrol":
+		return "RightCtrl", noRepeat, 0, false, nil // macOS flagsChanged, never RegisterHotKey
+	case "rightoption", "rightalt":
+		return "RightOption", noRepeat, 0, false, nil
 	}
 	parts := strings.Split(key, "+")
 	if len(parts) == 0 {
@@ -229,6 +233,9 @@ func validate(candidate, other, exit, label string) (string, error) {
 	normalized, _, vk, mouse, err := Parse(candidate)
 	if err != nil {
 		return "", err
+	}
+	if !mouse && vk == 0 {
+		return "", errors.New(KeyRejectedMessage) // bare modifiers are only usable by the macOS native listener
 	}
 	if !mouse && vk == 0x13 {
 		return "", errors.New(PauseReleaseMessage)
@@ -377,7 +384,7 @@ func ValidateStartup(mode, dictation, rewrite, exit string) (Startup, error) {
 	out.RewriteButton = rewriteButton
 	if !dictationMouse {
 		_, mods, vk, _, err := Parse(dictation)
-		if err != nil || vk == pauseVK {
+		if err != nil || vk == 0 || vk == pauseVK {
 			return Startup{}, errors.New(DictationInvalidMessage)
 		}
 		out.DictationMods, out.DictationVK = mods, vk
@@ -397,6 +404,9 @@ func ValidateStartup(mode, dictation, rewrite, exit string) (Startup, error) {
 		if err != nil {
 			return Startup{}, err
 		}
+		if vk == 0 {
+			return Startup{}, errors.New(KeyRejectedMessage)
+		}
 		out.RewriteMods, out.RewriteVK = mods, vk
 	}
 	_, exitMods, exitVK, exitMouse, err := Parse(exit)
@@ -405,6 +415,9 @@ func ValidateStartup(mode, dictation, rewrite, exit string) (Startup, error) {
 	}
 	if exitMouse {
 		return Startup{}, fmt.Errorf(MouseExitPrefix+"%q must use the mouse hook", exit)
+	}
+	if exitVK == 0 {
+		return Startup{}, errors.New(KeyRejectedMessage)
 	}
 	out.ExitMods, out.ExitVK = exitMods, exitVK
 	sameRewriteExit := !rewriteMouse && out.RewriteMods == exitMods && out.RewriteVK == exitVK
