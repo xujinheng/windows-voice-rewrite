@@ -37,6 +37,9 @@ public final class MicrophoneRecorder {
 
     private var state: State = .idle
     private var recordingID: UUID?
+    // Cancellation must not overlap a new native engine start with an
+    // abandoned start still returning from the CoreAudio lifecycle queue.
+    private var preparationInFlight = false
     private var recordingDeviceUID = ""
     private var engine: AVAudioEngine?
     private var pipeline: CapturePipeline?
@@ -153,7 +156,9 @@ public final class MicrophoneRecorder {
     }
 
     public func start(deviceUID: String = "", maximumSeconds: Int = 60) async throws {
-        guard case .idle = state else { throw MicrophoneError.alreadyRecording }
+        guard case .idle = state, !preparationInFlight else {
+            throw MicrophoneError.alreadyRecording
+        }
         // Host configuration owns the requested limit; native PCM bounds
         // still protect against unexpectedly large inputs.
         let duration = min(max(1, maximumSeconds), PCM16Buffer.maximumSeconds)
@@ -168,6 +173,7 @@ public final class MicrophoneRecorder {
             case .denied, .notDetermined: throw MicrophoneError.permissionDenied
             case .restricted: throw MicrophoneError.permissionRestricted
             }
+            preparationInFlight = true
             // AVAudioEngine inputNode, AudioUnitSetProperty, installTap and
             // start() can synchronously wait on a missing/reconfiguring driver.
             // They must not run on the key/indicator AppKit event loop.
@@ -188,9 +194,12 @@ public final class MicrophoneRecorder {
             }
             let (instance, processor) = prepared
             guard recordingID == attempt else {
+                // The cleanup must be queued *before* admitting a fresh start.
                 Self.cleanupEngineAsync(instance, hasTap: true)
+                preparationInFlight = false
                 throw MicrophoneError.cancelled
             }
+            preparationInFlight = false
             engine = instance
             hasTap = true
             pipeline = processor
@@ -217,6 +226,7 @@ public final class MicrophoneRecorder {
                 self?.handleFailure(id: id, error: .durationExceeded)
             }
         } catch {
+            preparationInFlight = false
             if recordingID == attempt {
                 teardownEngine()
                 pipeline?.cancel()
