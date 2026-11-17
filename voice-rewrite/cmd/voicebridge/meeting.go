@@ -556,7 +556,7 @@ func (m *bridgeMeeting) snapshot() map[string]any {
 		"captions_only": m.view.CaptionsOnly, "expression_expanded": m.view.ExpressionExpanded,
 		"expression": m.expression.English, "expression_chinese": m.expression.Chinese,
 		"expression_source": m.expressionSource, "expression_status": m.expressionStatus,
-		"session_id":        m.id, "status": m.status,
+		"session_id": m.id, "status": m.status,
 		"level": m.level, "captions": captions,
 		"history_trimmed": m.historyTrimmed,
 	}
