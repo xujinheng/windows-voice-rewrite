@@ -2,7 +2,7 @@ run_id,platform,cpu,os_version,mouse_model,driver_version,app_version,installer_
 ,windows,,,,,,,,TextEdit-equivalent,,Mouse4 dictation and Mouse5 rewrite,not_run,,
 ,windows,,,,,,,,Chrome,,Address bar and contenteditable Unicode insertion,not_run,,
 ,windows,,,,,,,,Zoom/Teams,,Meeting process loopback audio and permissions,not_run,,
-,macos-arm64,,,,,,,,TextEdit,,Accessibility grant revoke and 280ms Mouse4 hold,not_run,,
+,macos-arm64,,,,,,,,TextEdit,,Accessibility grant revoke and 250ms Mouse4 hold,not_run,,
 ,macos-arm64,,,,,,,,Chrome/Safari/Edge,,Address bar and contenteditable AX selection,not_run,,
 ,macos-arm64,,,,,,,,Electron/VS Code,,Focus switch clipboard restoration and cancellation,not_run,,
 ,macos-arm64,,,,,,,,Zoom/Teams,,Application/system audio including exclude-self,not_run,,
