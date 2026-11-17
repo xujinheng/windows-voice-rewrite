@@ -2087,6 +2087,8 @@ final class WorkspaceModel: ObservableObject {
                   (self.isProcessing || self.isStarting) else { return }
             DiagnosticLog.note("stage=voice_\(stage) status=timeout")
             self.processingWatchdog = nil
+            self.keyboardGate.clear()
+            self.keyboardHoldSequence &+= 1
             self.invalidatePending()
             self.microphone.cancel()
             self.isRecording = false
