@@ -102,11 +102,14 @@ public final class ClipboardProtector: @unchecked Sendable {
             return (true, (board as? any ClipboardReadReceiptBoard)?.lastTextReadAt())
         }
         guard status.0 else { return }
-        if (status.1 != nil && now - status.1! >= 0.2) || now - started >= 8.0 {
+        let quiet = Double(PasteTiming.quietMilliseconds) / 1000
+        let timeout = Double(PasteTiming.maxMilliseconds) / 1000
+        if (status.1 != nil && now - status.1! >= quiet) || now - started >= timeout {
             try? finish(id)
             return
         }
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.1) { [self] in
+        DispatchQueue.global(qos: .utility).asyncAfter(
+            deadline: .now() + Double(PasteTiming.pollMilliseconds) / 1000) { [self] in
             pollRestore(id, started: started)
         }
     }
