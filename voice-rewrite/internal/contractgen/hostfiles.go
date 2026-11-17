@@ -319,7 +319,10 @@ func emitLimits(moduleRoot string) (string, error) {
 	} {
 		b.WriteString("    public static let " + item.name + " = " + strconv.Quote(item.value) + "\n")
 	}
-	for _, item := range []struct{ name string; value int }{
+	for _, item := range []struct {
+		name  string
+		value int
+	}{
 		{"defaultMaxResponseTokens", coreconfig.Defaults().MaxResponseTokens},
 		{"defaultMaxSelectedRunes", coreconfig.Defaults().MaxSelectedRunes},
 		{"defaultCopyAttempts", coreconfig.Defaults().SelectionCopyAttempts},
@@ -611,20 +614,20 @@ func numberValue(expr ast.Expr, numbers map[string]string) string {
 
 func settingsMaps() (bindings, actions, status map[string]string) {
 	bindings = map[string]string{
-		"asr_base_url":       "model.settings.asrBaseURL",
-		"asr_model":          "model.settings.asrModel",
-		"asr_api_key":        "model.asrKeyInput",
-		"llm_base_url":       "model.settings.llmBaseURL",
-		"text_model":         "model.settings.textModel",
-		"llm_api_key":        "model.llmKeyInput",
-		"max_record_seconds": "model.settings.maxRecordSeconds",
-		"microphone":         "model.settings.microphoneUID",
-		"rewrite_shortcut":   "model.settings.rewriteShortcut",
-		"dictation_shortcut": "model.settings.dictationShortcut",
-		"exit_shortcut":      "model.settings.exitShortcut",
-		"record_mode":        "model.settings.recordMode",
-		"system_prompt":      "model.settings.systemPrompt",
-		"max_response_tokens": "model.settings.maxResponseTokens",
+		"asr_base_url":            "model.settings.asrBaseURL",
+		"asr_model":               "model.settings.asrModel",
+		"asr_api_key":             "model.asrKeyInput",
+		"llm_base_url":            "model.settings.llmBaseURL",
+		"text_model":              "model.settings.textModel",
+		"llm_api_key":             "model.llmKeyInput",
+		"max_record_seconds":      "model.settings.maxRecordSeconds",
+		"microphone":              "model.settings.microphoneUID",
+		"rewrite_shortcut":        "model.settings.rewriteShortcut",
+		"dictation_shortcut":      "model.settings.dictationShortcut",
+		"exit_shortcut":           "model.settings.exitShortcut",
+		"record_mode":             "model.settings.recordMode",
+		"system_prompt":           "model.settings.systemPrompt",
+		"max_response_tokens":     "model.settings.maxResponseTokens",
 		"max_selected_characters": "model.settings.maxSelectedRunes",
 	}
 	actions = map[string]string{
