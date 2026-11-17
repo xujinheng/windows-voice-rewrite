@@ -235,7 +235,11 @@ public final class RightModifierHoldDriver {
         }
         let otherKeys: CGEventFlags = [.maskCommand, .maskShift, .maskControl, .maskAlternate]
         let expected: CGEventFlags = key == .control ? .maskControl : .maskAlternate
-        // The aggregate CG flags do not distinguish left/right of the same\n        // modifier. Also reject a concurrently held left-side counterpart.\n        let leftEquivalent: CGKeyCode = key == .control ? 59 : 58\n        let alone = flags.intersection(otherKeys) == expected &&\n            !CGEventSource.keyState(.combinedSessionState, key: leftEquivalent)
+        // The aggregate CG flags do not distinguish left/right of the same
+        // modifier. Also reject a concurrently held left-side counterpart.
+        let leftEquivalent: CGKeyCode = key == .control ? 59 : 58
+        let alone = flags.intersection(otherKeys) == expected &&
+            !CGEventSource.keyState(.combinedSessionState, key: leftEquivalent)
         if let token = state.press(key, unmodified: alone) {
             let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
             DispatchQueue.main.asyncAfter(deadline: .now() + threshold) { [weak self] in
