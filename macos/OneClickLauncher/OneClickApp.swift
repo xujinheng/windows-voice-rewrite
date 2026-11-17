@@ -21,12 +21,12 @@ struct OneClickConfiguration {
     func validate() throws {
         let fs = FileManager.default
         if !attachToExisting {
-        guard fs.isExecutableFile(atPath: llamaServer) else {
-            throw LauncherError.message("请选择可执行的 llama-server 文件（macOS 对应架构）。")
-        }
-        guard fs.isReadableFile(atPath: model), fs.isReadableFile(atPath: audioEncoder) else {
-            throw LauncherError.message("模型 GGUF 或音频编码器 mmproj 不存在或不可读。")
-        }
+            guard fs.isExecutableFile(atPath: llamaServer) else {
+                throw LauncherError.message("请选择可执行的 llama-server 文件（macOS 对应架构）。")
+            }
+            guard fs.isReadableFile(atPath: model), fs.isReadableFile(atPath: audioEncoder) else {
+                throw LauncherError.message("模型 GGUF 或音频编码器 mmproj 不存在或不可读。")
+            }
         }
         guard (1...65535).contains(publicPort), (1...65535).contains(backendPort),
               publicPort != backendPort else {
