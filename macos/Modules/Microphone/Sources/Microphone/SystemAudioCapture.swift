@@ -51,6 +51,7 @@ public final class SystemAudioCapture {
     private var stream: SCStream?
     private var receiver: SystemAudioReceiver?
     private var startGate = SystemAudioStartGate()
+    private var pendingStop: Task<Void, Never>?
 
     public init() {}
 
@@ -90,6 +91,10 @@ public final class SystemAudioCapture {
             throw SystemAudioError.alreadyRunning
         }
         defer { startGate.finish(token) }
+        // Never restart ScreenCaptureKit before the preceding native stream has
+        // finished tearing down. A canceled discovery still checks its token.
+        await pendingStop?.value
+        guard startGate.accepts(token) else { throw SystemAudioError.startCanceled }
         let content = try await SCShareableContent.excludingDesktopWindows(
             false, onScreenWindowsOnly: false)
         // The first suspension is above: stop() must cancel source discovery too.
@@ -146,19 +151,39 @@ public final class SystemAudioCapture {
         guard startGate.accepts(token), self.stream === created else {
             receiver.invalidate()
             try? await created.stopCapture()
+            try? created.removeStreamOutput(receiver, type: .audio)
             throw SystemAudioError.startCanceled
         }
     }
 
-    public func stop() async {
-        // Invalidate before the first await, including when start() is still
-        // awaiting SCShareableContent and no SCStream exists yet.
+    /// Immediately fence callbacks and in-flight discovery. Unlike scheduling
+    /// an async stop from the UI, this cannot run after a newer meeting starts.
+    public func cancel() {
         startGate.invalidate()
-        guard let stream else { return }
         receiver?.invalidate()
-        self.stream = nil
-        self.receiver = nil
-        try? await stream.stopCapture()
+        let oldStream = stream
+        let oldReceiver = receiver
+        stream = nil
+        receiver = nil
+        guard let oldStream else { return }
+        let previousStop = pendingStop
+        pendingStop = Task {
+            await previousStop?.value
+            try? await oldStream.stopCapture()
+            if let oldReceiver {
+                try? oldStream.removeStreamOutput(oldReceiver, type: .audio)
+            }
+        }
+    }
+
+    /// Native teardown can be awaited when ordering is important (pause).
+    public func stop() async {
+        cancel()
+        await pendingStop?.value
+    }
+
+    public func waitForStop() async {
+        await pendingStop?.value
     }
 }
 
