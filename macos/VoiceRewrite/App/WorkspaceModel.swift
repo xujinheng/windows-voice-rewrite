@@ -120,6 +120,12 @@ final class WorkspaceModel: ObservableObject {
     private let recordingIndicator = RecordingIndicatorController()
     private var indicatorSnapshot = IndicatorSnapshot()
     private var sideGate = SideVoiceGate()
+    private var keyboardGate = KeyboardHoldGate()
+    private var keyboardHoldSequence: UInt64 = 0
+    /// Keyboard defaults to Windows' hold-and-release operation. Toggle mode
+    /// remains available as a native preference for a future Settings control.
+    @Published private(set) var keyboardHoldEnabled =
+        UserDefaults.standard.object(forKey: "VoiceRewriteKeyboardHold") as? Bool ?? true
     private struct SideDictationPreflight {
         let generation: UInt64
         let targetPID: Int32?
@@ -405,22 +411,21 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func createHotKeyRegistry(plan: MacShortcutPlan) throws -> (CarbonHotKeyDriver, HotKeyRegistry) {
-        let driver = CarbonHotKeyDriver { [weak self] shortcut, pid in
+        let driver = CarbonHotKeyDriver(onPressed: { [weak self] shortcut, pid in
             guard let self, let bound = self.activeShortcutPlan else { return }
             if shortcut == bound.dictation {
-                if self.meetingActive {
-                    self.toggleMeetingVoice(intent: .express)
-                } else {
-                    self.toggleRecording(from: pid)
-                }
+                self.keyboardPressed(.dictation, targetPID: pid)
             } else if shortcut == bound.rewrite {
-                if self.meetingActive {
-                    self.toggleMeetingVoice(intent: .compose)
-                } else {
-                    self.triggerSelectionRewrite(from: pid)
-                }
+                self.keyboardPressed(.rewrite, targetPID: pid)
             }
-        }
+        }, onReleased: { [weak self] shortcut in
+            guard let self, let bound = self.activeShortcutPlan else { return }
+            if shortcut == bound.dictation {
+                self.keyboardReleased(.dictation)
+            } else if shortcut == bound.rewrite {
+                self.keyboardReleased(.rewrite)
+            }
+        })
         let registry = HotKeyRegistry(driver: driver)
         do {
             for shortcut in plan.keyboard { try registry.register(shortcut) }
@@ -430,6 +435,92 @@ final class WorkspaceModel: ObservableObject {
             throw error
         }
         return (driver, registry)
+    }
+
+    /// Keyboard hold is the default; changing to Toggle persists independently
+    /// of native OS hotkey registration. Settings UI owns how this is presented.
+    func setKeyboardHoldEnabled(_ enabled: Bool) {
+        guard keyboardHoldEnabled != enabled else { return }
+        keyboardGate.clear()
+        keyboardHoldSequence &+= 1
+        keyboardHoldEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: "VoiceRewriteKeyboardHold")
+    }
+
+    private func keyboardPressed(_ action: SideMouseAction, targetPID: Int32?) {
+        if !keyboardHoldEnabled {
+            if meetingActive {
+                toggleMeetingVoice(intent: action == .dictation ? .express : .compose)
+            } else if action == .dictation {
+                toggleRecording(from: targetPID)
+            } else {
+                triggerSelectionRewrite(from: targetPID)
+            }
+            return
+        }
+        guard !voicePaused, !meetingStarting,
+              !isRecording, !isStarting, !isProcessing,
+              !meetingVoiceStarting, !meetingVoiceRecording,
+              !meetingBusy, !meetingCancelPending,
+              sideDictationPreflight == nil, sideGate.active == nil,
+              keyboardGate.begin(action) else { return }
+        if meetingActive {
+            toggleMeetingVoice(intent: action == .dictation ? .express : .compose)
+        } else if action == .dictation {
+            startRecording(targetPID: targetPID)
+        } else {
+            triggerSelectionRewrite(from: targetPID)
+        }
+        keyboardHoldSequence &+= 1
+        let sequence = keyboardHoldSequence
+        let maximumSeconds = settings.maxRecordSeconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(maximumSeconds + 2)) { [weak self] in
+            guard let self, self.keyboardHoldSequence == sequence,
+                  self.keyboardGate.action == action else { return }
+            self.keyboardGate.clear()
+            self.keyboardHoldSequence &+= 1
+            self.interactionStatus = "未收到录音快捷键松开事件，已结束本次录音"
+            if self.meetingActive {
+                if self.meetingVoiceRecording { self.toggleMeetingVoice() }
+                else if self.meetingVoiceStarting { self.cancelMeetingVoiceStart() }
+            } else if self.isRecording {
+                self.stopRecording()
+            } else if self.isStarting {
+                self.cancelCurrent()
+            }
+        }
+    }
+
+    private func keyboardReleased(_ action: SideMouseAction) {
+        guard keyboardHoldEnabled else { return }
+        let starting = meetingActive ? meetingVoiceStarting : isStarting
+        let recording = meetingActive ? meetingVoiceRecording : isRecording
+        let effect = keyboardGate.release(action, starting: starting, recording: recording)
+        if effect == .stop {
+            keyboardHoldSequence &+= 1
+            if meetingActive { toggleMeetingVoice() }
+            else { stopRecording() }
+        } else if effect == .clear {
+            keyboardHoldSequence &+= 1
+        }
+    }
+
+    private func finishKeyboardStart(_ action: SideMouseAction) {
+        let effect = keyboardGate.finishStart(action, recording: meetingActive ? meetingVoiceRecording : isRecording)
+        if effect == .stop {
+            keyboardHoldSequence &+= 1
+            if meetingActive { toggleMeetingVoice() }
+            else { stopRecording() }
+        } else if effect == .clear {
+            keyboardHoldSequence &+= 1
+        }
+    }
+
+    private func cancelMeetingVoiceStart() {
+        _ = meetingVoiceGeneration.begin()
+        microphone.cancel()
+        meetingVoiceStarting = false
+        meetingVoiceRecording = false
     }
 
     func refreshSideMouse() {
@@ -463,6 +554,9 @@ final class WorkspaceModel: ObservableObject {
             onObservedButton: { [weak self] button in
                 let action = self?.activeShortcutPlan?.sideButtons.action(for: button) ?? SideMouseBindings().action(for: button)
                 self?.sideMouseStatus = sideMouseObserved(button: button, action: action)
+            },
+            onFault: { [weak self] failure in
+                self?.sideMouseStatus = sideMouseListenFailed(failure.localizedDescription)
             }
         )
         do {
@@ -1058,6 +1152,8 @@ final class WorkspaceModel: ObservableObject {
                 if self.meetingSideReleasedDuringStart {
                     self.meetingSideReleasedDuringStart = false
                     self.toggleMeetingVoice()
+                } else {
+                    self.finishKeyboardStart(intent == .express ? .dictation : .rewrite)
                 }
             } catch {
                 if self.meetingGeneration.accepts(token),
@@ -1072,6 +1168,7 @@ final class WorkspaceModel: ObservableObject {
                     self.meetingSideReleasedDuringStart = false
                 }
                 self.meetingVoiceStarting = false
+                self.finishKeyboardStart(intent == .express ? .dictation : .rewrite)
                 self.refreshMicrophonePermission()
             }
         }
@@ -1205,6 +1302,8 @@ final class WorkspaceModel: ObservableObject {
         meetingCaptureSourceID = ""
         meetingSideAction = nil
         meetingSideReleasedDuringStart = false
+        keyboardGate.clear()
+        keyboardHoldSequence &+= 1
         _ = meetingGeneration.begin()
         _ = meetingActionGeneration.begin()
         _ = meetingVoiceGeneration.begin()
@@ -1529,6 +1628,7 @@ final class WorkspaceModel: ObservableObject {
                 presentSelectionCue(captured)
                 if captured.leave {
                     isStarting = false
+                    finishKeyboardStart(.rewrite)
                     return
                 }
                 if captured.startMicrophone {
@@ -1547,6 +1647,7 @@ final class WorkspaceModel: ObservableObject {
                     presentSelectionCue(ready)
                     if ready.leave {
                         isStarting = false
+                        finishKeyboardStart(.rewrite)
                         return
                     }
                 }
@@ -1559,6 +1660,7 @@ final class WorkspaceModel: ObservableObject {
             }
             isStarting = false
             stopWhenSideMouseReleased(.rewrite)
+            finishKeyboardStart(.rewrite)
         }
     }
 
@@ -1588,7 +1690,11 @@ final class WorkspaceModel: ObservableObject {
             if arm.keepInsert, let snapshot {
                 activeInsert = snapshot
             }
-            guard arm.startMicrophone else { return }
+            guard arm.startMicrophone else {
+                isStarting = false
+                finishKeyboardStart(.dictation)
+                return
+            }
             do {
                 try await microphone.start(deviceUID: settings.microphoneUID,
                                                maximumSeconds: settings.maxRecordSeconds)
@@ -1601,20 +1707,25 @@ final class WorkspaceModel: ObservableObject {
                 showIndicator(phase: .recording, mode: "听写", pending: false)
                 if let status = ready.recordingStatus { recordingStatus = status }
             } catch {
+                guard resultGeneration.accepts(token) else { return }
                 let ready = dictationMicrophoneReady(started: false, tokenValid: true, failure: error.localizedDescription)
                 if let status = ready.recordingStatus { recordingStatus = status }
                 if ready.showError {
                     showIndicator(phase: .error, mode: "听写", pending: false)
                 }
             }
+            guard resultGeneration.accepts(token) else { return }
             isStarting = false
             stopWhenSideMouseReleased(.dictation)
+            finishKeyboardStart(.dictation)
         }
     }
 
     func stopRecording() {
         guard isRecording else { return }
         sideGate.clear()
+        keyboardGate.clear()
+        keyboardHoldSequence &+= 1
         isRecording = false
         isProcessing = true
         showIndicator(phase: .processing, mode: indicatorSnapshot.mode, pending: false)
@@ -1939,6 +2050,8 @@ final class WorkspaceModel: ObservableObject {
 
     func cancelCurrent() {
         dismissIndicator()
+        keyboardGate.clear()
+        keyboardHoldSequence &+= 1
         sideDictationPreflight = nil
         invalidatePending()
         microphone.cancel()
