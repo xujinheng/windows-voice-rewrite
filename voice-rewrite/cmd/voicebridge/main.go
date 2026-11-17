@@ -261,7 +261,6 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	go s.runTask(ctx, task, req)
 }
 
-
 func (s *bridgeServer) meetingRequest(req request) response {
 	switch req.Op {
 	case "meeting_start":
