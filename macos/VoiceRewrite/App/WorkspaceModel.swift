@@ -88,6 +88,7 @@ final class WorkspaceModel: ObservableObject {
     @Published private(set) var meetingReplyTip = ""
     @Published private(set) var meetingExpression = ""
     @Published private(set) var meetingExpressionChinese = ""
+    @Published private(set) var meetingExpressionSource = ""
     @Published private(set) var meetingExpressionStatus = ""
     @Published private(set) var meetingCopyStatus = ""
     @Published private(set) var meetingBusy = false
@@ -741,6 +742,7 @@ final class WorkspaceModel: ObservableObject {
         meetingReplySource = ""
         meetingExpression = ""
         meetingExpressionChinese = ""
+        meetingExpressionSource = ""
         meetingExpressionStatus = ""
         meetingCopyStatus = ""
         meetingSelectedIndex = 0
@@ -855,6 +857,7 @@ final class WorkspaceModel: ObservableObject {
         if let status = values["expression_status"]?.string { meetingExpressionStatus = status }
         if let value = values["expression"]?.string { meetingExpression = value }
         if let value = values["expression_chinese"]?.string { meetingExpressionChinese = value }
+        if let source = values["expression_source"]?.string { meetingExpressionSource = source }
         if let source = values["reply_source"]?.string { meetingReplySource = source }
         if let tip = values["reply_tip"]?.string { meetingReplyTip = tip }
         meetingReplyPending = values["reply_pending"]?.boolValue == true
