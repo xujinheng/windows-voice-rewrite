@@ -26,13 +26,12 @@ struct ResultCardApply {
 }
 
 @MainActor
-final class ResultCardActionSession {
+final class ResultCardActionSession: ObservableObject {
     let text: String
     let apply: ResultCardApply?
-    private(set) var note = ""
-    private(set) var isApplying = false
+    @Published private(set) var note = ""
+    @Published private(set) var isApplying = false
     private(set) var isClosed = false
-    var onChange: (() -> Void)?
 
     init(text: String, apply: ResultCardApply? = nil) {
         self.text = text
@@ -42,23 +41,17 @@ final class ResultCardActionSession {
     func copyCompleted(_ copied: Bool) {
         guard !isClosed else { return }
         note = copied ? ResultCopy.copySucceeded : ResultCopy.copyFailed
-        onChange?()
     }
 
     func close() {
         isClosed = true
-        onChange = nil
     }
 
     func applyIfAuthorized() async {
         guard !isClosed, !isApplying, let apply else { return }
         isApplying = true
         note = "正在核验原选区并应用…"
-        onChange?()
-        defer {
-            isApplying = false
-            if !isClosed { onChange?() }
-        }
+        defer { isApplying = false }
 
         let permission = await apply.revalidate()
         guard !isClosed else { return }
@@ -87,7 +80,6 @@ final class ResultCardActionSession {
                 note = "无法安全替换，请使用复制结果"
             }
         }
-        onChange?()
     }
 }
 
@@ -107,15 +99,10 @@ final class ResultCardPanel {
         guard !trimmed.isEmpty else { return }
         dismiss()
         self.title = title
-        let next = ResultCardActionSession(text: trimmed, apply: apply)
-        next.onChange = { [weak self, weak next] in
-            guard let self, let next, self.session === next else { return }
-            self.render()
-        }
-        session = next
+        session = ResultCardActionSession(text: trimmed, apply: apply)
         ensurePanel()
         guard let panel else { return }
-        render()
+        show(on: panel)
         place(panel, height: ResultCardMetrics.height(unicodeScalars: trimmed.unicodeScalars.count))
         panel.orderFrontRegardless()
         installMonitors()
@@ -142,12 +129,11 @@ final class ResultCardPanel {
         Task { @MainActor in await session.applyIfAuthorized() }
     }
 
-    private func render() {
-        guard let panel, let session else { return }
+    private func show(on panel: NSPanel) {
+        guard let session else { return }
         let height = ResultCardMetrics.height(unicodeScalars: session.text.unicodeScalars.count)
         panel.contentView = NSHostingView(rootView: ResultCardView(
-            title: title, text: session.text, note: session.note, canApply: session.apply != nil,
-            isApplying: session.isApplying, width: ResultCardMetrics.width, height: height,
+            title: title, session: session, width: ResultCardMetrics.width, height: height,
             onCopy: { [weak self] in self?.copy() },
             onApply: { [weak self] in self?.apply() },
             onClose: { [weak self] in self?.dismiss() }))
@@ -260,13 +246,10 @@ private struct ResultCardPalette {
     }
 }
 
-private struct ResultCardView: View {
+struct ResultCardView: View {
     @Environment(\.colorScheme) private var colorScheme
     let title: String
-    let text: String
-    let note: String
-    let canApply: Bool
-    let isApplying: Bool
+    @ObservedObject var session: ResultCardActionSession
     let width: CGFloat
     let height: CGFloat
     let onCopy: () -> Void
@@ -275,6 +258,8 @@ private struct ResultCardView: View {
 
     var body: some View {
         let palette = ResultCardPalette(dark: colorScheme == .dark)
+        let note = session.note
+        let canApply = session.apply != nil
         let editor = ResultCardChrome.editor(width: Int32(width), height: Int32(height))
         let close = ResultCardChrome.closeButton(width: Int32(width))
         let copy = ResultCardChrome.copyButton(width: Int32(width), height: Int32(height))
@@ -307,7 +292,7 @@ private struct ResultCardView: View {
                     .accessibilityIdentifier("result-card-note")
             }
             ScrollView {
-                Text(text)
+                Text(session.text)
                     .font(.system(size: 15))
                     .textSelection(.enabled)
                     .foregroundStyle(palette.text)
@@ -327,7 +312,7 @@ private struct ResultCardView: View {
                         .foregroundStyle(palette.accentText)
                 }
                 .buttonStyle(.plain)
-                .disabled(isApplying)
+                .disabled(session.isApplying)
                 .position(x: CGFloat(copy.x - 124 + 58),
                           y: CGFloat(copy.y) + CGFloat(copy.h) / 2)
                 .accessibilityIdentifier("result-card-apply")
