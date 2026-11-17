@@ -22,6 +22,14 @@ public enum InteractionFailure: Error, Equatable, Sendable {
     case systemError(Int32)
 }
 
+/// A focused editor may lack text-change AX notifications, but an observed
+/// app focus plus a readable complete value permits final snapshot validation.
+/// Unreadable controls must keep notification monitoring or fall back to copy.
+public func canMonitorSelection(focusNotifications: Bool, textNotifications: Bool,
+                                unsupportedTextNotifications: Bool, fullValue: String?) -> Bool {
+    focusNotifications && (textNotifications || (unsupportedTextNotifications && fullValue != nil))
+}
+
 public struct TextRange: Equatable, Sendable {
     public let location: Int
     public let length: Int
@@ -56,10 +64,14 @@ public struct SelectionObservation: Sendable {
     public let isSecure: Bool
     /// Incremented by the native monitoring backend on AX focus/selection/value changes or app activation.
     public let revision: UInt64
+    /// Complete AX text value, when exposed by the control. Required if the
+    /// control does not support selection/value change notifications.
+    public let fullValue: String?
 
     public init(processID: Int32, identity: any FocusIdentity,
                 identityDescription: String, selectedText: String, range: TextRange,
-                isEditable: Bool, isSecure: Bool, revision: UInt64) {
+                isEditable: Bool, isSecure: Bool, revision: UInt64,
+                fullValue: String? = nil) {
         self.processID = processID
         self.identity = identity
         self.identityDescription = identityDescription
@@ -68,6 +80,7 @@ public struct SelectionObservation: Sendable {
         self.isEditable = isEditable
         self.isSecure = isSecure
         self.revision = revision
+        self.fullValue = fullValue
     }
 }
 
@@ -76,13 +89,13 @@ public struct SelectionObservation: Sendable {
 public protocol AccessibilityClient: Sendable {
     func captureMonitoredSelection() throws -> SelectionObservation
     func currentSelection() throws -> SelectionObservation
-    func writeSelectedText(_ text: String, expected: SelectionObservation) throws
+    func writeSelectedText(_ text: String, expected: SelectionObservation, intent: SelectionIntent) throws
     func stopMonitoring()
 }
 
-public enum SelectionIntent: Sendable {
+public enum SelectionIntent: Equatable, Sendable {
     case replaceSelection
-    case insertAtCaret
+    case dictation
 }
 
 /// Constructor intentionally internal: an LLM or caller cannot mint a valid snapshot.
@@ -167,10 +180,9 @@ public actor InteractionSession {
         switch intent {
         case .replaceSelection:
             guard reading.range.length > 0 else { throw InteractionFailure.invalidSelection }
-        case .insertAtCaret:
-            guard reading.range.length == 0, reading.selectedText.isEmpty else {
-                throw InteractionFailure.invalidSelection
-            }
+        case .dictation:
+            // Dictation inserts at the caret or replaces the existing selection.
+            break
         }
     }
 
@@ -205,7 +217,7 @@ public actor InteractionSession {
 
     public func insertIfCurrent(_ snapshot: SelectionSnapshot,
                                 text: String, generation token: UInt64) throws {
-        guard snapshot.intent == .insertAtCaret else { throw InteractionFailure.invalidSelection }
+        guard snapshot.intent == .dictation else { throw InteractionFailure.invalidSelection }
         try applyIfCurrent(snapshot, text: text, generation: token)
     }
 
@@ -226,11 +238,12 @@ public actor InteractionSession {
         }
         guard snapshot.evidence.revision == current.revision,
               snapshot.range == current.range,
-              snapshot.originalSelectedText == current.selectedText else {
+              snapshot.originalSelectedText == current.selectedText,
+              snapshot.evidence.fullValue == nil || snapshot.evidence.fullValue == current.fullValue else {
             throw InteractionFailure.selectionChanged
         }
         // No suspension point before native revalidation and either AX or guarded paste.
         // An unconfirmed paste is single-use and never retried automatically.
-        try client.writeSelectedText(text, expected: current)
+        try client.writeSelectedText(text, expected: current, intent: snapshot.intent)
     }
 }

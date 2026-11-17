@@ -14,6 +14,7 @@ final class ResultCopyTests: XCTestCase {
         XCTAssertEqual(ResultCopy.historyRestoreTitle("听写结果"), "听写结果 · 历史结果")
         XCTAssertEqual(ResultCopy.dictationNotInserted, "听写结果 · 未自动插入")
         XCTAssertEqual(ResultCopy.dictationCopyManually, "听写结果 · 请手动复制")
+        XCTAssertEqual(ResultCopy.dictationWriteUnconfirmed, "听写结果 · 请确认是否已输入")
         XCTAssertEqual(ResultCopy.copyAction, "复制结果")
         XCTAssertEqual(ResultCopy.applyAction, "应用到原文")
         XCTAssertEqual(ResultCopy.closeGlyph, "×")

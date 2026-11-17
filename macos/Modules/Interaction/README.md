@@ -19,7 +19,7 @@ let driver = CarbonHotKeyDriver { shortcut, foregroundPID in
         do {
             let generation = try await session.beginTask(targetProcessID: foregroundPID, timeout: 60)
             let target = try await session.captureSelection(
-                generation: generation, intent: .insertAtCaret)
+                generation: generation, intent: .dictation)
             // Perform ASR/LLM off of the UI/AX path; retain both target and generation.
             // let asrText = try await recognizeSpeech()
             // try await session.insertIfCurrent(target, text: asrText, generation: generation)
@@ -34,17 +34,19 @@ try hotkeys.register(.init(keyCode: 15, modifiers: [.command, .shift]))
 // On app exit: hotkeys.shutdown(); driver.shutdown(); await session.shutdown()
 ```
 
-**Replacement** is a different, explicit user action: only capture `intent: .replaceSelection` if the user invoked the replace-selection command, and call `replaceIfCurrent(snapshot,with:generation:)` only for that snapshot. Ordinary ASR insertion requires a zero-length caret selection; selected text cannot be replaced by the insertion route. No Go intent flag (including `may_attempt_replace`) is sufficient for native authorization.
+**Dictation** captures `intent: .dictation` and inserts at the caret or replaces the selection that was already highlighted when recording began. **Selected-text rewriting** is a separate, explicit action that captures `intent: .replaceSelection` and calls `replaceIfCurrent(snapshot,with:generation:)`. Model output (including `may_attempt_replace`) never authorizes an edit on its own.
 
-A `SelectionSnapshot` is a single-use capability bound to a generation, foreground PID, AX focus-element identity (compared with `CFEqual`), original selected text, UTF-16 selection range, and monotonic focus/value revision. All replacement and insertion requests revalidate this evidence synchronously before modifying the original application. An edit requires an explicit edit intent; ordinary dictation requires an empty caret selection. Password, protected, and secure-input fields are refused before text is read.
+A `SelectionSnapshot` is a single-use capability bound to a generation, foreground PID, AX focus-element identity (compared with `CFEqual`), original selected text, UTF-16 selection range, and monotonic focus/value revision. All replacement and insertion requests revalidate this evidence synchronously before modifying the original application. An edit requires the original user gesture; dictation can replace only the initially captured selection. Password, protected, and secure-input fields are refused before text is read.
 
 ### Cross-application insertion
 
-For a target that permits setting `AXSelectedText`, the client uses the native AX API. When this attribute is not writable, the macOS adapter can stage a plain-text paste, but **only** if the focused element exposes a complete readable `AXValue` and the original selection exactly matches the captured UTF-16 range. A focused app/element or selection change prevents issuing the paste. After rechecking that the original process and editable AX element remain frontmost, the synthetic Cmd+V events are posted through the active macOS session. The client compares the resulting full `AXValue` against the calculated replacement, not against a clipboard-read receipt. A timeout or failed confirmation reports an uncertain result and never automatically retries, because the target may already have received the paste.
+Ordinary dictation uses one guarded Cmd+V paste, at the captured caret or selected range. The current process, focused AX element, selected UTF-16 range, protected-field state, task generation, and any available original AXValue are revalidated before staging and posting. The temporary clipboard is restored on a background queue approximately one second after Cmd+V, only if VoiceRewrite still owns it. Sending the event returns immediately; this is best-effort delivery, not proof that the editor accepted it. The write is never retried automatically. When the editor does not expose AXValue, a supported AX text-change notification is required to authorize capture.
+
+Explicit selection rewriting retains its stronger contract: use native AX selected-text writing when supported; otherwise allow guarded paste only with a readable complete AXValue and exact UTF-16 baseline. Read back the complete value to confirm replacement, and report uncertainty if the editor cannot confirm it. This avoids presenting an unverified replacement as definite.
 
 The temporary pasteboard transaction captures all representations of all items (up to a bounded total size) and refuses data it cannot restore. It includes an owner marker and checks `changeCount` before restoring. When another process changes the clipboard, its content is left alone. Temporary contents are tagged transient/concealed for cooperative clipboard managers; those tags are conventions, not a privacy guarantee. If the original clipboard has unrepresentable types or the target cannot be verified, no paste is attempted. Results remain visible in the macOS app with a manual copy button.
 
-Cross-process event delivery and AX observations are not atomic. A focus change between the final check and a queued input event remains a platform risk. A successful paste must be verified with the full AX value; unsupported browser editors may therefore require manual copying. Physical-device acceptance is required before claiming per-application compatibility.
+Cross-process event delivery and AX observations are not atomic. A focus change between the final check and a queued input event remains a platform risk. Dictation paste delivery is best effort; unsupported AX targeting or unsafe clipboard snapshots may still require manual copying. Explicit rewriting requires full AX confirmation. Physical-device acceptance is required before claiming per-application compatibility.
 
 ## Tests
 
@@ -58,7 +60,7 @@ Platform-neutral authorization, lifecycle, clipboard and text-verification tests
 ## Physical macOS acceptance checklist
 
 1. Build with Xcode's Swift toolchain (`swift test`) and instantiate the package from a real native host. Grant Accessibility in System Settings, then restart the host if macOS requires it.
-2. Launch TextEdit in a plain-text document; focus an empty caret, trigger the configured global shortcut while TextEdit remains frontmost, capture an insertion snapshot, and verify an ASR string is inserted *only* at that caret using AX. Repeat with selected text and explicit replace-selection intent.
+2. Launch TextEdit in a plain-text document; test ordinary dictation at an empty caret and over a preselected phrase. Then test selected-text rewrite as a separate explicit command.
 3. Start a task, then change selected text, caret position, focus within TextEdit, or activate another app before delivering the delayed result. Verify no text is changed. Repeat with an ABA change (switch away and back), cancellation, timeout and overlapping generations.
 4. Focus a system password/secure-text field; verify `secureField` and no text access/write. Revoke Accessibility; verify `accessibilityPermissionDenied` and an actionable permission prompt path.
 5. Register the same shortcut twice and try a known system-reserved shortcut; confirm duplicate/conflict errors. Unregister/re-register; close the host and confirm no shortcut remains registered.

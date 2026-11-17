@@ -2,13 +2,29 @@ import XCTest
 @testable import VoiceRewriteInteraction
 
 final class HostStatusTests: XCTestCase {
+    func testInsertionFailureDistinguishesUncertainDeliveryFromChangedTarget() {
+        let args = (rewrite: false, passwordRewrite: "密码改写", passwordDictation: "密码听写")
+        let uncertain = insertionStatus(InteractionFailure.writeNotConfirmed,
+                                        rewrite: args.rewrite, passwordRewrite: args.passwordRewrite,
+                                        passwordDictation: args.passwordDictation)
+        XCTAssertTrue(uncertain.contains("避免重复粘贴"))
+        let changed = insertionStatus(InteractionFailure.selectionChanged,
+                                      rewrite: args.rewrite, passwordRewrite: args.passwordRewrite,
+                                      passwordDictation: args.passwordDictation)
+        XCTAssertTrue(changed.contains("光标"))
+        let focus = insertionStatus(InteractionFailure.focusChanged,
+                                    rewrite: args.rewrite, passwordRewrite: args.passwordRewrite,
+                                    passwordDictation: args.passwordDictation)
+        XCTAssertTrue(focus.contains("焦点"))
+    }
+
     func testCaptureStatusKeepsTheMacSentences() {
         XCTAssertEqual(
             captureStatus(InteractionFailure.secureField, password: "密码"),
             "密码")
         XCTAssertEqual(
             captureStatus(InteractionFailure.invalidSelection, password: "密码"),
-            "听写需要空光标位置；如有选中文字，请先取消选择")
+            "原输入框的选区或光标位置无效；无法安全写入")
         XCTAssertEqual(
             captureStatus(InteractionFailure.systemError(7), password: "密码"),
             "读取目标文本框失败（Accessibility 错误 7）")
@@ -23,10 +39,14 @@ final class HostStatusTests: XCTestCase {
 
     func testDictationRecordingSentencesStayMacOnly() {
         XCTAssertEqual(recordingIdle(), "未录音")
-        XCTAssertEqual(dictationCaretLocked(), "已锁定原应用光标；识别后将验证并写入")
+        XCTAssertEqual(dictationCaretLocked(), "已锁定原应用光标及选区；识别后将复核目标")
         XCTAssertTrue(dictationNoTarget().contains("未指定外部文本框"))
         XCTAssertEqual(dictationMicrophoneFailed("denied"), "无法启动麦克风：denied")
-        XCTAssertEqual(dictationInserted(), "已安全插入原目标")
+        XCTAssertEqual(dictationInserted(), "已向原输入框发送文字")
+        XCTAssertEqual(insertionDiagnosticCode(InteractionFailure.focusChanged), "focus_changed")
+        XCTAssertEqual(insertionDiagnosticCode(InteractionFailure.selectionChanged), "selection_changed")
+        XCTAssertEqual(insertionDiagnosticCode(InteractionFailure.writeNotConfirmed), "write_attempted_unconfirmed")
+        XCTAssertEqual(insertionDiagnosticCode(ClipboardFailure.ownershipLost), "clipboard_failed")
         XCTAssertNotEqual(rewriteNoTarget(), rewriteNoTargetForSelection())
         XCTAssertEqual(rewriteReplaced(), "原选区验证通过并已替换")
         XCTAssertEqual(rewriteTaskFailed("取消"), "文本任务失败或已取消：取消")
@@ -506,7 +526,7 @@ final class HostStatusTests: XCTestCase {
             "听写")
         XCTAssertEqual(
             insertionStatus(InteractionFailure.writeNotConfirmed, rewrite: true, passwordRewrite: "改写", passwordDictation: "听写"),
-            "已尝试写入，但无法确认是否生效；请检查目标或复制结果")
+            "已向目标发送文字，但无法确认是否生效；请先检查输入框，避免重复粘贴")
         XCTAssertEqual(
             insertionStatus(ClipboardFailure.restoreFailed, rewrite: false, passwordRewrite: "改写", passwordDictation: "听写"),
             "安全剪贴板操作失败；写入状态可能不确定，请检查目标并复制结果")
