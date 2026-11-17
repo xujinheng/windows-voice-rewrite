@@ -514,7 +514,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func sideMouseHeld(_ action: SideMouseAction, targetPID: Int32?) {
-        if meetingActive {
+        if meetingActive && !meetingDemoActive {
             dismissPreviewIndicator()
             guard meetingSideAction == nil, !meetingBusy, !meetingCancelPending,
                   !meetingVoiceRecording, !meetingVoiceStarting,
@@ -1102,6 +1102,8 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func toggleMeetingVoice(intent: MeetingVoiceIntent) {
+        // Viewing prerecorded demo material must never request a microphone.
+        guard !meetingDemoActive else { return }
         if meetingVoiceRecording {
             meetingVoiceRecording = false
             meetingBusy = true
