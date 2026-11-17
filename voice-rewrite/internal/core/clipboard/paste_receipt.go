@@ -4,17 +4,17 @@ import "time"
 
 // Values here are the single source for native pasteboard timing.
 const (
-	PasteReceiptQuietMilliseconds = 200
+	PasteReceiptQuietMilliseconds   = 200
 	PasteReceiptMinimumMilliseconds = 700
-	PasteReceiptMaxMilliseconds = 3000
-	PasteReceiptPollMilliseconds = 100
-	WindowsPasteWaitMilliseconds = 250
+	PasteReceiptMaxMilliseconds     = 3000
+	PasteReceiptPollMilliseconds    = 100
+	WindowsPasteWaitMilliseconds    = 250
 )
 
 type PasteReceipt struct {
-	Elapsed time.Duration
+	Elapsed       time.Duration
 	SinceLastRead time.Duration
-	HasRead bool
+	HasRead       bool
 }
 
 // An eager clipboard manager may fetch the promised text before the target
