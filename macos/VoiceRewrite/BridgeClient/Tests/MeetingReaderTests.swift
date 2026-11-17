@@ -136,4 +136,16 @@ final class MeetingReaderTests: XCTestCase {
     }
 
 
+    func testNewEnglishExpressionNeverStealsBusyFrozenOrHistoricalReader() {
+        let ready: (String, String, Bool, Bool, Bool, Bool) -> Bool =
+            MeetingReaderLayout.shouldFocusExpression
+        XCTAssertTrue(ready("Let's proceed.", "", true, false, true, false))
+        XCTAssertFalse(ready("Let's proceed.", "", false, false, true, false))
+        XCTAssertFalse(ready("Let's proceed.", "", true, true, true, false))
+        XCTAssertFalse(ready("Let's proceed.", "", true, false, true, true))
+        XCTAssertFalse(ready("Let's proceed.", "Let's proceed.", true, false, true, false))
+        XCTAssertFalse(ready("", "", true, false, true, false))
+        XCTAssertFalse(ready("Let's proceed.", "", true, false, false, false))
+    }
+
 }
