@@ -76,6 +76,7 @@ final class WorkspaceModel: ObservableObject {
     @Published var meetingSourceID = "system"
     @Published private(set) var meetingStatus = "选择音频来源后启动会议"
     @Published private(set) var meetingCaptions: [MeetingCaptionRow] = []
+    @Published private(set) var meetingHistoryTrimmed = 0
     @Published private(set) var meetingStarting = false
     @Published private(set) var meetingActive = false
     @Published private(set) var meetingReplies: [MeetingReplyRow] = []
@@ -730,6 +731,7 @@ final class WorkspaceModel: ObservableObject {
         meetingStarting = true
         meetingStatus = "正在准备会议识别…"
         meetingCaptions = []
+        meetingHistoryTrimmed = 0
         meetingCaptionsOnly = false
         meetingExpressionExpanded = false
         meetingReplies = []
@@ -848,6 +850,7 @@ final class WorkspaceModel: ObservableObject {
             meetingCapturePaused = paused
         }
         if let status = values["status"]?.string { meetingStatus = status }
+        if let trimmed = values["history_trimmed"]?.int { meetingHistoryTrimmed = trimmed }
         if let status = values["reply_status"]?.string { meetingReplyStatus = status }
         if let status = values["expression_status"]?.string { meetingExpressionStatus = status }
         if let value = values["expression"]?.string { meetingExpression = value }
@@ -936,6 +939,15 @@ final class WorkspaceModel: ObservableObject {
         meetingAction("meeting_view", fields: [
             "button_id": .number(Double(ContractLimits.meetingButtonExpression)),
         ])
+    }
+
+    // The reader initiates this only for a new expression while following
+    // the latest turn. The bridge runs Go Core's ExpressionFocus policy.
+    func focusMeetingExpressionIfReadingLatest() {
+        guard meetingActive, !meetingBusy, !meetingCancelPending,
+              !meetingExpression.isEmpty,
+              meetingCaptionsOnly || !meetingExpressionExpanded else { return }
+        meetingAction("meeting_view", fields: ["button_id": .number(0)])
     }
 
     func acceptMeetingReplies() {
