@@ -300,6 +300,18 @@ func emitLimits(moduleRoot string) (string, error) {
 		}
 		b.WriteString("    public static let " + item.swift + " = " + strconv.Quote(value) + "\n")
 	}
+	// These values come from the canonical Go Meeting configuration, never
+	// from a second hand-maintained list in the native settings UI.
+	for _, item := range []struct{ name, value string }{
+		{"meetingASRMultipart", coreconfig.MeetingASRMultipart},
+		{"meetingASRLlamaPrefix", coreconfig.MeetingASRLlamaPrefix},
+		{"defaultMeetingASRMode", coreconfig.Defaults().MeetingASRMode},
+		{"meetingASRMultipartTitle", coreconfig.MeetingASRModeTitle(coreconfig.MeetingASRMultipart)},
+		{"meetingASRLlamaPrefixTitle", coreconfig.MeetingASRModeTitle(coreconfig.MeetingASRLlamaPrefix)},
+	} {
+		b.WriteString("    public static let " + item.name + " = " + strconv.Quote(item.value) + "\n")
+	}
+	b.WriteString("    public static let meetingASRModes = [meetingASRMultipart, meetingASRLlamaPrefix]\n")
 	shortcut, err := parseFile(filepath.Join(moduleRoot, "internal", "core", "shortcut", "shortcut.go"))
 	if err != nil {
 		return "", err

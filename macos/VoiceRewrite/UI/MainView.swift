@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import VoiceRewriteStorage
 
 struct MainView: View {
     @ObservedObject var model: WorkspaceModel
@@ -195,6 +196,16 @@ private struct MeetingView: View {
                         .disabled(model.meetingSources.isEmpty)
                 }
             }
+            Picker("会议识别模式", selection: $model.settings.meetingASRMode) {
+                Text(ContractLimits.meetingASRMultipartTitle)
+                    .tag(ContractLimits.meetingASRMultipart)
+                Text(ContractLimits.meetingASRLlamaPrefixTitle)
+                    .tag(ContractLimits.meetingASRLlamaPrefix)
+            }
+            .disabled(model.meetingStarting || model.meetingActive)
+            .accessibilityIdentifier("meeting_asr_mode")
+            Text("更改识别模式后，请在设置中保存。前缀续写需要 ASR 服务支持该模式。")
+                .font(.caption).foregroundStyle(.secondary)
             Text(model.meetingStatus)
                 .font(.footnote).foregroundStyle(.secondary)
                 .accessibilityIdentifier("meeting_status")

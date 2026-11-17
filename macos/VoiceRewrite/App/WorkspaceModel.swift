@@ -539,9 +539,9 @@ final class WorkspaceModel: ObservableObject {
             guard case .object(var fields) = try requestConfig(for: .spokenSelectedTask) else {
                 throw BridgeFailure.invalidRequest
             }
-            // Multipart is the portable OpenAI-compatible meeting ASR mode;
-            // the shared Go Meeting pipeline owns segmentation and inference.
-            fields["meeting_asr_mode"] = .string("multipart")
+            // Meeting mode follows the same saved Go Core configuration
+            // as Windows; no macOS-only recognizer behavior is added.
+            fields["meeting_asr_mode"] = .string(settings.meetingASRMode)
             config = .object(fields)
         } catch {
             meetingStatus = "请保存有效的 ASR/LLM 设置后重试"

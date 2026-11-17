@@ -7,6 +7,7 @@ public struct MacSettings: Codable, Equatable, Sendable {
     public var llmBaseURL: String
     public var asrModel: String
     public var textModel: String
+    public var meetingASRMode: String
     public var microphoneUID: String
     public var maxRecordSeconds: Int
     public var dictationShortcut: String
@@ -18,6 +19,7 @@ public struct MacSettings: Codable, Equatable, Sendable {
         case llmBaseURL = "llm_base_url"
         case asrModel = "asr_model"
         case textModel = "text_model"
+        case meetingASRMode = "meeting_asr_mode"
         case microphoneUID = "microphone_uid"
         case maxRecordSeconds = "max_record_seconds"
         case dictationShortcut = "dictation_shortcut"
@@ -30,6 +32,7 @@ public struct MacSettings: Codable, Equatable, Sendable {
         llmBaseURL: String = ContractLimits.defaultLLMBaseURL,
         asrModel: String = ContractLimits.defaultASRModel,
         textModel: String = ContractLimits.defaultTextModel,
+        meetingASRMode: String = ContractLimits.defaultMeetingASRMode,
         maxRecordSeconds: Int = ContractLimits.defaultRecordSeconds,
         microphoneUID: String = "",
         dictationShortcut: String = ContractLimits.macDictationShortcut,
@@ -40,6 +43,7 @@ public struct MacSettings: Codable, Equatable, Sendable {
         self.llmBaseURL = llmBaseURL
         self.asrModel = asrModel
         self.textModel = textModel
+        self.meetingASRMode = meetingASRMode
         self.maxRecordSeconds = maxRecordSeconds
         self.microphoneUID = microphoneUID
         self.dictationShortcut = dictationShortcut
@@ -74,6 +78,9 @@ public struct MacSettings: Codable, Equatable, Sendable {
         llmBaseURL = endpoints.llmBaseURL
         asrModel = endpoints.asrModel
         textModel = endpoints.textModel
+        guard ContractLimits.meetingASRModes.contains(meetingASRMode) else {
+            throw SettingsError.invalidValues
+        }
         guard microphoneUID.utf8.count <= 512 else { throw SettingsError.invalidValues }
         if !Self.recordSeconds.contains(maxRecordSeconds) {
             maxRecordSeconds = ContractLimits.defaultRecordSeconds
@@ -100,6 +107,9 @@ public struct MacSettings: Codable, Equatable, Sendable {
             "text_edit_shortcut": ContractLimits.macTextEditShortcut,
         ]
         if values["microphone_uid"] == nil { values["microphone_uid"] = "" }
+        if values["meeting_asr_mode"] == nil {
+            values["meeting_asr_mode"] = ContractLimits.defaultMeetingASRMode
+        }
         for (key, value) in shortcutDefaults where values[key] == nil {
             values[key] = value
         }
