@@ -10,9 +10,9 @@ import (
 
 const (
 	// Only recent, bounded completed turns may accompany a model request.
-	MaxContextTurns = 3
-	MaxContextRunes = 1800
-	MaxContextTurnRunes = 900
+	MaxContextTurns      = 3
+	MaxContextRunes      = 1800
+	MaxContextTurnRunes  = 900
 	MaxGlossaryLineRunes = 160
 )
 
