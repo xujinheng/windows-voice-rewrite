@@ -235,6 +235,13 @@ func emitLimits(moduleRoot string) (string, error) {
 		{"RecordSecondsMin", "recordSecondsMin"},
 		{"RecordSecondsMax", "recordSecondsMax"},
 		{"DefaultRecordSeconds", "defaultRecordSeconds"},
+		{"MinResponseTokens", "minResponseTokens"},
+		{"MaxResponseTokens", "maxResponseTokens"},
+		{"MaxSelectedRunes", "maxSelectedRunes"},
+		{"MinCopyAttempts", "minCopyAttempts"},
+		{"MaxCopyAttempts", "maxCopyAttempts"},
+		{"MinCopyTimeoutMS", "minCopyTimeoutMS"},
+		{"MaxCopyTimeoutMS", "maxCopyTimeoutMS"},
 		{"MaxEndpointBytes", "maxEndpointBytes"},
 		{"MaxModelIDBytes", "maxModelIDBytes"},
 		{"MaxCredentialBytes", "maxCredentialBytes"},
@@ -308,6 +315,20 @@ func emitLimits(moduleRoot string) (string, error) {
 		{"defaultMeetingASRMode", coreconfig.Defaults().MeetingASRMode},
 		{"meetingASRMultipartTitle", coreconfig.MeetingASRModeTitle(coreconfig.MeetingASRMultipart)},
 		{"meetingASRLlamaPrefixTitle", coreconfig.MeetingASRModeTitle(coreconfig.MeetingASRLlamaPrefix)},
+	} {
+		b.WriteString("    public static let " + item.name + " = " + strconv.Quote(item.value) + "\n")
+	}
+	for _, item := range []struct{ name string; value int }{
+		{"defaultMaxResponseTokens", coreconfig.Defaults().MaxResponseTokens},
+		{"defaultMaxSelectedRunes", coreconfig.Defaults().MaxSelectedRunes},
+		{"defaultCopyAttempts", coreconfig.Defaults().SelectionCopyAttempts},
+		{"defaultCopyTimeoutMS", coreconfig.Defaults().SelectionCopyTimeoutMS},
+	} {
+		b.WriteString("    public static let " + item.name + " = " + strconv.Itoa(item.value) + "\n")
+	}
+	for _, item := range []struct{ name, value string }{
+		{"defaultRecordMode", coreconfig.Defaults().RecordMode},
+		{"defaultExitShortcut", coreconfig.Defaults().HotkeyExit},
 	} {
 		b.WriteString("    public static let " + item.name + " = " + strconv.Quote(item.value) + "\n")
 	}
