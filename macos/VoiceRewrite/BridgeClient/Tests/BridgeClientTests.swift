@@ -327,7 +327,7 @@ final class BridgeClientTests: XCTestCase {
     /// production, with only the external mic, ASR endpoint and OS paste
     /// replaced by deterministic CI fixtures. It is NOT a real-hardware test.
     @MainActor
-    func testOfflineKeyboardToVisibleTextLatency() async throws {
+    func testCISyntheticRightCommandDownToVisibleTextLatency() async throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
@@ -335,7 +335,7 @@ final class BridgeClientTests: XCTestCase {
         let directory = root.appendingPathComponent("performance-output", isDirectory: true)
         guard FileManager.default.fileExists(atPath:
             directory.appendingPathComponent(".enabled").path) else {
-            throw XCTSkip("User-perceived latency runs in the dedicated macOS CI job")
+            throw XCTSkip("Synthetic modifier-to-text latency runs inside the macOS build jobs")
         }
 
         let fixture = FileManager.default.temporaryDirectory
@@ -400,16 +400,41 @@ final class BridgeClientTests: XCTestCase {
             if case .connected = model.connection { return true }
             return false
         }
+        // Drive the real macOS modifier handler through its 250ms hold timer,
+        // not WorkspaceModel.keyboardPressed() after that timer has elapsed.
+        // CGEvent dispatch is synthetic; live hardware must be tested separately.
+        var activationCount = 0
+        var releaseCount = 0
+        let driver = MacModifierHoldDriver(
+            onHold: { key, _, pressedAt in
+                XCTAssertEqual(key, .rightCommand)
+                activationCount += 1
+                model.keyboardPressed(.dictation, targetPID: 4242, pressedAt: pressedAt)
+            },
+            onRelease: { key in
+                XCTAssertEqual(key, .rightCommand)
+                releaseCount += 1
+                model.keyboardReleased(.dictation)
+            },
+            onCancel: { XCTFail("Modifier hold unexpectedly cancelled") })
+        driver.setBindings(dictation: .rightCommand, rewrite: nil)
+        defer { driver.shutdown() }
+
         let loopCount = 12
+        var activationTimes: [Double] = []
         var indicatorTimes: [Double] = []
         var microphoneTimes: [Double] = []
         var insertionTimes: [Double] = []
         let text = "CI latency test."
         for cycle in 0..<loopCount {
             let onset = ProcessInfo.processInfo.systemUptime
-            // Exactly the production keyboard-held entrance after the OS has
-            // delivered its hotkey callback, not a synthetic view-only render.
-            model.keyboardPressed(.dictation, targetPID: 4242)
+            // Clock starts BEFORE MacModifierHoldDriver schedules the hold
+            // activation timer. The scheduler/threshold are genuinely exercised.
+            driver.simulateModifierTransitionForCI(key: .rightCommand, pressed: true)
+            try await waitUntil("250ms right Command activation #\(cycle)") {
+                activationCount == cycle + 1
+            }
+            activationTimes.append((ProcessInfo.processInfo.systemUptime - onset) * 1000)
             let panel = NSApp.windows.first {
                 $0 is NSPanel && $0.isVisible && $0.level == .statusBar
             }
@@ -430,7 +455,10 @@ final class BridgeClientTests: XCTestCase {
 
             let previous = editor.string.count
             let release = ProcessInfo.processInfo.systemUptime
-            model.keyboardReleased(.dictation)
+            driver.simulateModifierTransitionForCI(key: .rightCommand, pressed: false)
+            try await waitUntil("right Command released #\(cycle)") {
+                releaseCount == cycle + 1
+            }
             try await waitUntil("inserted text #\(cycle)") {
                 editor.string.count == previous + text.count && !model.isProcessing
             }
@@ -464,25 +492,28 @@ final class BridgeClientTests: XCTestCase {
         let architecture = "unknown"
         #endif
         let report: [String: Any] = [
-            "schema_version": 1,
-            "test": "keyboard-hold-to-visible-text",
-            "environment": "CI; fake microphone, local JSONL ASR, in-process NSTextView",
+            "schema_version": 2,
+            "test": "synthetic-right-command-down-to-visible-text",
+            "environment": "macOS CI; synthetic CGEvent through production modifier handler and 250ms timer; fake microphone, local JSONL ASR, in-process NSTextView",
             "coverage": [
-                "real_production_keyboard_state_machine",
+                "real_MacModifierHoldDriver_flagsChanged_state_machine_and_timer",
+                "real_WorkspaceModel_keyboard_state_machine",
                 "real_AppKit_indicator_panel",
                 "real_Background_BridgeClient_IPC",
                 "real_WorkspaceModel_result_dispatch",
                 "synthetic_audio_and_target_editor",
             ],
             "excludes": [
-                "OS_HID_event_delivery", "hardware_microphone_start",
-                "cloud_ASR", "system_paste_and_cross_application_AX",
+                "physical_keyboard_HID_scan_and_OS_event_delivery",
+                "hardware_microphone_start", "cloud_ASR",
+                "system_paste_and_cross_application_AX",
             ],
             "architecture": architecture,
             "successful_cycles": loopCount,
             "timeouts": 0,
-            "trigger_to_indicator_render": stats(indicatorTimes),
-            "trigger_to_recording_ready": stats(microphoneTimes),
+            "synthetic_down_to_hold_activation": stats(activationTimes),
+            "synthetic_down_to_indicator_render": stats(indicatorTimes),
+            "synthetic_down_to_recording_ready": stats(microphoneTimes),
             "release_to_text_visible": stats(insertionTimes),
         ]
         let folder = directory.appendingPathComponent("macos-\(architecture)", isDirectory: true)
@@ -493,7 +524,9 @@ final class BridgeClientTests: XCTestCase {
         print("VOICE_REWRITE_USER_LATENCY " + String(decoding: json, as: UTF8.self))
         // Hard limits only catch pathological regressions in cloud runners.
         // Compare P50/P95 as a trend, never claim these are physical-device SLOs.
-        XCTAssertLessThan(stats(indicatorTimes)["p95_ms"]!, 1000)
+        XCTAssertGreaterThanOrEqual(stats(activationTimes)["p50_ms"]!, SideHold.threshold * 1000)
+        XCTAssertLessThan(stats(activationTimes)["p95_ms"]!, 1200)
+        XCTAssertLessThan(stats(indicatorTimes)["p95_ms"]!, 1500)
         XCTAssertLessThan(stats(microphoneTimes)["p95_ms"]!, 2500)
         XCTAssertLessThan(stats(insertionTimes)["p95_ms"]!, 5000)
     }

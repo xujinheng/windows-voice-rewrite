@@ -279,10 +279,10 @@ final class WorkspaceModel: ObservableObject {
         if let keyboardHID { return keyboardHID }
         let hid = MacKeyboardHIDMonitor(
             onDevices: { [weak self] in self?.keyboardDevices = $0 },
-            onPress: { [weak self] key, deviceID, pid in
+            onPress: { [weak self] key, deviceID, pid, pressedAt in
                 guard let self, let bound = self.activeShortcutPlan else { return }
                 if key == bound.modifierDictation && deviceID == self.activeDictationKeyboardID {
-                    self.keyboardPressed(.dictation, targetPID: pid)
+                    self.keyboardPressed(.dictation, targetPID: pid, pressedAt: pressedAt)
                 } else if key == bound.modifierRewrite && deviceID == self.activeRewriteKeyboardID {
                     self.keyboardPressed(.rewrite, targetPID: pid)
                 }
@@ -558,10 +558,10 @@ final class WorkspaceModel: ObservableObject {
     /// active when permissions are missing.
     private func makeModifierHoldDriver() throws -> MacModifierHoldDriver {
         let driver = rightModifierDriver ?? MacModifierHoldDriver(
-            onHold: { [weak self] key, pid in
+            onHold: { [weak self] key, pid, pressedAt in
                 guard let self, let bound = self.activeShortcutPlan else { return }
                 if key == bound.modifierDictation && self.activeDictationKeyboardID.isEmpty {
-                    self.keyboardPressed(.dictation, targetPID: pid)
+                    self.keyboardPressed(.dictation, targetPID: pid, pressedAt: pressedAt)
                 } else if key == bound.modifierRewrite && self.activeRewriteKeyboardID.isEmpty {
                     self.keyboardPressed(.rewrite, targetPID: pid)
                 }
@@ -763,7 +763,7 @@ final class WorkspaceModel: ObservableObject {
 
     // Internal so the CI user-journey test enters through the *same* keyboard
     // state machine as the actual native right-modifier/keyboard callbacks.
-    func keyboardPressed(_ action: SideMouseAction, targetPID: Int32?) {
+    func keyboardPressed(_ action: SideMouseAction, targetPID: Int32?, pressedAt: TimeInterval? = nil) {
         if !keyboardHoldEnabled {
             if meetingActive {
                 toggleMeetingVoice(intent: action == .dictation ? .express : .compose)
@@ -783,7 +783,7 @@ final class WorkspaceModel: ObservableObject {
         if meetingActive {
             toggleMeetingVoice(intent: action == .dictation ? .express : .compose)
         } else if action == .dictation {
-            startRecording(targetPID: targetPID)
+            startRecording(targetPID: targetPID, pressedAt: pressedAt)
         } else {
             triggerSelectionRewrite(from: targetPID)
         }
@@ -2372,10 +2372,13 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func startRecording(targetPID: Int32?) {
+    private func startRecording(targetPID: Int32?, pressedAt: TimeInterval? = nil) {
         guard !meetingVoiceRecording && !meetingVoiceStarting else { return }
         invalidatePending()
-        dictationJourney = DictationJourney(triggeredAt: ProcessInfo.processInfo.systemUptime)
+        let now = ProcessInfo.processInfo.systemUptime
+        let onset = pressedAt.flatMap { $0 > 0 && $0 <= now ? $0 : nil } ?? now
+        dictationJourney = DictationJourney(triggeredAt: onset)
+        DiagnosticLog.note("journey=dictation event=hold_callback elapsed_ms=\(Self.elapsedMilliseconds(since: onset))")
         let token = resultGeneration.begin()
         isStarting = true
         armProcessingWatchdog(token: token, seconds: 30, stage: "microphone_start")
@@ -2858,8 +2861,8 @@ final class WorkspaceModel: ObservableObject {
                     self.finishProcessingWatchdog()
                     self.isProcessing = false
                     DiagnosticLog.note("stage=dictation_delivery status=\(outcome)")
-                    if let released = self.dictationJourney?.releasedAt {
-                        DiagnosticLog.note("journey=dictation event=delivery_returned elapsed_ms=\(Self.elapsedMilliseconds(since: released)) outcome=\(outcome)")
+                    if let journey = self.dictationJourney, let released = journey.releasedAt {
+                        DiagnosticLog.note("journey=dictation event=delivery_returned elapsed_ms=\(Self.elapsedMilliseconds(since: released)) total_since_key_down_ms=\(Self.elapsedMilliseconds(since: journey.triggeredAt)) outcome=\(outcome)")
                     }
                     self.dictationJourney = nil
                     self.applyTask(dictationInsertFollowUp(
@@ -2873,8 +2876,8 @@ final class WorkspaceModel: ObservableObject {
                     self.finishProcessingWatchdog()
                     self.isProcessing = false
                     DiagnosticLog.note("stage=dictation_delivery status=failed code=\(insertionDiagnosticCode(error))")
-                    if let released = self.dictationJourney?.releasedAt {
-                        DiagnosticLog.note("journey=dictation event=delivery_failed elapsed_ms=\(Self.elapsedMilliseconds(since: released))")
+                    if let journey = self.dictationJourney, let released = journey.releasedAt {
+                        DiagnosticLog.note("journey=dictation event=delivery_failed elapsed_ms=\(Self.elapsedMilliseconds(since: released)) total_since_key_down_ms=\(Self.elapsedMilliseconds(since: journey.triggeredAt))")
                     }
                     self.dictationJourney = nil
                     self.applyTask(dictationInsertFollowUp(
