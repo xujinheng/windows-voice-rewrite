@@ -48,13 +48,14 @@ func (s *meetingPacketSource) Stream(ctx context.Context, started func(), push f
 }
 
 type bridgeMeeting struct {
-	id        string
-	runtime   *meetingcore.SessionRuntime
-	pipeline  *meetingcore.Pipeline
-	source    *meetingPacketSource
-	audioDone chan struct{}
-	config    coreconfig.Config
-	scheduler *meetingcore.Scheduler
+	id             string
+	runtime        *meetingcore.SessionRuntime
+	pipeline       *meetingcore.Pipeline
+	source         *meetingPacketSource
+	audioDone      chan struct{}
+	config         coreconfig.Config
+	profileVersion uint64
+	scheduler      *meetingcore.Scheduler
 
 	mu                 sync.Mutex
 	captions           []meetingcore.Caption
@@ -82,17 +83,19 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 		return nil, err
 	}
 	m := &bridgeMeeting{
-		id:        hex.EncodeToString(key[:]),
-		runtime:   meetingcore.NewSessionRuntime(),
-		source:    &meetingPacketSource{packets: make(chan []byte, 12)},
-		audioDone: make(chan struct{}),
-		status:    meetingcore.ListeningPrompt,
-		config:    cfg,
-		scheduler: &meetingcore.Scheduler{},
+		id:             hex.EncodeToString(key[:]),
+		runtime:        meetingcore.NewSessionRuntime(),
+		source:         &meetingPacketSource{packets: make(chan []byte, 12)},
+		audioDone:      make(chan struct{}),
+		status:         meetingcore.ListeningPrompt,
+		config:         cfg,
+		profileVersion: 1,
+		scheduler:      &meetingcore.Scheduler{},
 	}
 	m.pipeline = meetingcore.NewPipeline(m.runtime, meetingcore.PipelineHooks{
 		Transcribe: func(ctx context.Context, state *meetingcore.ASRState, turn meetingcore.AudioTurn, emit func(string)) (string, error) {
 			var result string
+			cfg := m.configSnapshot()
 			err := m.scheduler.Run(ctx, meetingcore.PriorityASR, func(active context.Context) error {
 				var callErr error
 				result, callErr = state.Transcribe(active, cfg, turn.PCM, emit)
@@ -101,6 +104,7 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 			return result, err
 		},
 		Translate: func(ctx context.Context, job meetingcore.CaptionTask, emit func(string)) error {
+			cfg := m.configSnapshot()
 			return m.scheduler.Run(ctx, meetingcore.PriorityCaption, func(active context.Context) error {
 				return meetingcore.Complete(active, cfg, meetingcore.Query{
 					Mode: "caption", Latest: job.Latest, Prior: job.Prior,
@@ -118,7 +122,7 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 				return nil
 			}
 			m.captions = meetingcore.UpsertCaption(m.captions, turn.ID, latest, turn.Final, true)
-			if !turn.Final && cfg.MeetingASRMode != coreconfig.MeetingASRMultipart {
+			if !turn.Final && m.config.MeetingASRMode != coreconfig.MeetingASRMultipart {
 				meetingcore.SetCaptionPrefix(m.captions, turn.ID, stable)
 			}
 			var evicted int
@@ -192,6 +196,61 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 	m.pipeline.Run()
 	go m.runAudio()
 	return m, nil
+}
+
+// configSnapshot makes model calls immutable within a single work epoch.
+// Reconfigure invalidates that epoch before publishing replacement settings.
+func (m *bridgeMeeting) configSnapshot() coreconfig.Config {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.config
+}
+
+// reconfigure changes only the running Meeting profile and recognizer mode.
+// Completed captions survive; buffered PCM, previews, translations, replies
+// and expressions from the previous epoch are canceled and cannot publish.
+func (m *bridgeMeeting) reconfigure(next coreconfig.Config) error {
+	background, terms, err := meetingcore.AcceptProfile(next.MeetingBackground, next.MeetingTerms)
+	if err != nil {
+		return err
+	}
+	if !coreconfig.KnownMeetingASRMode(next.MeetingASRMode) {
+		return errors.New(meetingcore.UnknownMeetingASRMode)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.runtime.Context().Err() != nil {
+		return context.Canceled
+	}
+	if m.config.MeetingBackground == background && m.config.MeetingTerms == terms && m.config.MeetingASRMode == next.MeetingASRMode {
+		return nil
+	}
+	m.runtime.ResetWork()
+	m.discardPacketsLocked()
+	m.captions = meetingcore.KeepCompletedCaptions(m.captions)
+	m.replies.ResetWork()
+	if clear, status := meetingcore.CancelPresentation(m.expression.Complete, m.expressionStatus); clear {
+		m.expression = meetingcore.Line{}
+		m.expressionStatus = status
+	} else {
+		m.expressionStatus = status
+	}
+	if m.replyStatus == meetingcore.RepliesPreparing {
+		m.replyStatus = meetingcore.WorkCanceled
+	}
+	m.level = 0
+	m.asrFirstMS, m.asrDoneMS, m.translationFirstMS, m.translationDoneMS = 0, 0, 0, 0
+	m.config.MeetingBackground = background
+	m.config.MeetingTerms = terms
+	m.config.MeetingASRMode = next.MeetingASRMode
+	m.profileVersion++
+	_, _, paused := m.runtime.Snapshot()
+	if paused {
+		m.status = meetingcore.CapturePausedStatus
+	} else {
+		m.status = meetingcore.ListeningPrompt
+	}
+	return nil
 }
 
 // runAudio restarts the shared segmenter for every active epoch. Pausing or
@@ -376,6 +435,7 @@ func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64, 
 		return context.Canceled
 	}
 	prior := meetingcore.ReplyPrior(m.prior, latest)
+	cfg := m.config
 	serial := m.replies.StartTurn(turn)
 	m.replyStatus = meetingcore.RepliesPreparing
 	m.mu.Unlock()
@@ -384,7 +444,7 @@ func (m *bridgeMeeting) runReplies(parent context.Context, expectedTurn uint64, 
 	defer stopParent()
 	batch := meetingcore.ReplyBatch{Source: latest}
 	err := m.scheduler.Run(ctx, meetingcore.PriorityReply, func(active context.Context) error {
-		return meetingcore.Complete(active, m.config, meetingcore.Query{
+		return meetingcore.Complete(active, cfg, meetingcore.Query{
 			Mode: "replies", Latest: latest, Prior: prior,
 		}, func(line meetingcore.Line) {
 			if active.Err() != nil {
@@ -510,10 +570,11 @@ func (m *bridgeMeeting) runExpression(parent context.Context, query meetingcore.
 		query.Prior = append([]string(nil), m.prior...)
 	}
 	m.expressionStatus = meetingcore.ExpressionLabel(query.Mode)
+	cfg := m.config
 	m.mu.Unlock()
 	var expression meetingcore.Line
 	err := m.scheduler.Run(ctx, meetingcore.PriorityExpress, func(active context.Context) error {
-		return meetingcore.Complete(active, m.config, query, func(line meetingcore.Line) {
+		return meetingcore.Complete(active, cfg, query, func(line meetingcore.Line) {
 			if line.Kind == "SAY" && line.Complete {
 				expression = line
 			}
@@ -561,6 +622,7 @@ func (m *bridgeMeeting) snapshot() map[string]any {
 	}
 	return map[string]any{
 		"capture_paused": paused, "epoch": epoch,
+		"profile_version": m.profileVersion, "asr_mode": m.config.MeetingASRMode,
 		"metrics": map[string]any{
 			"pending":      pending,
 			"dropped":      m.dropped,

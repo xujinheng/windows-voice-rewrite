@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import VoiceRewriteStorage
 
 // Windows Meeting HUD: Chinese, English, history, replies, expression, source.
 enum MeetingReaderLayout {
@@ -537,62 +538,140 @@ private struct MeetingTextComposerSheet: View {
     }
 }
 
-// This input surface is ready for F/H's profile persistence and live mode-change
-// endpoints. It must not claim that unsent notes affect ASR or the model.
+// Structured editing is serialized to the two shared Windows/Go profile
+// strings. Untagged saved profiles remain editable without losing legacy text.
+struct MeetingProfileFields {
+    var role = ""
+    var experience = ""
+    var project = ""
+    var goal = ""
+    var constraints = ""
+    var properNouns = ""
+    var acronyms = ""
+    var bilingualTerms = ""
+
+    init(background: String = "", terms: String = "") {
+        let b = Self.decode(background, labels: ["角色", "经历", "项目背景", "目标", "限制"],
+                            legacy: 2)
+        role = b[0]; experience = b[1]; project = b[2]; goal = b[3]; constraints = b[4]
+        let t = Self.decode(terms, labels: ["专有名词", "缩写", "中英术语"], legacy: 2)
+        properNouns = t[0]; acronyms = t[1]; bilingualTerms = t[2]
+    }
+
+    var backgroundText: String {
+        Self.encode([role, experience, project, goal, constraints],
+                    labels: ["角色", "经历", "项目背景", "目标", "限制"])
+    }
+    var termsText: String {
+        Self.encode([properNouns, acronyms, bilingualTerms],
+                    labels: ["专有名词", "缩写", "中英术语"])
+    }
+
+    private static func encode(_ values: [String], labels: [String]) -> String {
+        zip(labels, values).compactMap { label, text -> String? in
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : "【\(label)】\n\(trimmed)"
+        }.joined(separator: "\n\n")
+    }
+
+    private static func decode(_ text: String, labels: [String], legacy: Int) -> [String] {
+        var result = Array(repeating: "", count: labels.count)
+        guard labels.contains(where: { text.hasPrefix("【\($0)】\n") }) else {
+            result[legacy] = text
+            return result
+        }
+        var current: Int?
+        for line in text.components(separatedBy: "\n") {
+            if let index = labels.firstIndex(where: { line == "【\($0)】" }) {
+                current = index
+            } else if let index = current {
+                result[index] += result[index].isEmpty ? line : "\n" + line
+            }
+        }
+        return result.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+}
+
 private struct MeetingProfileDraftView: View {
     @ObservedObject var model: WorkspaceModel
     @Environment(\.dismiss) private var dismiss
-    @State private var background: String
-    @State private var terms: String
+    @State private var fields: MeetingProfileFields
+    @State private var mode: String
     @State private var error = ""
+    @State private var saving = false
 
     init(model: WorkspaceModel) {
         self.model = model
-        _background = State(initialValue: model.settings.meetingBackground)
-        _terms = State(initialValue: model.settings.meetingTerms)
+        _fields = State(initialValue: MeetingProfileFields(
+            background: model.settings.meetingBackground, terms: model.settings.meetingTerms))
+        _mode = State(initialValue: model.settings.meetingASRMode)
     }
 
     private var valid: Bool {
-        background.unicodeScalars.count <= 4000 && terms.unicodeScalars.count <= 2000
+        fields.backgroundText.unicodeScalars.count <= 4000 &&
+        fields.termsText.unicodeScalars.count <= 2000 &&
+        ContractLimits.meetingASRModes.contains(mode)
+    }
+
+    private func section(_ label: String, value: Binding<String>, height: CGFloat = 76) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.subheadline.bold())
+            TextEditor(text: value)
+                .frame(height: height)
+                .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color(nsColor: .separatorColor)))
+        }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("会议资料").font(.title2.bold())
-            Text("背景：角色、项目、目标、已知限制").font(.headline)
-            TextEditor(text: $background).frame(height: 135)
-                .accessibilityIdentifier("meeting_profile_background")
-            Text("背景最多 4000 字，术语最多 2000 字（按 Unicode 字符计）")
-                .font(.caption).foregroundStyle(.secondary)
-            Text("术语：人名、缩写、产品名和中英对照（每行一条）").font(.headline)
-            TextEditor(text: $terms).frame(height: 120)
-                .accessibilityIdentifier("meeting_profile_terms")
-            Text("会议识别方式：\(model.settings.meetingASRMode)")
-                .foregroundStyle(.secondary)
-            Text("资料保存在本机配置中，并随新会议传给 Go Core；正在进行的会议需要重新开始后生效。")
-                .font(.caption).foregroundStyle(.secondary)
-            if !valid {
-                Text("背景或术语超出长度限制").foregroundStyle(.red)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("个人与会议背景").font(.headline)
+                    section("我的角色", value: $fields.role)
+                    section("相关经历", value: $fields.experience)
+                    section("项目背景", value: $fields.project, height: 105)
+                    section("本次会议目标", value: $fields.goal)
+                    section("限制与边界条件", value: $fields.constraints)
+                    Text("术语与缩写").font(.headline)
+                    section("专有名词与产品名称", value: $fields.properNouns)
+                    section("缩写及其完整含义", value: $fields.acronyms)
+                    section("中英文术语对照（每行一条）", value: $fields.bilingualTerms, height: 105)
+                    Picker("会议识别模式", selection: $mode) {
+                        Text(ContractLimits.meetingASRMultipartTitle)
+                            .tag(ContractLimits.meetingASRMultipart)
+                        Text(ContractLimits.meetingASRLlamaPrefixTitle)
+                            .tag(ContractLimits.meetingASRLlamaPrefix)
+                    }
+                    .accessibilityIdentifier("meeting_profile_asr_mode")
+                    Text("分段识别使用兼容的音频上传接口；前缀续写需要支持该协议的本地 ASR 服务。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .padding(.trailing, 5)
             }
+            Text("背景最多 4000 字，术语最多 2000 字（包含分组标题）。运行中保存将取消旧识别、翻译和生成任务，保留已完成字幕，并立即应用新配置；若更新失败，保存内容在下次会议生效。")
+                .font(.caption).foregroundStyle(.secondary)
+            if !valid { Text("背景或术语超出长度限制").foregroundStyle(.red) }
             if !error.isEmpty {
                 Text(error).foregroundStyle(.red).accessibilityIdentifier("meeting_profile_error")
             }
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }
-                Button("保存并应用") {
-                    if model.saveMeetingProfile(background: background, terms: terms) {
-                        dismiss()
-                    } else {
-                        error = model.settingsStatus
+                Button("取消") { dismiss() }.disabled(saving)
+                Button(saving ? "正在应用…" : "保存并应用") {
+                    saving = true
+                    model.updateMeetingProfile(background: fields.backgroundText,
+                                               terms: fields.termsText, mode: mode) { ok, message in
+                        saving = false
+                        if ok { dismiss() } else { error = message }
                     }
                 }
-                .disabled(!valid)
+                .disabled(!valid || saving || model.meetingProfileUpdating)
                 .accessibilityIdentifier("meeting_profile_save")
             }
         }
         .padding(20)
-        .frame(width: 540)
+        .frame(width: 590, height: 700)
     }
 }
 
