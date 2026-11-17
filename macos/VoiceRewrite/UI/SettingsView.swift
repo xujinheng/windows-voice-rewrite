@@ -331,7 +331,7 @@ struct SettingsView: View {
         if flags.contains(.control) { modifiers.append("Ctrl") }
         if flags.contains(.option) { modifiers.append("Alt") }
         if flags.contains(.shift) { modifiers.append("Shift") }
-        if !key.hasPrefix("F") && !modifiers.contains("Ctrl") && !modifiers.contains("Alt") {
+        if key.count == 1 && !modifiers.contains("Ctrl") && !modifiers.contains("Alt") {
             return nil
         }
         return (modifiers + [key]).joined(separator: "+")
