@@ -22,7 +22,7 @@ public struct MicrophoneInputDevice: Identifiable, Equatable, Sendable {
 ///
 /// The returned Data is headerless, 16,000 Hz, mono, signed little-endian PCM16,
 /// suitable for base64 encoding as `transcribe.pcm_base64` by the host integration.
-/// All lifecycle calls must occur on the main actor; calls are serialized.
+/// Lifecycle state belongs to the main actor; blocking CoreAudio calls run on a worker.
 @MainActor
 public final class MicrophoneRecorder {
     private enum State {
@@ -43,7 +43,7 @@ public final class MicrophoneRecorder {
 
     /// Selectable physical devices are enumerated by the CoreAudio HAL.
     /// Stable device UIDs survive device-index changes.
-    public static func availableDevices() -> [MicrophoneInputDevice] {
+    public nonisolated static func availableDevices() -> [MicrophoneInputDevice] {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -68,7 +68,7 @@ public final class MicrophoneRecorder {
     }
 
     /// An unplugged or output-only device cannot be offered as a recording target.
-    private static func inputDeviceUsable(_ device: AudioDeviceID) -> Bool {
+    private nonisolated static func inputDeviceUsable(_ device: AudioDeviceID) -> Bool {
         var alive = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyDeviceIsAlive,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -90,7 +90,7 @@ public final class MicrophoneRecorder {
         !uid.isEmpty && !devices.contains(where: { $0.id == uid })
     }
 
-    private static func propertyString(_ device: AudioDeviceID, selector: AudioObjectPropertySelector) -> String? {
+    private nonisolated static func propertyString(_ device: AudioDeviceID, selector: AudioObjectPropertySelector) -> String? {
         var property = AudioObjectPropertyAddress(
             mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain)
@@ -100,7 +100,7 @@ public final class MicrophoneRecorder {
         return value as String?
     }
 
-    private static func deviceID(for uid: String) -> AudioDeviceID? {
+    private nonisolated static func deviceID(for uid: String) -> AudioDeviceID? {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -162,29 +162,31 @@ public final class MicrophoneRecorder {
             case .denied, .notDetermined: throw MicrophoneError.permissionDenied
             case .restricted: throw MicrophoneError.permissionRestricted
             }
-            guard AVCaptureDevice.default(for: .audio) != nil || !deviceUID.isEmpty else {
-                throw MicrophoneError.noInputDevice
-            }
-            let instance = AVAudioEngine()
-            let input = instance.inputNode
-            if !deviceUID.isEmpty {
-                guard let id = Self.deviceID(for: deviceUID),
-                      let unit = input.audioUnit else { throw MicrophoneError.noInputDevice }
-                var device = id
-                let result = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
-                    kAudioUnitScope_Global, 0, &device, UInt32(MemoryLayout<AudioDeviceID>.size))
-                guard result == noErr else { throw MicrophoneError.engineStartFailed }
-            }
-            let format = input.outputFormat(forBus: 0)
-            guard format.channelCount > 0, format.sampleRate > 0 else {
-                throw MicrophoneError.noInputDevice
-            }
-            let processor = try CapturePipeline(id: attempt, inputFormat: format) { [weak self] id, reason in
-                Task { @MainActor [weak self] in
-                    self?.handleFailure(id: id, error: reason)
+            // AVAudioEngine inputNode, AudioUnitSetProperty, installTap and
+            // start() can synchronously wait on a missing/reconfiguring driver.
+            // They must not run on the key/indicator AppKit event loop.
+            let prepared = try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<(AVAudioEngine, CapturePipeline), Error>) in
+                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                    do {
+                        let pair = try Self.prepareEngine(deviceUID: deviceUID, attempt: attempt) { id, reason in
+                            Task { @MainActor [weak self] in
+                                self?.handleFailure(id: id, error: reason)
+                            }
+                        }
+                        continuation.resume(returning: pair)
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
                 }
             }
+            let (instance, processor) = prepared
+            guard recordingID == attempt else {
+                Self.cleanupEngineAsync(instance, hasTap: true)
+                throw MicrophoneError.cancelled
+            }
             engine = instance
+            hasTap = true
             pipeline = processor
             configurationObserver = NotificationCenter.default.addObserver(
                 forName: .AVAudioEngineConfigurationChange, object: instance, queue: nil
@@ -199,19 +201,6 @@ public final class MicrophoneRecorder {
                 Task { @MainActor [weak self] in
                     self?.handleFailure(id: id, error: .recordingInterrupted)
                 }
-            }
-            input.installTap(onBus: 0, bufferSize: 4_096, format: format) { buffer, _ in
-                processor.enqueue(buffer)
-            }
-            hasTap = true
-            do {
-                try instance.start()
-            } catch {
-                throw MicrophoneError.engineStartFailed
-            }
-            guard instance.isRunning else { throw MicrophoneError.engineStartFailed }
-            if !deviceUID.isEmpty && Self.deviceID(for: deviceUID) == nil {
-                throw MicrophoneError.noInputDevice
             }
             recordingDeviceUID = deviceUID
             state = .recording
@@ -305,6 +294,63 @@ public final class MicrophoneRecorder {
         state = .failed(error)
     }
 
+    /// The entire CoreAudio startup is performed off the main run loop. The
+    /// tap only captures PCM; UI callbacks remain on the main actor.
+    private nonisolated static func prepareEngine(
+        deviceUID: String, attempt: UUID,
+        onFailure: @escaping (UUID, MicrophoneError) -> Void
+    ) throws -> (AVAudioEngine, CapturePipeline) {
+        guard AVCaptureDevice.default(for: .audio) != nil || !deviceUID.isEmpty else {
+            throw MicrophoneError.noInputDevice
+        }
+        let instance = AVAudioEngine()
+        let input = instance.inputNode
+        var installedTap = false
+        do {
+            if !deviceUID.isEmpty {
+                guard let id = deviceID(for: deviceUID),
+                      let unit = input.audioUnit else { throw MicrophoneError.noInputDevice }
+                var device = id
+                let result = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
+                    kAudioUnitScope_Global, 0, &device, UInt32(MemoryLayout<AudioDeviceID>.size))
+                guard result == noErr else { throw MicrophoneError.engineStartFailed }
+            }
+            let format = input.outputFormat(forBus: 0)
+            guard format.channelCount > 0, format.sampleRate > 0 else {
+                throw MicrophoneError.noInputDevice
+            }
+            let processor = try CapturePipeline(
+                id: attempt, inputFormat: format, onFailure: onFailure)
+            input.installTap(onBus: 0, bufferSize: 4_096, format: format) { buffer, _ in
+                processor.enqueue(buffer)
+            }
+            installedTap = true
+            do { try instance.start() }
+            catch { throw MicrophoneError.engineStartFailed }
+            guard instance.isRunning else { throw MicrophoneError.engineStartFailed }
+            if !deviceUID.isEmpty && deviceID(for: deviceUID) == nil {
+                throw MicrophoneError.noInputDevice
+            }
+            return (instance, processor)
+        } catch {
+            // This cleanup is already on the background worker.
+            closeEngine(instance, hasTap: installedTap)
+            throw error
+        }
+    }
+
+    private nonisolated static func closeEngine(_ instance: AVAudioEngine, hasTap: Bool) {
+        if hasTap { instance.inputNode.removeTap(onBus: 0) }
+        instance.stop()
+        instance.reset()
+    }
+
+    private nonisolated static func cleanupEngineAsync(_ instance: AVAudioEngine, hasTap: Bool) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            closeEngine(instance, hasTap: hasTap)
+        }
+    }
+
     /// Detach the native engine before awaiting teardown, so cancellation
     /// cannot synchronously repeat a stuck CoreAudio stop on the main thread.
     private func teardownEngineAfterStop() async {
@@ -325,9 +371,7 @@ public final class MicrophoneRecorder {
         guard let stoppedEngine else { return }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             DispatchQueue.global(qos: .userInitiated).async {
-                if removeTap { stoppedEngine.inputNode.removeTap(onBus: 0) }
-                stoppedEngine.stop()
-                stoppedEngine.reset()
+                Self.closeEngine(stoppedEngine, hasTap: removeTap)
                 continuation.resume()
             }
         }
@@ -344,13 +388,13 @@ public final class MicrophoneRecorder {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
             sleepObserver = nil
         }
-        if hasTap {
-            engine?.inputNode.removeTap(onBus: 0)
-            hasTap = false
-        }
-        engine?.stop()
-        engine?.reset()
+        let previous = engine
+        let tapInstalled = hasTap
+        hasTap = false
         engine = nil
+        if let previous {
+            Self.cleanupEngineAsync(previous, hasTap: tapInstalled)
+        }
     }
 }
 #endif
