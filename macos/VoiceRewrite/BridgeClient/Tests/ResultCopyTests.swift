@@ -73,20 +73,28 @@ final class ResultCopyTests: XCTestCase {
     @MainActor
     func testManualApplyDifferentiatesSentEventFromConfirmedWrite() async {
         var writes = [String]()
-        var confirmation: ResultApplyReceipt = .eventSent
-        let card = ResultCardActionSession(text: "文本", apply: ResultCardApply(
+        let sentCard = ResultCardActionSession(text: "文本", apply: ResultCardApply(
             revalidate: { .authorized },
             replace: { value in
                 writes.append(value)
-                return confirmation
+                return .eventSent
             }))
-        await card.applyIfAuthorized()
+        await sentCard.applyIfAuthorized()
         XCTAssertEqual(writes, ["文本"])
-        XCTAssertEqual(card.note, "已发送粘贴指令 · 请确认是否写入")
-        confirmation = .confirmedWrite
-        await card.applyIfAuthorized()
-        XCTAssertEqual(writes, ["文本", "文本"])
-        XCTAssertEqual(card.note, "已确认替换原选区")
+        XCTAssertEqual(sentCard.note, "已发送粘贴指令 · 请确认是否写入")
+        XCTAssertFalse(sentCard.mayApply)
+        await sentCard.applyIfAuthorized()
+        XCTAssertEqual(writes, ["文本"], "An unconfirmed paste event must never be retried")
+        let confirmedCard = ResultCardActionSession(text: "新文本", apply: ResultCardApply(
+            revalidate: { .authorized },
+            replace: { value in
+                writes.append(value)
+                return .confirmedWrite
+            }))
+        await confirmedCard.applyIfAuthorized()
+        XCTAssertEqual(writes, ["文本", "新文本"])
+        XCTAssertEqual(confirmedCard.note, "已确认替换原选区")
+        XCTAssertFalse(confirmedCard.mayApply)
     }
 
     @MainActor
@@ -190,6 +198,27 @@ final class ResultCopyTests: XCTestCase {
                 add(attachment)
             }
         }
+    }
+
+    @MainActor
+    func testConcurrentApplyIsSingleFlight() async {
+        var checks = 0
+        var writes = 0
+        var card: ResultCardActionSession!
+        card = ResultCardActionSession(text: "正文", apply: ResultCardApply(
+            revalidate: {
+                checks += 1
+                await card.applyIfAuthorized()
+                return .authorized
+            },
+            replace: { _ in
+                writes += 1
+                return .eventSent
+            }))
+        await card.applyIfAuthorized()
+        XCTAssertEqual(checks, 1)
+        XCTAssertEqual(writes, 1)
+        XCTAssertFalse(card.mayApply)
     }
 
 }
