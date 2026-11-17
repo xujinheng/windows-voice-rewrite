@@ -5,7 +5,7 @@ final class MeetingReaderTests: XCTestCase {
     func testDefaultSixPaneOrderMatchesWindows() {
         XCTAssertEqual(MeetingReaderLayout.visible(captionsOnly: false, expanded: false),
                        [0, 1, 2, 3, 4, 5])
-        XCTAssertEqual(MeetingReaderLayout.defaults.map(Int.init), [85, 50, 85, 65, 230, 40])
+        XCTAssertEqual(MeetingReaderLayout.defaults.map { Int($0) }, [85, 50, 85, 65, 230, 40])
     }
 
     func testFocusedCaptionsAndExpandedEnglishKeepReadingRegions() {
