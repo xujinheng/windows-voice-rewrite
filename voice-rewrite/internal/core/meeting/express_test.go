@@ -2,6 +2,7 @@ package meeting
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -63,5 +64,23 @@ func TestMeetingExpressionStopsStaySeparate(t *testing.T) {
 	}
 	if ListeningPrompt == "正在聆听" {
 		t.Fatal("listening prompt collapsed")
+	}
+}
+
+func TestValidMeetingInstructionUsesOneUnicodeRuneLimit(t *testing.T) {
+	if ValidInstruction("") || ValidInstruction("  \t\n　") {
+		t.Fatal("blank instruction was accepted")
+	}
+	if !ValidInstruction(strings.Repeat("a", MaxInstructionRunes)) ||
+		ValidInstruction(strings.Repeat("a", MaxInstructionRunes+1)) {
+		t.Fatal("ASCII instruction boundary mismatch")
+	}
+	if !ValidInstruction(strings.Repeat("字", MaxInstructionRunes)) ||
+		ValidInstruction(strings.Repeat("字", MaxInstructionRunes+1)) {
+		t.Fatal("CJK instruction boundary mismatch")
+	}
+	if !ValidInstruction(strings.Repeat("🎤", MaxInstructionRunes)) ||
+		ValidInstruction(strings.Repeat("🎤", MaxInstructionRunes+1)) {
+		t.Fatal("supplementary-plane instruction boundary mismatch")
 	}
 }

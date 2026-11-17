@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -384,14 +383,12 @@ func (s *bridgeServer) meetingTask(ctx context.Context, req request) response {
 		err = m.runReplies(ctx, 0)
 	case "meeting_refine":
 		if req.ReplyIndex < 0 || req.ReplyIndex > 2 ||
-			strings.TrimSpace(req.Instruction) == "" ||
-			utf8.RuneCountInString(req.Instruction) > 2000 {
+			!meetingcore.ValidInstruction(req.Instruction) {
 			return failure(req.ID, "invalid_request", "请选择回复并输入 2000 字以内的调整指令")
 		}
 		err = m.refine(ctx, req.ReplyIndex, req.Instruction)
 	case "meeting_compose":
-		if strings.TrimSpace(req.Instruction) == "" ||
-			utf8.RuneCountInString(req.Instruction) > 2000 {
+		if !meetingcore.ValidInstruction(req.Instruction) {
 			return failure(req.ID, "invalid_request", "请输入 2000 字以内想表达的内容")
 		}
 		err = m.compose(ctx, req.Instruction)

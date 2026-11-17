@@ -3,6 +3,7 @@ package meeting
 import (
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 const (
@@ -10,6 +11,8 @@ const (
 	ExpressionTimeout = 50 * time.Second
 	// PriorTurns is how many finished utterances stay available to the next expression.
 	PriorTurns = 5
+	// MaxInstructionRunes limits user-supplied refine and compose requests in both hosts.
+	MaxInstructionRunes = 2000
 
 	// ListeningStage is the metrics stage while audio is being heard.
 	// ListeningPrompt is the live session line. An empty status still falls back to "正在聆听".
@@ -33,6 +36,12 @@ const (
 	ExpressGenerateFailed  = "英文生成失败"
 	WorkCanceled           = "处理已取消"
 )
+
+// ValidInstruction is the single meeting instruction rule for both desktop hosts
+// and the JSON-lines service. The byte-level transport limit is checked separately.
+func ValidInstruction(value string) bool {
+	return strings.TrimSpace(value) != "" && utf8.RuneCountInString(value) <= MaxInstructionRunes
+}
 
 // CancelPresentation drops an unfinished expression and replaces a visible status.
 // A finished expression stays. An empty status stays empty.

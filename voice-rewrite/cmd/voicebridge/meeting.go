@@ -309,7 +309,7 @@ func (m *bridgeMeeting) refine(parent context.Context, index int, instruction st
 	source := m.replies.Displayed.Source
 	m.mu.Unlock()
 	if !chosen.Complete || !meetingcore.RefineMayRun(chosen.English, false) ||
-		len([]rune(instruction)) > 2000 || strings.TrimSpace(instruction) == "" {
+		!meetingcore.ValidInstruction(instruction) {
 		return errMeetingInvalidReply
 	}
 	return m.runExpression(parent, meetingcore.Query{Mode: "refine",
@@ -317,7 +317,7 @@ func (m *bridgeMeeting) refine(parent context.Context, index int, instruction st
 }
 
 func (m *bridgeMeeting) compose(parent context.Context, instruction string) error {
-	if len([]rune(instruction)) > 2000 || strings.TrimSpace(instruction) == "" {
+	if !meetingcore.ValidInstruction(instruction) {
 		return errors.New("invalid expression request")
 	}
 	return m.runExpression(parent, meetingcore.Query{Mode: "compose", UserPoints: instruction})
