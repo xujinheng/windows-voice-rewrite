@@ -50,9 +50,20 @@ enum MeetingReaderLayout {
         return updated
     }
 
-    static func unread(previous: Int, current: Int, unread: Int, following: Bool) -> Int {
-        if following || current < previous { return 0 }
-        return unread + max(0, current - previous)
+    static func unread(previous: Int, current: Int, unread: Int, following: Bool,
+                       previousID: Int? = nil, currentID: Int? = nil) -> Int {
+        if following { return 0 }
+        if let previousID, let currentID, currentID < previousID { return 0 }
+        if current < previous && currentID == nil { return 0 }
+        let newTail = previousID != nil && currentID != nil && currentID! > previousID! ? 1 : 0
+        return unread + max(max(0, current - previous), newTail)
+    }
+
+    // A completed current turn remains fixed until the next utterance arrives.
+    // Interim ASR text must never appear in the independently scrolled history.
+    static func split(_ captions: [MeetingCaptionRow]) -> (current: MeetingCaptionRow?, history: [MeetingCaptionRow]) {
+        let readable = captions.filter { !$0.source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        return (readable.last, Array(readable.dropLast().filter(\.final)))
     }
 }
 
@@ -87,6 +98,7 @@ struct MeetingReaderView: View {
 
     @AppStorage("meeting.reader.fontSize") private var fontSize = 16
     @AppStorage("meeting.reader.paneWeights") private var savedWeights = "85,50,85,65,230,40"
+    @AppStorage("meeting.reader.captionsFocus") private var savedCaptionsFocus = false
     @State private var weights = MeetingReaderLayout.defaults
     @State private var dragBase: [CGFloat]?
     @State private var dragIndex: Int?
@@ -97,12 +109,8 @@ struct MeetingReaderView: View {
 
     private var captions: [MeetingCaptionRow] { frozen?.captions ?? model.meetingCaptions }
     private var replies: [MeetingReplyRow] { frozen?.replies ?? model.meetingReplies }
-    private var latest: MeetingCaptionRow? { captions.last }
-    private var past: [MeetingCaptionRow] {
-        let finalized = captions.filter(\.final)
-        guard let last = latest, last.final, finalized.last?.id == last.id else { return finalized }
-        return Array(finalized.dropLast())
-    }
+    private var latest: MeetingCaptionRow? { MeetingReaderLayout.split(captions).current }
+    private var past: [MeetingCaptionRow] { MeetingReaderLayout.split(captions).history }
     private var reply: MeetingReplyRow? {
         replies.first(where: { $0.id == model.meetingSelectedIndex }) ??
         replies.first(where: { $0.complete && !$0.english.isEmpty })
@@ -116,7 +124,7 @@ struct MeetingReaderView: View {
     }
     private var history: String {
         past.map { row in
-            row.chinese.isEmpty ? row.source : row.source + "\n" + row.chinese
+            row.chinese.isEmpty ? row.source : row.chinese + "\n" + row.source
         }.joined(separator: "\n\n")
     }
 
@@ -171,14 +179,24 @@ struct MeetingReaderView: View {
             }
         }
         .padding(12)
-        .frame(minWidth: embedded ? 590 : 600, minHeight: embedded ? 625 : 720)
+        .frame(minWidth: embedded ? 590 : 600, minHeight: embedded ? 625 : 550)
         .onAppear { weights = MeetingReaderLayout.decode(savedWeights) }
         .onChange(of: model.meetingActive) { _, active in
             if !active {
                 frozen = nil
                 following = true
                 unread = 0
+            } else if savedCaptionsFocus != model.meetingCaptionsOnly {
+                model.toggleMeetingCaptionsOnly()
             }
+        }
+        .onChange(of: model.meetingCaptionsOnly) { _, value in
+            if model.meetingActive { savedCaptionsFocus = value }
+        }
+        .onChange(of: model.meetingExpression) { old, new in
+            // Do not steal focus from a frozen view or someone reading history.
+            guard frozen == nil, following, !new.isEmpty, new != old else { return }
+            model.focusMeetingExpressionIfReadingLatest()
         }
         .sheet(isPresented: $showProfile) {
             MeetingProfileDraftView(model: model)
@@ -277,7 +295,7 @@ struct MeetingReaderView: View {
                         size: fontSize + 1)
             }
         case 2:
-            section("之前的对话 · \(past.count) 段\(unread > 0 ? " · \(unread) 条新内容" : "")",
+            section("之前的对话 · \(past.count) 段\(model.meetingHistoryTrimmed > 0 ? " · 更早 \(model.meetingHistoryTrimmed) 段已清理" : "")\(unread > 0 ? " · \(unread) 条新内容" : "")",
                     identifier: "meeting_pane_history") {
                 VStack(spacing: 1) {
                     HStack {
@@ -290,7 +308,8 @@ struct MeetingReaderView: View {
                         .controlSize(.mini)
                         .accessibilityIdentifier("meeting_history_latest")
                     }
-                    HistoryReaderText(text: history, completedCount: past.count, fontSize: fontSize,
+                    HistoryReaderText(text: history, completedCount: past.count,
+                                      newestID: past.last?.id, fontSize: fontSize,
                                       following: $following, unread: $unread)
                         .accessibilityIdentifier("meeting_history_text")
                 }
@@ -511,6 +530,7 @@ private struct MeetingProfileDraftView: View {
 private struct HistoryReaderText: NSViewRepresentable {
     let text: String
     let completedCount: Int
+    let newestID: Int?
     let fontSize: Int
     @Binding var following: Bool
     @Binding var unread: Int
@@ -568,13 +588,16 @@ private struct HistoryReaderText: NSViewRepresentable {
         }
         let nextUnread = MeetingReaderLayout.unread(
             previous: oldCount, current: completedCount,
-            unread: unread, following: following)
+            unread: unread, following: following,
+            previousID: coordinator.newestID, currentID: newestID)
         coordinator.count = completedCount
+        coordinator.newestID = newestID
         coordinator.wasFollowing = following
         if nextUnread != unread {
             DispatchQueue.main.async { [weak coordinator] in
                 guard let coordinator else { return }
-                coordinator.parent.unread = nextUnread
+                if coordinator.parent.following { coordinator.parent.unread = 0 }
+                else { coordinator.parent.unread = nextUnread }
             }
         }
     }
@@ -594,6 +617,7 @@ private struct HistoryReaderText: NSViewRepresentable {
         var parent: HistoryReaderText
         weak var scrollView: NSScrollView?
         var count = 0
+        var newestID: Int?
         var wasFollowing = true
         var updating = false
 
@@ -642,13 +666,28 @@ final class MeetingReaderWindowController: NSObject, NSWindowDelegate {
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.minSize = NSSize(width: 680, height: 510)
+        panel.minSize = NSSize(width: 680, height: 610)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = NSHostingView(rootView:
             MeetingReaderView(model: model, embedded: false))
         panel.delegate = self
         if !panel.setFrameUsingName("VoiceRewriteMeetingReader") {
             panel.center()
+        }
+        // Saved coordinates may point at a disconnected external monitor.
+        // Keep a usable window on an attached display without discarding the
+        // last chosen dimensions when the screen can accommodate them.
+        let frame = panel.frame
+        if !NSScreen.screens.contains(where: {
+            $0.visibleFrame.intersection(frame).width >= 120 &&
+            $0.visibleFrame.intersection(frame).height >= 100
+        }), let screen = NSScreen.main ?? NSScreen.screens.first {
+            let area = screen.visibleFrame
+            let width = min(frame.width, area.width)
+            let height = min(frame.height, area.height)
+            panel.setFrame(NSRect(x: area.midX - width / 2,
+                                  y: area.midY - height / 2,
+                                  width: width, height: height), display: false)
         }
         panel.setFrameAutosaveName("VoiceRewriteMeetingReader")
         self.panel = panel
