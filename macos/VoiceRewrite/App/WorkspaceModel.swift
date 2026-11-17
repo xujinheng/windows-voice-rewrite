@@ -991,7 +991,9 @@ final class WorkspaceModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self, self.resultGeneration.accepts(token) else { return }
                 do {
-                    try self.dictationDelivery.deliver(text, to: insertion)
+                    try await self.dictationDelivery.deliver(text, to: insertion, stillValid: {
+                        self.resultGeneration.accepts(token)
+                    })
                     DiagnosticLog.note("stage=dictation_delivery status=sent_unverified")
                     self.applyTask(dictationInsertFollowUp(succeeded: true, status: "", manualTitle: "", text: text))
                 } catch {
