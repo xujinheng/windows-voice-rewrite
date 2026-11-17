@@ -235,6 +235,7 @@ func emitLimits(moduleRoot string) (string, error) {
 		{"RecordSecondsMin", "recordSecondsMin"},
 		{"RecordSecondsMax", "recordSecondsMax"},
 		{"DefaultRecordSeconds", "defaultRecordSeconds"},
+		{"MaxSystemPromptBytes", "maxSystemPromptBytes"},
 		{"MinResponseTokens", "minResponseTokens"},
 		{"MaxResponseTokens", "maxResponseTokens"},
 		{"MaxSelectedRunes", "maxSelectedRunes"},
