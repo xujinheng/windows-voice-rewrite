@@ -96,6 +96,7 @@ private struct ReaderSnapshot {
     let replyTip: String
     let expression: String
     let expressionChinese: String
+    let expressionSource: String
     let expressionStatus: String
 
     init(model: WorkspaceModel) {
@@ -106,6 +107,7 @@ private struct ReaderSnapshot {
         replyTip = model.meetingReplyTip
         expression = model.meetingExpression
         expressionChinese = model.meetingExpressionChinese
+        expressionSource = model.meetingExpressionSource
         expressionStatus = model.meetingExpressionStatus
     }
 }
@@ -127,6 +129,7 @@ struct MeetingReaderView: View {
     @State private var unread = 0
     @State private var lastFocusedExpression = ""
     @State private var showProfile = false
+    @State private var showCompose = false
 
     private var captions: [MeetingCaptionRow] { frozen?.captions ?? model.meetingCaptions }
     private var replies: [MeetingReplyRow] { frozen?.replies ?? model.meetingReplies }
@@ -221,6 +224,9 @@ struct MeetingReaderView: View {
         .onChange(of: frozen == nil) { _, _ in requestExpressionFocusIfReady() }
         .sheet(isPresented: $showProfile) {
             MeetingProfileDraftView(model: model)
+        }
+        .sheet(isPresented: $showCompose) {
+            MeetingTextComposerSheet(model: model)
         }
     }
 
@@ -472,27 +478,62 @@ struct MeetingReaderView: View {
     }
 
     private var sourcePane: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            TextEditor(text: $model.meetingInput)
+        HStack(alignment: .top, spacing: 6) {
+            let original = frozen?.expressionSource ?? model.meetingExpressionSource
+            let status = frozen?.expressionStatus ?? model.meetingExpressionStatus
+            Text(original.isEmpty
+                 ? (status.isEmpty ? "语音原话会显示在这里" : status)
+                 : "已识别 · " + original)
                 .font(.system(size: CGFloat(fontSize)))
-                .scrollContentBackground(.hidden)
+                .lineLimit(2)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help(original)
+                .accessibilityIdentifier("meeting_expression_source")
+            Button("文字输入") { showCompose = true }
+                .disabled(!model.meetingActive || model.meetingBusy || frozen != nil)
+                .accessibilityIdentifier("meeting_compose_open")
+            Button(model.meetingVoiceRecording ? "结束语音" : "语音输入") {
+                model.toggleMeetingVoice()
+            }
+            .disabled(!model.meetingActive || model.meetingVoiceStarting ||
+                      (model.meetingBusy && !model.meetingVoiceRecording) ||
+                      model.isRecording || model.isStarting || model.isProcessing ||
+                      frozen != nil)
+            Button("取消处理") { model.cancelMeetingWork() }
+                .disabled(!model.meetingActive || model.meetingCancelPending || frozen != nil)
+        }
+        .controlSize(.mini)
+    }
+}
+
+// Compose is a separate editor so the sixth reading region remains the
+// original utterance, matching the Windows read-only expression-source field.
+private struct MeetingTextComposerSheet: View {
+    @ObservedObject var model: WorkspaceModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("生成可直接说的英语").font(.headline)
+            TextEditor(text: $model.meetingInput)
+                .font(.system(size: 16))
+                .frame(minHeight: 150)
                 .accessibilityIdentifier("meeting_expression_input")
             HStack {
-                Button("生成可直接说的英语") { model.composeMeetingText() }
-                    .disabled(!model.meetingActive || model.meetingBusy ||
-                              model.meetingInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button(model.meetingVoiceRecording ? "结束语音并生成" : "语音输入") {
-                    model.toggleMeetingVoice()
-                }
-                .disabled(!model.meetingActive || model.meetingVoiceStarting ||
-                          (model.meetingBusy && !model.meetingVoiceRecording) ||
-                          model.isRecording || model.isStarting || model.isProcessing)
-                Button("取消处理") { model.cancelMeetingWork() }
-                    .disabled(!model.meetingActive || model.meetingCancelPending)
                 Spacer()
+                Button("取消") { dismiss() }
+                Button("生成英文") {
+                    model.composeMeetingText()
+                    dismiss()
+                }
+                .disabled(!model.meetingActive || model.meetingBusy ||
+                    model.meetingInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityIdentifier("meeting_compose_submit")
             }
-            .controlSize(.small)
         }
+        .padding(20)
+        .frame(width: 540)
     }
 }
 
