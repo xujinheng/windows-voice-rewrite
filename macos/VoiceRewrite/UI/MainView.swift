@@ -208,7 +208,7 @@ private struct MeetingView: View {
                     }
                     .disabled(model.meetingStarting || model.meetingActive)
                     .accessibilityIdentifier("meeting_asr_mode")
-                    Button(model.meetingActive || model.meetingStarting ? "停止会议" : "开始会议") {
+                    Button(model.meetingDemoActive ? "退出演示" : (model.meetingActive || model.meetingStarting ? "停止会议" : "开始会议")) {
                         if model.meetingActive || model.meetingStarting {
                             model.stopMeeting()
                         } else {
@@ -218,8 +218,11 @@ private struct MeetingView: View {
                     .disabled(!model.meetingActive && !model.meetingStarting &&
                               !model.meetingSources.contains(where: { $0.id == model.meetingSourceID }))
                     .accessibilityIdentifier("meeting_start_stop")
+                    Button("离线演示") { model.startMeetingDemo() }
+                        .disabled(model.meetingStarting || model.meetingActive)
+                        .accessibilityIdentifier("meeting_offline_demo")
                 }
-                Text("识别模式需在设置中保存。前缀续写要求 ASR 服务支持。")
+                Text("会议资料中可在运行时更换识别模式。离线演示只显示固定测试数据，不采集音频，不连接在线模型服务。")
                     .font(.caption).foregroundStyle(.secondary)
                 MeetingReaderView(model: model, embedded: true)
                     .frame(height: 690)
