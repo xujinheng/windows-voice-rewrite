@@ -5,6 +5,7 @@ public enum ContractLimits {
     public static let recordSecondsMin = 1
     public static let recordSecondsMax = 180
     public static let defaultRecordSeconds = 60
+    public static let maxSystemPromptBytes = 16384
     public static let minResponseTokens = 128
     public static let maxResponseTokens = 4096
     public static let maxSelectedRunes = 100000
