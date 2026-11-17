@@ -202,6 +202,17 @@ public struct MacSettings: Codable, Equatable, Sendable {
             values["dictation_shortcut"] = ContractLimits.macDictationShortcut
             values["rewrite_shortcut"] = ContractLimits.macRewriteShortcut
         }
+        // The earlier macOS default used RightCtrl, which is absent on
+        // built-in MacBook keyboards. Upgrade only the unscoped default pair
+        // in Hold mode. Device-specific RightCtrl bindings and custom chords
+        // keep their explicitly configured behavior.
+        if values["dictation_shortcut"] as? String == "RightCtrl",
+           values["rewrite_shortcut"] as? String == "RightOption",
+           values["record_mode"] as? String == "hold",
+           values["dictation_keyboard_id"] as? String == "",
+           values["rewrite_keyboard_id"] as? String == "" {
+            values["dictation_shortcut"] = ContractLimits.macDictationShortcut
+        }
         guard Set(values.keys) == Set(CodingKeys.allCases.map(\.rawValue)),
               let encoded = try? JSONSerialization.data(withJSONObject: values),
               var settings = try? JSONDecoder().decode(MacSettings.self, from: encoded) else {
