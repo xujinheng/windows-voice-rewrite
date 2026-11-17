@@ -38,8 +38,16 @@ func PrepareQuery(cfg coreconfig.Config, q Query) Query {
 			q.Prior, q.Background = nil, ""
 		}
 		q.Terms = MatchingTerms(q.Terms, spoken)
-	case "replies", "refine":
+	case "replies":
 		q.Prior = RecentContext(q.Prior)
+		// A glossary is a vocabulary hint, not instructions to steer every
+		// answer toward every project named in the saved profile.
+		q.Terms = MatchingTerms(q.Terms, q.Latest+"\n"+strings.Join(q.Prior, "\n"))
+	case "refine":
+		// Refinement edits the selected sentence. Old turns and background
+		// must not silently introduce facts or commitments into that edit.
+		q.Prior, q.Background = nil, ""
+		q.Terms = MatchingTerms(q.Terms, q.SelectedReply+"\n"+q.UserPoints)
 	default:
 		q.Prior, q.Background, q.Terms = nil, "", ""
 	}

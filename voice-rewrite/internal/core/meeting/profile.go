@@ -11,10 +11,9 @@ const (
 	// The Windows profile fields use the same numbers as their text limits.
 	MaxBackgroundRunes = 4000
 	MaxTermsRunes      = 2000
-	// MaxRefineInstructionRunes is the accepted length after trim.
-	// RefineFieldLimit is the Windows edit control's typing stop. It stays lower.
-	MaxRefineInstructionRunes = 2000
-	RefineFieldLimit          = 600
+	// RefineFieldLimit bounds the input UI and the shared request protocol.
+	// A distinct 2000-rune limit applies to free-form compose and express.
+	RefineFieldLimit = 600
 )
 
 // AcceptProfile rejects over-long meeting notes, then trims what will be stored.
@@ -29,7 +28,7 @@ func AcceptProfile(background, terms string) (string, string, error) {
 // An empty or too-long instruction is ignored, matching the previous host gate.
 func AcceptRefine(index int, instruction string) (string, bool) {
 	instruction = strings.TrimSpace(instruction)
-	if index < 0 || index >= len(ReplyBatch{}.Lines) || instruction == "" || utf8.RuneCountInString(instruction) > MaxRefineInstructionRunes {
+	if index < 0 || index >= len(ReplyBatch{}.Lines) || instruction == "" || utf8.RuneCountInString(instruction) > RefineFieldLimit {
 		return "", false
 	}
 	return instruction, true

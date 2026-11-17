@@ -296,7 +296,8 @@ func (s *bridgeServer) meetingRequest(req request) response {
 			return failure(req.ID, "meeting_failed", "无法启动会议处理")
 		}
 		s.meeting = m
-		return success(req.ID, map[string]any{"session_id": m.id})
+		_, epoch, _ := m.runtime.Snapshot()
+		return success(req.ID, map[string]any{"session_id": m.id, "audio_epoch": epoch})
 	case "meeting_feed":
 		if req.SessionID == "" || len(req.PCMBase64) == 0 ||
 			len(req.PCMBase64) > base64.StdEncoding.EncodedLen(32_000) {
@@ -406,9 +407,8 @@ func (s *bridgeServer) meetingTask(ctx context.Context, req request) response {
 	case "meeting_replies":
 		err = m.runReplies(ctx, 0)
 	case "meeting_refine":
-		if req.ReplyIndex < 0 || req.ReplyIndex > 2 ||
-			!meetingcore.ValidInstruction(req.Instruction) {
-			return failure(req.ID, "invalid_request", "请选择回复并输入 2000 字以内的调整指令")
+		if _, ok := meetingcore.AcceptRefine(req.ReplyIndex, req.Instruction); !ok {
+			return failure(req.ID, "invalid_request", "请选择回复并输入 600 字以内的调整指令")
 		}
 		err = m.refine(ctx, req.ReplyIndex, req.Instruction)
 	case "meeting_express":
