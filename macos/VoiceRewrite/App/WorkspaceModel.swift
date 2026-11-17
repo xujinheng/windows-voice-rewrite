@@ -217,19 +217,19 @@ final class WorkspaceModel: ObservableObject {
         if let keyboardHID { return keyboardHID }
         let hid = MacKeyboardHIDMonitor(
             onDevices: { [weak self] in self?.keyboardDevices = $0 },
-            onPress: { [weak self] key, pid in
+            onPress: { [weak self] key, deviceID, pid in
                 guard let self, let bound = self.activeShortcutPlan else { return }
-                if key == bound.modifierDictation && !self.activeDictationKeyboardID.isEmpty {
+                if key == bound.modifierDictation && deviceID == self.activeDictationKeyboardID {
                     self.keyboardPressed(.dictation, targetPID: pid)
-                } else if key == bound.modifierRewrite && !self.activeRewriteKeyboardID.isEmpty {
+                } else if key == bound.modifierRewrite && deviceID == self.activeRewriteKeyboardID {
                     self.keyboardPressed(.rewrite, targetPID: pid)
                 }
             },
-            onRelease: { [weak self] key in
+            onRelease: { [weak self] key, deviceID in
                 guard let self, let bound = self.activeShortcutPlan else { return }
-                if key == bound.modifierDictation && !self.activeDictationKeyboardID.isEmpty {
+                if key == bound.modifierDictation && deviceID == self.activeDictationKeyboardID {
                     self.keyboardReleased(.dictation)
-                } else if key == bound.modifierRewrite && !self.activeRewriteKeyboardID.isEmpty {
+                } else if key == bound.modifierRewrite && deviceID == self.activeRewriteKeyboardID {
                     self.keyboardReleased(.rewrite)
                 }
             },
@@ -336,10 +336,16 @@ final class WorkspaceModel: ObservableObject {
         do {
             guard let store else { throw SettingsError.insecureStorage }
             let previous = activeShortcutPlan
+            let previousDictationKeyboardID = activeDictationKeyboardID
+            let previousRewriteKeyboardID = activeRewriteKeyboardID
             guard try ShortcutSaveTransaction.run(
                 activate: { self.register(dictation: dictation, rewrite: rewrite) },
                 persist: { try store.save(self.settings) },
-                restore: { self.restoreShortcutPlan(previous) }
+                restore: {
+                    self.activeDictationKeyboardID = previousDictationKeyboardID
+                    self.activeRewriteKeyboardID = previousRewriteKeyboardID
+                    self.restoreShortcutPlan(previous)
+                }
             ) else {
                 settingsStatus = shortcutNotRegistered()
                 return
@@ -370,7 +376,9 @@ final class WorkspaceModel: ObservableObject {
               let rewrite = ShortcutBinding(canonical: settings.rewriteShortcut),
               let exit = ShortcutBinding(canonical: settings.exitShortcut),
               MacShortcutPlan(dictation: dictation, rewrite: rewrite,
-                              exit: exit, recordMode: settings.recordMode) != nil else {
+                              exit: exit, recordMode: settings.recordMode,
+                              dictationDeviceID: settings.dictationKeyboardID,
+                              rewriteDeviceID: settings.rewriteKeyboardID) != nil else {
             return nil
         }
         return (dictation, rewrite)
@@ -493,7 +501,9 @@ final class WorkspaceModel: ObservableObject {
     private func register(dictation: ShortcutBinding, rewrite: ShortcutBinding) -> Bool {
         guard let exit = ShortcutBinding(canonical: settings.exitShortcut),
               let next = MacShortcutPlan(dictation: dictation, rewrite: rewrite,
-                                         exit: exit, recordMode: settings.recordMode) else {
+                                         exit: exit, recordMode: settings.recordMode,
+                                          dictationDeviceID: settings.dictationKeyboardID,
+                                          rewriteDeviceID: settings.rewriteKeyboardID) else {
             interactionStatus = shortcutPlanRejected()
             return false
         }
@@ -752,8 +762,11 @@ final class WorkspaceModel: ObservableObject {
             return
         }
         if rightModifierDriver == nil &&
-           (activeShortcutPlan == nil || activeShortcutPlan?.modifierDictation != nil ||
-            activeShortcutPlan?.modifierRewrite != nil) { registerHotKeys() }
+           (activeShortcutPlan == nil ||
+            (activeShortcutPlan?.modifierDictation != nil && activeDictationKeyboardID.isEmpty) ||
+            (activeShortcutPlan?.modifierRewrite != nil && activeRewriteKeyboardID.isEmpty)) {
+            registerHotKeys()
+        }
         let isFreshStart = sideMouse == nil
         let driver = sideMouse ?? SideMouseButtonDriver(
             bindings: shortcutCaptureBindings(),
