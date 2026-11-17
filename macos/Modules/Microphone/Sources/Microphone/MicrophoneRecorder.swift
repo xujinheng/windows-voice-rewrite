@@ -251,7 +251,11 @@ public final class MicrophoneRecorder {
         let deviceStillAvailable = recordingDeviceUID.isEmpty ||
             Self.deviceID(for: recordingDeviceUID) != nil
         recordingDeviceUID = ""
-        teardownEngine()
+        // CoreAudio may block removeTap/stop/reset indefinitely when an input
+        // device is reconfigured or disappears. Never wait for those native
+        // calls on AppKit's main actor; the host's processing watchdog can
+        // recover independently if teardown fails to complete.
+        await teardownEngineAfterStop()
         guard let processor = pipeline else {
             state = .idle
             recordingID = nil
@@ -299,6 +303,34 @@ public final class MicrophoneRecorder {
         pipeline?.cancel()
         recordingDeviceUID = ""
         state = .failed(error)
+    }
+
+    /// Detach the native engine before awaiting teardown, so cancellation
+    /// cannot synchronously repeat a stuck CoreAudio stop on the main thread.
+    private func teardownEngineAfterStop() async {
+        deadline?.cancel()
+        deadline = nil
+        if let observer = configurationObserver {
+            NotificationCenter.default.removeObserver(observer)
+            configurationObserver = nil
+        }
+        if let observer = sleepObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            sleepObserver = nil
+        }
+        let stoppedEngine = engine
+        let removeTap = hasTap
+        engine = nil
+        hasTap = false
+        guard let stoppedEngine else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                if removeTap { stoppedEngine.inputNode.removeTap(onBus: 0) }
+                stoppedEngine.stop()
+                stoppedEngine.reset()
+                continuation.resume()
+            }
+        }
     }
 
     private func teardownEngine() {
