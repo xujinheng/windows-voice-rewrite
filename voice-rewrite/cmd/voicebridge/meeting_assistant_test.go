@@ -198,6 +198,7 @@ func TestMeetingReplyCoalescesConcurrentRequestsAndAvoidsRepeatInference(t *test
 		}
 		select {
 		case <-release:
+			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"choices": []any{map[string]any{
 					"message": map[string]string{"content": "ONE\tA good answer.\t一个好答案。"},
