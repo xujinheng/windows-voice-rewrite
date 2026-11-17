@@ -53,7 +53,8 @@ public final class MicrophoneRecorder {
               size > 0 else { return [] }
         var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
         let result = ids.withUnsafeMutableBufferPointer { buffer in
-            AudioObjectGetPropertyData(system, &address, 0, nil, &size, buffer.baseAddress)
+            guard let pointer = buffer.baseAddress else { return OSStatus(-1) }
+            return AudioObjectGetPropertyData(system, &address, 0, nil, &size, pointer)
         }
         guard result == noErr else { return [] }
         return ids.compactMap { id in
@@ -91,7 +92,8 @@ public final class MicrophoneRecorder {
         guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr else { return nil }
         var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
         let result = ids.withUnsafeMutableBufferPointer {
-            AudioObjectGetPropertyData(system, &address, 0, nil, &size, $0.baseAddress)
+            guard let pointer = $0.baseAddress else { return OSStatus(-1) }
+            return AudioObjectGetPropertyData(system, &address, 0, nil, &size, pointer)
         }
         guard result == noErr else { return nil }
         return ids.first { propertyString($0, selector: kAudioDevicePropertyDeviceUID) == uid }
