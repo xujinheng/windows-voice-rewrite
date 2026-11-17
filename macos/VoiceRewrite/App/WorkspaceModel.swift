@@ -672,7 +672,8 @@ final class WorkspaceModel: ObservableObject {
             } catch {
                 guard self.meetingSourceGeneration.accepts(token),
                       !self.meetingStarting && !self.meetingActive else { return }
-                self.meetingStatus = "无法读取音频来源；请在系统设置中允许屏幕与系统音频录制后重试"
+                self.meetingStatus = (error as? SystemAudioError)?.localizedDescription
+                    ?? "无法读取音频来源；请在系统设置中允许屏幕与系统音频录制后重试"
             }
         }
     }
