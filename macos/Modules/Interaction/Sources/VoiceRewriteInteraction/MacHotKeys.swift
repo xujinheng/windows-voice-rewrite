@@ -14,10 +14,13 @@ private let carbonHotKeyCallback: EventHandlerUPP = { _, event, userData in
     let identifier = hotKeyID.id
     // Pin the foreground target when the OS delivers the hotkey, before any async work.
     let foregroundPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-    // Never block Carbon's event callback; delivery is always on the main actor.
+    // The EventRef is valid only during this callback. Capture its kind now,
+    // before scheduling the native UI handler on the main actor.
+    let released = GetEventKind(event) == UInt32(kEventHotKeyReleased)
     DispatchQueue.main.async {
-        MainActor.assumeIsolated { driver.dispatch(identifier: identifier, foregroundPID: foregroundPID,
-                                                  released: GetEventKind(event) == UInt32(kEventHotKeyReleased)) }
+        MainActor.assumeIsolated {
+            driver.dispatch(identifier: identifier, foregroundPID: foregroundPID, released: released)
+        }
     }
     return noErr
 }
