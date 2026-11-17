@@ -3,6 +3,7 @@ package meeting
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestMeetingStableTail(t *testing.T) {
@@ -139,5 +140,44 @@ func TestCaptionStablePrefixAndFinalImmutability(t *testing.T) {
 	captions = UpsertCaption(captions, 3, "stale preview", false, true)
 	if !captions[0].Final || captions[0].Source != "Hello there!" {
 		t.Fatalf("final caption revised by delayed result: %+v", captions[0])
+	}
+}
+
+func TestBoundCaptionHistoryKeepsLongMeetingWithoutTwelveTurnCutoff(t *testing.T) {
+	var captions []Caption
+	for i := 0; i < 80; i++ {
+		captions = append(captions, Caption{ID: uint64(i + 1), Source: "turn", Final: true})
+	}
+	kept, removed := BoundCaptionHistory(captions)
+	if removed != 0 || len(kept) != 80 || BuildReadingPanels(kept).HistoryCount != 79 {
+		t.Fatalf("80-turn conversation must remain readable: %d removed, %d kept", removed, len(kept))
+	}
+}
+
+func TestBoundCaptionHistoryLimitsTurnsBytesAndPreservesUnicode(t *testing.T) {
+	var captions []Caption
+	for i := 0; i < 700; i++ {
+		captions = append(captions, Caption{ID: uint64(i + 1), Source: "Hello", Chinese: "你好", Final: true})
+	}
+	kept, removed := BoundCaptionHistory(captions)
+	if len(kept) != MaxHistoryCaptions || removed != 700-MaxHistoryCaptions || kept[len(kept)-1].ID != 700 {
+		t.Fatalf("count limit: %d kept, %d removed", len(kept), removed)
+	}
+	big := strings.Repeat("你好", MaxCaptionField)
+	captions = nil
+	for i := 0; i < 20; i++ {
+		captions = append(captions, Caption{ID: uint64(i + 1), Source: big, Chinese: big, Final: true})
+	}
+	kept, removed = BoundCaptionHistory(captions)
+	bytes := 0
+	for _, caption := range kept {
+		bytes += len(caption.Source) + len(caption.Chinese) +
+			len(caption.TranslatedFrom) + len(caption.Stable) + len(caption.Live)
+		if !utf8.ValidString(caption.Source) || !utf8.ValidString(caption.Chinese) {
+			t.Fatal("UTF-8 split at byte limit")
+		}
+	}
+	if removed == 0 || bytes > MaxHistoryBytes || kept[len(kept)-1].ID != 20 {
+		t.Fatalf("byte limit: %d kept, %d removed, %d bytes", len(kept), removed, bytes)
 	}
 }
