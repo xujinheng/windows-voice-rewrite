@@ -144,7 +144,7 @@ public final class MacDictationDelivery {
         do {
             try revalidate(target)
             guard clipboard.isOwned(lease) else { throw ClipboardFailure.ownershipLost }
-            postPaste()
+            try postPaste()
             // A queued Cmd+V is not a consumption receipt. Prefer a real paste
             // read notification; otherwise retain the transcript until timeout.
             clipboard.restoreAfterPaste(lease)
