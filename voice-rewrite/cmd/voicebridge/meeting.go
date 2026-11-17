@@ -442,12 +442,16 @@ func (m *bridgeMeeting) refine(parent context.Context, index int, instruction st
 	if index < 0 || index >= 3 {
 		return errors.New("invalid reply index")
 	}
+	instruction, ok := meetingcore.AcceptRefine(index, instruction)
+	if !ok {
+		return errMeetingInvalidReply
+	}
 	m.mu.Lock()
 	chosen := m.replies.Displayed.Lines[index]
 	source := m.replies.Displayed.Source
+	_, _, paused := m.runtime.Snapshot()
 	m.mu.Unlock()
-	if !chosen.Complete || !meetingcore.RefineMayRun(chosen.English, false) ||
-		!meetingcore.ValidInstruction(instruction) {
+	if !chosen.Complete || !meetingcore.RefineMayRun(chosen.English, paused) {
 		return errMeetingInvalidReply
 	}
 	return m.runExpression(parent, meetingcore.Query{Mode: "refine",
@@ -475,9 +479,14 @@ func (m *bridgeMeeting) runExpression(parent context.Context, query meetingcore.
 	stopParent := context.AfterFunc(parent, cancel)
 	defer stopParent()
 	m.mu.Lock()
-	if !m.runtime.CurrentExpression(epoch, serial) {
+	if !m.runtime.CurrentExpression(epoch, serial) || ctx.Err() != nil {
 		m.mu.Unlock()
 		return context.Canceled
+	}
+	if query.Mode == "compose" {
+		// Only the intent-based action may resolve references against recent
+		// completed speech. PrepareQuery will discard unrelated history.
+		query.Prior = append([]string(nil), m.prior...)
 	}
 	m.expressionStatus = meetingcore.ExpressionLabel(query.Mode)
 	m.mu.Unlock()
@@ -491,6 +500,11 @@ func (m *bridgeMeeting) runExpression(parent context.Context, query meetingcore.
 	}, nil)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// A canceled client must never commit an answer that happened to finish
+	// just before the cancellation callback reached the bridge.
+	if err == nil && ctx.Err() != nil {
+		err = ctx.Err()
+	}
 	if m.runtime.CurrentExpression(epoch, serial) {
 		if err == nil && expression.English != "" {
 			m.expression = expression
