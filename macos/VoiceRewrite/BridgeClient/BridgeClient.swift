@@ -123,12 +123,18 @@ final class BridgeClient {
         }
         guard let (stdin, session) = destination else { return id }
         writer.async { [weak self] in
+            guard let self else { return }
+            // A stopped, canceled or reconnected request must not spend CPU
+            // converting megabytes of PCM into Base64 and JSON just to be
+            // discarded afterward. The final write also rechecks the epoch.
+            guard self.state.sync(execute: {
+                self.epoch == session && self.replies.contains(id: id)
+            }) else { return }
             do {
                 var payload = fields
                 if let pcm { payload["pcm_base64"] = .string(pcm.base64EncodedString()) }
                 let line = try BridgeRequest(id: id, operation: operation, fields: payload).line()
                 // Cancellation/reconnect may have happened while encoding.
-                guard let self else { return }
                 // No Foundation FileHandle.write(contentsOf:) here: it blocks
                 // inside a full pipe and may also block close()/stop().
                 // Nonblocking writes bound *actual native I/O*, not just the
@@ -225,8 +231,10 @@ final class BridgeClient {
         }
         DispatchQueue.global(qos: .utility).async {
             if let child = previous.0, child.isRunning { child.terminate() }
-            try? previous.1?.fileHandleForWriting.close()
         }
+        // Do not close an fd concurrently with an in-flight POSIX write.
+        // The OS could reuse its integer for a newly launched Helper.
+        writer.async { try? previous.1?.fileHandleForWriting.close() }
     }
 
     private func readReplies(from handle: FileHandle, process child: Process, epoch session: UInt64) {
@@ -283,8 +291,10 @@ final class BridgeClient {
         replies.failAll(reason)
         DispatchQueue.global(qos: .utility).async {
             if let child, child.isRunning { child.terminate() }
-            try? oldInput?.fileHandleForWriting.close()
         }
+        // Serialize fd lifetime with every original write; partial frames
+        // terminate their own epoch, so a new session cannot inherit bytes.
+        writer.async { try? oldInput?.fileHandleForWriting.close() }
         DispatchQueue.main.async { [onExit] in onExit(reason) }
     }
 }
