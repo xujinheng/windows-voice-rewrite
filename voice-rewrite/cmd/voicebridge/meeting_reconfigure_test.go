@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -109,5 +110,54 @@ func TestMeetingDemoIsOfflineAndNeverStartsCapture(t *testing.T) {
 	}
 	if s.meeting != nil {
 		t.Fatal("demo created a live meeting")
+	}
+}
+
+func TestBridgeMeetingConfigureProtocolAppliesModeAndFencesPCM(t *testing.T) {
+	h := startBridge(t, defaultOptions())
+	defer h.close()
+	cfg := configFor("http://127.0.0.1:8080")
+	cfg["meeting_asr_mode"] = "multipart"
+	h.send(map[string]any{"v": 1, "id": "profile-start", "op": "meeting_start", "config": cfg})
+	start := h.receive()
+	if !start.OK {
+		t.Fatalf("cannot start Meeting fixture: %#v", start)
+	}
+	sid := object(t, start.Result)["session_id"].(string)
+	cfg["meeting_asr_mode"] = "llama-prefix"
+	cfg["meeting_background"] = "Project: Atlas"
+	cfg["meeting_terms"] = "SLO = service level objective"
+	h.send(map[string]any{"v": 1, "id": "configure", "op": "meeting_configure",
+		"session_id": sid, "config": cfg})
+	updated := h.receive()
+	if !updated.OK {
+		t.Fatalf("live configure failed: %#v", updated)
+	}
+	snap := object(t, updated.Result)
+	if snap["profile_version"] != float64(2) || snap["epoch"] != float64(2) ||
+		snap["asr_mode"] != "llama-prefix" {
+		t.Fatalf("new mode/version not synchronized: %#v", snap)
+	}
+	h.send(map[string]any{"v": 1, "id": "old-packet", "op": "meeting_feed",
+		"session_id": sid, "audio_epoch": 1,
+		"pcm_base64": base64.StdEncoding.EncodeToString(make([]byte, 640))})
+	late := h.receive()
+	if !late.OK || object(t, late.Result)["stale_epoch"] != true {
+		t.Fatalf("late pre-switch audio accepted: %#v", late)
+	}
+	cfg["meeting_asr_mode"] = "unknown"
+	h.send(map[string]any{"v": 1, "id": "bad-configure", "op": "meeting_configure",
+		"session_id": sid, "config": cfg})
+	if bad := h.receive(); bad.OK || bad.Error == nil || bad.Error.Code != "invalid_config" {
+		t.Fatalf("invalid mode accepted: %#v", bad)
+	}
+	h.send(map[string]any{"v": 1, "id": "after-invalid", "op": "meeting_snapshot", "session_id": sid})
+	if current := h.receive(); !current.OK ||
+		object(t, current.Result)["profile_version"] != float64(2) {
+		t.Fatalf("invalid update changed running version: %#v", current)
+	}
+	h.send(map[string]any{"v": 1, "id": "profile-stop", "op": "meeting_stop", "session_id": sid})
+	if stopped := h.receive(); !stopped.OK {
+		t.Fatalf("unable to stop Meeting: %#v", stopped)
 	}
 }
