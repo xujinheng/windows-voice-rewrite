@@ -49,9 +49,11 @@ func TestSettingsCatalogKeepsSharedPagesAndOrder(t *testing.T) {
 		t.Fatal("third global shortcut must not appear in settings")
 	}
 	for _, id := range []string{"record_mode", "exit_shortcut", "capture_exit", "system_prompt", "max_response_tokens", "max_selected_characters"} {
-        field, ok := Find(id)
-        if !ok || !field.VisibleOn(MacOS) || field.VisibleOn(Windows) { t.Fatalf("macOS settings catalog missing %s", id) }
-    }
+		field, ok := Find(id)
+		if !ok || !field.VisibleOn(MacOS) || field.VisibleOn(Windows) {
+			t.Fatalf("macOS settings catalog missing %s", id)
+		}
+	}
 	if len(PageControls("speech", Windows)) != len(PageControls("speech", MacOS)) {
 		t.Fatal("speech page controls diverged")
 	}
