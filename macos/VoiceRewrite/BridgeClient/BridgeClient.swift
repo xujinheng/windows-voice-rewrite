@@ -51,6 +51,12 @@ final class BridgeClient {
         child.standardError = stderr
         do {
             try child.run()
+            // The parent owns only stdin's writer and stdout/stderr readers.
+            // Retaining unused ends makes pipe EOF/EPIPE detection unreliable
+            // and can strand the reader or a blocked large-audio writer.
+            try? stdin.fileHandleForReading.close()
+            try? stdout.fileHandleForWriting.close()
+            try? stderr.fileHandleForWriting.close()
         } catch {
             state.sync {
                 if epoch == session { launching = false }
