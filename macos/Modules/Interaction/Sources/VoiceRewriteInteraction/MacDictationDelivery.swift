@@ -128,8 +128,23 @@ public final class MacDictationDelivery {
         }
     }
 
-    public func deliver(_ text: String, to target: MacDictationTarget) throws {
+    private func waitForModifierRelease(stillValid: () -> Bool) async throws {
+        let timeout = ProcessInfo.processInfo.systemUptime + 2.0
+        let modifiers: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
+        while !CGEventSource.flagsState(.hidSystemState).intersection(modifiers).isEmpty {
+            guard stillValid() else { throw InteractionFailure.cancelled }
+            guard ProcessInfo.processInfo.systemUptime < timeout else {
+                throw InteractionFailure.modifiersHeld
+            }
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+    }
+
+    public func deliver(_ text: String, to target: MacDictationTarget,
+                        stillValid: () -> Bool) async throws {
         guard !text.isEmpty else { throw InteractionFailure.invalidSelection }
+        try await waitForModifierRelease(stillValid: stillValid)
+        guard stillValid() else { throw InteractionFailure.cancelled }
         try revalidate(target)
         let lease: UUID
         do {
