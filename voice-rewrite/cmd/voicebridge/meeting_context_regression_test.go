@@ -55,7 +55,7 @@ func TestBridgeComposeInjectsOnlyReferencedMeetingHistory(t *testing.T) {
 	m.mu.Unlock()
 
 	cases := []struct {
-		mode, spoken string
+		mode, spoken   string
 		prior, profile bool
 	}{
 		{"compose", "我想谈谈昨天看的电影", false, false},
