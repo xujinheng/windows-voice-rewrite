@@ -57,6 +57,20 @@ func TestGenerateHostFilesFromCore(t *testing.T) {
 			t.Fatalf("generated settings missing %s", piece)
 		}
 	}
+	// A SettingsView embedded inside the workspace must never close the
+	// entire application window; its host supplies an explicit tab action.
+	for _, piece := range []string{
+		"@Environment(\\.dismiss) private var dismiss",
+		"var onClose: (() -> Void)? = nil",
+		"if let onClose { onClose() } else { dismiss() }",
+	} {
+		if !strings.Contains(settings, piece) {
+			t.Fatalf("generated settings lacks safe close contract %q", piece)
+		}
+	}
+	if strings.Contains(settings, "NSApp.keyWindow?.close()") {
+		t.Fatal("settings Close must not close the workspace window")
+	}
 	if strings.Contains(settings, "text_edit_shortcut") || strings.Contains(settings, "TextField(\"文字指令\"") {
 		t.Fatal("third global hotkey settings entry must be absent")
 	}
