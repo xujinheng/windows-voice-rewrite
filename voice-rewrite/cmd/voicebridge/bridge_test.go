@@ -217,6 +217,92 @@ func TestBridgeCoreHTTPRequestsAndRouting(t *testing.T) {
 	}
 }
 
+func TestBridgeModelDiscoveryUsesCoreAndSeparateKeys(t *testing.T) {
+	var asrKeySeen, llmKeySeen bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("unexpected endpoint %s", r.URL.Path)
+		}
+		switch r.Header.Get("Authorization") {
+		case "Bearer asr-private-key":
+			asrKeySeen = true
+		case "Bearer llm-private-key":
+			llmKeySeen = true
+		default:
+			t.Error("model listing leaked or omitted provider credential")
+		}
+		_, _ = io.WriteString(w, `{"data":[{"id":"chat-model"},{"id":"whisper-1"},{"id":"chat-model"}]}`)
+	}))
+	defer srv.Close()
+	h := startBridge(t, defaultOptions())
+	cfg := configFor(srv.URL)
+	h.send(map[string]any{"v": 1, "id": "asr-models", "op": "list_asr_models", "config": cfg})
+	h.send(map[string]any{"v": 1, "id": "llm-models", "op": "list_llm_models", "config": cfg})
+	replies := h.receiveIDs("asr-models", "llm-models")
+	for _, id := range []string{"asr-models", "llm-models"} {
+		got := replies[id]
+		if !got.OK || got.Error != nil {
+			t.Fatalf("%s: %#v", id, got)
+		}
+		models, ok := object(t, got.Result)["models"].([]any)
+		if !ok || len(models) != 2 || models[0] != "chat-model" || models[1] != "whisper-1" {
+			t.Fatalf("unexpected %s models: %#v", id, got)
+		}
+	}
+	h.close()
+	if !asrKeySeen || !llmKeySeen {
+		t.Fatal("model discovery did not use both provider credentials")
+	}
+}
+
+func TestBridgeModelDiscoveryCancelsInFlightRequest(t *testing.T) {
+	started := make(chan struct{}, 1)
+	stopped := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started <- struct{}{}
+		<-r.Context().Done()
+		stopped <- struct{}{}
+	}))
+	defer srv.Close()
+	h := startBridge(t, defaultOptions())
+	h.send(map[string]any{"v": 1, "id": "models-slow", "op": "list_llm_models", "config": configFor(srv.URL)})
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("model discovery request did not start")
+	}
+	h.send(map[string]any{"v": 1, "id": "stop-models", "op": "cancel", "target_id": "models-slow"})
+	replies := h.receiveIDs("models-slow", "stop-models")
+	if replies["models-slow"].Error == nil || replies["models-slow"].Error.Code != "canceled" {
+		t.Fatalf("stale model request returned a success: %#v", replies["models-slow"])
+	}
+	if !replies["stop-models"].OK || object(t, replies["stop-models"].Result)["found"] != true {
+		t.Fatalf("bridge cancel did not own model request: %#v", replies["stop-models"])
+	}
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("model provider did not receive cancellation")
+	}
+	h.close()
+}
+
+func TestBridgeModelDiscoverySanitizesFailure(t *testing.T) {
+	const secret = "private-credential-from-provider"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, secret, http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	h := startBridge(t, defaultOptions())
+	h.send(map[string]any{"v": 1, "id": "models-error", "op": "list_llm_models", "config": configFor(srv.URL)})
+	got := h.receive()
+	if got.OK || got.Error == nil || got.Error.Code != "model_list_failed" ||
+		strings.Contains(got.Error.Message, secret) {
+		t.Fatalf("provider error leaked private response: %#v", got)
+	}
+	h.close()
+}
+
 func TestBridgeInvalidConfigNeverContactsProvider(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

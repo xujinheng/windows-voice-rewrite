@@ -598,7 +598,15 @@ func emitSettings() (string, error) {
 		if !ok || binding == "" {
 			return "", fmt.Errorf("stale probe %s has no binding", control.ID)
 		}
-		b.WriteString("        .onChange(of: " + binding + ") { _, _ in model.markConnectionProbeStale(." + control.StaleProbe + ") }\n")
+		if control.ID == "asr_base_url" || control.ID == "asr_api_key" ||
+			control.ID == "llm_base_url" || control.ID == "llm_api_key" {
+			b.WriteString("        .onChange(of: " + binding + ") { _, _ in\n")
+			b.WriteString("            model.markConnectionProbeStale(." + control.StaleProbe + ")\n")
+			b.WriteString("            model.invalidateDiscoveredModels(." + control.StaleProbe + ")\n")
+			b.WriteString("        }\n")
+		} else {
+			b.WriteString("        .onChange(of: " + binding + ") { _, _ in model.markConnectionProbeStale(." + control.StaleProbe + ") }\n")
+		}
 	}
 	b.WriteString("        .formStyle(.grouped)\n    }\n}\n")
 	return b.String(), nil
@@ -612,7 +620,11 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 		if err != nil {
 			return "", err
 		}
-		return "                TextField(" + strconv.Quote(control.Label) + ", text: $" + binding + ")\n                    " + id + "\n", nil
+		line := "                TextField(" + strconv.Quote(control.Label) + ", text: $" + binding + ")\n                    " + id + "\n"
+		if control.ID == "asr_model" || control.ID == "text_model" {
+			line += renderModelDiscovery(control.ID)
+		}
+		return line, nil
 	case contract.Secret:
 		binding, err := requiredBinding(control, bindings)
 		if err != nil {
@@ -648,6 +660,35 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 	default:
 		return "", fmt.Errorf("unsupported kind %q for %s", control.Kind, control.ID)
 	}
+}
+
+// These choices are generated beside the canonical settings controls rather
+// than maintained as a separate Swift form or duplicate UI state machine.
+func renderModelDiscovery(id string) string {
+	operation, models, busy, status, setting, prefix := "", "", "", "", "", ""
+	switch id {
+	case "asr_model":
+		operation, models, busy, status, setting, prefix = "transcribe", "asrAvailableModels", "isDiscoveringASRModels", "asrModelDiscoveryStatus", "asrModel", "asr"
+	case "text_model":
+		operation, models, busy, status, setting, prefix = "selectedTask", "llmAvailableModels", "isDiscoveringLLMModels", "llmModelDiscoveryStatus", "textModel", "llm"
+	}
+	return fmt.Sprintf(`                HStack {
+                    Button("发现模型") { model.discoverModels(for: .%s) }
+                        .disabled(model.%s)
+                        .accessibilityIdentifier("discover_%s_models")
+                    Menu("选择发现的模型") {
+                        ForEach(model.%s, id: \.self) { id in
+                            Button(id) { model.settings.%s = id }
+                        }
+                    }
+                    .disabled(model.%s.isEmpty)
+                    .accessibilityIdentifier("select_%s_model")
+                }
+                if !model.%s.isEmpty {
+                    Text(model.%s).font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("%s_models_status")
+                }
+`, operation, busy, prefix, models, setting, models, prefix, status, status, prefix)
 }
 
 func requiredBinding(control contract.Control, bindings map[string]string) (string, error) {
