@@ -125,6 +125,7 @@ final class WorkspaceModel: ObservableObject {
     private var meetingPendingPackets = 0
     private var meetingSnapshotPending = false
     private var meetingSnapshotRequestID: String?
+    private var meetingStartWatchdog: Task<Void, Never>?
     private var meetingSnapshotStartedAt: TimeInterval = 0
     private var meetingRequestID: String?
     private var meetingCaptureSourceID = ""
@@ -1183,6 +1184,23 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    private func clearMeetingStartWatchdog() {
+        meetingStartWatchdog?.cancel()
+        meetingStartWatchdog = nil
+    }
+
+    private func armMeetingStartWatchdog(token: UInt64, seconds: UInt64 = 60) {
+        clearMeetingStartWatchdog()
+        meetingStartWatchdog = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: seconds * 1_000_000_000) }
+            catch { return }
+            guard let self, self.meetingGeneration.accepts(token),
+                  self.meetingStarting else { return }
+            DiagnosticLog.note("stage=meeting_start status=timeout")
+            self.stopMeeting(reason: "会议启动超时，已取消本次采集；请检查 Helper 和系统音频权限")
+        }
+    }
+
     /// Preview data comes entirely from the bundled Go Core fixture. This does
     /// not request audio permissions, start ScreenCaptureKit, or call a provider.
     func startMeetingDemo() {
@@ -1193,11 +1211,13 @@ final class WorkspaceModel: ObservableObject {
         }
         let token = meetingGeneration.begin()
         meetingStarting = true
+        armMeetingStartWatchdog(token: token, seconds: 15)
         bridge.send(operation: "meeting_demo") { [weak self] result in
             Task { @MainActor [weak self] in
                 guard let self, self.meetingGeneration.accepts(token),
                       !self.meetingActive && self.meetingStarting else { return }
                 self.meetingStarting = false
+                self.clearMeetingStartWatchdog()
                 guard case .success(let reply) = result, reply.ok,
                       reply.result?["demo"]?.boolValue == true else {
                     self.meetingStatus = "无法读取本地离线演示数据"
@@ -1266,6 +1286,7 @@ final class WorkspaceModel: ObservableObject {
         meetingAudioEpoch = 0
         meetingPendingPackets = 0
         meetingStarting = true
+        armMeetingStartWatchdog(token: token)
         meetingStatus = "正在准备会议识别…"
         meetingCaptions = []
         meetingHistoryTrimmed = 0
@@ -1289,6 +1310,7 @@ final class WorkspaceModel: ObservableObject {
                 guard result?.ok == true, let id = result?.result?["session_id"]?.string else {
                     guard self.meetingGeneration.accepts(token) else { return }
                     self.meetingStarting = false
+                    self.clearMeetingStartWatchdog()
                     self.meetingStatus = "无法启动会议处理，请检查本地 Helper"
                     return
                 }
@@ -1317,6 +1339,7 @@ final class WorkspaceModel: ObservableObject {
                     guard self.meetingGeneration.accepts(token),
                           self.meetingCaptureGeneration.accepts(capture) else { return }
                     self.meetingStarting = false
+                    self.clearMeetingStartWatchdog()
                     self.meetingActive = true
                     self.meetingStatus = "正在监听所选应用音频"
                     self.pollMeeting(id: id, token: token)
@@ -1891,6 +1914,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func stopMeeting(reason: String = "会议采集已停止") {
+        clearMeetingStartWatchdog()
         clearMeetingVoiceWatchdog()
         let wasDemo = meetingDemoActive
         meetingDemoActive = false
