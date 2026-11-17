@@ -72,6 +72,12 @@ func TestSettingsCommandsKeepButtonOrder(t *testing.T) {
 	if action, _ := Command(ProbeLLMButton); action != ActionProbeLLM {
 		t.Fatal(action)
 	}
+	if action, _ := Command(DiscoverASRButton); action != ActionDiscoverASR {
+		t.Fatal(action)
+	}
+	if action, _ := Command(DiscoverLLMButton); action != ActionDiscoverLLM {
+		t.Fatal(action)
+	}
 	if action, _ := Command(CaptureRewrite); action != ActionCapture {
 		t.Fatal(action)
 	}
@@ -85,6 +91,12 @@ func TestSettingsCommandsKeepButtonOrder(t *testing.T) {
 	label, primary = ButtonLabel(ProbeLLMButton, false)
 	if label != "测试连接" || primary {
 		t.Fatalf("probe %q %t", label, primary)
+	}
+	for _, id := range []int{DiscoverASRButton, DiscoverLLMButton} {
+		label, primary = ButtonLabel(id, false)
+		if label != "发现模型" || primary {
+			t.Fatalf("discovery label %d: %q %t", id, label, primary)
+		}
 	}
 	label, primary = ButtonLabel(CaptureDictation, false)
 	if label != "录入按键" || primary {
