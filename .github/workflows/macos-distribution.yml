@@ -1,0 +1,91 @@
+name: macOS signed distribution
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  signed-macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: voice-rewrite/go.mod
+      - name: Require Apple signing and notarization credentials
+        env:
+          CERT: ${{ secrets.MACOS_DEVELOPER_ID_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+          SIGN_IDENTITY: ${{ vars.MACOS_DEVELOPER_ID_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_NOTARY_APP_PASSWORD }}
+          TEAM: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          for value in "$CERT" "$CERT_PASSWORD" "$SIGN_IDENTITY" "$APPLE_ID" "$APPLE_PASSWORD" "$TEAM"; do
+            if [[ -z "$value" ]]; then
+              echo "::error::Configure Developer ID signing and notarization secrets/variables before distributing."
+              exit 1
+            fi
+          done
+      - name: Build native app and bundled Go helper
+        run: |
+          set -euo pipefail
+          xcodebuild -project macos/VoiceRewrite.xcodeproj -scheme VoiceRewrite \
+            -configuration Release -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/release-build" build
+      - name: Sign, notarize and staple native app
+        env:
+          CERT: ${{ secrets.MACOS_DEVELOPER_ID_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+          SIGN_IDENTITY: ${{ vars.MACOS_DEVELOPER_ID_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_NOTARY_APP_PASSWORD }}
+          TEAM: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/release-build/Build/Products/Release/VoiceRewrite.app"
+          test -x "$app/Contents/MacOS/VoiceRewrite"
+          test -x "$app/Contents/MacOS/voicebridge"
+          test "$(lipo -archs "$app/Contents/MacOS/VoiceRewrite")" = "${{ matrix.arch }}"
+          test "$(lipo -archs "$app/Contents/MacOS/voicebridge")" = "${{ matrix.arch }}"
+          keychain="$RUNNER_TEMP/release-signing.keychain-db"
+          security create-keychain -p "$RUNNER_TEMP" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$RUNNER_TEMP" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          printf '%s' "$CERT" | base64 -D > "$RUNNER_TEMP/developer-id.p12"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/developer-id.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$RUNNER_TEMP" "$keychain"
+          codesign --force --timestamp --options runtime --sign "$SIGN_IDENTITY" "$app/Contents/MacOS/voicebridge"
+          codesign --force --deep --timestamp --options runtime --sign "$SIGN_IDENTITY" "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          unsigned_zip="$RUNNER_TEMP/VoiceRewrite-notary-${{ matrix.arch }}.zip"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$unsigned_zip"
+          xcrun notarytool submit "$unsigned_zip" --apple-id "$APPLE_ID" --team-id "$TEAM" \
+            --password "$APPLE_PASSWORD" --wait
+          xcrun stapler staple "$app"
+          xcrun stapler validate "$app"
+          artifact="$RUNNER_TEMP/VoiceRewrite-macOS-${{ matrix.arch }}.zip"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$artifact"
+          shasum -a 256 "$artifact" > "$artifact.sha256"
+          security delete-keychain "$keychain"
+      - name: Upload signed and notarized application
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceRewrite-macOS-${{ matrix.arch }}-notarized
+          path: |
+            ${{ runner.temp }}/VoiceRewrite-macOS-${{ matrix.arch }}.zip
+            ${{ runner.temp }}/VoiceRewrite-macOS-${{ matrix.arch }}.zip.sha256
+          if-no-files-found: error

@@ -36,6 +36,11 @@ public protocol ClipboardBoard: Sendable {
     func restore(_ previous: ClipboardContents) throws
 }
 
+/// Native boards may expose a timestamp for the last actual read of staged text.
+public protocol ClipboardReadReceiptBoard: ClipboardBoard {
+    func lastTextReadAt() -> TimeInterval?
+}
+
 /// Serializes pasteboard leases so staging cannot race with another VoiceRewrite write.
 /// A different process may take ownership at any point; never restore over its clipboard.
 public final class ClipboardProtector: @unchecked Sendable {
@@ -79,6 +84,35 @@ public final class ClipboardProtector: @unchecked Sendable {
             guard let held = lease, held.id == id else { return false }
             return ClipboardOwnership.mayRestore(
                 hasOriginal: true, owned: held.ownedChangeCount, current: board.ownedChangeCount(owner: id))
+        }
+    }
+
+    /// Restore after the target has read the pasteboard and further reads have
+    /// gone quiet. If no read is observed, leave the text available until the
+    /// bounded timeout; the paste keystroke may still be queued.
+    public func restoreAfterPaste(_ id: UUID) {
+        let started = ProcessInfo.processInfo.systemUptime
+        pollRestore(id, started: started)
+    }
+
+    private func pollRestore(_ id: UUID, started: TimeInterval) {
+        let now = ProcessInfo.processInfo.systemUptime
+        let status = synchronized { () -> (Bool, TimeInterval?) in
+            guard let held = lease, held.id == id else { return (false, nil) }
+            return (true, (board as? any ClipboardReadReceiptBoard)?.lastTextReadAt())
+        }
+        guard status.0 else { return }
+        let quiet = Double(PasteTiming.quietMilliseconds) / 1000
+        let timeout = Double(PasteTiming.maxMilliseconds) / 1000
+        // Ignore eager clipboard-manager reads that precede the paste event.
+        let postPasteRead = status.1 != nil && status.1! >= started
+        if (postPasteRead && now - status.1! >= quiet) || now - started >= timeout {
+            try? finish(id)
+            return
+        }
+        DispatchQueue.global(qos: .utility).asyncAfter(
+            deadline: .now() + Double(PasteTiming.pollMilliseconds) / 1000) { [self] in
+            pollRestore(id, started: started)
         }
     }
 

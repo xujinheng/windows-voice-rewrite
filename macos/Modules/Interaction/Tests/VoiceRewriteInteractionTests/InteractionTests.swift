@@ -1,5 +1,8 @@
 import Foundation
 import XCTest
+#if os(macOS)
+import AppKit
+#endif
 @testable import VoiceRewriteInteraction
 
 private final class FakeAccessibility: AccessibilityClient, @unchecked Sendable {
@@ -11,17 +14,15 @@ private final class FakeAccessibility: AccessibilityClient, @unchecked Sendable 
     var captureFailure: InteractionFailure?
     var writeFailure: InteractionFailure?
     var writes: [String] = []
-    var deliveryIntents: [SelectionIntent] = []
     var monitorStops = 0
     func captureMonitoredSelection() throws -> SelectionObservation {
         if let captureFailure { throw captureFailure }
         return observation
     }
     func currentSelection() throws -> SelectionObservation { observation }
-    func writeSelectedText(_ text: String, expected: SelectionObservation, intent: SelectionIntent) throws {
+    func writeSelectedText(_ text: String, expected: SelectionObservation) throws {
         if let writeFailure { throw writeFailure }
         writes.append(text)
-        deliveryIntents.append(intent)
     }
     func stopMonitoring() { monitorStops += 1 }
     func update(processID: Int32? = nil, focus: String? = nil, text: String? = nil,
@@ -44,6 +45,29 @@ private final class FakeAccessibility: AccessibilityClient, @unchecked Sendable 
 private final class FakeUptime: @unchecked Sendable {
     var now: TimeInterval = 1000
 }
+
+#if os(macOS)
+final class NativeClipboardReceiptTests: XCTestCase {
+    func testLazyPasteboardReportsActualTextRead() throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let board = MacClipboardBoard(board: pasteboard)
+        let lease = ClipboardProtector(board: board)
+        let token = try lease.beginTemporaryText("spoken text")
+        XCTAssertNil(board.lastTextReadAt())
+        XCTAssertEqual(pasteboard.string(forType: .string), "spoken text")
+        XCTAssertNotNil(board.lastTextReadAt())
+        try lease.finish(token)
+        XCTAssertNil(board.lastTextReadAt())
+    }
+
+    func testReceiptTimingsComeFromSharedGoCore() {
+        XCTAssertEqual(PasteTiming.quietMilliseconds, 200)
+        XCTAssertEqual(PasteTiming.maxMilliseconds, 8000)
+        XCTAssertEqual(PasteTiming.pollMilliseconds, 100)
+    }
+}
+#endif
 
 final class SelectionGuardTests: XCTestCase {
     func testBrowserAddressBarMonitorFallbackNeedsFocusAndFullValue() {
@@ -165,59 +189,18 @@ final class SelectionGuardTests: XCTestCase {
         XCTAssertTrue(fake.writes.isEmpty)
     }
 
-    func testBrowserAddressBarValueChangeRejectsInsertion() async throws {
-        let fake = FakeAccessibility(), session = InteractionSession(client: fake)
-        fake.update(text: "", range: VoiceRewriteInteraction.TextRange(location: 7, length: 0),
-                    fullValue: "example")
-        let gen = try await session.beginTask(targetProcessID: 123)
-        let snapshot = try await session.captureSelection(generation: gen, intent: .dictation)
-        // Address bar value changed without a selection change notification:
-        // unchanged PID, focus, selection and revision must still fail closed.
-        fake.update(fullValue: "examplE")
-        do { try await session.insertIfCurrent(snapshot, text: "spoken", generation: gen); XCTFail() }
-        catch { XCTAssertEqual(error as? InteractionFailure, .selectionChanged) }
-        XCTAssertTrue(fake.writes.isEmpty)
+    #if os(macOS)
+    func testDictationTargetAllowsNormalInputWithoutAXTextModel() {
+        XCTAssertTrue(DictationTargetPolicy.maySend(
+            capturedPID: 123, foregroundPID: 123, secureInput: false))
+        XCTAssertFalse(DictationTargetPolicy.maySend(
+            capturedPID: 123, foregroundPID: 456, secureInput: false))
+        XCTAssertFalse(DictationTargetPolicy.maySend(
+            capturedPID: 123, foregroundPID: 123, secureInput: true))
+        XCTAssertFalse(DictationTargetPolicy.maySend(
+            capturedPID: 0, foregroundPID: 123, secureInput: false))
     }
-
-    func testStableBrowserAddressBarValueAllowsInsertion() async throws {
-        let fake = FakeAccessibility(), session = InteractionSession(client: fake)
-        fake.update(text: "", range: VoiceRewriteInteraction.TextRange(location: 7, length: 0),
-                    fullValue: "example")
-        let gen = try await session.beginTask(targetProcessID: 123)
-        let snapshot = try await session.captureSelection(generation: gen, intent: .dictation)
-        try await session.insertIfCurrent(snapshot, text: "spoken", generation: gen)
-        XCTAssertEqual(fake.writes, ["spoken"])
-    }
-
-    func testInsertRequiresCaretAndIsSingleUse() async throws {
-        let fake = FakeAccessibility(), session = InteractionSession(client: fake)
-        fake.update(text: "", range: VoiceRewriteInteraction.TextRange(location: 1, length: 0))
-        let gen = try await session.beginTask(targetProcessID: 123)
-        let snapshot = try await session.captureSelection(generation: gen, intent: .dictation)
-        try await session.insertIfCurrent(snapshot, text: "ASR", generation: gen)
-        XCTAssertEqual(fake.writes, ["ASR"])
-        do { try await session.insertIfCurrent(snapshot, text: "AGAIN", generation: gen); XCTFail() }
-        catch { XCTAssertEqual(error as? InteractionFailure, .staleSnapshot) }
-    }
-
-    func testDictationReplacesCapturedSelection() async throws {
-        let fake = FakeAccessibility(), session = InteractionSession(client: fake)
-        let gen = try await session.beginTask(targetProcessID: 123)
-        let snapshot = try await session.captureSelection(generation: gen, intent: .dictation)
-        try await session.insertIfCurrent(snapshot, text: "spoken", generation: gen)
-        XCTAssertEqual(fake.writes, ["spoken"])
-        XCTAssertEqual(fake.deliveryIntents, [.dictation])
-    }
-
-    func testDictationRejectsChangedSelection() async throws {
-        let fake = FakeAccessibility(), session = InteractionSession(client: fake)
-        let gen = try await session.beginTask(targetProcessID: 123)
-        let snapshot = try await session.captureSelection(generation: gen, intent: .dictation)
-        fake.update(text: "world", revision: 2)
-        do { try await session.insertIfCurrent(snapshot, text: "spoken", generation: gen); XCTFail() }
-        catch { XCTAssertEqual(error as? InteractionFailure, .selectionChanged) }
-        XCTAssertTrue(fake.writes.isEmpty)
-    }
+    #endif
 
     func testUnsupportedWriteCannotBeRetried() async throws {
         let fake = FakeAccessibility(), session = InteractionSession(client: fake)

@@ -2,11 +2,38 @@
 import AppKit
 import Foundation
 
-/// NSPasteboard implementation for optional guarded clipboard staging. No synthetic paste.
-public final class MacClipboardBoard: ClipboardBoard, @unchecked Sendable {
+/// A promised string is rendered only when the recipient actually reads it.
+private final class PasteTextProvider: NSObject, NSPasteboardItemDataProvider {
+    let text: String
+    private let lock = NSLock()
+    private var lastRead: TimeInterval?
+    init(text: String) { self.text = text }
+
+    var lastReadAt: TimeInterval? {
+        lock.lock(); defer { lock.unlock() }
+        return lastRead
+    }
+
+    func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem,
+                    provideDataForType type: NSPasteboard.PasteboardType) {
+        guard type == .string else { return }
+        lock.lock()
+        lastRead = ProcessInfo.processInfo.systemUptime
+        lock.unlock()
+        _ = item.setString(text, forType: .string)
+    }
+
+    func pasteboardFinishedWithDataProvider(_ pasteboard: NSPasteboard) {}
+}
+
+/// NSPasteboard owner and complete-format clipboard snapshot implementation.
+public final class MacClipboardBoard: ClipboardReadReceiptBoard, @unchecked Sendable {
     private let board: NSPasteboard
     private let ownerType = NSPasteboard.PasteboardType("com.voicerewrite.interaction.temp-owner")
     private let maxBackupBytes = 8 * 1024 * 1024
+    private var provider: PasteTextProvider?
+
+    public func lastTextReadAt() -> TimeInterval? { provider?.lastReadAt }
 
     public init(board: NSPasteboard = .general) { self.board = board }
 
@@ -37,7 +64,8 @@ public final class MacClipboardBoard: ClipboardBoard, @unchecked Sendable {
         // Convention-based hints to clipboard history apps; not a security boundary.
         let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
         let transient = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
-        guard item.setString(text, forType: .string),
+        let nextProvider = PasteTextProvider(text: text)
+        guard item.setDataProvider(nextProvider, forTypes: [.string]),
               item.setString(owner.uuidString, forType: ownerType),
               item.setData(Data(), forType: concealed),
               item.setData(Data(), forType: transient) else {
@@ -45,6 +73,7 @@ public final class MacClipboardBoard: ClipboardBoard, @unchecked Sendable {
         }
         board.clearContents()
         guard board.writeObjects([item]) else { throw ClipboardFailure.writeFailed }
+        provider = nextProvider
         return board.changeCount
     }
 
@@ -69,6 +98,12 @@ public final class MacClipboardBoard: ClipboardBoard, @unchecked Sendable {
         }
         board.clearContents()
         if !items.isEmpty, !board.writeObjects(items) { throw ClipboardFailure.restoreFailed }
+        provider = nil
     }
+}
+
+/// Both selected-text replacement and dictation use one clipboard lease owner.
+public enum MacClipboardTransactions {
+    public static let shared = ClipboardProtector(board: MacClipboardBoard())
 }
 #endif

@@ -47,6 +47,8 @@ public func insertionStatus(_ error: Error, rewrite: Bool, passwordRewrite: Stri
             return "录音期间目标应用或输入框焦点发生变化；未插入，结果可复制"
         case .selectionChanged:
             return "录音期间光标、选区或输入内容发生变化；未插入，结果可复制"
+        case .modifiersHeld:
+            return "请先松开听写快捷键再尝试输入"
         case .timedOut:
             return "录音或识别时间超过目标锁定期限；未插入，结果可复制"
         case .accessibilityPermissionDenied:

@@ -19,7 +19,7 @@ let driver = CarbonHotKeyDriver { shortcut, foregroundPID in
         do {
             let generation = try await session.beginTask(targetProcessID: foregroundPID, timeout: 60)
             let target = try await session.captureSelection(
-                generation: generation, intent: .dictation)
+                generation: generation, intent: .replaceSelection)
             // Perform ASR/LLM off of the UI/AX path; retain both target and generation.
             // let asrText = try await recognizeSpeech()
             // try await session.insertIfCurrent(target, text: asrText, generation: generation)
@@ -34,15 +34,15 @@ try hotkeys.register(.init(keyCode: 15, modifiers: [.command, .shift]))
 // On app exit: hotkeys.shutdown(); driver.shutdown(); await session.shutdown()
 ```
 
-**Dictation** captures `intent: .dictation` and inserts at the caret or replaces the selection that was already highlighted when recording began. **Selected-text rewriting** is a separate, explicit action that captures `intent: .replaceSelection` and calls `replaceIfCurrent(snapshot,with:generation:)`. Model output (including `may_attempt_replace`) never authorizes an edit on its own.
+**Ordinary dictation** uses `MacDictationDelivery`, which captures the foreground application's process ID (and an optional AX focus identity). It does not require Accessibility text attributes, selection ranges or editor notifications. The host stores the target until transcription finishes, then performs one native paste or, before any paste is attempted, a direct Unicode input fallback when the clipboard cannot be preserved.
 
-A `SelectionSnapshot` is a single-use capability bound to a generation, foreground PID, AX focus-element identity (compared with `CFEqual`), original selected text, UTF-16 selection range, and monotonic focus/value revision. All replacement and insertion requests revalidate this evidence synchronously before modifying the original application. An edit requires the original user gesture; dictation can replace only the initially captured selection. Password, protected, and secure-input fields are refused before text is read.
+**Selected-text editing** uses `InteractionSession` with `intent: .replaceSelection`. It requires a stable and readable AX selection, rejects stale focus, and validates the original full value before rewriting. Go intent flags are not native write authorization.
 
 ### Cross-application insertion
 
-Ordinary dictation uses one guarded Cmd+V paste, at the captured caret or selected range. The current process, focused AX element, selected UTF-16 range, protected-field state, task generation, and any available original AXValue are revalidated before staging and posting. The temporary clipboard is restored on a background queue approximately one second after Cmd+V, only if VoiceRewrite still owns it. Sending the event returns immediately; this is best-effort delivery, not proof that the editor accepted it. The write is never retried automatically. When the editor does not expose AXValue, a supported AX text-change notification is required to authorize capture.
+Ordinary dictation posts a single Cmd+V with the original application still active. AX is optional and only assists with detecting focused-field changes and protected inputs. Without AX the host cannot guarantee that the original text field remains focused inside the same application. The user chooses this compatibility-oriented behavior. There is no automatic retry after a paste event.
 
-Explicit selection rewriting retains its stronger contract: use native AX selected-text writing when supported; otherwise allow guarded paste only with a readable complete AXValue and exact UTF-16 baseline. Read back the complete value to confirm replacement, and report uncertainty if the editor cannot confirm it. This avoids presenting an unverified replacement as definite.
+The native pasteboard provides text lazily and records a receipt when the destination requests it. Restoration is delayed until reads have been quiet for 200ms, or a bounded 8-second timeout. The original clipboard is restored only while the temporary lease is still owned. A new dictation arriving during another paste lease can use direct Unicode input instead.
 
 The temporary pasteboard transaction captures all representations of all items (up to a bounded total size) and refuses data it cannot restore. It includes an owner marker and checks `changeCount` before restoring. When another process changes the clipboard, its content is left alone. Temporary contents are tagged transient/concealed for cooperative clipboard managers; those tags are conventions, not a privacy guarantee. If the original clipboard has unrepresentable types or the target cannot be verified, no paste is attempted. Results remain visible in the macOS app with a manual copy button.
 
