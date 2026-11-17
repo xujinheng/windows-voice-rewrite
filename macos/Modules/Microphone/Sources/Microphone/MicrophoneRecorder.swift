@@ -236,15 +236,27 @@ public final class MicrophoneRecorder {
         default: throw MicrophoneError.notRecording
         }
         state = .stopping
-        let engineWasRunning = engine?.isRunning == true
-        let deviceStillAvailable = recordingDeviceUID.isEmpty ||
-            Self.deviceID(for: recordingDeviceUID) != nil
+        // A recording state requires a successfully started engine. Avoid
+        // calling CoreAudio.isRunning or HAL device discovery synchronously
+        // on the main actor when the input device is disappearing.
+        let engineWasRunning = engine != nil
+        let stoppedDeviceUID = recordingDeviceUID
         recordingDeviceUID = ""
         // CoreAudio may block removeTap/stop/reset indefinitely when an input
         // device is reconfigured or disappears. Never wait for those native
         // calls on AppKit's main actor; the host's processing watchdog can
         // recover independently if teardown fails to complete.
         await teardownEngineAfterStop()
+        let deviceStillAvailable: Bool
+        if stoppedDeviceUID.isEmpty {
+            deviceStillAvailable = true
+        } else {
+            deviceStillAvailable = await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .utility).async {
+                    continuation.resume(returning: Self.deviceID(for: stoppedDeviceUID) != nil)
+                }
+            }
+        }
         guard let processor = pipeline else {
             state = .idle
             recordingID = nil
