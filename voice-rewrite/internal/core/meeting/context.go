@@ -33,7 +33,7 @@ func PrepareQuery(cfg coreconfig.Config, q Query) Query {
 		spoken := q.UserPoints
 		if UsesConversationContext(q.UserPoints) {
 			q.Prior = RecentContext(q.Prior)
-			spoken += "\\n" + strings.Join(q.Prior, "\\n")
+			spoken += "\n" + strings.Join(q.Prior, "\n")
 		} else {
 			q.Prior, q.Background = nil, ""
 		}
