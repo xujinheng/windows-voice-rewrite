@@ -51,7 +51,14 @@ final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
         VoiceRewriteRuntime.shared.model.shutdown()
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        // The last workspace/settings window can close while the status item lives on.
+        DispatchQueue.main.async {
+            let hasDocumentWindows = NSApp.windows.contains { $0.isVisible && !($0 is NSPanel) }
+            if !hasDocumentWindows { NSApp.setActivationPolicy(.accessory) }
+        }
+        return false
+    }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         guard !hasVisibleWindows,
