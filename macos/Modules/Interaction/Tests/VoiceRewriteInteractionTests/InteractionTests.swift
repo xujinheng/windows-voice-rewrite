@@ -1,5 +1,8 @@
 import Foundation
 import XCTest
+#if os(macOS)
+import AppKit
+#endif
 @testable import VoiceRewriteInteraction
 
 private final class FakeAccessibility: AccessibilityClient, @unchecked Sendable {
@@ -42,6 +45,29 @@ private final class FakeAccessibility: AccessibilityClient, @unchecked Sendable 
 private final class FakeUptime: @unchecked Sendable {
     var now: TimeInterval = 1000
 }
+
+#if os(macOS)
+final class NativeClipboardReceiptTests: XCTestCase {
+    func testLazyPasteboardReportsActualTextRead() throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let board = MacClipboardBoard(board: pasteboard)
+        let lease = ClipboardProtector(board: board)
+        let token = try lease.beginTemporaryText("spoken text")
+        XCTAssertNil(board.lastTextReadAt())
+        XCTAssertEqual(pasteboard.string(forType: .string), "spoken text")
+        XCTAssertNotNil(board.lastTextReadAt())
+        try lease.finish(token)
+        XCTAssertNil(board.lastTextReadAt())
+    }
+
+    func testReceiptTimingsComeFromSharedGoCore() {
+        XCTAssertEqual(PasteTiming.quietMilliseconds, 200)
+        XCTAssertEqual(PasteTiming.maxMilliseconds, 8000)
+        XCTAssertEqual(PasteTiming.pollMilliseconds, 100)
+    }
+}
+#endif
 
 final class SelectionGuardTests: XCTestCase {
     func testBrowserAddressBarMonitorFallbackNeedsFocusAndFullValue() {
