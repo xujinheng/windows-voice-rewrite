@@ -632,11 +632,13 @@ func settingsMaps() (bindings, actions, status map[string]string) {
 		"max_selected_characters": "model.settings.maxSelectedRunes",
 	}
 	actions = map[string]string{
-		"probe_asr": "model.checkASRService()",
-		"probe_llm": "model.checkLLMService()",
-		"save":      "model.saveSettings()",
-		"advanced":  "showAdvanced.toggle()",
-		"close":     "if let onClose { onClose() } else { dismiss() }",
+		"probe_asr":           "model.checkASRService()",
+		"probe_llm":           "model.checkLLMService()",
+		"discover_asr_models": "model.discoverModels(for: .transcribe)",
+		"discover_llm_models": "model.discoverModels(for: .selectedTask)",
+		"save":                "model.saveSettings()",
+		"advanced":            "showAdvanced.toggle()",
+		"close":               "if let onClose { onClose() } else { dismiss() }",
 	}
 	status = map[string]string{
 		"probe_asr_status": "model.asrProbeStatus",
