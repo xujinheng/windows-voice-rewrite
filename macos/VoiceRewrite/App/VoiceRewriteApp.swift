@@ -8,14 +8,15 @@ import Carbon.HIToolbox
 private let exitHotKeySignature: OSType = 0x5652_4558 // 'VREX'
 private let exitHotKeyID: UInt32 = 0xFFFF_FF10
 private let exitHotKeyHandler: EventHandlerUPP = { _, event, _ in
-    guard let event else { return noErr }
+    guard let event else { return eventNotHandledErr }
     var identifier = EventHotKeyID()
     let status = GetEventParameter(event, EventParamName(kEventParamDirectObject),
                                    EventParamType(typeEventHotKeyID), nil,
                                    MemoryLayout<EventHotKeyID>.size, nil, &identifier)
-    guard status == noErr else { return status }
+    guard status == noErr else { return eventNotHandledErr }
+    // Leave the two voice shortcuts to their own Carbon handler.
     guard identifier.signature == exitHotKeySignature,
-          identifier.id == exitHotKeyID else { return noErr }
+          identifier.id == exitHotKeyID else { return eventNotHandledErr }
     DispatchQueue.main.async { NSApp.terminate(nil) }
     return noErr
 }
@@ -232,11 +233,8 @@ enum MenuBarStatus {
         if processing { return "ellipsis.circle.fill" }
         if paused { return "pause.circle.fill" }
         if connectionFailed { return "exclamationmark.triangle.fill" }
-        if processing { return "ellipsis.circle.fill" }
-        if recording { return "mic.fill" }
-        if starting { return "mic.badge.plus" }
         if meetingActive { return "person.2.wave.2.fill" }
-        return paused ? "pause.circle.fill" : "waveform"
+        return "waveform"
     }
 }
 
