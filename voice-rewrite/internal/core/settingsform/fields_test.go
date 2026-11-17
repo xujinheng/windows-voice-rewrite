@@ -29,28 +29,28 @@ func TestFieldGeometryKeepsWholeFocusBorderVisible(t *testing.T) {
 }
 
 func TestModelDiscoveryActionFitsModelRowWithoutOverlappingText(t *testing.T) {
-    frame := FieldFrame(1)
-    edit := ModelEdit(1)
-    button := ModelDiscoverButton(1)
-    if edit.X != FieldEdit(1).X || edit.Y != FieldEdit(1).Y ||
-        button.Y < frame.Y || button.Y+button.H > frame.Y+frame.H ||
-        edit.X+edit.W+12 > button.X || button.X+button.W > frame.X+frame.W {
-        t.Fatalf("invalid model selector geometry: frame=%+v edit=%+v action=%+v", frame, edit, button)
-    }
+	frame := FieldFrame(1)
+	edit := ModelEdit(1)
+	button := ModelDiscoverButton(1)
+	if edit.X != FieldEdit(1).X || edit.Y != FieldEdit(1).Y ||
+		button.Y < frame.Y || button.Y+button.H > frame.Y+frame.H ||
+		edit.X+edit.W+12 > button.X || button.X+button.W > frame.X+frame.W {
+		t.Fatalf("invalid model selector geometry: frame=%+v edit=%+v action=%+v", frame, edit, button)
+	}
 }
 
 func TestModelDiscoveryRejectsCancelledOrWrongPageCompletion(t *testing.T) {
-    if !ModelDiscoveryMayPresent(21, 21, 1, 1) {
-        t.Fatal("current model response must be selectable")
-    }
-    for _, test := range [][4]int{{0, 0, 1, 1}, {19, 20, 0, 0}, {21, 21, 0, 1}, {21, 21, 1, 0}} {
-        if ModelDiscoveryMayPresent(uint64(test[0]), uint64(test[1]), test[2], test[3]) {
-            t.Fatalf("stale or off-page model response accepted: %v", test)
-        }
-    }
-    if MaxModelMenuChoices < 1 || MaxModelMenuChoices > 100 {
-        t.Fatalf("unsafe model menu size %d", MaxModelMenuChoices)
-    }
+	if !ModelDiscoveryMayPresent(21, 21, 1, 1) {
+		t.Fatal("current model response must be selectable")
+	}
+	for _, test := range [][4]int{{0, 0, 1, 1}, {19, 20, 0, 0}, {21, 21, 0, 1}, {21, 21, 1, 0}} {
+		if ModelDiscoveryMayPresent(uint64(test[0]), uint64(test[1]), test[2], test[3]) {
+			t.Fatalf("stale or off-page model response accepted: %v", test)
+		}
+	}
+	if MaxModelMenuChoices < 1 || MaxModelMenuChoices > 100 {
+		t.Fatalf("unsafe model menu size %d", MaxModelMenuChoices)
+	}
 }
 
 func TestPaintedFramesFollowThePage(t *testing.T) {
