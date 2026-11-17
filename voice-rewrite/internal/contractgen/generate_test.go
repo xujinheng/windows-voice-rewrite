@@ -79,6 +79,9 @@ func TestGenerateHostFilesFromCore(t *testing.T) {
 		t.Fatal("history policy was not transcribed from Go")
 	}
 	limits := first[filepath.Join(filepath.Dir(root), "macos/Modules/Storage/Sources/VoiceRewriteStorage/ContractLimits.swift")]
+	if strings.Contains(limits, "macTextEditShortcut") {
+		t.Fatal("third global macOS keyboard shortcut was regenerated")
+	}
 	if !strings.Contains(limits, "func canonicalEndpoints") || !strings.Contains(limits, "func storedCredentialTooLong") || !strings.Contains(limits, "trimmed.contains(\"://\")") || !strings.Contains(limits, "func baseURLEscapesOK") || !strings.Contains(limits, "\"%25\"") {
 		t.Fatal("endpoint rules were not generated from Go")
 	}
