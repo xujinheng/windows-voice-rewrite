@@ -167,6 +167,13 @@ final class ReplyRegistry {
     // Do not recycle finished/canceled IDs: a delayed reply cannot match a newer request.
     private var usedIDs: Set<String> = []
     var count: Int { handlers.count }
+    func contains(id: String) -> Bool { handlers[id] != nil }
+
+    /// Retire a failed local encoding without killing unrelated requests.
+    func fail(id: String, reason: BridgeFailure) {
+        guard let callback = handlers.removeValue(forKey: id) else { return }
+        DispatchQueue.main.async { callback(.failure(reason)) }
+    }
 
     func register(id: String, completion: @escaping Completion) throws {
         guard usedIDs.insert(id).inserted else { throw BridgeFailure.duplicateID }
