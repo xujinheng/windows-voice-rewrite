@@ -20,8 +20,10 @@ private final class PasteTextProvider: NSObject, NSPasteboardItemDataProvider {
         lock.lock()
         lastRead = ProcessInfo.processInfo.systemUptime
         lock.unlock()
-        item.setString(text, forType: .string)
+        _ = item.setString(text, forType: .string)
     }
+
+    func pasteboardFinishedWithDataProvider(_ pasteboard: NSPasteboard) {}
 }
 
 /// NSPasteboard owner and complete-format clipboard snapshot implementation.
