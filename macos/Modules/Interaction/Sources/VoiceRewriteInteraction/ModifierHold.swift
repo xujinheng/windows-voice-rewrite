@@ -6,7 +6,7 @@ import Foundation
 
 /// The six physical left/right keys, independent of the keyboard layout.
 /// Bare modifier holds belong to the macOS host and are never Carbon hotkeys.
-public enum MacModifierKey: String, CaseIterable, Equatable, Sendable {
+public enum MacModifierKey: String, CaseIterable, Hashable, Sendable {
     case leftControl = "LeftCtrl"
     case rightControl = "RightCtrl"
     case leftOption = "LeftOption"
