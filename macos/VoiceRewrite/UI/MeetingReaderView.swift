@@ -127,7 +127,7 @@ struct MeetingReaderView: View {
                         .font(.headline)
                     Text(frozen == nil ? model.meetingStatus : "画面已冻结 · 后台继续处理")
                         .font(.caption)
-                        .foregroundStyle(model.meetingActive ? .secondary : .orange)
+                        .foregroundColor(model.meetingActive ? .secondary : .orange)
                         .lineLimit(2)
                         .accessibilityIdentifier("meeting_reader_status")
                 }
@@ -355,8 +355,8 @@ struct MeetingReaderView: View {
                     .disabled(frozen != nil || !replies.contains(where: {
                         $0.id == index && $0.complete && !$0.english.isEmpty
                     }))
-                    .buttonStyle(model.meetingSelectedIndex == index
-                        ? BorderedProminentButtonStyle() : BorderedButtonStyle())
+                    .buttonStyle(.bordered)
+                    .tint(model.meetingSelectedIndex == index ? .accentColor : .gray)
                 }
             }
             .controlSize(.small)
