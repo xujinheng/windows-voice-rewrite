@@ -630,6 +630,26 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    /// Profile changes are persisted immediately, but the Go Meeting session
+    /// snapshots its config at start. Never claim live inference was updated.
+    @discardableResult
+    func saveMeetingProfile(background: String, terms: String) -> Bool {
+        do {
+            guard let store else { throw SettingsError.insecureStorage }
+            var updated = settings
+            updated.meetingBackground = background
+            updated.meetingTerms = terms
+            try updated.canonicalize()
+            try store.save(updated)
+            settings = updated
+            settingsStatus = "会议资料已保存；正在进行的会议将在重新开始后应用"
+            return true
+        } catch {
+            settingsStatus = settingsSaveFailed(error.localizedDescription)
+            return false
+        }
+    }
+
     func startMeeting() {
         guard !meetingActive && !meetingStarting else { return }
         guard meetingSources.contains(where: { $0.id == meetingSourceID }) else {
