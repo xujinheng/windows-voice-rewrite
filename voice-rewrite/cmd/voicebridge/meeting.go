@@ -286,6 +286,16 @@ func (m *bridgeMeeting) setPaused(paused bool) error {
 		m.discardPacketsLocked()
 		m.level = 0
 		m.replies.ResetWork()
+		m.captions = meetingcore.KeepCompletedCaptions(m.captions)
+		if clear, status := meetingcore.CancelPresentation(m.expression.Complete, m.expressionStatus); clear {
+			m.expression = meetingcore.Line{}
+			m.expressionStatus = status
+		} else {
+			m.expressionStatus = status
+		}
+		if m.replyStatus == meetingcore.RepliesPreparing {
+			m.replyStatus = meetingcore.WorkCanceled
+		}
 		if paused {
 			m.status = meetingcore.CapturePausedStatus
 		} else {
@@ -494,10 +504,14 @@ func (m *bridgeMeeting) snapshot() map[string]any {
 		lines = append(lines, map[string]any{"english": line.English, "chinese": line.Chinese, "complete": line.Complete})
 	}
 	_, epoch, paused := m.runtime.Snapshot()
+	pending := 0
+	if !paused && m.runtime.Context().Err() == nil {
+		pending = m.pipeline.Pending() + m.scheduler.Pending()
+	}
 	return map[string]any{
 		"capture_paused": paused, "epoch": epoch,
 		"metrics": map[string]any{
-			"pending":      m.pipeline.Pending() + m.scheduler.Pending(),
+			"pending":      pending,
 			"dropped":      m.dropped,
 			"asr_first_ms": m.asrFirstMS, "asr_done_ms": m.asrDoneMS,
 			"translation_first_ms": m.translationFirstMS,
