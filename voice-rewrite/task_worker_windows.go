@@ -177,18 +177,18 @@ func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintp
 			app.fail(fmt.Errorf("录音处理线程发生错误：%v", reason))
 		}
 	}()
-	if err := ux.HoldEditorReady(isSameForegroundWindow(expectedWindow)); err != nil {
+	if !isSameForegroundWindow(expectedWindow) {
 		rec.Stop()
 		go func() { <-rec.result }()
-		app.fail(err)
+		app.fail(errors.New(ux.HoldWindowChanged))
 		return
 	}
 	sel, err := captureSelection(app.Window, app.cfg)
 	sel.Anchor = anchor
 	defer restoreSelectionClipboardIfOwned(app.Window, sel)
 	app.logger.Printf("stage=selection mode=hold ms=%d", time.Since(started).Milliseconds())
-	if err == nil {
-		err = ux.HoldCapturedWindow(sel.TargetWindow == expectedWindow)
+	if err == nil && sel.TargetWindow != expectedWindow {
+		err = errors.New(ux.HoldSelectionMoved)
 	}
 	if err == nil {
 		err = textedit.SelectedLengthError(app.cfg.MaxSelectedRunes, sel.Text)
@@ -260,7 +260,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	allowApply := action == textedit.Replace || action == textedit.TryReplace
 	app.history.Remember(ux.HistoryTitle(answer.Intent), answer.Result)
 	if allowApply {
-		app.postHandyPhase(ux.RewriteApplying().Phase, generation)
+		app.postHandyPhase(indicator.Applying, generation)
 		startedPaste := time.Now()
 		// All unknown controls receive the same pre/post paste checks as a browser.
 		e = replaceSelectionWithGuard(app.Window, sel, answer.Result, app.cfg, action == textedit.TryReplace, func() bool { return app.epoch.Valid(generation) })

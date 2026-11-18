@@ -228,7 +228,7 @@ func (s *meetingSession) refineReply(index int, instruction string) {
 	}
 	s.mu.Lock()
 	selected := s.view.reply.Displayed.Lines[index].English
-	if !meetingcore.RefineMayRun(selected, s.view.capturePaused) {
+	if selected == "" || s.view.capturePaused {
 		s.mu.Unlock()
 		return
 	}

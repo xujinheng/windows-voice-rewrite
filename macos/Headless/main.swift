@@ -8,7 +8,7 @@ import Foundation
 // All transcription, prompt/intent and routing decisions live in voicebridge (Go).
 private enum Action { case dictation, rewrite }
 private enum HostError: Error {
-    case config(String), microphone(String), selection, conversion, bridge(String), targetChanged
+    case config(String), microphone(String), conversion, bridge(String)
 }
 
 private struct HostConfig {
@@ -185,31 +185,15 @@ private enum GoCore {
         ]
         let request = try JSONSerialization.data(withJSONObject: payload)
         try process.run()
-        // The Go bridge handles provider work asynchronously. Closing stdin now
-        // signals EOF and cancels that work, often before ASR/LLM can answer.
-        // Keep stdin open until one complete JSONL reply has been received.
-        defer {
-            try? stdin.fileHandleForWriting.close()
-            // Only after EOF may we drain to process exit: waiting for EOF
-            // before closing stdin would deadlock with serveWithOptions.
-            _ = stdout.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-        }
         stdin.fileHandleForWriting.write(request + Data([10]))
-        var frame = Data()
-        while !frame.contains(10) {
-            guard let chunk = try stdout.fileHandleForReading.read(upToCount: 8192),
-                  !chunk.isEmpty else {
-                throw HostError.bridge("voicebridge closed without a JSONL reply")
-            }
-            frame.append(chunk)
-            guard frame.count <= 8 << 20 else {
-                throw HostError.bridge("voicebridge JSONL reply exceeds 8 MiB")
-            }
-        }
-        guard let line = frame.split(separator: 10, maxSplits: 1).first,
+        try? stdin.fileHandleForWriting.close()
+        // Drain stdout while the helper is alive to avoid pipe-buffer deadlocks.
+        let output = stdout.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0,
+              let line = output.split(separator: 10).last,
               let reply = try? JSONDecoder().decode(BridgeReply.self, from: Data(line)) else {
-            throw HostError.bridge("voicebridge returned malformed JSON")
+            throw HostError.bridge("voicebridge failed or returned malformed JSON")
         }
         guard reply.ok, let result = reply.result else {
             throw HostError.bridge(reply.error?.message ?? "Go Core operation failed")
@@ -327,24 +311,22 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         case 61: (name, family) = ("RightOption", .maskAlternate)
         default: return
         }
-        guard name == config.dictation || name == config.rewrite else { return }
-        if pressed.contains(code) {
-            pressed.remove(code)
-            release(code)
-        } else if flags.contains(family) {
-            pressed.insert(code)
-            arm(code: code, action: name == config.dictation ? .dictation : .rewrite,
-                delay: 0.20)
-        }
+        // Right-side flagsChanged events can fire while another modifier is held.
+        // A tracked press is a release; a new press requires the matching flag.
+        updatePress(code: code, name: name,
+                    down: !pressed.contains(code) && flags.contains(family), delay: 0.20)
     }
     private func handleButton(code: Int64, down: Bool) {
-        let name = code == 103 ? "Mouse4" : "Mouse5"
+        updatePress(code: code, name: code == 103 ? "Mouse4" : "Mouse5",
+                    down: down, delay: 0.25)
+    }
+    private func updatePress(code: Int64, name: String, down: Bool, delay: TimeInterval) {
+        guard name == config.dictation || name == config.rewrite else { return }
         if down {
-            pressed.insert(code)
+            guard pressed.insert(code).inserted else { return }
             arm(code: code, action: name == config.dictation ? .dictation : .rewrite,
-                delay: 0.25)
-        } else {
-            pressed.remove(code)
+                delay: delay)
+        } else if pressed.remove(code) != nil {
             release(code)
         }
     }
@@ -496,13 +478,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func cancelFromPill() {
         generation &+= 1
         if microphone.running { _ = try? microphone.stop() }
-        timer?.invalidate()
-        timer = nil
-        activeKey = nil
-        activeAction = nil
-        started = nil
-        selected = nil
-        pending = false
+        clearSession()
         pill.dismiss()
         show("Cancelled")
     }
@@ -511,14 +487,18 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         if pill.isVisible {
             pill.result(message == "Preview only" ? .fallback : .error)
         }
+        clearSession()
+        show(message)
+    }
+
+    private func clearSession() {
         timer?.invalidate()
         timer = nil
         activeKey = nil
         activeAction = nil
-        pending = false
         started = nil
         selected = nil
-        show(message)
+        pending = false
     }
 }
 

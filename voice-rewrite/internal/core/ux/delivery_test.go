@@ -28,9 +28,6 @@ func TestDictationInsertStopsAtTheFirstFailure(t *testing.T) {
 	if err = DictationInsertReady("你好", func() bool { return true }, func() bool { return true }, func() bool { return false }); err != nil {
 		t.Fatal(err)
 	}
-	if err = DictationWindowStillOpen(func() bool { return false }); err == nil || err.Error() != DictationWindowChanged {
-		t.Fatal(err)
-	}
 	if DictationClipboardRestored(nil) != nil {
 		t.Fatal("nil restore")
 	}

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"strings"
@@ -221,7 +222,8 @@ func (p *answerPopup) setNote(s string) {
 	runtime.KeepAlive(label)
 }
 func (p *answerPopup) apply() {
-	if p == nil || p.app == nil || corepopup.ApplyIgnored(p.selection != nil, p.allowApply, p.canceled.Load(), p.app.epoch.Valid(p.generation)) {
+	if p == nil || p.app == nil || p.selection == nil || !p.allowApply ||
+		p.canceled.Load() || !p.app.epoch.Valid(p.generation) {
 		return
 	}
 	var app *appState
@@ -245,7 +247,7 @@ func (p *answerPopup) apply() {
 		p.setNote(ux.ApplyBusy)
 		return
 	case corepopup.ApplyEditorClosed:
-		p.applyResult <- ux.ApplyEditorOpen(false)
+		p.applyResult <- errors.New(ux.ApplyWindowClosed)
 		procPostMessage.Call(app.Window, WM_APPLY_RESULT, 0, 0)
 		app.busy.Store(false)
 		return
@@ -642,7 +644,7 @@ func showAnswerPopup(msg popupMessage) error {
 	uxSetText(editor, editorText)
 	if size, _, _ := procGetWindowTextLength.Call(editor); size == 0 {
 		closeActiveAnswer()
-		return corepopup.ResultWritten(0)
+		return errors.New(corepopup.UnwrittenCard)
 	}
 	// The header Close action stays outside the draggable caption hit area.
 	closeFrame := corepopup.CloseButton(cw, scale)

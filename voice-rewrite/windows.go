@@ -473,7 +473,7 @@ func runApp() {
 		app.setStatus(trayTranscribing)
 		l.Print("recording stop requested; selection/model processing moved to worker")
 		kind := input.FinishRecording(cfg.RecordMode == "hold", holdIsDictation, holdMeeting != nil)
-		if input.FinishShowsProcessing(kind) {
+		if kind == input.FinishDictation || kind == input.FinishMeeting {
 			app.postHandyPhase(indicator.Processing, holdGeneration)
 		} else if kind == input.FinishSpokenRewrite {
 			app.postHandyPhase(indicator.Selection, holdGeneration)
@@ -515,7 +515,7 @@ func runApp() {
 		holdButton = button
 		holdIsDictation = dictation
 		holdMeeting = nil
-		if meetingcore.HoldUsesMeeting(app.meeting != nil, app.meeting != nil && app.meeting.demo) {
+		if app.meeting != nil && !app.meeting.demo {
 			holdMeeting = app.meeting
 		}
 		holdGeneration = app.epoch.Start()
@@ -544,7 +544,7 @@ func runApp() {
 		if button != 0 {
 			promoted = promotePendingHandyStatus(rec, statusMode, holdGeneration)
 		}
-		if input.ShowFreshHoldStatus(button != 0, promoted) {
+		if button == 0 || !promoted {
 			showHandyStatus(rec, statusMode, indicator.Recording, holdGeneration)
 		}
 		// The native status bar is the start feedback. A synchronous Beep
@@ -558,9 +558,7 @@ func runApp() {
 		}
 		win, _, _ := procGetForegroundWindow.Call()
 		if win == 0 {
-			if input.ReportMissingWindow(false) {
-				app.fail(errors.New(input.NoTargetWindow))
-			}
+			app.fail(errors.New(input.NoTargetWindow))
 			return
 		}
 		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
@@ -580,9 +578,6 @@ func runApp() {
 		}
 		win, _, _ := procGetForegroundWindow.Call()
 		if win == 0 {
-			if input.ReportMissingWindow(true) {
-				app.fail(errors.New(input.NoTargetWindow))
-			}
 			return
 		}
 		// Paint the provisional status immediately. Recording starts at
@@ -601,7 +596,7 @@ func runApp() {
 		var held *sideCapture
 		if same {
 			held = pendingSide
-			ready = input.ConfirmSideReady(app.paused.Load(), app.busy.Load(), active != nil, held.targetWindow != 0 && isSameForegroundWindow(held.targetWindow))
+			ready = !app.paused.Load() && !app.busy.Load() && active == nil && held.targetWindow != 0 && isSameForegroundWindow(held.targetWindow)
 			failed = held.err != nil
 		}
 		switch input.SideConfirm(hasPending, same, ready, failed) {
@@ -740,8 +735,7 @@ func runApp() {
 		}
 		if msg.Message == WM_TRAY_UPDATE {
 			state := trayState(app.status.Load())
-			hasPill := activeHandyStatus != nil
-			if ux.TrayShowsError(state == trayError, hasPill, hasPill && indicator.Terminal(activeHandyStatus.phase), hasPill && app.epoch.Valid(activeHandyStatus.owner)) {
+			if state == trayError && activeHandyStatus != nil && !indicator.Terminal(activeHandyStatus.phase) && app.epoch.Valid(activeHandyStatus.owner) {
 				updateHandyStatus(indicator.Error)
 			}
 			// Always run Shell_NotifyIconW on the thread that owns the tray window.
@@ -749,7 +743,7 @@ func runApp() {
 				l.Printf("tray state update failed: %v", err)
 			}
 			procKillTimer.Call(0, TRAY_RESET_TIMER_ID)
-			if ux.TrayArmsReset(state == traySuccess, state == trayError) {
+			if state == traySuccess || state == trayError {
 				procSetTimer.Call(0, TRAY_RESET_TIMER_ID, uintptr(ux.TrayResetAfter/time.Millisecond), 0)
 			}
 			continue
@@ -888,7 +882,7 @@ func runApp() {
 			return
 		}
 		if msg.Message == WM_HOLD_RELEASE {
-			if input.HoldEventApplies(cfg.RecordMode == "hold", active != nil, msg.WParam == holdSession) {
+			if cfg.RecordMode == "hold" && active != nil && msg.WParam == holdSession {
 				l.Print("hold key released; completing recording")
 				finish()
 			}
@@ -902,7 +896,7 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_HOLD_TIMEOUT {
-			if input.HoldEventApplies(cfg.RecordMode == "hold", active != nil, msg.WParam == holdSession) {
+			if cfg.RecordMode == "hold" && active != nil && msg.WParam == holdSession {
 				// The safety watcher is not proof that the mouse driver lost
 				// a release. Preserve the captured speech instead of discarding it.
 				l.Print("hold safety deadline reached; submitting available audio")
@@ -931,13 +925,13 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_SIDE_CANCEL {
-			if input.SideCancelApplies(pendingSide != nil, pendingSide != nil && pendingSide.button == uint16(msg.WParam)) {
+			if pendingSide != nil && pendingSide.button == uint16(msg.WParam) {
 				discardPendingSide()
 			}
 			continue
 		}
 		if msg.Message == WM_SIDE_UP {
-			if input.SideReleaseApplies(cfg.RecordMode == "hold", active != nil, uint16(msg.WParam) == holdButton) {
+			if cfg.RecordMode == "hold" && active != nil && uint16(msg.WParam) == holdButton {
 				l.Printf("mouse button %d released; completing recording", holdButton)
 				finish()
 			}

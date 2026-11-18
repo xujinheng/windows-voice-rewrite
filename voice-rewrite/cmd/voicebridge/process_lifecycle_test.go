@@ -15,9 +15,8 @@ import (
 	"time"
 )
 
-// This is an actual subprocess with the production serve(os.Stdin, os.Stdout)
-// loop. A client must keep stdin open until its asynchronous response arrives.
-// Closing stdin early signals shutdown and cancels in-flight ASR/LLM work.
+// This exercises the production subprocess with the headless host's exact
+// one-request-then-EOF sequence. A normal EOF must not cancel provider work.
 func TestBridgeSubprocessDelayedProviderReply(t *testing.T) {
 	if os.Getenv("VOICEBRIDGE_SUBPROCESS_TEST") == "1" {
 		if err := serve(os.Stdin, os.Stdout); err != nil {
@@ -78,9 +77,11 @@ func TestBridgeSubprocessDelayedProviderReply(t *testing.T) {
 				_ = child.Wait()
 				t.Fatal(err)
 			}
-			// Do not close stdin before reading this complete JSONL reply.
+			if err := stdin.Close(); err != nil {
+				_ = child.Wait()
+				t.Fatal(err)
+			}
 			line, readErr := bufio.NewReader(stdout).ReadBytes('\n')
-			_ = stdin.Close()
 			waitErr := child.Wait()
 			if readErr != nil || waitErr != nil {
 				t.Fatalf("subprocess failed: read=%v wait=%v stderr=%q line=%q",
@@ -91,7 +92,7 @@ func TestBridgeSubprocessDelayedProviderReply(t *testing.T) {
 				t.Fatal(err)
 			}
 			if !reply.OK || reply.Error != nil || reply.ID != "delayed" {
-				t.Fatalf("%s was canceled despite open stdin: %+v", op, reply)
+				t.Fatalf("%s was canceled after normal stdin EOF: %+v", op, reply)
 			}
 			data, ok := reply.Result.(map[string]any)
 			if !ok {

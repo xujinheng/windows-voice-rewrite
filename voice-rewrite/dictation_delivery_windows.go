@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"time"
 
 	"voicerewrite/internal/core/clipboard"
@@ -28,8 +29,8 @@ func insertDictationText(hwnd, target uintptr, text string, valid func() bool) e
 	}
 	backup.markOwned(clipboardSeq())
 	defer backup.restoreIfOwned(hwnd)
-	if err = ux.DictationWindowStillOpen(windowOK); err != nil {
-		return err
+	if !windowOK() {
+		return errors.New(ux.DictationWindowChanged)
 	}
 	if err = sendCombo('V'); err != nil {
 		return err
