@@ -33,12 +33,8 @@ jobs:
           - case: xcode16-deriveddata-cache
             runner: macos-15-intel
             cache: 'derived'
-          - case: xcode26-no-cache
-            runner: macos-26-intel
-            cache: 'off'
-          - case: xcode26-cas-cache
-            runner: macos-26-intel
-            cache: 'on'
+          # Xcode 26 trials completed; compare Xcode 16 incremental cache
+          # against the same-code native baseline without unrelated CPU contention.
     env:
       COMPILATION_CACHE_DIR: ${{ github.workspace }}/.xcode-compilation-cas
       EXPERIMENT_CASE: ${{ matrix.case }}
@@ -185,3 +181,5 @@ jobs:
 # Measurement repeat 3: same application source with package-resolution probe.
 
 # Measurement repeat 4: cold incremental build cache (same tests, source).
+
+# Measurement repeat 5: warm Xcode 16 DerivedData cache vs baseline.
