@@ -45,7 +45,7 @@ class HeadlessWorkflowTests(unittest.TestCase):
         host = sources[0].read_text()
         self.assertIn("styleMask: [.borderless, .nonactivatingPanel]", pill)
         self.assertIn("width: 232, height: 50", pill)
-        self.assertIn("width: CGFloat = view.appearance == .recording ? 232 : 252", pill)
+        self.assertIn("width: CGFloat = view.phase == .recording ? 232 : 252", pill)
         self.assertIn("self?.cancelFromPill()", host)
         self.assertIn("pill.recording(", host)
         self.assertIn("pill.processing()", host)

@@ -45,7 +45,7 @@ final class RecordingPill {
         terminalAt = nil
         view.rewrite = rewrite
         view.started = started
-        view.appearance = .recording
+        view.phase = .recording
         view.level = 0
         display()
     }
@@ -53,14 +53,14 @@ final class RecordingPill {
     func processing() {
         guard isVisible else { return }
         terminalAt = nil
-        view.appearance = .processing
+        view.phase = .processing
         display()
     }
 
-    func result(_ appearance: PillAppearance) {
+    func result(_ phase: PillAppearance) {
         guard isVisible else { return }
         terminalAt = Date()
-        view.appearance = appearance
+        view.phase = phase
         display()
     }
 
@@ -93,7 +93,7 @@ final class RecordingPill {
             dismiss()
             return
         }
-        if view.appearance == .recording {
+        if view.phase == .recording {
             let raw = levelSource()
             let normalized = raw.isFinite ? min(1, max(0, raw * 5)) : 0
             smoothed = 0.72 * smoothed + 0.28 * normalized
@@ -105,7 +105,7 @@ final class RecordingPill {
 
     private func reposition() {
         guard let panel else { return }
-        let width: CGFloat = view.appearance == .recording ? 232 : 252
+        let width: CGFloat = view.phase == .recording ? 232 : 252
         let cursor = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(cursor, $0.frame, false) } ?? NSScreen.main
         guard let bounds = screen?.visibleFrame else { return }
@@ -118,7 +118,7 @@ final class RecordingPill {
 }
 
 private final class PillSurface: NSView {
-    var appearance: PillAppearance = .recording
+    var phase: PillAppearance = .recording
     var rewrite = false
     var started = Date()
     var level = 0.0
@@ -134,7 +134,7 @@ private final class PillSurface: NSView {
     }
 
     private var accent: NSColor {
-        if appearance == .error { return rgb(255, 129, 138) }
+        if phase == .error { return rgb(255, 129, 138) }
         return rewrite ? rgb(175, 165, 255) : rgb(233, 129, 170)
     }
 
@@ -151,7 +151,7 @@ private final class PillSurface: NSView {
                 radius: 20, color: rgb(0, 0, 0, alpha: 34.0 / 255))
         capsule(bounds.insetBy(dx: 5, dy: 5), radius: 20, color: rgb(32, 36, 46))
         let color = accent
-        if appearance == .recording {
+        if phase == .recording {
             capsule(NSRect(x: 12, y: 18, width: 3, height: 14), radius: 1.5, color: color)
             color.setFill()
             NSBezierPath(ovalIn: NSRect(x: 23, y: 21, width: 8, height: 8)).fill()
@@ -167,7 +167,7 @@ private final class PillSurface: NSView {
         } else {
             drawMark()
             let message: String
-            switch appearance {
+            switch phase {
             case .processing: message = rewrite ? "识别指令…" : "正在转写…"
             case .sent: message = "已发送粘贴指令"
             case .error: message = "操作未完成 · 查看日志"
@@ -204,7 +204,7 @@ private final class PillSurface: NSView {
 
     private func drawMark() {
         let color = accent
-        if appearance == .processing {
+        if phase == .processing {
             for index in 0..<8 {
                 let angle = Double(tick) * 0.2 + Double(index) * .pi / 4
                 let x = CGFloat(30 + 8 * cos(angle))
@@ -214,14 +214,14 @@ private final class PillSurface: NSView {
             }
         } else {
             let fill: NSColor
-            switch appearance {
+            switch phase {
             case .sent: fill = rgb(141, 189, 232)
             case .fallback: fill = rgb(245, 197, 107)
             default: fill = rgb(255, 129, 138)
             }
             fill.setFill()
             NSBezierPath(ovalIn: NSRect(x: 22, y: 17, width: 16, height: 16)).fill()
-            label(appearance == .sent ? "✓" : "!", x: 22, width: 16, size: 11, centered: true)
+            label(phase == .sent ? "✓" : "!", x: 22, width: 16, size: 11, centered: true)
         }
     }
 
