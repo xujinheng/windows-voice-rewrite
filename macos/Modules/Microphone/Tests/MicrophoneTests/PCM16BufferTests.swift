@@ -67,7 +67,7 @@ final class PCM16BufferTests: XCTestCase {
         }
     }
 
-    func testInPlaceEncodingRollbackPreservesEarlierChunks() throws {
+    func testReusableScratchRollbackPreservesEarlierChunks() throws {
         var pcm = PCM16Buffer(reserveFrames: 2)
         try pcm.append([-1, 0.5])
         let before = pcm.frameCount
@@ -80,7 +80,7 @@ final class PCM16BufferTests: XCTestCase {
                        [0x00, 0x80, 0x00, 0x40, 0x00, 0xc0, 0xff, 0x7f])
     }
 
-    func testInPlaceEncodingMatchesReferenceAcrossChunkSizes() throws {
+    func testReusableScratchMatchesReferenceAcrossChunkSizes() throws {
         var pcm = PCM16Buffer(reserveFrames: 1)
         var expected = [UInt8]()
         for size in [1, 7, 512, 4_096, 17] {
@@ -98,7 +98,7 @@ final class PCM16BufferTests: XCTestCase {
     }
 
     /// Same-run A/B of the original temporary-array encoder against the
-    /// production in-place encoder. These are CPU hot-path microbenchmarks,
+    /// production reusable-scratch encoder. These are CPU hot-path microbenchmarks,
     /// not key-to-audio or end-to-end ASR latency measurements.
     func testPCM16EncoderHotPathABEvidence() throws {
         let samples = (0..<4_096).map { Float(($0 % 257) - 128) / 128 }
@@ -155,7 +155,7 @@ final class PCM16BufferTests: XCTestCase {
             }
             XCTAssertEqual(current, previous)
         }
-        print("PCM16_ENCODING_AB legacy_p50_ms=\(middle(oldTimes)) in_place_p50_ms=\(middle(newTimes)) rounds=5 frames_per_round=\(totalFrames)")
+        print("PCM16_ENCODING_AB legacy_p50_ms=\(middle(oldTimes)) scratch_p50_ms=\(middle(newTimes)) rounds=5 frames_per_round=\(totalFrames)")
     }
 
     func testEmptyInputCannotSucceed() {
