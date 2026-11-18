@@ -1,25 +1,6 @@
 name: Cross-platform UI acceptance evidence
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/acceptance-evidence.yml'
-      - 'tests/acceptance/**'
-      - 'scripts/capture-acceptance-windows.ps1'
-      - 'scripts/test-meeting-ui.ps1'
-      - 'voice-rewrite/visual_preview_windows.go'
-      - 'voice-rewrite/meeting_ui_e2e_windows_test.go'
-      - 'voice-rewrite/settings*.go'
-      - 'voice-rewrite/handy_status_windows.go'
-      - 'voice-rewrite/popup_windows.go'
-      - 'voice-rewrite/meeting*.go'
-      - 'voice-rewrite/internal/core/meeting/**'
-      - 'voice-rewrite/internal/core/indicator/**'
-      - 'voice-rewrite/internal/core/settingsform/**'
-      - 'macos/VoiceRewrite/UI/**'
-      - 'macos/VoiceRewrite/App/**'
-      - 'macos/VoiceRewrite/Tests/**'
-      - 'macos/VoiceRewrite.xcodeproj/**'
-      - 'macos/Modules/Interaction/**'
+  workflow_call:
   push:
     branches: [main]
     paths:
