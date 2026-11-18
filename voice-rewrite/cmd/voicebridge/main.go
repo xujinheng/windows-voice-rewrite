@@ -18,6 +18,7 @@ import (
 
 	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
+	"voicerewrite/internal/core/delivery"
 	"voicerewrite/internal/core/jsonl"
 	meetingcore "voicerewrite/internal/core/meeting"
 	"voicerewrite/internal/core/provider"
@@ -51,6 +52,11 @@ type request struct {
 	PCMBase64       string          `json:"pcm_base64"`
 	SelectedText    string          `json:"selected_text"`
 	CanInsert       bool            `json:"can_insert"`
+	ReceiptKind     string          `json:"receipt_kind"`
+	ReceiptState    string          `json:"receipt_state"`
+	ReceiptText     string          `json:"receipt_text"`
+	ReceiptTitle    string          `json:"receipt_title"`
+	ReceiptStatus   string          `json:"receipt_status"`
 	Instruction     string          `json:"instruction"`
 	CurrentVersion  string          `json:"current_version"`
 	Shortcut        string          `json:"shortcut"`
@@ -253,6 +259,8 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		switch req.Op {
 		case "meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop", "meeting_pause", "meeting_resume", "meeting_accept", "meeting_cancel", "meeting_view", "meeting_configure", "meeting_demo":
 			s.send(s.meetingRequest(req))
+		case "task_receipt":
+			s.send(s.processReceipt(req))
 		case "voice_epoch":
 			s.send(s.voiceEpochRequest(req))
 		case "voice_event":
@@ -592,11 +600,57 @@ func selectedTaskSuccess(id string, result textedit.AssistantResult, instruction
 		"intent": result.Intent,
 		"text":   result.Result,
 		"route":  route,
+		"effect": ux.SelectedTaskEffect(result.Intent, result.Result, instruction, route, spoken),
 	}
 	if spoken {
 		payload["instruction"] = instruction
 	}
 	return success(id, payload)
+}
+
+// processReceipt routes a native OS write's evidence into a presentation effect.
+// The bridge neither attempts another paste nor silently upgrades "sent" to confirmed.
+func (s *bridgeServer) processReceipt(req request) response {
+	var kind delivery.Kind
+	switch req.ReceiptKind {
+	case "dictation":
+		kind = delivery.Dictation
+	case "selection":
+		kind = delivery.ReplaceSelection
+	default:
+		return failure(req.ID, "invalid_request", "invalid receipt kind")
+	}
+	var state delivery.State
+	switch req.ReceiptState {
+	case "blocked":
+		state = delivery.Blocked
+	case "sent_unverified":
+		state = delivery.SentUnverified
+	case "confirmed":
+		state = delivery.Confirmed
+	case "uncertain":
+		state = delivery.Uncertain
+	default:
+		return failure(req.ID, "invalid_request", "invalid receipt state")
+	}
+	// A receipt is never accepted on its native token alone. The Go epoch
+	// must still own this session and generation and consume it exactly once.
+	if req.SessionID == "" || req.Generation == 0 {
+		return failure(req.ID, "invalid_request", "receipt requires session_id and generation")
+	}
+	owner := sessioncore.Event{
+		Type: sessioncore.EventAuthorize, SessionID: req.SessionID, Generation: req.Generation,
+	}
+	if !s.voiceEpoch.Apply(owner).Allowed {
+		return failure(req.ID, "stale_task", "write receipt arrived after cancel or replacement")
+	}
+	owner.Type = sessioncore.EventComplete
+	if !s.voiceEpoch.Apply(owner).Allowed {
+		return failure(req.ID, "stale_task", "write receipt already consumed or canceled")
+	}
+	return success(req.ID, map[string]any{
+		"effect": ux.TaskWriteEffect(kind, state, req.ReceiptText, req.ReceiptTitle, req.ReceiptStatus),
+	})
 }
 
 func parseShortcut(req request) response {
@@ -685,8 +739,9 @@ func processRequest(ctx context.Context, req request) response {
 			return contextFailure(req.ID, ctx.Err())
 		}
 		return success(req.ID, map[string]any{
-			"text":  text,
-			"route": ux.RouteDictationTranscript(text, req.CanInsert),
+			"text":   text,
+			"route":  ux.RouteDictationTranscript(text, req.CanInsert),
+			"effect": ux.DictationTaskEffect(text, req.CanInsert),
 		})
 	case "selected_task", "selected_voice_task":
 		if len(req.SelectedText) == 0 || len(req.SelectedText) > maxSelectedBytes ||
