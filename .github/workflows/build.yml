@@ -503,6 +503,9 @@ jobs:
   ci-gate:
     name: CI Gate
     if: always() && github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      actions: read
     needs: [changes, test-core, test-core-macos, build-macos-intel, build, build-oneclick, ui-acceptance, direct2d-acceptance]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -548,6 +551,50 @@ jobs:
           check 'Cross-platform UI acceptance' "$UI_REQUIRED" "$UI_RESULT" || errors=1
           check 'Direct2D result acceptance' "$D2D_REQUIRED" "$D2D_RESULT" || errors=1
           exit "$errors"
+      - name: Summarize actual runner usage
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" > "$RUNNER_TEMP/jobs.json"
+          python3 - "$RUNNER_TEMP/jobs.json" <<'PY'
+          import collections
+          import datetime
+          import json
+          import os
+          import sys
+
+          def timestamp(value):
+              return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              data = json.load(stream)
+          rows = []
+          for job in data.get("jobs", []):
+              start, end = job.get("started_at"), job.get("completed_at")
+              if not start or not end or not job.get("runner_name"):
+                  continue
+              elapsed = max(0, (timestamp(end) - timestamp(start)).total_seconds())
+              runner = (job.get("labels") or ["unknown"])[0]
+              rows.append((runner, elapsed))
+          by_runner = collections.defaultdict(lambda: [0, 0.0])
+          for runner, elapsed in rows:
+              by_runner[runner][0] += 1
+              by_runner[runner][1] += elapsed / 60.0
+          lines = ["### CI runner usage", "",
+                   "Observed job execution time; not a GitHub billing statement.",
+                   "", "| Runner | Executed jobs | Runner minutes |",
+                   "| --- | ---: | ---: |"]
+          for runner, (count, minutes) in sorted(by_runner.items()):
+              lines.append(f"| {runner} | {count} | {minutes:.1f} |")
+          lines.append(f"| **Total** | **{len(rows)}** | **{sum(v[1] for v in by_runner.values()):.1f}** |")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
+              out.write("\n".join(lines) + "\n")
+          print("\n".join(lines))
+          PY
 
   macos-signed-distribution:
     name: Publish signed macOS packages
