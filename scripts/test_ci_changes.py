@@ -37,7 +37,19 @@ class ClassifyTests(unittest.TestCase):
             "core": False, "macos": False, "windows": True, "oneclick": False, "ui": False, "direct2d": False})
 
     def test_workflow_change_rechecks_everything(self):
-        self.assertTrue(all(classify([".github/workflows/build.yml"]).values()))
+        for path in (".github/workflows/build.yml", ".github/actions/setup/action.yml",
+                     ".github/dependabot.yml", "scripts/test_ci_workflows.py",
+                     "scripts/test_ci_trigger_ownership.py"):
+            with self.subTest(path=path):
+                self.assertTrue(all(classify([path]).values()))
+
+    def test_native_xcode_ci_helpers_validate_both_macos_architectures(self):
+        for path in ("scripts/ci_xcode_mtimes.py", "scripts/ci_xctest_coverage.py"):
+            with self.subTest(path=path):
+                self.assertEqual(classify([path]), {
+                    "core": False, "macos": True, "windows": False,
+                    "oneclick": False, "ui": False, "direct2d": False,
+                })
 
     def test_mixed_change(self):
         self.assertEqual(classify(["macos/VoiceRewrite/App/Main.swift", "oneclick/go.mod"]),
