@@ -33,8 +33,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          # On PRs the checkout is a merge commit; fetch its first parent for
+          # a zero-extra-runner side-by-side reuse comparison with the base.
+          fetch-depth: 2
       - name: Verify CI path classifier
         run: python3 -m unittest discover -s scripts -p 'test_ci_*.py' -v
+      - name: Benchmark portable Go decision ownership against base
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s scripts -p 'test_reuse_*.py' -v
+          base_args=()
+          if git rev-parse --verify -q 'HEAD^1' >/dev/null; then
+            base_args=(--baseline-revision 'HEAD^1')
+          fi
+          python3 scripts/bench_reuse.py --no-regression "${base_args[@]}" \
+            --json-output "$RUNNER_TEMP/reuse-benchmark.json" \
+            --summary "$GITHUB_STEP_SUMMARY"
       - name: Compute affected platforms
         id: scope
         shell: bash
