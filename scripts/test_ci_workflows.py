@@ -29,6 +29,20 @@ class HeadlessWorkflowTests(unittest.TestCase):
         ready = (WORKFLOWS / "ready-build.yml").read_text()
         self.assertIn("github.event.changes.title", ready)
 
+    def test_mac_bridge_keeps_stdin_open_until_complete_jsonl_reply(self):
+        # The Go bridge dispatches provider work asynchronously. An early
+        # Swift stdin close triggers serveWithOptions.shutdown/cancellation.
+        host = (ROOT / "macos/Headless/main.swift").read_text()
+        self.assertIn("while !frame.contains(10)", host)
+        self.assertIn("read(upToCount: 8192)", host)
+        self.assertIn("frame.count <= 8 << 20", host)
+        self.assertIn("defer {\n            try? stdin.fileHandleForWriting.close()", host)
+        self.assertNotIn(
+            "stdin.fileHandleForWriting.write(request + Data([10]))\n"
+            "        try? stdin.fileHandleForWriting.close()",
+            host,
+        )
+
     def test_headless_does_not_link_the_retired_meeting_host(self):
         bridge = ROOT / "voice-rewrite/cmd/voicebridge"
         self.assertFalse((bridge / "meeting.go").exists())

@@ -185,15 +185,31 @@ private enum GoCore {
         ]
         let request = try JSONSerialization.data(withJSONObject: payload)
         try process.run()
+        // The Go bridge handles provider work asynchronously. Closing stdin now
+        // signals EOF and cancels that work, often before ASR/LLM can answer.
+        // Keep stdin open until one complete JSONL reply has been received.
+        defer {
+            try? stdin.fileHandleForWriting.close()
+            // Only after EOF may we drain to process exit: waiting for EOF
+            // before closing stdin would deadlock with serveWithOptions.
+            _ = stdout.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+        }
         stdin.fileHandleForWriting.write(request + Data([10]))
-        try? stdin.fileHandleForWriting.close()
-        // Drain stdout while the helper is alive to avoid pipe-buffer deadlocks.
-        let output = stdout.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0,
-              let line = output.split(separator: 10).last,
+        var frame = Data()
+        while !frame.contains(10) {
+            guard let chunk = try stdout.fileHandleForReading.read(upToCount: 8192),
+                  !chunk.isEmpty else {
+                throw HostError.bridge("voicebridge closed without a JSONL reply")
+            }
+            frame.append(chunk)
+            guard frame.count <= 8 << 20 else {
+                throw HostError.bridge("voicebridge JSONL reply exceeds 8 MiB")
+            }
+        }
+        guard let line = frame.split(separator: 10, maxSplits: 1).first,
               let reply = try? JSONDecoder().decode(BridgeReply.self, from: Data(line)) else {
-            throw HostError.bridge("voicebridge failed or returned malformed JSON")
+            throw HostError.bridge("voicebridge returned malformed JSON")
         }
         guard reply.ok, let result = reply.result else {
             throw HostError.bridge(reply.error?.message ?? "Go Core operation failed")
