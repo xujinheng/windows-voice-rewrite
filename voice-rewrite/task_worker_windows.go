@@ -254,7 +254,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	if !app.epoch.StartStage(generation, session.StageSpokenEdit, session.StageBudget(session.StageSpokenEdit, len(r.pcm), 0)) {
 		return
 	}
-	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), 240*time.Second)
+	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), session.StageBudget(session.StageSpokenEdit, len(r.pcm), 0))
 	defer cancel()
 	started := time.Now()
 	answer, instruction, e := textedit.ResolveSpokenTask(ctx, app.cfg, sel.Text, r.pcm, func(text string) {
