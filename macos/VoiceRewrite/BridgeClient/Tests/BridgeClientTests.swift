@@ -34,12 +34,11 @@ final class BridgeClientTests: XCTestCase {
         XCTAssertEqual(payload["selected_text"] as? String, "原文")
         XCTAssertNil(payload["instruction"])
 
-        let response = Data(#"{"v":1,"id":"voice-selected","ok":true,"result":{"instruction":"请翻译成英文","intent":"translate","text":"Original","preview_only":false,"may_attempt_replace":true}}"#.utf8)
+        let response = Data(#"{"v":1,"id":"voice-selected","ok":true,"result":{"instruction":"请翻译成英文","intent":"translate","text":"Original","route":"replace"}}"#.utf8)
         let reply = try JSONDecoder().decode(BridgeReply.self, from: response)
         try reply.validate()
         XCTAssertEqual(reply.result?["instruction"]?.string, "请翻译成英文")
-        XCTAssertEqual(reply.result?["may_attempt_replace"]?.boolValue, true)
-        XCTAssertEqual(reply.result?["preview_only"]?.boolValue, false)
+        XCTAssertEqual(reply.result?["route"]?.string, "replace")
     }
 
     func testSharedCoreProbeOperationsAndResponses() throws {
@@ -388,7 +387,11 @@ final class BridgeClientTests: XCTestCase {
             *'"op":"hello"'*)
               printf '{"v":1,"id":"%s","ok":true,"result":{"name":"VoiceRewrite","protocol":1}}\\n' "$id" ;;
             *'"op":"transcribe"'*)
-              printf '{"v":1,"id":"%s","ok":true,"result":{"text":"CI latency test."}}\\n' "$id" ;;
+              case "$line" in
+                *'"can_insert":true'*) route="insert" ;;
+                *) route="preview" ;;
+              esac
+              printf '{"v":1,"id":"%s","ok":true,"result":{"text":"CI latency test.","route":"%s"}}\\n' "$id" "$route" ;;
             *)
               printf '{"v":1,"id":"%s","ok":false,"error":{"code":"unsupported_op","message":"test fixture"}}\\n' "$id" ;;
           esac

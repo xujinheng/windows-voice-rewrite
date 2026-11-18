@@ -2581,6 +2581,7 @@ final class WorkspaceModel: ObservableObject {
                 let requestStarted = ProcessInfo.processInfo.systemUptime
                 let id = bridge.sendPCM(operation: "transcribe", pcm: pcm, fields: [
                     "config": config,
+                    "can_insert": .boolean(insertion != nil),
                 ]) { [weak self] reply in
                     Task { @MainActor [weak self] in
                         guard let self, self.resultGeneration.accepts(token) else { return }
@@ -2592,8 +2593,8 @@ final class WorkspaceModel: ObservableObject {
                         let follow = dictationTranscriptFollowUp(
                             ok: response?.ok ?? false,
                             text: response?.result?["text"]?.string,
+                            route: response?.result?["route"]?.string,
                             transport: self.replyFailure(reply),
-                            hasInsertion: insertion != nil,
                             failureStatus: FailureCopy.status(prefix: "ASR 请求失败：", message: response?.error?.userText ?? "invalid_reply"),
                             emptyStatus: ResultCopy.dictationEmpty,
                             historyTitle: ResultCopy.dictationHistory,
@@ -2738,8 +2739,7 @@ final class WorkspaceModel: ObservableObject {
             text: result?["text"]?.string,
             spoken: spoken,
             instruction: result?["instruction"]?.string,
-            mayWrite: result?["may_attempt_replace"]?.boolValue == true,
-            previewOnly: result?["preview_only"]?.boolValue != false,
+            route: result?["route"]?.string,
             transport: replyFailure(reply),
             failureStatus: FailureCopy.status(prefix: "模型处理失败：", message: response?.error?.userText ?? "invalid_reply"),
             historyTitle: ResultCopy.historyTitle(intent: intent),

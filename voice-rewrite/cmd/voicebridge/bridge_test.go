@@ -227,12 +227,12 @@ func TestBridgeCoreHTTPRequestsAndRouting(t *testing.T) {
 		"selected_text": "Original text", "instruction": "rewrite this more clearly",
 	})
 	replies := h.receiveIDs("asr", "edit")
-	if !replies["asr"].OK || object(t, replies["asr"].Result)["text"] != "hello from core" {
+	if !replies["asr"].OK || object(t, replies["asr"].Result)["text"] != "hello from core" || object(t, replies["asr"].Result)["route"] != "preview" {
 		t.Fatalf("bad ASR response: %#v", replies["asr"])
 	}
 	edit := object(t, replies["edit"].Result)
 	if !replies["edit"].OK || edit["intent"] != "edit" || edit["text"] != "Edited text" ||
-		edit["preview_only"] != false || edit["may_attempt_replace"] != true {
+		edit["route"] != "replace" {
 		t.Fatalf("bad selected-task response: %#v", replies["edit"])
 	}
 	h.close()
@@ -787,7 +787,7 @@ func TestBridgeSpokenSelectionUsesSharedASRAndTextedit(t *testing.T) {
 	}
 	result := object(t, reply.Result)
 	if result["instruction"] != "请写成英文" || result["text"] != "Hello" ||
-		result["may_attempt_replace"] != true || result["preview_only"] != false {
+		result["route"] != "replace" {
 		t.Fatalf("unexpected spoken decision: %#v", result)
 	}
 	h.close()

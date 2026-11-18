@@ -48,6 +48,7 @@ type request struct {
 	Config          json.RawMessage `json:"config"`
 	PCMBase64       string          `json:"pcm_base64"`
 	SelectedText    string          `json:"selected_text"`
+	CanInsert       bool            `json:"can_insert"`
 	Instruction     string          `json:"instruction"`
 	CurrentVersion  string          `json:"current_version"`
 	Shortcut        string          `json:"shortcut"`
@@ -520,12 +521,14 @@ func rejectPCM(id, op, reason string) response {
 
 func selectedTaskSuccess(id string, result textedit.AssistantResult, instruction string, spoken bool) response {
 	action := textedit.RouteTask(result, instruction, false)
-	mayAttempt := action == textedit.TryReplace || action == textedit.Replace
+	route := "preview"
+	if action == textedit.TryReplace || action == textedit.Replace {
+		route = "replace"
+	}
 	payload := map[string]any{
-		"intent":              result.Intent,
-		"text":                result.Result,
-		"preview_only":        result.PreviewOnly || !mayAttempt,
-		"may_attempt_replace": mayAttempt,
+		"intent": result.Intent,
+		"text":   result.Result,
+		"route":  route,
 	}
 	if spoken {
 		payload["instruction"] = instruction
@@ -618,7 +621,10 @@ func processRequest(ctx context.Context, req request) response {
 		if ctx.Err() != nil {
 			return contextFailure(req.ID, ctx.Err())
 		}
-		return success(req.ID, map[string]string{"text": text})
+		return success(req.ID, map[string]any{
+			"text":  text,
+			"route": ux.RouteDictationTranscript(text, req.CanInsert),
+		})
 	case "selected_task", "selected_voice_task":
 		if len(req.SelectedText) == 0 || len(req.SelectedText) > maxSelectedBytes ||
 			!utf8.ValidString(req.SelectedText) || len(req.Instruction) > maxInstructionBytes ||
