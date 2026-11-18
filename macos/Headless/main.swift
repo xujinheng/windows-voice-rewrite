@@ -42,6 +42,12 @@ private final class Microphone {
     private var samples: [Float] = []
     private var sampleRate: Double = 0
     private var maxSamples = 0
+    private var rms = 0.0
+    var meterLevel: Double {
+        lock.lock()
+        defer { lock.unlock() }
+        return rms
+    }
     private(set) var running = false
 
     func start(maximumSeconds: Int) throws {
@@ -54,6 +60,7 @@ private final class Microphone {
         }
         lock.lock()
         samples = []
+        rms = 0
         sampleRate = format.sampleRate
         maxSamples = Int(format.sampleRate) * maximumSeconds
         lock.unlock()
@@ -65,11 +72,15 @@ private final class Microphone {
             let count = min(Int(buffer.frameLength), available)
             guard count > 0 else { return }
             let channelCount = Int(buffer.format.channelCount)
+            var sumSquares = 0.0
             for i in 0..<count {
                 var mono: Float = 0
                 for channel in 0..<channelCount { mono += channels[channel][i] }
-                self.samples.append(mono / Float(channelCount))
+                mono /= Float(channelCount)
+                self.samples.append(mono)
+                sumSquares += Double(mono) * Double(mono)
             }
+            self.rms = (sumSquares / Double(count)).squareRoot()
         }
         do {
             engine.prepare()
@@ -90,6 +101,7 @@ private final class Microphone {
         let captured = samples
         let rate = sampleRate
         samples = []
+        rms = 0
         lock.unlock()
         guard captured.count >= Int(rate / 10) else {
             throw HostError.microphone("audio shorter than 100 ms")
@@ -196,6 +208,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var microphone = Microphone()
+    private let pill = RecordingPill()
     private var config: HostConfig!
     private var configURL: URL!
     private var pressed = Set<Int64>()
@@ -219,6 +232,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         for entry in menu.items where entry.action != nil { entry.target = self }
         item.menu = menu
+        pill.onCancel = { [weak self] in self?.cancelFromPill() }
+        pill.prepare()
         let defaultPath = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/voicerewrite/config.json")
         configURL = ProcessInfo.processInfo.arguments.dropFirst().first.map {
@@ -341,7 +356,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         }
         do {
             try microphone.start(maximumSeconds: config.maximumSeconds)
-            started = Date()
+            let startTime = Date()
+            started = startTime
+            pill.recording(rewrite: action == .rewrite, started: startTime,
+                           meter: { [weak self] in self?.microphone.meterLevel ?? 0 })
             show("● 0s")
             timer?.invalidate()
             timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
@@ -368,6 +386,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         activeKey = nil
         activeAction = nil
         pending = true
+        pill.processing()
         show("Processing…")
         let configValue = config.raw
         let selectedValue = selected
@@ -434,6 +453,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         down?.post(tap: .cghidEventTap)
         up?.post(tap: .cghidEventTap)
         show("Sent ✓")
+        pill.result(.sent)
         // Restore only if this lease still owns the clipboard.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
             if board.string(forType: .string) == text {
@@ -442,7 +462,26 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             }
         }
     }
+    // Clicking the floating pill cancels the active capture or suppresses a
+    // pending bridge result. It must never retry or deliver a stale write.
+    private func cancelFromPill() {
+        generation &+= 1
+        if microphone.running { _ = try? microphone.stop() }
+        timer?.invalidate()
+        timer = nil
+        activeKey = nil
+        activeAction = nil
+        started = nil
+        selected = nil
+        pending = false
+        pill.dismiss()
+        show("Cancelled")
+    }
+
     private func reset(_ message: String) {
+        if pill.isVisible {
+            pill.result(message == "Preview only" ? .fallback : .error)
+        }
         timer?.invalidate()
         timer = nil
         activeKey = nil

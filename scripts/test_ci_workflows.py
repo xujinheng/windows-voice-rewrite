@@ -30,9 +30,27 @@ class HeadlessWorkflowTests(unittest.TestCase):
         self.assertIn("github.event.changes.title", ready)
 
     def test_source_budget_and_user_path(self):
-        host = ROOT / "macos/Headless/main.swift"
-        self.assertTrue(host.is_file())
-        self.assertLessEqual(sum(1 for line in host.read_text().splitlines() if line.strip()), 1000)
+        sources = [ROOT / "macos/Headless/main.swift",
+                   ROOT / "macos/Headless/RecordingPill.swift"]
+        for path in sources:
+            self.assertTrue(path.is_file())
+            self.assertNotIn("import SwiftUI", path.read_text())
+        nonblank = sum(sum(bool(line.strip()) for line in path.read_text().splitlines())
+                       for path in sources)
+        self.assertLessEqual(nonblank, 1000)
+        script = (ROOT / "scripts/build-macos-headless.sh").read_text()
+        for path in sources:
+            self.assertIn(path.relative_to(ROOT).as_posix(), script)
+        pill = sources[1].read_text()
+        host = sources[0].read_text()
+        self.assertIn("styleMask: [.borderless, .nonactivatingPanel]", pill)
+        self.assertIn("width: 232, height: 50", pill)
+        self.assertIn("width: CGFloat = view.appearance == .recording ? 232 : 252", pill)
+        self.assertIn("self?.cancelFromPill()", host)
+        self.assertIn("pill.recording(", host)
+        self.assertIn("pill.processing()", host)
+        self.assertIn("pill.result(.sent)", host)
+        self.assertIn("pill.dismiss()", host)
         self.assertTrue((ROOT / "macos/Headless/config.example.json").is_file())
         self.assertTrue((ROOT / "scripts/check_headless_scope.py").is_file())
 

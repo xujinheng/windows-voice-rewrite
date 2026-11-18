@@ -21,7 +21,7 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 swiftc -O -target "${arch}-apple-macosx13.0" \
   -framework AppKit -framework AVFoundation -framework ApplicationServices \
   -framework CoreGraphics -o "$app/Contents/MacOS/VoiceRewrite" \
-  macos/Headless/main.swift
+  macos/Headless/main.swift macos/Headless/RecordingPill.swift
 cat > "$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"

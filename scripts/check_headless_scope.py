@@ -23,11 +23,15 @@ def main():
         idx += read
         if (obj.get("Module") or {}).get("Path") == "voicerewrite":
             paths.update(Path(obj["Dir"]) / f for f in obj.get("GoFiles", []) + obj.get("CgoFiles", []))
-    swift = ROOT / "macos/Headless/main.swift"
+    swift_files = sorted((ROOT / "macos/Headless").glob("*.swift"))
+    build_script = (ROOT / "scripts/build-macos-headless.sh").read_text(encoding="utf-8")
+    for swift in swift_files:
+        if swift.relative_to(ROOT).as_posix() not in build_script:
+            raise SystemExit(f"unaccounted Swift host source: {swift}")
     go_lines = sum(nonblank(p) for p in paths)
-    swift_lines = nonblank(swift)
-    if not go_lines or not swift_lines:
-        raise SystemExit("missing production Go or Swift source")
+    swift_lines = sum(nonblank(swift) for swift in swift_files)
+    if not go_lines or not swift_lines or len(swift_files) != 2:
+        raise SystemExit("missing linked Go or two native Swift sources")
     percentage = go_lines / (go_lines + swift_lines) * 100
     print(f"Go: {go_lines} nonblank linked-source LOC; Swift: {swift_lines}; Go share: {percentage:.1f}%")
     print("This is a static linked-source inventory, NOT functional coverage.")

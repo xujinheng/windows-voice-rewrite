@@ -3,7 +3,9 @@
 The shared Go Core is authoritative for JSON config normalization, ASR, LLM,
 spoken selected-text rewriting, error classification and result routing.
 Windows is the existing Win32 host. macOS is a small headless `NSStatusItem`
-host whose only Swift code is `macos/Headless/main.swift`.
+host whose native Swift files are `macos/Headless/main.swift` (native
+input/audio/AX/paste) and `macos/Headless/RecordingPill.swift` (floating
+non-activating status panel).
 
 ## macOS production path
 
@@ -15,7 +17,10 @@ host whose only Swift code is `macos/Headless/main.swift`.
    sends one JSONL request (`transcribe` or `selected_voice_task`) with the
    configured JSON fields. No synchronized per-audio-frame IPC.
 4. Go Core owns the provider request, instruction parsing, response and route.
-5. macOS checks foreground target/selected-text freshness, sends at most one
+5. macOS displays the original 232×50 waveform/clock pill on capture and a
+252×50 processing/result pill without activating the foreground editor. Its
+cancel action stops native capture or invalidates a pending result generation.
+macOS checks foreground target/selected-text freshness, sends at most one
    native paste, and conditionally restores its pasteboard lease. A sent event
    is not a confirmed editor write. No automatic retry on uncertainty.
 
@@ -36,7 +41,7 @@ Windows uses the Go Core directly from its Win32 main package.
 ## Source ownership and tests
 
 `scripts/check_headless_scope.py` counts only production Go source included
-by `go list -deps ./cmd/voicebridge` and the one Swift host file; standard library,
+by `go list -deps ./cmd/voicebridge` and the two compiled Swift host files; standard library,
 Go tooling, test source, Windows-only host and inactive files do not count.
 A >=90% linked-source Go ratio is a **source metric**, not an assertion that
 90% of dynamic instructions, features or decision points run in Go.

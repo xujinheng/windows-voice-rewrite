@@ -3,7 +3,8 @@
 This is a **minimal menu-bar host**, not a second SwiftUI business application.
 The existing Go `cmd/voicebridge` owns ASR, LLM and result-route decisions.
 Swift contains only Quartz keyboard/side-button input, AVAudioEngine capture,
-Accessibility selection, focus-checked paste and an NSStatusItem recording timer.
+Accessibility selection, focus-checked paste, a native NSStatusItem menu icon and
+a non-activating AppKit recording pill (232×50, expanding to 252×50).
 
 ## Build and run
 
