@@ -97,6 +97,67 @@ final class PCM16BufferTests: XCTestCase {
         XCTAssertEqual(Array(try pcm.finish()), expected)
     }
 
+    /// Same-run A/B of the original temporary-array encoder against the
+    /// production in-place encoder. These are CPU hot-path microbenchmarks,
+    /// not key-to-audio or end-to-end ASR latency measurements.
+    func testPCM16EncoderHotPathABEvidence() throws {
+        let samples = (0..<4_096).map { Float(($0 % 257) - 128) / 128 }
+        let chunkCount = 128
+        let totalFrames = samples.count * chunkCount
+
+        func previousEncoder() -> Data {
+            var bytes = Data()
+            bytes.reserveCapacity(totalFrames * 2)
+            for _ in 0..<chunkCount {
+                var chunk = [UInt8]()
+                chunk.reserveCapacity(samples.count * 2)
+                for sample in samples {
+                    let clipped = max(-1.0, min(1.0, sample))
+                    let magnitude = Int((clipped * 32_768.0).rounded())
+                    let word = UInt16(bitPattern: Int16(clamping: magnitude))
+                    chunk.append(UInt8(truncatingIfNeeded: word))
+                    chunk.append(UInt8(truncatingIfNeeded: word >> 8))
+                }
+                bytes.append(contentsOf: chunk)
+            }
+            return bytes
+        }
+
+        func currentEncoder() throws -> Data {
+            var encoder = PCM16Buffer(reserveFrames: totalFrames)
+            for _ in 0..<chunkCount { try encoder.append(samples) }
+            return try encoder.finish()
+        }
+
+        func middle(_ values: [Double]) -> Double {
+            values.sorted()[values.count / 2]
+        }
+
+        var oldTimes = [Double]()
+        var newTimes = [Double]()
+        for round in 0..<5 {
+            let previous: Data
+            let current: Data
+            if round.isMultiple(of: 2) {
+                let started = ProcessInfo.processInfo.systemUptime
+                previous = previousEncoder()
+                oldTimes.append((ProcessInfo.processInfo.systemUptime - started) * 1_000)
+                let next = ProcessInfo.processInfo.systemUptime
+                current = try currentEncoder()
+                newTimes.append((ProcessInfo.processInfo.systemUptime - next) * 1_000)
+            } else {
+                let started = ProcessInfo.processInfo.systemUptime
+                current = try currentEncoder()
+                newTimes.append((ProcessInfo.processInfo.systemUptime - started) * 1_000)
+                let next = ProcessInfo.processInfo.systemUptime
+                previous = previousEncoder()
+                oldTimes.append((ProcessInfo.processInfo.systemUptime - next) * 1_000)
+            }
+            XCTAssertEqual(current, previous)
+        }
+        print("PCM16_ENCODING_AB legacy_p50_ms=\(middle(oldTimes)) in_place_p50_ms=\(middle(newTimes)) rounds=5 frames_per_round=\(totalFrames)")
+    }
+
     func testEmptyInputCannotSucceed() {
         var pcm = PCM16Buffer()
         XCTAssertThrowsError(try pcm.finish()) { error in
