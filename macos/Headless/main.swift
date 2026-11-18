@@ -448,33 +448,25 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             return
         }
         let board = NSPasteboard.general
-        let originalCount = board.changeCount
-        let originals = board.pasteboardItems ?? []
-        // NSPasteboardItem does not implement NSCopying. Snapshot each type before
-        // clearing the board; unsupported or promised data must stay untouched.
-        guard board.types?.isEmpty != false || board.pasteboardItems != nil else {
-            reset("Clipboard unsupported")
-            return
+        let stamp = board.changeCount
+        let originals = board.pasteboardItems
+        guard originals != nil || board.types?.isEmpty != false else {
+            reset("Clipboard unsupported"); return
         }
+        // NSPasteboardItem is not NSCopying; preserve each advertised data type.
         var saved: [NSPasteboardItem] = []
-        for original in originals {
-            let snapshot = NSPasteboardItem()
-            for type in original.types {
-                guard let data = original.data(forType: type),
-                      snapshot.setData(data, forType: type) else {
-                    reset("Clipboard unsupported")
-                    return
+        for item in originals ?? [] {
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                guard let data = item.data(forType: type), copy.setData(data, forType: type) else {
+                    reset("Clipboard unsupported"); return
                 }
             }
-            saved.append(snapshot)
+            saved.append(copy)
         }
-        guard board.changeCount == originalCount else {
-            reset("Clipboard changed")
-            return
-        }
+        guard board.changeCount == stamp else { reset("Clipboard changed"); return }
         board.clearContents()
         guard board.setString(text, forType: .string) else {
-            // The paste never went out; restore the clipboard we just cleared.
             board.clearContents()
             if !saved.isEmpty { _ = board.writeObjects(saved) }
             reset("Paste failed")
