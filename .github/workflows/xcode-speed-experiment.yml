@@ -30,6 +30,9 @@ jobs:
           - case: xcode16-baseline
             runner: macos-15-intel
             cache: 'off'
+          - case: xcode16-no-auto-package-resolution
+            runner: macos-15-intel
+            cache: 'skip-package'
           - case: xcode26-no-cache
             runner: macos-26-intel
             cache: 'off'
@@ -94,6 +97,10 @@ jobs:
             run_xcode COMPILATION_CACHE_ENABLE_CACHING=YES \
               "COMPILATION_CACHE_CAS_PATH=$COMPILATION_CACHE_DIR" \
               COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES
+          elif [[ "$COMPILATION_CACHE_MODE" == skip-package ]]; then
+            # Local Swift packages only; probe whether automatic dependency
+            # resolution is adding critical-path overhead on cold runners.
+            run_xcode -disableAutomaticPackageResolution
           else
             run_xcode
           fi
@@ -132,3 +139,5 @@ jobs:
             echo "- XCTest: full scheme, native Intel, including visual fixture captures"
           } >> "$GITHUB_STEP_SUMMARY"
 # Measurement repeat 2: unchanged source tree; verify warm CAS restoration.
+
+# Measurement repeat 3: same application source with package-resolution probe.
