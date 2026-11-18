@@ -219,24 +219,24 @@ struct SettingsView: View {
                             else if selectedPage == "input" {
                                 Text("输入偏好").font(.headline)
                                 HStack(spacing: 12) {
-                    Text("语音指令")
-                        .font(.system(size: 13))
-                        .frame(width: 112, alignment: .leading)
-                    TextField("语音指令", text: $model.settings.rewriteShortcut)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(height: 32)
-                        .accessibilityIdentifier("rewrite_shortcut")
+                Text("语音指令")
+                    .font(.system(size: 13))
+                    .frame(width: 112, alignment: .leading)
+                TextField("语音指令", text: $model.settings.rewriteShortcut)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(height: 32)
+                    .accessibilityIdentifier("rewrite_shortcut")
                 Button(captureTarget == "rewrite_shortcut" ? "等待按键…" : "录入按键") { beginCapture("rewrite_shortcut") }
                     .accessibilityIdentifier("capture_rewrite")
                                 }
                                 HStack(spacing: 12) {
-                    Text("听写快捷键")
-                        .font(.system(size: 13))
-                        .frame(width: 112, alignment: .leading)
-                    TextField("听写快捷键", text: $model.settings.dictationShortcut)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(height: 32)
-                        .accessibilityIdentifier("dictation_shortcut")
+                Text("听写快捷键")
+                    .font(.system(size: 13))
+                    .frame(width: 112, alignment: .leading)
+                TextField("听写快捷键", text: $model.settings.dictationShortcut)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(height: 32)
+                    .accessibilityIdentifier("dictation_shortcut")
                 Button(captureTarget == "dictation_shortcut" ? "等待按键…" : "录入按键") { beginCapture("dictation_shortcut") }
                     .accessibilityIdentifier("capture_dictation")
                                 }
@@ -262,13 +262,13 @@ struct SettingsView: View {
                 }
                 .accessibilityIdentifier("record_mode")
                                 HStack(spacing: 12) {
-                    Text("全局退出快捷键（不是语音操作）")
-                        .font(.system(size: 13))
-                        .frame(width: 112, alignment: .leading)
-                    TextField("全局退出快捷键（不是语音操作）", text: $model.settings.exitShortcut)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(height: 32)
-                        .accessibilityIdentifier("exit_shortcut")
+                Text("全局退出快捷键（不是语音操作）")
+                    .font(.system(size: 13))
+                    .frame(width: 112, alignment: .leading)
+                TextField("全局退出快捷键（不是语音操作）", text: $model.settings.exitShortcut)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(height: 32)
+                    .accessibilityIdentifier("exit_shortcut")
                 Button(captureTarget == "exit_shortcut" ? "等待按键…" : "录入按键") { beginCapture("exit_shortcut") }
                     .accessibilityIdentifier("capture_exit")
                                 }
