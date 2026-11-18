@@ -177,6 +177,10 @@ final class WorkspaceModel: ObservableObject {
     private var activeProbeIDs: [String: String] = [:]
     private var activeRequestID: String?
     private var processingWatchdog: Task<Void, Never>?
+    private var recordingPolicySessionID: String?
+    private var recordingPolicyGeneration: UInt64 = 0
+    private var recordingPolicyWatchdogMS = 182_000
+    private var recordingDeadlinePending = false
     private var activeInsert: MacDictationTarget?
     private var activeVoiceSelection: (snapshot: SelectionSnapshot, generation: UInt64)?
     private var activeSelectionGeneration: UInt64?
@@ -230,7 +234,119 @@ final class WorkspaceModel: ObservableObject {
             toggleMeetingVoice()
         } else if isRecording {
             DiagnosticLog.note("stage=recording status=duration_limit")
-            stopRecording()
+            recordingDeadlinePending = false
+            stopRecording(cause: "deadline")
+        } else if isStarting {
+            recordingDeadlinePending = true
+        }
+    }
+
+
+    /// One Go helper event per recording (never per PCM packet). On success
+    /// native AVAudioEngine receives the Go-selected persisted duration.
+    private func recordingPolicyBegin(kind: String, token: UInt64) async throws -> Int {
+        guard let bridge else { throw BridgeFailure.notRunning }
+        let sessionID = UUID().uuidString
+        recordingPolicySessionID = sessionID
+        recordingPolicyGeneration = token
+        let window: (seconds: Int, watchdogMS: Int) = try await withCheckedThrowingContinuation { continuation in
+            bridge.send(operation: "recording_begin", fields: [
+                "session_id": .string(sessionID),
+                "generation": .number(Double(token)),
+                "recording_kind": .string(kind),
+                "max_seconds": .number(Double(settings.maxRecordSeconds)),
+            ]) { reply in
+                switch reply {
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                case .success(let response):
+                    guard response.ok, response.result?["receipt"]?.string == "accepted",
+                          let seconds = response.result?["seconds"]?.int,
+                          let watchdogMS = response.result?["watchdog_ms"]?.int,
+                          seconds >= 1, seconds <= 180, watchdogMS == (seconds + 2) * 1000 else {
+                        continuation.resume(throwing: BridgeFailure.invalidRequest)
+                        return
+                    }
+                    continuation.resume(returning: (seconds, watchdogMS))
+                }
+            }
+        }
+        guard resultGeneration.accepts(token) else { throw CancellationError() }
+        recordingPolicyWatchdogMS = window.watchdogMS
+        return window.seconds
+    }
+
+    private func recordingPolicyReady(token: UInt64) async throws {
+        guard let bridge, let sessionID = recordingPolicySessionID,
+              recordingPolicyGeneration == token else { throw BridgeFailure.invalidRequest }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            bridge.send(operation: "recording_ready", fields: [
+                "session_id": .string(sessionID),
+                "generation": .number(Double(token)),
+                "native_ready": .boolean(true),
+            ]) { reply in
+                switch reply {
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                case .success(let response):
+                    guard response.ok, response.result?["receipt"]?.string == "accepted" else {
+                        continuation.resume(throwing: BridgeFailure.invalidRequest)
+                        return
+                    }
+                    continuation.resume(returning: ())
+                }
+            }
+        }
+        guard resultGeneration.accepts(token) else { throw CancellationError() }
+        if keyboardHoldEnabled, keyboardGate.action != nil, !meetingActive {
+            armGoRecordingWatchdog(token: token,
+                milliseconds: recordingPolicyWatchdogMS)
+        }
+    }
+
+    private func armGoRecordingWatchdog(token: UInt64, milliseconds: Int) {
+        let sequence = keyboardHoldSequence
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(milliseconds) / 1000) { [weak self] in
+            guard let self, self.resultGeneration.accepts(token),
+                  self.keyboardHoldSequence == sequence,
+                  self.keyboardGate.action != nil else { return }
+            self.keyboardGate.clear()
+            self.keyboardHoldSequence &+= 1
+            self.hotKeyDriver?.resetHeldState()
+            self.interactionStatus = "录音已达到最长时间，正在提交已录制内容"
+            if self.isRecording { self.stopRecording(cause: "watchdog") }
+            else if self.isStarting { self.cancelCurrent() }
+        }
+    }
+
+    private func recordingPolicyCommit(sessionID: String?, generation: UInt64,
+                                       cause: String) async throws -> String {
+        guard let bridge, let sessionID else { throw BridgeFailure.invalidRequest }
+        return try await withCheckedThrowingContinuation { continuation in
+            bridge.send(operation: "recording_commit", fields: [
+                "session_id": .string(sessionID),
+                "generation": .number(Double(generation)),
+                "stop_cause": .string(cause),
+            ]) { reply in
+                switch reply {
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                case .success(let response):
+                    guard response.ok, let receipt = response.result?["receipt"]?.string,
+                          let action = response.result?["action"]?.string else {
+                        continuation.resume(throwing: BridgeFailure.invalidRequest)
+                        return
+                    }
+                    if receipt == "accepted", (action == "send_asr" ||
+                                              action == "send_spoken_selection") {
+                        continuation.resume(returning: action)
+                    } else if receipt == "duplicate" || receipt == "stale" {
+                        continuation.resume(returning: "none")
+                    } else {
+                        continuation.resume(throwing: BridgeFailure.invalidRequest)
+                    }
+                }
+            }
         }
     }
 
@@ -809,22 +925,18 @@ final class WorkspaceModel: ObservableObject {
             triggerSelectionRewrite(from: targetPID)
         }
         keyboardHoldSequence &+= 1
-        let sequence = keyboardHoldSequence
-        let maximumSeconds = settings.maxRecordSeconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + Double(maximumSeconds + 2)) { [weak self] in
-            guard let self, self.keyboardHoldSequence == sequence,
-                  self.keyboardGate.action == action else { return }
-            self.keyboardGate.clear()
-            self.keyboardHoldSequence &+= 1
-            self.hotKeyDriver?.resetHeldState()
-            self.interactionStatus = "录音已达到最长时间，正在提交已录制内容"
-            if self.meetingActive {
+        // Meeting has a separate watchdog. Non-Meeting receives the maximum
+        // and +2s rule from Go recording_begin instead of Swift arithmetic.
+        if meetingActive {
+            let sequence = keyboardHoldSequence
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(settings.maxRecordSeconds + 2)) { [weak self] in
+                guard let self, self.keyboardHoldSequence == sequence,
+                      self.keyboardGate.action == action else { return }
+                self.keyboardGate.clear()
+                self.keyboardHoldSequence &+= 1
+                self.hotKeyDriver?.resetHeldState()
                 if self.meetingVoiceRecording { self.toggleMeetingVoice() }
                 else if self.meetingVoiceStarting { self.cancelMeetingVoiceStart() }
-            } else if self.isRecording {
-                self.stopRecording()
-            } else if self.isStarting {
-                self.cancelCurrent()
             }
         }
     }
@@ -1127,6 +1239,21 @@ final class WorkspaceModel: ObservableObject {
                 }
             }
             guard self.resultGeneration.accepts(preflight.generation) else { return }
+            do {
+                // Speculative native capture already owns the first samples.
+                // Register only after the side hold is confirmed.
+                _ = try await self.recordingPolicyBegin(kind: "dictation", token: preflight.generation)
+                try await self.recordingPolicyReady(token: preflight.generation)
+            } catch {
+                guard self.resultGeneration.accepts(preflight.generation) else { return }
+                self.microphone.cancel()
+                self.finishProcessingWatchdog()
+                self.isStarting = false
+                self.recordingStatus = error.localizedDescription
+                self.showIndicator(phase: .error, mode: "听写", pending: false)
+                return
+            }
+            guard self.resultGeneration.accepts(preflight.generation) else { return }
             self.finishProcessingWatchdog()
             let arm = dictationArm(hasTarget: (preflight.targetPID ?? 0) > 0,
                                   tokenValid: true, captured: snapshot != nil,
@@ -1138,6 +1265,10 @@ final class WorkspaceModel: ObservableObject {
             self.isStarting = false
             self.showIndicator(phase: .recording, mode: "听写", pending: false)
             if let status = ready.recordingStatus { self.recordingStatus = status }
+            if self.recordingDeadlinePending {
+                self.finishRecordingAtLimit()
+                return
+            }
             self.stopWhenSideMouseReleased(.dictation)
         }
     }
@@ -2307,6 +2438,14 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func invalidatePending() {
+        recordingDeadlinePending = false
+        if let policySession = recordingPolicySessionID {
+            bridge?.send(operation: "recording_cancel", fields: [
+                "session_id": .string(policySession),
+                "generation": .number(Double(recordingPolicyGeneration)),
+            ]) { _ in }
+            recordingPolicySessionID = nil
+        }
         dictationJourney = nil
         finishProcessingWatchdog()
         _ = resultGeneration.begin()
@@ -2367,8 +2506,16 @@ final class WorkspaceModel: ObservableObject {
             guard let self else { return }
             defer { self.refreshMicrophonePermission() }
             do {
+                let seconds = try await self.recordingPolicyBegin(kind: "spoken_selection", token: token)
+                guard resultGeneration.accepts(token) else { return }
                 try await microphone.start(deviceUID: settings.microphoneUID,
-                                           maximumSeconds: settings.maxRecordSeconds)
+                                           maximumSeconds: seconds)
+                do {
+                    try await self.recordingPolicyReady(token: token)
+                } catch {
+                    microphone.cancel()
+                    throw error
+                }
                 guard resultGeneration.accepts(token) else {
                     microphone.cancel()
                     isStarting = false
@@ -2380,6 +2527,10 @@ final class WorkspaceModel: ObservableObject {
                 isRecording = true
                 showIndicator(phase: .recording, mode: "改写", pending: false)
                 recordingStatus = rewriteRecording()
+                if recordingDeadlinePending {
+                    finishRecordingAtLimit()
+                    return
+                }
             } catch {
                 guard resultGeneration.accepts(token) else { return }
                 microphone.cancel()
@@ -2416,12 +2567,20 @@ final class WorkspaceModel: ObservableObject {
             // audio independently and overlap it with the optional AX query.
             // The existing generation fence cancels either stale operation.
             let deviceUID = settings.microphoneUID
-            let maximumSeconds = settings.maxRecordSeconds
             let microphoneStartup = Task { @MainActor [weak self] () throws -> Void in
                 try Task.checkCancellation()
                 guard let self else { throw CancellationError() }
+                let seconds = try await self.recordingPolicyBegin(kind: "dictation", token: token)
+                try Task.checkCancellation()
+                guard self.resultGeneration.accepts(token) else { throw CancellationError() }
                 try await self.microphone.start(deviceUID: deviceUID,
-                                                maximumSeconds: maximumSeconds)
+                                                maximumSeconds: seconds)
+                do {
+                    try await self.recordingPolicyReady(token: token)
+                } catch {
+                    self.microphone.cancel()
+                    throw error
+                }
             }
             var captured = false
             var failure: String?
@@ -2475,6 +2634,10 @@ final class WorkspaceModel: ObservableObject {
                 isRecording = true
                 showIndicator(phase: .recording, mode: "听写", pending: false)
                 if let status = ready.recordingStatus { recordingStatus = status }
+                if recordingDeadlinePending {
+                    finishRecordingAtLimit()
+                    return
+                }
             } catch {
                 guard resultGeneration.accepts(token) else { return }
                 finishProcessingWatchdog()
@@ -2491,7 +2654,7 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    func stopRecording() {
+    func stopRecording(cause: String = "release") {
         guard isRecording else { return }
         if dictationJourney != nil {
             dictationJourney?.releasedAt = ProcessInfo.processInfo.systemUptime
@@ -2505,6 +2668,8 @@ final class WorkspaceModel: ObservableObject {
         recordingStatus = dictationProcessing()
         armProcessingWatchdog(token: resultGeneration.latest, seconds: 20, stage: "capture_stop")
         let token = resultGeneration.latest
+        let policySession = recordingPolicySessionID
+        let policyGeneration = recordingPolicyGeneration
         let insertion = activeInsert
         let voiceTargetPID = activeVoiceTargetPID
         activeInsert = nil
@@ -2526,12 +2691,22 @@ final class WorkspaceModel: ObservableObject {
                 armProcessingWatchdog(token: token,
                     seconds: voiceTargetPID == nil ? Self.asrDeadline(for: pcm) : 375,
                     stage: voiceTargetPID == nil ? "asr" : "spoken_edit")
-                let route = recordingDispatch(tokenValid: resultGeneration.accepts(token), voiceSelection: voiceTargetPID != nil)
-                guard route.send else { return }
-                if route.cancelProbes { cancelProbes() }
-                if let status = route.asrProbe { asrProbeStatus = status }
-                if let status = route.llmProbe { llmProbeStatus = status }
-                if route.spoken, let voiceTargetPID {
+                // A native stop never authorizes ASR: Go grants one
+                // generation-scoped effect, including deadline completion.
+                let action = try await self.recordingPolicyCommit(sessionID: policySession,
+                    generation: policyGeneration, cause: cause)
+                guard resultGeneration.accepts(token) else { return }
+                guard action != "none" else {
+                    finishProcessingWatchdog()
+                    isProcessing = false
+                    return
+                }
+                let spoken = action == "send_spoken_selection"
+                guard spoken == (voiceTargetPID != nil) else { throw BridgeFailure.invalidRequest }
+                cancelProbes()
+                asrProbeStatus = spoken ? probeRewriteListeningASR() : probeTranscribing()
+                if spoken { llmProbeStatus = probeRewriteWaitingLLM() }
+                if spoken, let voiceTargetPID {
                     // The release PID must still be the original application.
                     // InteractionSession then captures and monitors the *actual*
                     // selected element before the model is ever called.
@@ -2739,7 +2914,8 @@ final class WorkspaceModel: ObservableObject {
             text: result?["text"]?.string,
             spoken: spoken,
             instruction: result?["instruction"]?.string,
-            route: result?["route"]?.string,
+            mayWrite: result?["may_attempt_replace"]?.boolValue == true,
+            previewOnly: result?["preview_only"]?.boolValue != false,
             transport: replyFailure(reply),
             failureStatus: FailureCopy.status(prefix: "模型处理失败：", message: response?.error?.userText ?? "invalid_reply"),
             historyTitle: ResultCopy.historyTitle(intent: intent),

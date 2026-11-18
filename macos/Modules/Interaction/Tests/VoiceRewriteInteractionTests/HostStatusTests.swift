@@ -130,7 +130,7 @@ final class HostStatusTests: XCTestCase {
         XCTAssertNil(failed.insertText)
         XCTAssertFalse(failed.cancelTask)
 
-        let empty = dictationTranscriptFollowUp(ok: true, text: "  ", route: "empty", transport: nil, failureStatus: "ASR失败", emptyStatus: "空", historyTitle: "历史", notInsertedTitle: "未插入")
+        let empty = dictationTranscriptFollowUp(ok: true, text: "  ", route: "insert", transport: nil, failureStatus: "ASR失败", emptyStatus: "空", historyTitle: "历史", notInsertedTitle: "未插入")
         XCTAssertEqual(empty.recordingStatus, "空")
         XCTAssertEqual(empty.phase, .error)
         XCTAssertNil(empty.insertText)
@@ -450,28 +450,7 @@ final class HostStatusTests: XCTestCase {
         XCTAssertNotEqual(sideMouseListening(), "待")
     }
 
-    func testRecordingDispatchKeepsSpokenAndDictationProbesApart() {
-        let stale = recordingDispatch(tokenValid: false, voiceSelection: true)
-        XCTAssertFalse(stale.send)
-        XCTAssertFalse(stale.cancelProbes)
-        XCTAssertNil(stale.asrProbe)
-        XCTAssertNil(stale.llmProbe)
-
-        let spoken = recordingDispatch(tokenValid: true, voiceSelection: true)
-        XCTAssertTrue(spoken.send)
-        XCTAssertTrue(spoken.spoken)
-        XCTAssertTrue(spoken.cancelProbes)
-        XCTAssertEqual(spoken.asrProbe, probeRewriteListeningASR())
-        XCTAssertEqual(spoken.llmProbe, probeRewriteWaitingLLM())
-        XCTAssertNotEqual(spoken.asrProbe, probeTranscribing())
-
-        let dictation = recordingDispatch(tokenValid: true, voiceSelection: false)
-        XCTAssertTrue(dictation.send)
-        XCTAssertFalse(dictation.spoken)
-        XCTAssertTrue(dictation.cancelProbes)
-        XCTAssertEqual(dictation.asrProbe, probeTranscribing())
-        XCTAssertNil(dictation.llmProbe)
-
+    func testRecordingStopFailureRespectsStaleToken() {
         let hidden = recordingStopFailure(tokenValid: false)
         XCTAssertFalse(hidden.apply)
         XCTAssertFalse(hidden.stopProcessing)

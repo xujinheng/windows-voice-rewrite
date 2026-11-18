@@ -45,7 +45,21 @@
           "swift": {
             "path": "macos/Modules/Microphone/Sources/Microphone/MicrophoneRecorder.swift",
             "contains": "public func start(deviceUID: String = \"\", maximumSeconds: Int"
-          }
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/recording/policy.go",
+              "contains": "func Limits("
+            },
+            {
+              "path": "voice-rewrite/windows.go",
+              "contains": "recording.Limits("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "s.recording.Begin("
+            }
+          ]
         },
         {
           "id": "capture",
@@ -72,7 +86,27 @@
           "swift": {
             "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/RecordingDispatch.swift",
             "contains": "public func recordingDispatch("
-          }
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/recording/policy.go",
+              "contains": "func Route("
+            },
+            {
+              "path": "voice-rewrite/windows.go",
+              "contains": "recording.Route("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "s.recording.Commit("
+            }
+          ],
+          "go_forbidden_when": [
+            {
+              "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/RecordingDispatch.swift",
+              "contains": "public func recordingDispatch("
+            }
+          ]
         },
         {
           "id": "asr",
@@ -178,7 +212,27 @@
           "swift": {
             "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/RecordingDispatch.swift",
             "contains": "public func recordingDispatch("
-          }
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/recording/policy.go",
+              "contains": "func Route("
+            },
+            {
+              "path": "voice-rewrite/windows.go",
+              "contains": "recording.Route("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "s.recording.Commit("
+            }
+          ],
+          "go_forbidden_when": [
+            {
+              "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/RecordingDispatch.swift",
+              "contains": "public func recordingDispatch("
+            }
+          ]
         },
         {
           "id": "spoken_asr",
@@ -307,16 +361,16 @@
           },
           "go": [
             {
-              "path": "voice-rewrite/internal/core/input/hold.go",
-              "contains": "func HoldWatchLimit("
+              "path": "voice-rewrite/internal/core/recording/policy.go",
+              "contains": "func Limits("
             },
             {
-              "path": "voice-rewrite/task_worker_windows.go",
-              "contains": "input.HoldWatchLimit("
+              "path": "voice-rewrite/windows.go",
+              "contains": "recording.Limits("
             },
             {
               "path": "voice-rewrite/cmd/voicebridge/main.go",
-              "contains": "input.HoldWatchLimit("
+              "contains": "s.recording.Begin("
             }
           ]
         },
@@ -327,7 +381,21 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "func stopRecording()"
-          }
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/recording/policy.go",
+              "contains": "func (c *Controller) Commit("
+            },
+            {
+              "path": "voice-rewrite/windows.go",
+              "contains": "recordingPolicy.Commit("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "s.recording.Commit("
+            }
+          ]
         },
         {
           "id": "stale_timeout",
@@ -336,7 +404,21 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "keyboardHoldSequence &+= 1"
-          }
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/recording/policy.go",
+              "contains": "func (c *Controller) Commit("
+            },
+            {
+              "path": "voice-rewrite/windows.go",
+              "contains": "recordingPolicy.Commit("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "s.recording.Commit("
+            }
+          ]
         },
         {
           "id": "asr",

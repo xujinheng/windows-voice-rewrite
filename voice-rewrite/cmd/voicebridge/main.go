@@ -21,6 +21,7 @@ import (
 	"voicerewrite/internal/core/jsonl"
 	meetingcore "voicerewrite/internal/core/meeting"
 	"voicerewrite/internal/core/provider"
+	"voicerewrite/internal/core/recording"
 	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/shortcut"
 	"voicerewrite/internal/core/speech"
@@ -55,6 +56,11 @@ type request struct {
 	Shortcut        string          `json:"shortcut"`
 	TargetID        string          `json:"target_id"`
 	SessionID       string          `json:"session_id"`
+	Generation      uint64          `json:"generation"`
+	RecordingKind   recording.Kind  `json:"recording_kind"`
+	MaxSeconds      int             `json:"max_seconds"`
+	StopCause       recording.Cause `json:"stop_cause"`
+	NativeReady     *bool           `json:"native_ready"`
 	AudioEpoch      uint64          `json:"audio_epoch"`
 	ReplyIndex      int             `json:"reply_index"`
 	ViewButton      int             `json:"button_id"`
@@ -119,6 +125,7 @@ type bridgeServer struct {
 	options bridgeOptions
 	meeting *bridgeMeeting
 	voice   *voiceflow.Engine
+	recording recording.Controller
 
 	input    io.Reader
 	output   io.Writer
@@ -259,6 +266,33 @@ func (s *bridgeServer) dispatch(frame []byte) {
 			s.send(success(req.ID, map[string]any{"name": jsonl.HelloName, "protocol": jsonl.Version}))
 		case "parse_shortcut":
 			s.send(parseShortcut(req))
+		case "recording_begin":
+			decision := s.recording.Begin(req.SessionID, req.Generation, req.RecordingKind, req.MaxSeconds)
+			if decision.Receipt == "invalid" {
+				s.send(failure(req.ID, "invalid_request", "invalid recording session or kind"))
+			} else {
+				s.send(success(req.ID, map[string]any{
+					"receipt": decision.Receipt, "action": decision.Action,
+					"seconds": decision.Window.Seconds, "watchdog_ms": decision.Window.WatchdogMS,
+				}))
+			}
+		case "recording_ready":
+			if req.NativeReady == nil {
+				s.send(failure(req.ID, "invalid_request", "native_ready is required"))
+				return
+			}
+			decision := s.recording.Ready(req.SessionID, req.Generation, *req.NativeReady)
+			s.send(success(req.ID, map[string]any{"receipt": decision.Receipt, "action": decision.Action}))
+		case "recording_commit":
+			decision := s.recording.Commit(req.SessionID, req.Generation, req.StopCause)
+			if decision.Receipt == "invalid" {
+				s.send(failure(req.ID, "invalid_request", "invalid recording stop cause"))
+			} else {
+				s.send(success(req.ID, map[string]any{"receipt": decision.Receipt, "action": decision.Action}))
+			}
+		case "recording_cancel":
+			decision := s.recording.Cancel(req.SessionID, req.Generation)
+			s.send(success(req.ID, map[string]any{"receipt": decision.Receipt, "action": decision.Action}))
 		case "cancel":
 			if req.TargetID == "" {
 				s.send(failure(req.ID, "invalid_request", "target_id is required"))
@@ -699,6 +733,7 @@ func serveWithOptions(input io.Reader, output io.Writer, options bridgeOptions) 
 		input: input, output: output, options: options,
 		voice: voiceflow.New(),
 	}
+	s.recording = recording.NewController(s.voice)
 	reader := bufio.NewReaderSize(input, 64<<10)
 	var readErr error
 	for {

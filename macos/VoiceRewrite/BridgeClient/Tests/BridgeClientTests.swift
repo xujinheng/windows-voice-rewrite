@@ -58,6 +58,33 @@ final class BridgeClientTests: XCTestCase {
         return executable
     }
 
+    func testGoRecordingBeginAndCommitContract() throws {
+        let begin = try BridgeRequest(id: "begin-1", operation: "recording_begin", fields: [
+            "session_id": .string("s1"), "generation": .number(1),
+            "recording_kind": .string("dictation"), "max_seconds": .number(60),
+        ]).line()
+        let beginObject = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(begin.dropLast())) as? [String: Any])
+        XCTAssertEqual(beginObject["op"] as? String, "recording_begin")
+        XCTAssertEqual(beginObject["max_seconds"] as? Int, 60)
+        XCTAssertEqual(beginObject["session_id"] as? String, "s1")
+        let beginReply = try JSONDecoder().decode(BridgeReply.self, from:
+            Data(#"{"v":1,"id":"begin-1","ok":true,"result":{"receipt":"accepted","action":"none","seconds":60,"watchdog_ms":62000}}"#.utf8))
+        try beginReply.validate()
+        XCTAssertEqual(beginReply.result?["seconds"]?.int, 60)
+        XCTAssertEqual(beginReply.result?["watchdog_ms"]?.int, 62000)
+
+        let stop = try BridgeRequest(id: "stop-1", operation: "recording_commit", fields: [
+            "session_id": .string("s1"), "generation": .number(1),
+            "stop_cause": .string("deadline"),
+        ]).line()
+        let stopObject = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(stop.dropLast())) as? [String: Any])
+        XCTAssertEqual(stopObject["stop_cause"] as? String, "deadline")
+        let stopReply = try JSONDecoder().decode(BridgeReply.self, from:
+            Data(#"{"v":1,"id":"stop-1","ok":true,"result":{"receipt":"accepted","action":"send_asr"}}"#.utf8))
+        try stopReply.validate()
+        XCTAssertEqual(stopReply.result?["action"]?.string, "send_asr")
+    }
+
     func testSpokenSelectionRequestAndGuardedResponse() throws {
         let request = try BridgeRequest(id: "voice-selected", operation: "selected_voice_task",
             fields: [

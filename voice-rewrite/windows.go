@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -22,6 +23,7 @@ import (
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/logfile"
 	meetingcore "voicerewrite/internal/core/meeting"
+	"voicerewrite/internal/core/recording"
 	"voicerewrite/internal/core/session"
 	"voicerewrite/internal/core/shortcut"
 	"voicerewrite/internal/core/textedit"
@@ -435,6 +437,9 @@ func runApp() {
 	var selectedGeneration uint64
 	var holdSession uintptr
 	var recordingSession uintptr
+	var recordingPolicy recording.Controller
+	var recordingPolicyID string
+	var recordingPolicyGeneration uint64
 	var holdWatch chan struct{}
 	// The native recorder can reach its duration limit before a held key or
 	// mouse button is released. Observe recorder completion without consuming
@@ -459,7 +464,7 @@ func runApp() {
 		}
 	}
 	defer stopHoldWatch()
-	finish := func() {
+	finish := func(cause recording.Cause) {
 		if active == nil {
 			return
 		}
@@ -473,6 +478,19 @@ func runApp() {
 		app.setStatus(trayTranscribing)
 		l.Print("recording stop requested; selection/model processing moved to worker")
 		kind := input.FinishRecording(cfg.RecordMode == "hold", holdIsDictation, holdMeeting != nil)
+		if kind != input.FinishMeeting {
+			decision := recordingPolicy.Commit(recordingPolicyID, recordingPolicyGeneration, cause)
+			// The native recorder is already stopped. A stale or duplicate event
+			// must drain its PCM but must never dispatch a second ASR request.
+			if decision.Receipt != "accepted" ||
+				decision.Action != recording.Route(recording.KindForHold(cfg.RecordMode == "hold", holdIsDictation)) {
+				go func() { <-rec.result }()
+				app.busy.Store(false)
+				app.setStatus(trayIdle)
+				closeHandyStatus()
+				return
+			}
+		}
 		if input.FinishShowsProcessing(kind) {
 			app.postHandyPhase(indicator.Processing, holdGeneration)
 		} else if kind == input.FinishSpokenRewrite {
@@ -521,11 +539,18 @@ func runApp() {
 		holdGeneration = app.epoch.Start()
 		active = rec
 		watchRecordingLimit(rec)
+		if holdMeeting == nil {
+			recordingPolicyGeneration = uint64(recordingSession)
+			recordingPolicyID = strconv.FormatUint(recordingPolicyGeneration, 10)
+			recordingPolicy.Begin(recordingPolicyID, recordingPolicyGeneration,
+				recording.KindForHold(cfg.RecordMode == "hold", dictation), cfg.MaxRecordSeconds)
+			recordingPolicy.Ready(recordingPolicyID, recordingPolicyGeneration, true)
+		}
 		app.setStatus(trayRecording)
 		holdSession++
 		holdWatch = make(chan struct{})
 		if button != 0 {
-			go watchMouseHoldTimeout(hwnd, holdSession, holdWatch, input.HoldWatchLimit(cfg.MaxRecordSeconds), l)
+			go watchMouseHoldTimeout(hwnd, holdSession, holdWatch, recording.Limits(cfg.MaxRecordSeconds).Watchdog(), l)
 		} else {
 			vk := recordVK
 			if dictation {
@@ -535,7 +560,7 @@ func runApp() {
 			if dictation {
 				mods = dictationMods
 			}
-			go watchHoldRelease(hwnd, vk, mods, holdSession, holdWatch, input.HoldWatchLimit(cfg.MaxRecordSeconds), l)
+			go watchHoldRelease(hwnd, vk, mods, holdSession, holdWatch, recording.Limits(cfg.MaxRecordSeconds).Watchdog(), l)
 		}
 		statusMode := input.HoldModeLabel(dictation, holdMeeting != nil)
 		// Promote the immediate mouse-down preview without recreating its HWND.
@@ -563,7 +588,7 @@ func runApp() {
 			}
 			return
 		}
-		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
+		rec, err := startRecorder(recording.Limits(cfg.MaxRecordSeconds).Seconds, cfg.AudioDeviceID)
 		if err != nil {
 			app.fail(err)
 			return
@@ -590,7 +615,7 @@ func runApp() {
 		// A short click closes this preview and replays browser navigation.
 		mode := input.HoldModeLabel(input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation", false)
 		showPendingHandyStatus(mode)
-		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
+		rec, err := startRecorder(recording.Limits(cfg.MaxRecordSeconds).Seconds, cfg.AudioDeviceID)
 		pendingSide = &sideCapture{button: button, targetWindow: win, recorder: rec, err: err}
 	}
 
@@ -672,6 +697,9 @@ func runApp() {
 			case indicator.CancelDismiss:
 				closeHandyStatus() // close a completed status, not the answer card
 			case indicator.CancelWork:
+				if holdMeeting == nil {
+					recordingPolicy.Cancel(recordingPolicyID, recordingPolicyGeneration)
+				}
 				app.epoch.Start() // cancel either Mouse4 or Mouse5 before paste
 				if active != nil {
 					stopHoldWatch()
@@ -732,6 +760,11 @@ func runApp() {
 			selectedGeneration = result.generation
 			active = result.rec
 			watchRecordingLimit(active)
+			recordingPolicyGeneration = uint64(recordingSession)
+			recordingPolicyID = strconv.FormatUint(recordingPolicyGeneration, 10)
+			recordingPolicy.Begin(recordingPolicyID, recordingPolicyGeneration,
+				recording.ToggleSelection, cfg.MaxRecordSeconds)
+			recordingPolicy.Ready(recordingPolicyID, recordingPolicyGeneration, true)
 			selected = result.sel
 			app.busy.Store(false)
 			app.setStatus(trayRecording)
@@ -890,14 +923,14 @@ func runApp() {
 		if msg.Message == WM_HOLD_RELEASE {
 			if input.HoldEventApplies(cfg.RecordMode == "hold", active != nil, msg.WParam == holdSession) {
 				l.Print("hold key released; completing recording")
-				finish()
+				finish(recording.Released)
 			}
 			continue
 		}
 		if msg.Message == WM_RECORD_LIMIT {
 			if active != nil && msg.WParam == recordingSession {
 				l.Print("recording reached configured duration; submitting captured audio")
-				finish()
+				finish(recording.Deadline)
 			}
 			continue
 		}
@@ -906,7 +939,7 @@ func runApp() {
 				// The safety watcher is not proof that the mouse driver lost
 				// a release. Preserve the captured speech instead of discarding it.
 				l.Print("hold safety deadline reached; submitting available audio")
-				finish()
+				finish(recording.Watchdog)
 			}
 			continue
 		}
@@ -939,7 +972,7 @@ func runApp() {
 		if msg.Message == WM_SIDE_UP {
 			if input.SideReleaseApplies(cfg.RecordMode == "hold", active != nil, uint16(msg.WParam) == holdButton) {
 				l.Printf("mouse button %d released; completing recording", holdButton)
-				finish()
+				finish(recording.Released)
 			}
 			continue
 		}
@@ -972,7 +1005,7 @@ func runApp() {
 		case HOTKEY_RECORD:
 			switch input.RewriteHotkeyAction(app.paused.Load(), app.busy.Load(), active != nil, cfg.RecordMode == "hold") {
 			case input.RewriteFinishToggle:
-				finish()
+				finish(recording.Released)
 				continue
 			case input.RewriteStartHold:
 				// Hold mode records immediately and does NOT touch the clipboard
@@ -1001,7 +1034,7 @@ func runApp() {
 					finishTogglePrepare(app, hwnd, sel, nil, input.ToggleSelectionFailed, err)
 					return
 				}
-				rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
+				rec, err := startRecorder(recording.Limits(cfg.MaxRecordSeconds).Seconds, cfg.AudioDeviceID)
 				if err != nil {
 					finishTogglePrepare(app, hwnd, sel, nil, input.ToggleSelectionFailed, err)
 					return
