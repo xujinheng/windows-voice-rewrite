@@ -214,9 +214,9 @@ func defaultConfig() config {
 		LlamaServerPath: "llama-server.exe",
 		ModelPath:       "Qwen3-ASR-1.7B-Q8_0.gguf",
 		MMProjPath:      "mmproj-Qwen3-ASR-1.7B-bf16.gguf",
-		ListenAddress:   "127.0.0.1:8081",
+		ListenAddress:   "127.0.0.1:8080",
 		BackendHost:     "127.0.0.1",
-		BackendPort:     8080,
+		BackendPort:     8082,
 		ContextSize:     8192,
 		GPULayers:       99,
 	}
