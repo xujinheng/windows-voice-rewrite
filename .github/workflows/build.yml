@@ -738,7 +738,7 @@ jobs:
 
   direct2d-acceptance:
     name: Direct2D result acceptance
-    if: github.event_name == 'pull_request' && needs.changes.outputs.direct2d == 'true'
+    if: needs.changes.outputs.direct2d == 'true' && !startsWith(github.ref, 'refs/tags/')
     needs: changes
     permissions:
       contents: read

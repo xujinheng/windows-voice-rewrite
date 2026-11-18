@@ -1,11 +1,11 @@
 name: Ready-to-test builds
 
 # Do not build download packages for every intermediate PR commit.
-# A bot signals a completed revision by editing the title to add
-# [ready-to-test], or (when available) by adding the build:ready label.
+# A bot signals a completed revision by editing its title to add
+# [ready-to-test]. Ordinary PR label events no longer create skipped runs.
 on:
   pull_request:
-    types: [edited, labeled]
+    types: [edited]
   workflow_dispatch:
 
 permissions:
@@ -18,7 +18,7 @@ concurrency:
 jobs:
   ready:
     name: Verify explicit build request
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.action == 'labeled' && github.event.label.name == 'build:ready') || (github.event.action == 'edited' && github.event.changes.title && contains(github.event.pull_request.title, '[ready-to-test]')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.action == 'edited' && github.event.changes.title && contains(github.event.pull_request.title, '[ready-to-test]')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
