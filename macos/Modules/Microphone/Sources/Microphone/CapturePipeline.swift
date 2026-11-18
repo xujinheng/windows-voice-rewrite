@@ -17,6 +17,7 @@ final class CapturePipeline: @unchecked Sendable {
     // A dead/removed input device can stop callbacks without delivering an
     // AVAudioEngineConfigurationChange notification.
     private var lastCaptureAt = ProcessInfo.processInfo.systemUptime
+    private var firstCaptureAt: TimeInterval?
     private let queueLimitFrames: Int
     private let converter: NativeAudioConverter
     private var encoded = PCM16Buffer()
@@ -51,6 +52,13 @@ final class CapturePipeline: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// First actual PCM callback timestamp, distinct from AVAudioEngine.start().
+    var firstCapturedAt: TimeInterval? {
+        lock.lock()
+        defer { lock.unlock() }
+        return firstCaptureAt
+    }
+
     func hasStalled(now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
         lock.lock()
         defer { lock.unlock() }
@@ -71,7 +79,9 @@ final class CapturePipeline: @unchecked Sendable {
             return
         }
         pendingFrames += count
-        lastCaptureAt = ProcessInfo.processInfo.systemUptime
+        let receivedAt = ProcessInfo.processInfo.systemUptime
+        lastCaptureAt = receivedAt
+        if firstCaptureAt == nil { firstCaptureAt = receivedAt }
         lock.unlock()
 
         // Engine formats are required to be noninterleaved Float32 at start().

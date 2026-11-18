@@ -2496,6 +2496,11 @@ final class WorkspaceModel: ObservableObject {
             do {
                 let pcm = try await microphone.stop()
                 guard resultGeneration.accepts(token) else { return }
+                if let firstAudioAt = (microphone as? MicrophoneRecorder)?.lastFirstCapturedAt,
+                   let triggeredAt = dictationJourney?.triggeredAt, firstAudioAt >= triggeredAt {
+                    let firstAudioMilliseconds = Int(((firstAudioAt - triggeredAt) * 1_000).rounded())
+                    DiagnosticLog.note("journey=dictation event=first_audio_sample elapsed_ms=\(firstAudioMilliseconds)")
+                }
                 DiagnosticLog.note("stage=microphone_stop status=done elapsed_ms=\(Self.elapsedMilliseconds(since: stopStarted))")
                 armProcessingWatchdog(token: token,
                     seconds: voiceTargetPID == nil ? Self.asrDeadline(for: pcm) : 375,

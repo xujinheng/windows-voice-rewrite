@@ -98,7 +98,11 @@ final class NativeAudioConverterTests: XCTestCase {
         let fmt = format(48_000, channels: 1)
         let processor = try CapturePipeline(id: UUID(), inputFormat: fmt) { _, _ in }
         let silence = makeBuffer(format: fmt, frames: 1024, value: 0)
+        XCTAssertNil(processor.firstCapturedAt)
+        processor.markStarted()
         processor.enqueue(silence)
+        XCTAssertNotNil(processor.firstCapturedAt,
+                        "First audio callback must be measurable independently of engine start")
         XCTAssertFalse(processor.hasStalled(),
                        "Silent samples still prove that the CoreAudio callback is alive")
         processor.cancel()

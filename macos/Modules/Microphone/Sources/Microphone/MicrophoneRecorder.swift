@@ -81,6 +81,10 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
     private var deadline: Task<Void, Never>?
     private var captureLiveness: Task<Void, Never>?
 
+    /// First input callback of the latest completed recording; a real audio
+    /// readiness marker distinct from the native engine-start return.
+    public private(set) var lastFirstCapturedAt: TimeInterval?
+
     public init() {}
 
     /// Selectable physical devices are enumerated by the CoreAudio HAL.
@@ -198,6 +202,7 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
         state = .starting
         let attempt = UUID()
         recordingID = attempt
+        lastFirstCapturedAt = nil
         do {
             let access = await requestPermission()
             guard recordingID == attempt else { throw MicrophoneError.cancelled }
@@ -253,7 +258,6 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
                 }
             }
             recordingDeviceUID = deviceUID
-            processor.markStarted()
             state = .recording
             // This supervisor is independent of CoreAudio callback delivery.
             // A frozen device may deliver neither buffers nor an interruption
@@ -321,6 +325,7 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
         // re-recording must never let an old stop finish a new pipeline.
         guard recordingID == id else { throw MicrophoneError.cancelled }
         guard case .stopping = state else { throw MicrophoneError.cancelled }
+        lastFirstCapturedAt = processor.firstCapturedAt
         let deviceStillAvailable: Bool
         if stoppedDeviceUID.isEmpty {
             deviceStillAvailable = true
@@ -359,6 +364,7 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
 
     /// Idempotent; discards captured bytes and rejects an in-flight start/stop.
     public func cancel() {
+        lastFirstCapturedAt = nil
         recordingID = nil
         recordingDeviceUID = ""
         teardownEngine()
@@ -407,6 +413,8 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
                 processor.enqueue(buffer)
             }
             installedTap = true
+            // The first callback can arrive before the MainActor resumes.
+            processor.markStarted()
             do { try instance.start() }
             catch { throw MicrophoneError.engineStartFailed }
             guard instance.isRunning else { throw MicrophoneError.engineStartFailed }
