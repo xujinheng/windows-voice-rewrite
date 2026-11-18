@@ -1,0 +1,74 @@
+"""Regression tests for GitHub Actions platform routing."""
+import unittest
+from ci_changes import classify
+
+
+class ClassifyTests(unittest.TestCase):
+    def test_docs_only(self):
+        self.assertEqual(classify(["README.md", "docs/ui/screen.png"]), {
+            "core": False, "macos": False, "windows": False, "oneclick": False, "ui": False, "direct2d": False})
+
+    def test_native_macos(self):
+        self.assertEqual(classify(["macos/Modules/Microphone/Sources/Record.swift"]), {
+            "core": False, "macos": True, "windows": False, "oneclick": False, "ui": False, "direct2d": False})
+
+    def test_shared_go(self):
+        self.assertEqual(classify(["voice-rewrite/internal/core/meeting/meeting.go"]), {
+            "core": True, "macos": True, "windows": True, "oneclick": False, "ui": True, "direct2d": False})
+
+    def test_windows_only_native_code(self):
+        selected = classify(["voice-rewrite/task_worker_windows.go"])
+        self.assertEqual(selected, {
+            "core": False, "macos": False, "windows": True,
+            "oneclick": False, "ui": False, "direct2d": False})
+
+    def test_voicebridge_only(self):
+        selected = classify(["voice-rewrite/cmd/voicebridge/main.go"])
+        self.assertEqual(selected, {
+            "core": True, "macos": True, "windows": False,
+            "oneclick": False, "ui": False, "direct2d": False})
+
+    def test_oneclick(self):
+        self.assertEqual(classify(["oneclick/main.go"]), {
+            "core": False, "macos": False, "windows": False, "oneclick": True, "ui": False, "direct2d": False})
+
+    def test_windows_installer(self):
+        self.assertEqual(classify(["installer/VoiceRewrite.iss"]), {
+            "core": False, "macos": False, "windows": True, "oneclick": False, "ui": False, "direct2d": False})
+
+    def test_workflow_change_rechecks_everything(self):
+        self.assertTrue(all(classify([".github/workflows/build.yml"]).values()))
+
+    def test_mixed_change(self):
+        self.assertEqual(classify(["macos/VoiceRewrite/App/Main.swift", "oneclick/go.mod"]),
+                         {"core": False, "macos": True, "windows": True, "oneclick": True, "ui": True, "direct2d": False})
+
+    def test_ui_acceptance(self):
+        self.assertTrue(classify(["macos/VoiceRewrite/UI/RecordingIndicator.swift"])["ui"])
+        self.assertTrue(classify(["voice-rewrite/settings_windows.go"])["ui"])
+        self.assertFalse(classify(["macos/Modules/Microphone/Recorder.swift"])["ui"])
+
+    def test_windows_ui_requires_both_platforms(self):
+        routed = classify(["voice-rewrite/settings_windows.go"])
+        self.assertTrue(routed["ui"])
+        self.assertTrue(routed["windows"])
+        self.assertTrue(routed["macos"])
+        self.assertFalse(routed["core"])
+
+    def test_macos_ui_requires_windows_capture(self):
+        routed = classify(["macos/VoiceRewrite/UI/RecordingIndicator.swift"])
+        self.assertTrue(routed["ui"])
+        self.assertTrue(routed["macos"])
+        self.assertTrue(routed["windows"])
+        self.assertFalse(routed["oneclick"])
+
+    def test_direct2d_acceptance(self):
+        self.assertTrue(classify(["voice-rewrite/popup_layout.go"])["direct2d"])
+        self.assertFalse(classify(["voice-rewrite/internal/core/meeting/meeting.go"])["direct2d"])
+
+    def test_portable_boundary(self):
+        self.assertTrue(classify(["scripts/check-portable-core.py"])["core"])
+
+
+if __name__ == "__main__":
+    unittest.main()
