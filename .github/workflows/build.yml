@@ -192,10 +192,10 @@ jobs:
       # The same deterministic source mtime normalization is verified on Intel
       # with changed-source recompilation. Keep architecture-specific caches.
       - name: Normalize tracked mtimes for ARM incremental builds
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
         run: python3 scripts/ci_xcode_mtimes.py
       - name: Fingerprint exact Apple Silicon Xcode toolchain
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
         id: arm-xcode
         shell: bash
         run: |
@@ -205,7 +205,7 @@ jobs:
           { xcodebuild -version; xcode-select -p; } |
             shasum -a 256 | awk '{ print "fingerprint=" $1 }' >> "$GITHUB_OUTPUT"
       - name: Restore ARM Xcode incremental Build products
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
         id: arm-derived
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -248,7 +248,7 @@ jobs:
           test -x "$app/Contents/MacOS/voicebridge"
           file "$app/Contents/MacOS/voicebridge"
       - name: Assert full ARM XCTest coverage (no cached test results)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
@@ -264,7 +264,7 @@ jobs:
               raise SystemExit("ARM full XCTest suite missing or below 69 passing tests")
           PY
       - name: Report ARM incremental cache and Xcode timing
-        if: always() && github.event_name == 'pull_request'
+        if: always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
         shell: bash
         env:
           CACHE_HIT: ${{ steps.arm-derived.outputs.cache-hit }}
@@ -364,10 +364,10 @@ jobs:
       # Normalize tracked file times from content before restoring the cache,
       # so a changed Swift/resource file invalidates its own previous build.
       - name: Normalize tracked mtimes for Intel incremental builds
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
         run: python3 scripts/ci_xcode_mtimes.py
       - name: Fingerprint exact Intel Xcode toolchain
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
         id: intel-xcode
         shell: bash
         run: |
@@ -377,7 +377,7 @@ jobs:
           { xcodebuild -version; xcode-select -p; } |
             shasum -a 256 | awk '{ print "fingerprint=" $1 }' >> "$GITHUB_OUTPUT"
       - name: Restore Intel Xcode incremental Build products
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
         id: intel-derived
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -435,7 +435,7 @@ jobs:
           test "$(lipo -archs "$app/Contents/MacOS/voicebridge")" = x86_64
           codesign --verify --deep --strict "$app"
       - name: Assert full Intel XCTest coverage (no cached test results)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
@@ -451,7 +451,7 @@ jobs:
               raise SystemExit("Intel full XCTest suite missing or below 69 passing tests")
           PY
       - name: Report Intel incremental cache and Xcode timing
-        if: always() && github.event_name == 'pull_request'
+        if: always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
         shell: bash
         env:
           CACHE_HIT: ${{ steps.intel-derived.outputs.cache-hit }}
