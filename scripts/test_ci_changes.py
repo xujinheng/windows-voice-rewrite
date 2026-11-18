@@ -14,7 +14,7 @@ class ClassifyTests(unittest.TestCase):
 
     def test_shared_go(self):
         self.assertEqual(classify(["voice-rewrite/internal/core/meeting/meeting.go"]), {
-            "core": True, "macos": True, "windows": True, "oneclick": False, "ui": True, "direct2d": False)
+            "core": True, "macos": True, "windows": True, "oneclick": False, "ui": True, "direct2d": False})
 
     def test_windows_only_native_code(self):
         selected = classify(["voice-rewrite/task_worker_windows.go"])
