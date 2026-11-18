@@ -176,11 +176,14 @@ func (p *Policy) Apply(e Event) Decision {
 		if p.seen == nil {
 			p.seen = make(map[string]struct{})
 		}
-		if _, used := p.seen[e.SessionID]; used || len(p.seen) >= 65536 {
+		if _, used := p.seen[e.SessionID]; used {
 			return result
 		}
 		result.Effects = p.finish(p.current, ReasonReplaced)
 		p.lastGeneration = e.Generation
+		// Generation never wraps, and UUID replay is rejected for the whole
+		// helper lifetime. An artificial session-count cap would permanently
+		// disable voice after enough successful tasks.
 		p.seen[e.SessionID] = struct{}{}
 		generation := p.epoch.Start()
 		if generation == 0 {

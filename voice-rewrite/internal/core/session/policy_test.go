@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -177,5 +178,18 @@ func TestPolicyConcurrentOldReceipts(t *testing.T) {
 	wg.Wait()
 	if !p.Apply(Event{Type: EventAuthorize, SessionID: "new", Generation: 2}).Allowed {
 		t.Fatal("new active task lost")
+	}
+}
+
+func TestPolicyManySequentialTasksKeepNewGenerationAvailable(t *testing.T) {
+	var p Policy
+	for i := uint64(1); i <= 65537; i++ {
+		id := fmt.Sprintf("session-%d", i)
+		if !p.Apply(Event{Type: EventBegin, SessionID: id, Generation: i}).Allowed {
+			t.Fatalf("fresh task %d rejected; session cap must not lock out users", i)
+		}
+		if !p.Apply(Event{Type: EventCancel, SessionID: id, Generation: i}).Allowed {
+			t.Fatalf("cancel task %d failed", i)
+		}
 	}
 }

@@ -2328,12 +2328,54 @@ final class WorkspaceModel: ObservableObject {
     private func cancelVoiceEpoch(reason: String = "user") {
         guard let sessionID = voiceEpochSessionID else { return }
         let token = resultGeneration.latest
+        // Capture exact OS task identities before invalidation clears fields.
+        // Late Go effects must never target a newer native selection or mic.
+        let requestID = activeRequestID
+        let selectedGenerations = Set([activeVoiceSelection?.generation, activeSelectionGeneration].compactMap { $0 })
         voiceEpochSessionID = nil
         voiceEpochStage = nil
-        bridge?.send(operation: "voice_epoch", fields: [
+        guard let bridge else { return }
+        bridge.send(operation: "voice_epoch", fields: [
             "epoch_event": .string("cancel"), "session_id": .string(sessionID),
             "generation": .number(Double(token)), "reason": .string(reason)
-        ]) { _ in }
+        ]) { [weak self] reply in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let result = try? reply.get()
+                guard result?.ok == true, result?.result?["allowed"]?.boolValue == true,
+                      case .array(let effects)? = result?.result?["effects"] else {
+                    // Helper failure: the native generation was revoked locally
+                    // already; retire the old request in the client registry.
+                    if let requestID { bridge.cancel(id: requestID) }
+                    return
+                }
+                for case .object(let effect) in effects {
+                    guard effect["session_id"]?.string == sessionID,
+                          effect["generation"]?.int == Int(token),
+                          let type = effect["type"]?.string,
+                          let effectID = effect["id"]?.string, !effectID.isEmpty else { continue }
+                    switch type {
+                    case "cancel_request":
+                        // Go bridge has already canceled its matching provider
+                        // context. Retire the exact old native request registry.
+                        if let id = effect["request_id"]?.string, !id.isEmpty,
+                           id == requestID { bridge.cancel(id: id) }
+                    case "cancel_selection":
+                        for generation in selectedGenerations {
+                            Task { await self.interaction.cancelTask(generation: generation) }
+                        }
+                    case "stop_native_capture":
+                        // A late command must never stop the next recording.
+                        if self.resultGeneration.accepts(token) { self.microphone.cancel() }
+                    case "clear_task":
+                        // Local UI was synchronously invalidated before callback.
+                        DiagnosticLog.note("stage=voice_cancel status=go_cleared reason=\(reason)")
+                    default:
+                        DiagnosticLog.note("stage=voice_cancel status=unknown_effect")
+                    }
+                }
+            }
+        }
     }
 
     private func bindVoiceEpochRequest(token: UInt64, requestID: String) {
