@@ -24,26 +24,26 @@ import (
 )
 
 const (
-	maxPCMBytes         = audio.PCMBytesPerSecond * coreconfig.RecordSecondsMax
-	maxSelectedBytes    = 1 << 20
-	msgUnsupported      = "unsupported operation"
-	msgCanceled         = "request canceled"
-	msgTimedOut         = "request timed out"
-	msgInvalidConfig    = "invalid configuration"
+	maxPCMBytes      = audio.PCMBytesPerSecond * coreconfig.RecordSecondsMax
+	maxSelectedBytes = 1 << 20
+	msgUnsupported   = "unsupported operation"
+	msgCanceled      = "request canceled"
+	msgTimedOut      = "request timed out"
+	msgInvalidConfig = "invalid configuration"
 )
 
 var errFrameTooLarge = errors.New("frame exceeds limit")
 
 type request struct {
-	Version        int             `json:"v"`
-	ID             string          `json:"id"`
-	Op             string          `json:"op"`
-	Config         json.RawMessage `json:"config"`
-	PCMBase64      string          `json:"pcm_base64"`
-	SelectedText   string          `json:"selected_text"`
-	CanInsert      bool            `json:"can_insert"`
-	Instruction    string          `json:"instruction"`
-	TargetID       string          `json:"target_id"`
+	Version      int             `json:"v"`
+	ID           string          `json:"id"`
+	Op           string          `json:"op"`
+	Config       json.RawMessage `json:"config"`
+	PCMBase64    string          `json:"pcm_base64"`
+	SelectedText string          `json:"selected_text"`
+	CanInsert    bool            `json:"can_insert"`
+	Instruction  string          `json:"instruction"`
+	TargetID     string          `json:"target_id"`
 }
 
 type bridgeError struct {
