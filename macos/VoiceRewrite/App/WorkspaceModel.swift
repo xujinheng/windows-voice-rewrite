@@ -298,7 +298,8 @@ final class WorkspaceModel: ObservableObject {
             }
         }
         guard resultGeneration.accepts(token) else { throw CancellationError() }
-        if keyboardHoldEnabled, keyboardGate.action != nil, !meetingActive {
+        if !meetingActive &&
+            ((keyboardHoldEnabled && keyboardGate.action != nil) || sideGate.active != nil) {
             armGoRecordingWatchdog(token: token,
                 milliseconds: recordingPolicyWatchdogMS)
         }
@@ -306,11 +307,17 @@ final class WorkspaceModel: ObservableObject {
 
     private func armGoRecordingWatchdog(token: UInt64, milliseconds: Int) {
         let sequence = keyboardHoldSequence
+        let keyboardAction = keyboardGate.action
+        let mouseAction = sideGate.active
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(milliseconds) / 1000) { [weak self] in
-            guard let self, self.resultGeneration.accepts(token),
-                  self.keyboardHoldSequence == sequence,
-                  self.keyboardGate.action != nil else { return }
+            guard let self, self.resultGeneration.accepts(token) else { return }
+            let heldKeyboard = keyboardAction != nil &&
+                self.keyboardGate.action == keyboardAction &&
+                self.keyboardHoldSequence == sequence
+            let heldMouse = mouseAction != nil && self.sideGate.active == mouseAction
+            guard heldKeyboard || heldMouse else { return }
             self.keyboardGate.clear()
+            self.sideGate.clear()
             self.keyboardHoldSequence &+= 1
             self.hotKeyDriver?.resetHeldState()
             self.interactionStatus = "录音已达到最长时间，正在提交已录制内容"
