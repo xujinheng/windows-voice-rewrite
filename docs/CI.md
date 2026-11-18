@@ -18,8 +18,9 @@ protection. Do **not** make path-filtered visual workflows required checks.
 | Workflow/CI classifier | full validation matrix |
 
 Specialized cross-platform UI and Direct2D acceptance are invoked as conditional
-reusable jobs by the same PR workflow and are part of **CI Gate** when relevant.
-Unrelated PRs do not launch those jobs. Both main pushes and version tags run
+reusable jobs by the unified CI workflow for affected PRs and `main` pushes.
+They are part of **CI Gate** on PRs when relevant; there is no second
+independent Direct2D push workflow. Unrelated PRs do not launch those jobs. Both main pushes and version tags run
 all platforms, ignoring PR change filters. A release tag validates the full
 matrix, creates the curated Windows Release, and then calls the reusable signed
 macOS distribution workflow. If signing credentials are absent, the macOS
@@ -55,16 +56,18 @@ signature. These development apps are **not Apple-notarized**; the user may
 need to explicitly allow opening the app. There are no DMGs, additional
 portable Windows ZIPs, installers or duplicate checksum files in this workflow.
 
-A `build:ready` PR label also triggers a one-off build when added, if the
-repository has that label. Adding subsequent commits does **not** rerun the
-ready-build workflow; remove/re-add the label or remove/re-add the title marker
-to request newer artifacts. An explicit `workflow_dispatch` against a PR
-branch can build its head on demand. Always confirm the workflow's recorded
-source SHA matches the desired PR version; a passing CI Gate is still required
-for release/merge readiness.
+Adding subsequent commits does **not** rerun the ready-build workflow;
+remove and re-add the `[ready-to-test]` title marker to request fresh artifacts.
+Ordinary PR label events do not launch empty build runs. Alternatively, use
+`workflow_dispatch` against the PR branch to build its head on demand.
+Always confirm the workflow's recorded source SHA matches the desired PR
+version; a passing CI Gate is still required for release/merge readiness.
 
-Each push to `main` publishes one Windows EXE and one app-bundle ZIP per macOS
-architecture. **Only version tags** produce the full Windows installer, Windows
+Each push to `main` publishes one Windows EXE and one VoiceRewrite app-bundle ZIP per macOS
+architecture. The same existing ARM64/Intel native jobs also compile the separate
+Mac OneClick launcher and upload one architecture-checked, ad-hoc signed **Dev** app ZIP
+for each; `[ready-to-test]` PRs can fetch these launchers as well. This is not
+Developer ID signing or Apple notarization. **Only version tags** produce the full Windows installer, Windows
 portable archive and macOS developer ZIP/DMG release assets. The separately
 signed/notarized release pipeline is unchanged.
 
@@ -117,3 +120,34 @@ Go helper, verifies native app/helper architecture and signature, and checks
 the ZIP. Neither XCTest results nor signed release assets are cached.
 Intel ready builds also reuse the official Go toolchain cache. Cache hit and
 Xcode build seconds are recorded in each ready job summary.
+
+## Workflow ownership and main-branch fan-out
+
+The default branch has one continuous validation workflow: `build.yml`.
+It owns platform compilation, shared Go and Swift tests, UI comparison,
+Direct2D acceptance, PR CI Gate, and tagged releases. The specialized
+`acceptance-evidence.yml`, `direct2d-result.yml` and
+`macos-distribution.yml` are invoked as reusable jobs; direct invocation
+is reserved for manual diagnostics. A `main` push that edits Direct2D code
+runs its acceptance **inside the main CI**, not as a competing push run.
+
+The README media pipeline has one primary automatic chain:
+`visual-matrix.yml` (rebuild/capture/publish screenshots) followed by
+`demo-video.yml` (render video on successful completion). Changes to the
+video renderer or its workflow also trigger the screenshot workflow so
+there is no overlapping video push run for those changes. Direct edits to
+published `docs/ui/*.png` images still trigger video rendering via a narrow
+push path filter; automated screenshot commits made with `GITHUB_TOKEN` do
+not cause a duplicate push event. A manual demo-only regeneration is
+available via `workflow_dispatch`.
+The screenshots workflow retains its own write permission, bounded
+artifacts and main-head race check. The video workflow likewise checks
+that the source branch is main and that main has not moved before it
+publishes. Generated media commits made with `GITHUB_TOKEN` do not
+trigger recursive CI runs.
+
+`ready-build.yml` accepts only an explicit title-edit marker or manual
+workflow dispatch. Labeling a PR (including Dependabot's automatic labels)
+no longer enqueues skipped ready-build runs. GitHub still retains historical
+workflow names in its Actions UI; removing an old YAML file does not delete
+past run records.
