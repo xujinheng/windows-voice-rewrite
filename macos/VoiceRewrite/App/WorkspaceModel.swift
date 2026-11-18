@@ -1161,6 +1161,7 @@ final class WorkspaceModel: ObservableObject {
             let ready = dictationMicrophoneReady(started: true, tokenValid: true, failure: "")
             self.isRecording = true
             self.isStarting = false
+            self.armProcessingWatchdog(token: preflight.generation, seconds: UInt64(self.settings.maxRecordSeconds), stage: "recording")
             self.showIndicator(phase: .recording, mode: "听写", pending: false)
             if let status = ready.recordingStatus { self.recordingStatus = status }
             self.stopWhenSideMouseReleased(.dictation)
@@ -2371,8 +2372,15 @@ final class WorkspaceModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self, self.voiceEpochSessionID == sessionID,
                       self.voiceEpochStage == stage, self.resultGeneration.accepts(token),
-                      (self.isProcessing || self.isStarting) else { return }
+                      (self.isProcessing || self.isStarting || self.isRecording) else { return }
                 let response = try? reply.get()
+                if response?.result?["reason"]?.string == "record_limit",
+                   self.isRecording {
+                    // The Go deadline commands a normal capture stop, preserving
+                    // all PCM for ASR instead of treating missing key-release as error.
+                    self.stopRecording()
+                    return
+                }
                 if response?.result?["reason"]?.string == "timeout",
                    case .array(let effects)? = response?.result?["effects"], !effects.isEmpty {
                     DiagnosticLog.note("stage=voice_\(stage) status=timeout owner=go")
@@ -2522,6 +2530,7 @@ final class WorkspaceModel: ObservableObject {
                 activeVoiceTargetPID = pid
                 isVoiceSelectionRecording = true
                 isRecording = true
+                armProcessingWatchdog(token: token, seconds: UInt64(settings.maxRecordSeconds), stage: "recording")
                 showIndicator(phase: .recording, mode: "改写", pending: false)
                 recordingStatus = rewriteRecording()
             } catch {
@@ -2617,6 +2626,7 @@ final class WorkspaceModel: ObservableObject {
                     DiagnosticLog.note("journey=dictation event=recording_ready elapsed_ms=\(Self.elapsedMilliseconds(since: journey.triggeredAt))")
                 }
                 isRecording = true
+                armProcessingWatchdog(token: token, seconds: UInt64(settings.maxRecordSeconds), stage: "recording")
                 showIndicator(phase: .recording, mode: "听写", pending: false)
                 if let status = ready.recordingStatus { recordingStatus = status }
             } catch {
