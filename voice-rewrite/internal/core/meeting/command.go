@@ -146,11 +146,6 @@ const (
 	PostedRefreshMeeting
 )
 
-// HoldUsesMeeting reports that a live meeting, not a demo, owns the recording that just started.
-func HoldUsesMeeting(hasMeeting, demo bool) bool {
-	return hasMeeting && !demo
-}
-
 // PostedMeetingEffect is a meeting message from the tray. A paused app ignores a real start.
 // A demo still starts. Suggestions run only for a live meeting.
 func PostedMeetingEffect(message PostedMeeting, paused, hasMeeting, demo bool) PostedEffect {
@@ -253,16 +248,6 @@ func MeetingStopAction(canceled bool) MeetingStop {
 
 func AcceptEnabled(owner, pending, paused bool) bool {
 	return owner && pending && !paused
-}
-
-// AcceptClick is the click, not the button.
-// The button also requires an owner and a pending reply. A paused meeting does not accept.
-func AcceptClick(paused bool) bool {
-	return !paused
-}
-
-func RefineEnabled(complete bool, instruction string, paused bool) bool {
-	return complete && instruction != "" && !paused
 }
 
 // RefineButtonEnabled is the button face, not the click. The click still

@@ -17,12 +17,6 @@ type Preferences struct {
 	Height       int32       `json:"height"`
 }
 
-// RememberBounds reports whether the current rectangle should replace the stored one.
-// A minimized or maximized window keeps the last normal rectangle.
-func RememberBounds(iconic, zoomed bool) bool {
-	return !iconic && !zoomed
-}
-
 type CloseChoice int
 
 const (

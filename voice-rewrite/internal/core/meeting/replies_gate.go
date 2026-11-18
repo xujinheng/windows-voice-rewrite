@@ -56,8 +56,3 @@ func ReplyPrior(prior []string, latest string) []string {
 	}
 	return out
 }
-
-// RefineMayRun requires English text and a live capture. The instruction was already accepted.
-func RefineMayRun(selected string, capturePaused bool) bool {
-	return selected != "" && !capturePaused
-}

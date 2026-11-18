@@ -424,7 +424,7 @@ func updateMeetingHUD(view meetingView) {
 	}
 	meetingEnableWindow.Call(p.buttons[12], meetingBool(meetingcore.AcceptEnabled(p.owner != 0, view.reply.PendingAvailable, p.paused)))
 	p.setText(p.buttons[12], meetingcore.ButtonFace(meetingcore.ButtonAcceptReplies, buttons), false)
-	if !meetingcore.RefreshReading(p.paused) {
+	if p.paused {
 		return
 	}
 	panels := meetingcore.BuildReadingPanels(view.captions)
@@ -450,7 +450,9 @@ func updateMeetingHUD(view meetingView) {
 		p.unreadHistory = meetingcore.UnreadHistory(p.unreadHistory, p.historyCount, panels.HistoryCount, p.followLatest)
 		p.historyCount = panels.HistoryCount
 	}
-	p.unreadHistory = meetingcore.ShownUnread(p.followLatest, p.unreadHistory)
+	if p.followLatest {
+		p.unreadHistory = 0
+	}
 	p.setText(p.labels[3], meetingcore.HistoryHeading(panels.HistoryCount, p.unreadHistory), false)
 	p.displayedReplies, p.displayedTip = view.reply.Displayed.Lines, view.reply.Displayed.Tip
 	p.renderReply()
@@ -473,7 +475,7 @@ func updateMeetingHUD(view meetingView) {
 	}
 	original := meetingcore.ExpressionDetail(view.expressionStatus, view.expressionSource)
 	p.setText(p.expressionSource, original, true)
-	meetingEnableWindow.Call(p.buttons[5], meetingBool(meetingcore.ExpressionCopyEnabled(p.copyExpression)))
+	meetingEnableWindow.Call(p.buttons[5], meetingBool(p.copyExpression != ""))
 }
 
 func (p *meetingHUD) renderReply() {
@@ -515,7 +517,7 @@ func (p *meetingHUD) savePreferences() {
 	maximized, _, _ := user32.NewProc("IsZoomed").Call(p.window)
 	prefs, _ := meetingcore.LoadPreferences(meetingPreferencesPath())
 	prefs.FontSize, prefs.CaptionsOnly, prefs.Panes = p.fontSize, p.captionsOnly, p.paneWeights
-	if meetingcore.RememberBounds(minimized != 0, maximized != 0) {
+	if minimized == 0 && maximized == 0 {
 		prefs.X, prefs.Y, prefs.Width, prefs.Height = bounds.Left, bounds.Top, bounds.Right-bounds.Left, bounds.Bottom-bounds.Top
 	}
 	if err := meetingcore.SavePreferences(meetingPreferencesPath(), prefs); err != nil && p.app != nil {
@@ -652,14 +654,14 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				p.layout()
 				updateMeetingHUD(p.latest)
 			case meetingcore.EffectAccept:
-				if session := p.session(); session != nil && meetingcore.AcceptClick(p.paused) {
+				if session := p.session(); session != nil && !p.paused {
 					session.acceptPendingReplies()
 					p.app.refreshMeeting()
 				}
 			case meetingcore.EffectRefine:
 				reply := p.displayedReplies[p.selectedReply]
 				instruction := strings.TrimSpace(uxWinText(p.instruction))
-				if session := p.session(); session != nil && meetingcore.RefineEnabled(reply.Complete, instruction, p.paused) {
+				if session := p.session(); session != nil && reply.Complete && instruction != "" && !p.paused {
 					session.refineReply(p.selectedReply, instruction)
 				}
 			case meetingcore.EffectSaveProfile:

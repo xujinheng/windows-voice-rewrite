@@ -25,9 +25,6 @@ func TestReplyAndRefineStayOnTheirOwnSentences(t *testing.T) {
 	if len(got) != 1 || got[0] != " earlier " {
 		t.Fatal(got)
 	}
-	if !RefineMayRun("en", false) || RefineMayRun("", false) || RefineMayRun("en", true) {
-		t.Fatal("refine")
-	}
 	if CapturePausedStatus == "采集已暂停 · 不再接收音频" || RepliesPreparing == RepliesFailed || RefineRunning == RefineFailed {
 		t.Fatal("sentences collapsed")
 	}

@@ -101,14 +101,3 @@ func TestHistoryReplyAndExpressionCopy(t *testing.T) {
 	}
 }
 
-func TestPausedMeetingKeepsTheReadingSurface(t *testing.T) {
-	if RefreshReading(true) || !RefreshReading(false) {
-		t.Fatal("paused reading")
-	}
-	if ShownUnread(true, 4) != 0 || ShownUnread(false, 4) != 4 {
-		t.Fatal("unread while following")
-	}
-	if !ExpressionCopyEnabled("上次的话") || ExpressionCopyEnabled("") || ReplyCopyEnabled(false, "上次的话") {
-		t.Fatal("expression copy")
-	}
-}

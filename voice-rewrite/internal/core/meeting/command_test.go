@@ -12,9 +12,6 @@ func TestPostedMeetingKeepsDemoAvailableWhilePaused(t *testing.T) {
 	if PostedMeetingEffect(PostedDemo, true, false, false) != PostedBeginDemo || PostedMeetingEffect(PostedStop, false, false, false) != PostedStopMeeting || PostedMeetingEffect(PostedRefresh, true, true, true) != PostedRefreshMeeting {
 		t.Fatal("demo")
 	}
-	if !HoldUsesMeeting(true, false) || HoldUsesMeeting(true, true) || HoldUsesMeeting(false, false) {
-		t.Fatal("hold meeting")
-	}
 	dropped := MeetingStopAction(true)
 	if dropped.Express || !dropped.DrainRecorder || !dropped.ClearBusy || !dropped.IdleTray || !dropped.ClosePill {
 		t.Fatal("canceled meeting")
@@ -25,10 +22,7 @@ func TestPostedMeetingKeepsDemoAvailableWhilePaused(t *testing.T) {
 	}
 }
 
-func TestAcceptClickStaysNarrowerThanTheButton(t *testing.T) {
-	if AcceptClick(true) || !AcceptClick(false) {
-		t.Fatal("click")
-	}
+func TestAcceptButtonNeedsOwnerPendingAndLiveMeeting(t *testing.T) {
 	if AcceptEnabled(false, true, false) || AcceptEnabled(true, false, false) || !AcceptEnabled(true, true, false) || AcceptEnabled(true, true, true) {
 		t.Fatal("button")
 	}
@@ -122,10 +116,10 @@ func TestMeetingButtonsStayContiguous(t *testing.T) {
 	if CopyText(CommandCopyExpression, "en", true, "expr") != "expr" {
 		t.Fatal("expression copy")
 	}
-	if !ReplyCopyEnabled(true, "en") || ReplyCopyEnabled(true, "") || !AcceptEnabled(true, true, false) || AcceptEnabled(true, true, true) || AcceptEnabled(false, true, false) || !RefineEnabled(true, "短一点", false) || RefineEnabled(true, "短一点", true) || RefineEnabled(false, "短一点", false) {
+	if !ReplyCopyEnabled(true, "en") || ReplyCopyEnabled(true, "") || !AcceptEnabled(true, true, false) || AcceptEnabled(true, true, true) || AcceptEnabled(false, true, false) {
 		t.Fatal("copy and refine gates")
 	}
-	if RefineButtonEnabled(true, true, "", false) || !RefineEnabled(true, "短一点", false) || !RefineButtonEnabled(true, true, "en", false) || RefineButtonEnabled(false, true, "en", false) || RefineButtonEnabled(true, true, "en", true) {
+	if RefineButtonEnabled(true, true, "", false) || !RefineButtonEnabled(true, true, "en", false) || RefineButtonEnabled(false, true, "en", false) || RefineButtonEnabled(true, true, "en", true) {
 		t.Fatal("refine button")
 	}
 }

@@ -96,27 +96,6 @@ func VoiceMode(dictation bool) string {
 	return "compose"
 }
 
-// RefreshReading reports whether captions, replies, and the expression update.
-// A paused meeting still updates the status line and the button faces.
-func RefreshReading(paused bool) bool {
-	return !paused
-}
-
-// ShownUnread clears the unread count when the reader is on the latest turn.
-// That clear still happens when the history text itself did not change.
-func ShownUnread(following bool, unread int) int {
-	if following {
-		return 0
-	}
-	return unread
-}
-
-// ExpressionCopyEnabled is the expression copy button.
-// Reply copy also requires a finished reply. A stored expression is enough here.
-func ExpressionCopyEnabled(expression string) bool {
-	return expression != ""
-}
-
 // Only new completed history turns count as unread while a reader is away.
 func UnreadHistory(unread, priorCount, nextCount int, following bool) int {
 	if following {

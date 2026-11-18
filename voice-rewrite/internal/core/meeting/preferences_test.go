@@ -6,10 +6,7 @@ import (
 	"testing"
 )
 
-func TestMeetingWindowRememberAndClose(t *testing.T) {
-	if !RememberBounds(false, false) || RememberBounds(true, false) || RememberBounds(false, true) {
-		t.Fatal("bounds")
-	}
+func TestMeetingWindowClose(t *testing.T) {
 	if ChooseClose(false) != CloseLocal || ChooseClose(true) != CloseOwner {
 		t.Fatal("close")
 	}

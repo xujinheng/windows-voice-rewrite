@@ -515,7 +515,7 @@ func runApp() {
 		holdButton = button
 		holdIsDictation = dictation
 		holdMeeting = nil
-		if meetingcore.HoldUsesMeeting(app.meeting != nil, app.meeting != nil && app.meeting.demo) {
+		if app.meeting != nil && !app.meeting.demo {
 			holdMeeting = app.meeting
 		}
 		holdGeneration = app.epoch.Start()
