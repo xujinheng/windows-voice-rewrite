@@ -435,7 +435,12 @@ func serveWithOptions(input io.Reader, output io.Writer, options bridgeOptions) 
 		}
 	}
 done:
-	s.shutdown()
+	// The headless host writes one request then closes stdin. EOF is not a
+	// cancellation signal: let the bounded provider task return its reply.
+	// Actual read failures and broken stdout still cancel in-flight work.
+	if readErr != nil {
+		s.shutdown()
+	}
 	s.wg.Wait()
 	if err := s.outputError(); err != nil {
 		return err

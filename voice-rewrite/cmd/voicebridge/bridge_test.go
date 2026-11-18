@@ -465,18 +465,14 @@ func TestBridgePrivateErrorsDoNotEchoInputs(t *testing.T) {
 	h.close()
 }
 
-func TestBridgeEOFAndOutputFailureReleaseTasks(t *testing.T) {
+func TestBridgeOneShotEOFWaitsForASRResponse(t *testing.T) {
 	started := make(chan struct{}, 1)
-	canceled := make(chan struct{}, 1)
+	complete := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		started <- struct{}{}
-		select {
-		case <-r.Context().Done():
-		case <-time.After(5 * time.Second):
-			t.Error("HTTP request was not canceled")
-		}
-		canceled <- struct{}{}
+		<-complete
+		_, _ = io.WriteString(w, `{"text":"one-shot transcription"}`)
 	}))
 	defer srv.Close()
 	h := startBridge(t, defaultOptions())
@@ -486,14 +482,13 @@ func TestBridgeEOFAndOutputFailureReleaseTasks(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("ASR request never started")
 	}
+	// Swift closes its stdin pipe after sending exactly one request. The bridge
+	// must wait for the provider instead of treating this normal EOF as cancel.
 	_ = h.in.Close()
-	if reply := h.receive(); reply.OK || reply.Error == nil || reply.Error.Code != "canceled" {
-		t.Fatalf("EOF did not cancel task: %#v", reply)
-	}
-	select {
-	case <-canceled:
-	case <-time.After(5 * time.Second):
-		t.Fatal("EOF did not cancel HTTP request")
+	close(complete)
+	reply := h.receive()
+	if !reply.OK || reply.Error != nil || object(t, reply.Result)["text"] != "one-shot transcription" {
+		t.Fatalf("EOF canceled a valid dictation: %#v", reply)
 	}
 	select {
 	case err := <-h.done:
