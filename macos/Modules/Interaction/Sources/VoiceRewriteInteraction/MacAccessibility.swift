@@ -328,7 +328,9 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
 
     func writeSelectedText(_ text: String, expected: SelectionObservation) throws {
         let target = try revalidate(expected)
-        let baseline = try wholeValue(target)
+        let baseline = try AXCallThreading.withSafeAppKitThread(for: expected.processID) {
+            try wholeValue(target)
+        }
         guard let expectedValue = TextWriteVerification.expectedValue(
             original: baseline, selectedText: expected.selectedText,
             range: expected.range, replacement: text) else {
