@@ -105,3 +105,12 @@ Every "Compare side by side" relative PNG link also works from the downloaded
 `report.md`. Do **not** link to `/actions/runs/<png-filename>`: that path is
 invalid and produces a 404. The Job Summary links to the real upload-artifact
 `artifact-url`, which requires GitHub login and expires with retention.
+
+Ready-to-test macOS builds reuse the same PR-scoped DerivedData/Build cache
+as required ARM and Intel XCTest jobs, with the same exact Xcode toolchain,
+project/package fingerprint and content-derived tracked source timestamps.
+Every ready build still executes native xcodebuild, recompiles/signs its bundled
+Go helper, verifies native app/helper architecture and signature, and checks
+the ZIP. Neither XCTest results nor signed release assets are cached.
+Intel ready builds also reuse the official Go toolchain cache. Cache hit and
+Xcode build seconds are recorded in each ready job summary.

@@ -84,35 +84,85 @@ jobs:
           - runner: macos-15
             arch: arm64
             public_arch: arm64
+            derived_directory: voicerewrite-derived
+            cache_prefix: arm-xcode-build
           - runner: macos-15-intel
             arch: x86_64
             public_arch: x64
+            derived_directory: voicerewrite-intel-derived
+            cache_prefix: intel-xcode-build
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.ready.outputs.revision }}
           persist-credentials: false
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
-        with:
-          go-version: '1.23'
-          cache-dependency-path: voice-rewrite/go.mod
-      - name: Compile native app with bundled matching Go helper
+      # Restore PR-scoped Build outputs already validated by XCTest.
+      - name: Normalize tracked source mtimes for ready incremental build
+        run: python3 scripts/ci_xcode_mtimes.py
+      - name: Fingerprint ready Xcode toolchain
+        id: ready-xcode
         shell: bash
         env:
           ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           test "$(uname -m)" = "$ARCH"
+          xcodebuild -version
+          { xcodebuild -version; xcode-select -p; } |
+            shasum -a 256 | awk '{ print "fingerprint=" $1 }' >> "$GITHUB_OUTPUT"
+      - name: Restore PR-validated native app Build products
+        id: ready-derived
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.temp }}/${{ matrix.derived_directory }}/Build
+          key: ${{ matrix.cache_prefix }}-${{ steps.ready-xcode.outputs.fingerprint }}-${{ hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj', 'macos/**/Package.swift', 'macos/**/Package.resolved') }}-v1
+      - name: Cache official Intel Go 1.23.12 toolchain
+        if: matrix.arch == 'x86_64'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.tool_cache }}/go/1.23.12
+          key: official-go-macos-intel-1.23.12-v1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
+        with:
+          go-version: '1.23.12'
+          cache-dependency-path: voice-rewrite/go.mod
+      - name: Compile native app with bundled matching Go helper
+        id: ready-compile
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+          DERIVED_DIR: ${{ matrix.derived_directory }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "$ARCH"
+          start="$(date +%s)"
           xcodebuild -project macos/VoiceRewrite.xcodeproj -scheme VoiceRewrite \
             -configuration Debug -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/ready-derived" \
-            ARCHS="$ARCH" ONLY_ACTIVE_ARCH=YES build
-          app="$RUNNER_TEMP/ready-derived/Build/Products/Debug/VoiceRewrite.app"
+            -derivedDataPath "$RUNNER_TEMP/$DERIVED_DIR" \
+            ARCHS="$ARCH" ONLY_ACTIVE_ARCH=YES build \
+            2>&1 | tee "$RUNNER_TEMP/ready-xcode.log"
+          echo "build_seconds=$(( $(date +%s) - start ))" >> "$GITHUB_OUTPUT"
+          app="$RUNNER_TEMP/$DERIVED_DIR/Build/Products/Debug/VoiceRewrite.app"
           for executable in VoiceRewrite voicebridge; do
             test -x "$app/Contents/MacOS/$executable"
             test "$(lipo -archs "$app/Contents/MacOS/$executable")" = "$ARCH"
           done
           codesign --verify --deep --strict "$app"
+      - name: Report ready cache hit and Xcode build duration
+        if: always()
+        shell: bash
+        env:
+          CACHE_HIT: ${{ steps.ready-derived.outputs.cache-hit }}
+          XCODE_SECONDS: ${{ steps.ready-compile.outputs.build_seconds }}
+        run: |
+          {
+            echo '### Native ready-to-test incremental build'
+            echo "- Platform: ${{ matrix.public_arch }}"
+            echo "- Source: ${{ needs.ready.outputs.revision }}"
+            echo "- Xcode Build cache hit: ${CACHE_HIT:-false}"
+            echo "- Native Xcode build: ${XCODE_SECONDS:-not-finished} seconds"
+            echo '- App/helper architecture and signing reverified on this run'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve and verify one runnable macOS app archive
         shell: bash
         env:
@@ -121,7 +171,7 @@ jobs:
           SOURCE_SHA: ${{ needs.ready.outputs.revision }}
         run: |
           set -euo pipefail
-          app="$RUNNER_TEMP/ready-derived/Build/Products/Debug/VoiceRewrite.app"
+          app="$RUNNER_TEMP/${{ matrix.derived_directory }}/Build/Products/Debug/VoiceRewrite.app"
           version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
           short="${SOURCE_SHA:0:12}"
           base="VoiceRewrite-$version-macOS-$PUBLIC_ARCH-Ready-$short-Dev"
