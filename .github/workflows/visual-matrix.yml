@@ -300,6 +300,7 @@ jobs:
         with:
           name: VoiceRewrite-readme-gallery
           path: docs/ui/
+          retention-days: 7
           if-no-files-found: warn
       - name: Upload UI screenshots
         if: always()
@@ -307,4 +308,5 @@ jobs:
         with:
           name: VoiceRewrite-ui-screenshots
           path: visual-matrix/
+          retention-days: 7
           if-no-files-found: warn
