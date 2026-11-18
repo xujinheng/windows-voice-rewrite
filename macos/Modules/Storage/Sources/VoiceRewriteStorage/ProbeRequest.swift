@@ -39,3 +39,5 @@ public func probeRequest(_ operation: HelperOperation) -> ProbeRequest? {
         return nil
     }
 }
+
+// CI incremental-compilation probe: source-content change; no product behavior changed.
