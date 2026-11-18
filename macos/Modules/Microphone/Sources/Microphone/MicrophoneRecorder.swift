@@ -80,6 +80,9 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
     private var sleepObserver: NSObjectProtocol?
     private var deadline: Task<Void, Never>?
     private var captureLiveness: Task<Void, Never>?
+    /// The host owns whether the completed recording is dictation, rewrite or
+    /// a meeting voice task. It stops and submits the buffered PCM on this cue.
+    public var onMaximumDuration: (@MainActor () -> Void)?
 
     /// First input callback of the latest completed recording; a real audio
     /// readiness marker distinct from the native engine-start return.
@@ -192,7 +195,7 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
         return permissionStatus
     }
 
-    public func start(deviceUID: String = "", maximumSeconds: Int = 60) async throws {
+    public func start(deviceUID: String = "", maximumSeconds: Int = PCM16Buffer.maximumSeconds) async throws {
         guard case .idle = state, !nativePreparation.isBusy else {
             throw MicrophoneError.alreadyRecording
         }
@@ -278,7 +281,15 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
                 do {
                     try await Task.sleep(nanoseconds: UInt64(duration) * 1_000_000_000)
                 } catch { return }
-                self?.handleFailure(id: id, error: .durationExceeded)
+                guard let self, self.recordingID == id,
+                      case .recording = self.state else { return }
+                if let onMaximumDuration = self.onMaximumDuration {
+                    // Reaching the configured limit is a normal completion.
+                    // Keep the PCM alive for the host's stop() and ASR path.
+                    onMaximumDuration()
+                } else {
+                    self.handleFailure(id: id, error: .durationExceeded)
+                }
             }
         } catch {
             nativePreparation.finish(attempt)
