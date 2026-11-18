@@ -87,6 +87,15 @@ struct PCM16Buffer {
         frameCount += samples.count
     }
 
+    /// The native converter may flush one last partial buffer at the exact
+    /// deadline. Keep the first 180 seconds instead of discarding all audio.
+    /// The strict append API above still rejects an out-of-range caller.
+    mutating func appendCapped(_ samples: UnsafeBufferPointer<Float>) throws {
+        guard frameCount < Self.maximumFrames else { return }
+        let count = min(samples.count, Self.maximumFrames - frameCount)
+        try append(UnsafeBufferPointer(start: samples.baseAddress, count: count))
+    }
+
     mutating func append(_ samples: [Float]) throws {
         try samples.withUnsafeBufferPointer { try append($0) }
     }
