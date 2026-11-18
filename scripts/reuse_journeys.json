@@ -46,8 +46,9 @@
           "kind": "portable_decision",
           "swift": {
             "path": "macos/Modules/Microphone/Sources/Microphone/MicrophoneRecorder.swift",
-            "contains": "maximumSeconds: Int = 180"
-          }
+            "contains": "let duration = min(max(1, maximumSeconds), PCM16Buffer.maximumSeconds)"
+          },
+          "logical_unit_id": "dictation_hold/duration"
         },
         {
           "id": "capture",
@@ -559,16 +560,12 @@
               "contains": "func DecideQueue("
             },
             {
-              "path": "voice-rewrite/internal/core/meeting/pipeline.go",
-              "contains": "DecideQueue("
-            },
-            {
               "path": "voice-rewrite/meeting_session.go",
               "contains": "meetingcore.NewPipeline("
             },
             {
               "path": "voice-rewrite/cmd/voicebridge/meeting.go",
-              "contains": "m.runtime.AdmitPCM("
+              "contains": "meetingcore.NewPipeline("
             }
           ],
           "go_forbidden_when": [
@@ -580,7 +577,8 @@
               "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
               "contains": "stopMeeting(reason: \"会议音频处理过载"
             }
-          ]
+          ],
+          "logical_unit_id": "meeting_live/backpressure"
         },
         {
           "id": "source_route",
@@ -593,21 +591,18 @@
           "go": [
             {
               "path": "voice-rewrite/internal/core/meeting/capture_route.go",
-              "contains": "func (s *SessionRuntime) CaptureRoute("
+              "contains": "func CaptureRoute("
             },
             {
               "path": "voice-rewrite/meeting_windows.go",
-              "contains": "s.runtime.CaptureRoute(meetingcore.CaptureStart,"
+              "contains": "meetingcore.CaptureRoute("
             },
             {
               "path": "voice-rewrite/cmd/voicebridge/main.go",
-              "contains": "m.runtime.CaptureRoute(meetingcore.CaptureStart,"
-            },
-            {
-              "path": "voice-rewrite/cmd/voicebridge/meeting.go",
-              "contains": "m.runtime.CaptureRoute(event,"
+              "contains": "meetingcore.CaptureRoute("
             }
-          ]
+          ],
+          "logical_unit_id": "meeting_live/source_route"
         },
         {
           "id": "render",
