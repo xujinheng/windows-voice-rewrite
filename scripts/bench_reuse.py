@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -60,7 +59,15 @@ class Snapshot:
 
 def present(snapshot: Snapshot, proof: dict) -> bool:
     source = snapshot.read(proof["path"])
-    return source is not None and proof["contains"] in source
+    if source is None:
+        return False
+    # A comment claiming to call Go cannot serve as call-site evidence.
+    # This remains static evidence rather than a complete parser/call graph.
+    executable_lines = "\n".join(
+        line for line in source.splitlines()
+        if not line.lstrip().startswith(("//", "/*", "*"))
+    )
+    return proof["contains"] in executable_lines
 
 
 def decide_owner(snapshot: Snapshot, step: dict, journey_id: str) -> str:
@@ -182,6 +189,14 @@ def compare(current: dict, baseline: dict) -> list[str]:
             journey["go_pct_delta"] = round(journey["go_portable_pct"] - old["go_portable_pct"], 1)
             if journey["go_portable_pct"] < old["go_portable_pct"]:
                 issues.append("shared-Go decision share fell in " + journey["id"])
+    current_inventory = current["source_inventory"]
+    baseline_inventory = baseline["source_inventory"]
+    for kind in ("shared_go", "native_swift", "generated_swift"):
+        current_inventory[kind]["base_nonblank_lines"] = baseline_inventory[kind]["nonblank_lines"]
+        current_inventory[kind]["delta_nonblank_lines"] = (
+            current_inventory[kind]["nonblank_lines"] - baseline_inventory[kind]["nonblank_lines"]
+        )
+    current_inventory["base_go_source_share_pct"] = baseline_inventory["shared_go_source_share_pct"]
     current["total"]["base_go_portable_pct"] = baseline["total"]["go_portable_pct"]
     current["total"]["go_pct_delta"] = round(
         current["total"]["go_portable_pct"] - baseline["total"]["go_portable_pct"], 1
@@ -225,6 +240,13 @@ def markdown(report: dict, base: str | None, errors: list[str]) -> str:
             lines.append(f"| {journey['id']} / {stage['title']} | `{stage['owner']}` |")
     lines += ["", "</details>"]
     inv = report["source_inventory"]
+    source_deltas = ""
+    if "base_nonblank_lines" in inv["shared_go"]:
+        source_deltas = (
+            f" Relative to base: Go {inv['shared_go']['delta_nonblank_lines']:+,} lines; "
+            f"Swift {inv['native_swift']['delta_nonblank_lines']:+,} lines; "
+            f"generated Swift {inv['generated_swift']['delta_nonblank_lines']:+,} lines."
+        )
     lines += [
         "",
         f"**Source inventory only (not an executed-code ratio):** "
@@ -232,7 +254,7 @@ def markdown(report: dict, base: str | None, errors: list[str]) -> str:
         f"hand-authored macOS Swift {inv['native_swift']['nonblank_lines']:,}; "
         f"generated Swift {inv['generated_swift']['nonblank_lines']:,}. "
         f"Go share in this explicitly scoped source inventory: "
-        f"{inv['shared_go_source_share_pct']:.1f}%.",
+        f"{inv['shared_go_source_share_pct']:.1f}%.{source_deltas}",
         "",
         f"Baseline: \`{base}\`." if base else "Baseline unavailable (new benchmark or shallow checkout).",
         "The full per-stage evidence and owners are in \`scripts/reuse_journeys.json\`; "
