@@ -497,13 +497,25 @@ jobs:
             release/VoiceRewrite-windows-x64.zip
           fail_on_unmatched_files: true
 
-  ui-acceptance:
-    name: Cross-platform UI acceptance
-    if: always() && !startsWith(github.ref, 'refs/tags/') && needs.changes.outputs.ui == 'true' && needs.test-core-macos.result == 'success' && needs.build-macos-intel.result == 'success'
-    needs: [changes, test-core-macos, build-macos-intel]
+  windows-acceptance:
+    name: Windows UI capture (parallel)
+    if: !startsWith(github.ref, 'refs/tags/') && needs.changes.outputs.ui == 'true'
+    needs: changes
     permissions:
       contents: read
     uses: ./.github/workflows/acceptance-evidence.yml
+    with:
+      phase: capture
+
+  ui-acceptance:
+    name: Compare cross-platform UI evidence
+    if: always() && !startsWith(github.ref, 'refs/tags/') && needs.changes.outputs.ui == 'true' && needs.test-core-macos.result == 'success' && needs.build-macos-intel.result == 'success' && needs.windows-acceptance.result == 'success'
+    needs: [changes, test-core-macos, build-macos-intel, windows-acceptance]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/acceptance-evidence.yml
+    with:
+      phase: compare
 
   direct2d-acceptance:
     name: Direct2D result acceptance
@@ -519,7 +531,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    needs: [changes, test-core, test-core-macos, build-macos-intel, build, build-oneclick, ui-acceptance, direct2d-acceptance]
+    needs: [changes, test-core, test-core-macos, build-macos-intel, build, build-oneclick, windows-acceptance, ui-acceptance, direct2d-acceptance]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -537,6 +549,7 @@ jobs:
           ONECLICK_REQUIRED: ${{ needs.changes.outputs.oneclick }}
           ONECLICK_RESULT: ${{ needs.build-oneclick.result }}
           UI_REQUIRED: ${{ needs.changes.outputs.ui }}
+          UI_CAPTURE_RESULT: ${{ needs.windows-acceptance.result }}
           UI_RESULT: ${{ needs.ui-acceptance.result }}
           D2D_REQUIRED: ${{ needs.changes.outputs.direct2d }}
           D2D_RESULT: ${{ needs.direct2d-acceptance.result }}
@@ -561,6 +574,7 @@ jobs:
           check 'macOS Intel' "$MAC_REQUIRED" "$MAC_INTEL_RESULT" || errors=1
           check 'Windows' "$WIN_REQUIRED" "$WIN_RESULT" || errors=1
           check 'OneClick' "$ONECLICK_REQUIRED" "$ONECLICK_RESULT" || errors=1
+          check 'Windows UI capture' "$UI_REQUIRED" "$UI_CAPTURE_RESULT" || errors=1
           check 'Cross-platform UI acceptance' "$UI_REQUIRED" "$UI_RESULT" || errors=1
           check 'Direct2D result acceptance' "$D2D_REQUIRED" "$D2D_RESULT" || errors=1
           exit "$errors"

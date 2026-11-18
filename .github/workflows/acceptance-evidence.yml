@@ -1,14 +1,19 @@
 name: Cross-platform UI acceptance evidence
 on:
   workflow_call:
+    inputs:
+      phase:
+        type: string
+        default: full
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: ui-acceptance-${{ github.event.pull_request.number || github.ref }}
+  group: ui-acceptance-${{ inputs.phase || 'manual' }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
   windows-ui:
+    if: inputs.phase != 'compare'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -134,7 +139,7 @@ jobs:
           if-no-files-found: warn
   compare-evidence:
     runs-on: ubuntu-latest
-    if: always()
+    if: always() && inputs.phase != 'capture'
     needs: [windows-ui, macos-ui]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
