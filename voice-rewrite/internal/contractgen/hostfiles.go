@@ -759,7 +759,7 @@ func emitSettings() (string, error) {
 	if save.Label != "保存设置" || advanced.Label != "高级配置" || closeButton.Label != "关闭" {
 		return "", fmt.Errorf("footer labels out of sync")
 	}
-	b.WriteString("            Text(\"API Key 为可选项；需要认证时先保存再检测。连接检测共用 Windows 的 Go Core 规则：ASR 发送生成的静音 WAV，LLM 查询 /models，不发送用户录音或文本。密钥仅保存在 Keychain。\")\n                .font(.footnote).foregroundStyle(.secondary)\n                .accessibilityIdentifier(\"save_note\")\n")
+	b.WriteString("            Text(\"API Key 仅保存在 Keychain；连接检测不发送真实录音或文字。\")\n                .font(.footnote).foregroundStyle(.secondary)\n                .lineLimit(1)\n                .accessibilityIdentifier(\"save_note\")\n")
 	b.WriteString("                .padding(.horizontal, 20)\n                .padding(.bottom, 12)\n        }\n        .frame(minWidth: 480, minHeight: 420)\n        .background(Color(nsColor: .windowBackgroundColor))\n        .tint(Color(red: 0.43, green: 0.32, blue: 0.82))\n")
 	for _, control := range contract.Controls() {
 		if control.StaleProbe == "" || !control.VisibleOn(contract.MacOS) {

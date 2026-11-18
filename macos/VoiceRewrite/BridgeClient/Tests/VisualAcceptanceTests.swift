@@ -85,10 +85,12 @@ final class VisualAcceptanceTests: XCTestCase {
 
         let model = WorkspaceModel() // no launch(), mic, permissions or helper connection
         for page in ["speech", "writing", "input"] {
-            try store("settings.\(page)", fixture: "default-settings-v1", theme: "light",
-                      width: SettingsWindowMetrics.width, height: SettingsWindowMetrics.height,
-                      content: SettingsView(model: model, initialPage: page)
-                          .environment(\.colorScheme, .light))
+            for theme in ["light", "dark"] {
+                try store("settings.\(page)", fixture: "default-settings-v1", theme: theme,
+                          width: SettingsWindowMetrics.width, height: SettingsWindowMetrics.height,
+                          content: SettingsView(model: model, initialPage: page)
+                              .environment(\.colorScheme, theme == "dark" ? .dark : .light))
+            }
         }
 
         let started = Date(timeIntervalSince1970: 100)
@@ -131,6 +133,20 @@ final class VisualAcceptanceTests: XCTestCase {
                               onCopy: {}, onApply: {}, onClose: {})
                               .environment(\.colorScheme, theme == "dark" ? .dark : .light))
             }
+        }
+
+        // The Windows answer preview repeats the same UTF-8 sentence 80 times.
+        // A long scroll verifies both hosts retain bounded card geometry.
+        let longText = String(repeating: "这一段用于验证长文本滚动、换行、阅读区域和底部操作按钮。\n", count: 80)
+        for theme in ["light", "dark"] {
+            let card = ResultCardActionSession(text: longText)
+            let height = CGFloat(ResultCardMetrics.height(unicodeScalars: longText.unicodeScalars.count))
+            try store("result.long", fixture: "long-result-v1", theme: theme,
+                      width: ResultCardMetrics.width, height: height,
+                      content: ResultCardView(title: "AI 回答", session: card,
+                          width: ResultCardMetrics.width, height: height,
+                          onCopy: {}, onApply: {}, onClose: {})
+                          .environment(\.colorScheme, theme == "dark" ? .dark : .light))
         }
 
         // The empty state is not a substitute for Windows's populated demo.
@@ -188,6 +204,6 @@ final class VisualAcceptanceTests: XCTestCase {
         let manifest = Manifest(platform: platform, captures: captures)
         try JSONEncoder().encode(manifest).write(
             to: directory.appendingPathComponent("manifest.json"), options: .atomic)
-        XCTAssertEqual(captures.count, 17)
+        XCTAssertEqual(captures.count, 22)
     }
 }

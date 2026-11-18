@@ -102,8 +102,8 @@ class EvidenceTest(unittest.TestCase):
             manifest.write_text(json.dumps(obj))
             manifests.append(manifest)
         result = generate(manifests, self.root / "report")
-        self.assertEqual(require_complete_matrix(result), 32)
-        self.assertEqual(result["paired_review_states"], 32)
+        self.assertEqual(require_complete_matrix(result), 42)
+        self.assertEqual(result["paired_review_states"], 42)
         self.assertEqual(result["acceptance"], "NOT_VERIFIED_ON_PHYSICAL_DEVICE")
         self.assertTrue(all(row["status"] == "matched-for-review" for row in result["rows"]))
 
