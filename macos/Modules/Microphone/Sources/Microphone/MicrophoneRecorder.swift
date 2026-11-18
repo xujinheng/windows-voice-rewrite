@@ -195,7 +195,7 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
         return permissionStatus
     }
 
-    public func start(deviceUID: String = "", maximumSeconds: Int = PCM16Buffer.maximumSeconds) async throws {
+    public func start(deviceUID: String = "", maximumSeconds: Int = 180) async throws {
         guard case .idle = state, !nativePreparation.isBusy else {
             throw MicrophoneError.alreadyRecording
         }
