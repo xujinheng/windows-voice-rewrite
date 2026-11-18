@@ -495,6 +495,13 @@ func main() {
 		name = filepath.Join(directory, "config.json")
 	}
 	cfg, err := loadConfig(name)
+	if err == nil && runtime.GOOS == "windows" && alreadyRunning(cfg.ListenAddress) {
+		fmt.Println("Qwen3-ASR 服务已经在运行：http://" + cfg.ListenAddress + "/v1")
+		return
+	}
+	if err == nil {
+		cfg, err = bootstrapWindows(cfg, directory)
+	}
 	if err == nil {
 		err = run(cfg.toOptions(filepath.Dir(name)))
 	}
