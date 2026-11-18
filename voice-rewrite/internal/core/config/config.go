@@ -36,7 +36,7 @@ type Config struct {
 const (
 	RecordSecondsMin        = 1
 	RecordSecondsMax        = 180
-	DefaultRecordSeconds    = 60
+	DefaultRecordSeconds    = 180
 	DefaultMaxSelectedRunes = 12000
 	MaxSystemPromptBytes    = 16384
 	MinResponseTokens       = 128
