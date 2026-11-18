@@ -78,19 +78,25 @@ jobs:
           mkdir -p acceptance-output
           touch acceptance-output/.enabled
           mkdir -p "$COMPILATION_CACHE_DIR"
-          args=()
-          if [[ "$COMPILATION_CACHE_MODE" == on ]]; then
-            args+=(COMPILATION_CACHE_ENABLE_CACHING=YES)
-            args+=("COMPILATION_CACHE_CAS_PATH=$COMPILATION_CACHE_DIR")
-            args+=(COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES)
-          fi
+          # macOS ships Bash 3.2: under set -u, an empty ${array[@]}
+          # raises "unbound variable". Pass optional Xcode build settings via
+          # a function's positional parameters instead.
+          run_xcode() {
+            xcodebuild -project macos/VoiceRewrite.xcodeproj \
+              -scheme VoiceRewrite -configuration Debug \
+              -destination 'platform=macOS' \
+              -derivedDataPath "$RUNNER_TEMP/experiment-derived" \
+              -resultBundlePath "$RUNNER_TEMP/experiment.xcresult" \
+              "$@" test 2>&1 | tee "$RUNNER_TEMP/experiment-xcode.log"
+          }
           start="$(date +%s)"
-          xcodebuild -project macos/VoiceRewrite.xcodeproj \
-            -scheme VoiceRewrite -configuration Debug \
-            -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/experiment-derived" \
-            -resultBundlePath "$RUNNER_TEMP/experiment.xcresult" \
-            "${args[@]}" test 2>&1 | tee "$RUNNER_TEMP/experiment-xcode.log"
+          if [[ "$COMPILATION_CACHE_MODE" == on ]]; then
+            run_xcode COMPILATION_CACHE_ENABLE_CACHING=YES \
+              "COMPILATION_CACHE_CAS_PATH=$COMPILATION_CACHE_DIR" \
+              COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES
+          else
+            run_xcode
+          fi
           end="$(date +%s)"
           echo "xcode_seconds=$((end-start))" >> "$GITHUB_OUTPUT"
           app="$RUNNER_TEMP/experiment-derived/Build/Products/Debug/VoiceRewrite.app"
