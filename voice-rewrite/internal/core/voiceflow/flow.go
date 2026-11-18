@@ -137,7 +137,7 @@ func New() *Engine {
 	return &Engine{tasks: make(map[string]*task), latest: make(map[string]uint64)}
 }
 
-func (t *task) action(id string, kind ActionType, ev Event) Action {
+func (t *task) action(kind ActionType, ev Event) Action {
 	t.next++
 	command := fmt.Sprintf("%s/%d/%d", ev.SessionID, ev.Generation, t.next)
 	return Action{
@@ -148,7 +148,7 @@ func (t *task) action(id string, kind ActionType, ev Event) Action {
 }
 
 func (t *task) emit(out *Transition, kind ActionType, ev Event) Action {
-	a := t.action("", kind, ev)
+	a := t.action(kind, ev)
 	out.Effects = append(out.Effects, a)
 	return a
 }
@@ -249,20 +249,26 @@ func (e *Engine) Apply(ev Event) (Transition, error) {
 		out.Reason = "stale_receipt"
 		return out, nil
 	}
+	applied := false
 	switch ev.Type {
 	case Press:
 		if t.phase != Armed { break }
+		applied = true
 		t.pendingEffect(&out, StartNativeCapture, Starting, ev)
 	case Release, RecordLimit:
-		if t.phase == Starting {
+		if t.phase == Starting && !t.released {
+			applied = true
 			t.released = true
 		} else if t.phase == Recording {
+			applied = true
 			t.pendingEffect(&out, StopNativeCapture, Stopping, ev)
 		} else if t.phase == Armed && ev.Type == Release {
+			applied = true
 			t.finish(&out, Canceled, ev)
 		} else { break }
 	case RecordReady:
 		if t.phase != Starting { break }
+		applied = true
 		if !ev.Success {
 			t.finish(&out, Failed, ev)
 		} else if t.released {
@@ -273,6 +279,7 @@ func (e *Engine) Apply(ev Event) (Transition, error) {
 		}
 	case AudioStopped:
 		if t.phase != Stopping { break }
+		applied = true
 		if !ev.Success {
 			t.finish(&out, Failed, ev)
 		} else {
@@ -280,6 +287,7 @@ func (e *Engine) Apply(ev Event) (Transition, error) {
 		}
 	case ASRResult:
 		if t.phase != Recognizing { break }
+		applied = true
 		t.text = strings.TrimSpace(ev.Text)
 		if !ev.Success || t.text == "" {
 			t.finish(&out, Failed, ev)
@@ -290,6 +298,7 @@ func (e *Engine) Apply(ev Event) (Transition, error) {
 		}
 	case ModelResult:
 		if t.phase != Modeling { break }
+		applied = true
 		t.text = strings.TrimSpace(ev.Text)
 		if !ev.Success || t.text == "" {
 			t.finish(&out, Failed, ev)
@@ -298,6 +307,7 @@ func (e *Engine) Apply(ev Event) (Transition, error) {
 		}
 	case WriteReceipt:
 		if t.phase != Writing { break }
+		applied = true
 		if ev.Success {
 			t.emit(&out, AppendHistory, ev)
 			t.finish(&out, Success, ev)
@@ -307,11 +317,12 @@ func (e *Engine) Apply(ev Event) (Transition, error) {
 			t.finish(&out, Preview, ev)
 		}
 	case Cancel, FocusChanged, Timeout:
+		applied = true
 		t.abort(&out, Canceled, ev)
 	default:
 		return Transition{}, ErrEvent
 	}
-	if len(out.Effects) == 0 && !t.released {
+	if !applied {
 		out.Reason = "out_of_order"
 		return out, nil
 	}
