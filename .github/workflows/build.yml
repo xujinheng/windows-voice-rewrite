@@ -527,8 +527,6 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      id-token: write
-      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -618,16 +616,6 @@ jobs:
           "$hash *$($packages[0].Name)" | Set-Content -LiteralPath 'installer/output/INSTALLER-SHA256SUMS.txt' -Encoding ascii
       # On version tags, GitHub signs provenance for the built artifacts via
       # short-lived OIDC credentials. This is NOT Authenticode publisher signing.
-      - name: Attest portable archive provenance
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-path: voice-rewrite/VoiceRewrite-windows-x64.zip
-      - name: Attest installer provenance
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-path: installer/output/VoiceRewrite-Setup-*-x64.exe
       - name: Upload installer and checksum
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -642,8 +630,6 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      id-token: write
-      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -663,11 +649,6 @@ jobs:
         working-directory: oneclick
         shell: pwsh
         run: go build -trimpath -ldflags '-s -w' -o Qwen3-ASR-OneClick-Windows-x64.exe .
-      - name: Attest OneClick provenance
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-path: oneclick/Qwen3-ASR-OneClick-Windows-x64.exe
       - name: Stage OneClick executable and license
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
@@ -682,9 +663,58 @@ jobs:
           name: Qwen3-ASR-OneClick-Windows-x64
           path: oneclick/package/*
           if-no-files-found: error
+  attest-windows-release:
+    name: Attest Windows release packages (trusted tag only)
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, build-oneclick]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      # Download exactly the three Windows release artifacts from this workflow
+      # run. Do not download third-party or pull-request supplied artifacts.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: VoiceRewrite-portable-windows-x64
+          path: provenance
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: VoiceRewrite-installer-windows-x64
+          path: provenance
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: Qwen3-ASR-OneClick-Windows-x64
+          path: provenance
+      - name: Verify release artifacts before attestation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s provenance/VoiceRewrite-windows-x64.zip
+          test -s provenance/Qwen3-ASR-OneClick-Windows-x64.exe
+          shopt -s nullglob
+          installers=(provenance/VoiceRewrite-Setup-*-x64.exe)
+          test "${#installers[@]}" -eq 1
+          test -s "${installers[0]}"
+          (cd provenance && sha256sum -c SHA256SUMS.txt)
+          (cd provenance && sha256sum -c INSTALLER-SHA256SUMS.txt)
+      - name: Attest verified portable Windows package
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: provenance/VoiceRewrite-windows-x64.zip
+      - name: Attest verified Windows installer
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: provenance/VoiceRewrite-Setup-*-x64.exe
+      - name: Attest verified Windows OneClick executable
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: provenance/Qwen3-ASR-OneClick-Windows-x64.exe
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test-core, test-swift-modules, test-core-macos, build-macos-intel, build, build-oneclick]
+    needs: [test-core, test-swift-modules, test-core-macos, build-macos-intel, build, build-oneclick, attest-windows-release]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
