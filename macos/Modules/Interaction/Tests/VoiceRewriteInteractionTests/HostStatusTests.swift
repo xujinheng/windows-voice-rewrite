@@ -345,9 +345,68 @@ final class HostStatusTests: XCTestCase {
         let phase = indicatorTiming(wasVisible: true, wasPending: true, wasPhase: 1, pending: true, phase: 2, now: now, started: earlier, changed: earlier)
         XCTAssertEqual(phase.started, earlier)
         XCTAssertEqual(phase.changed, now)
+        // Re-arming a new pending capture while the old pill remains visible
+        // is a new recording and must not inherit the old elapsed seconds.
         let pending = indicatorTiming(wasVisible: true, wasPending: false, wasPhase: 1, pending: true, phase: 1, now: now, started: earlier, changed: earlier)
-        XCTAssertEqual(pending.started, earlier)
+        XCTAssertEqual(pending.started, now)
         XCTAssertEqual(pending.changed, now)
+    }
+
+    func testFreshRecordingResetsClockEvenWhenPreviousPillIsStillVisible() {
+        let previousStart = Date(timeIntervalSince1970: 10)
+        let newStart = Date(timeIntervalSince1970: 20)
+        // A completion/failure pill stays visible briefly after each recording.
+        for previousPhase in [2, 3, 4, 7, 9] {
+            let next = indicatorTiming(
+                wasVisible: true, wasPending: false, wasPhase: previousPhase,
+                pending: true, phase: 1, now: newStart,
+                started: previousStart, changed: previousStart)
+            XCTAssertEqual(next.started, newStart, "phase \(previousPhase) must not leak elapsed seconds")
+            XCTAssertEqual(next.changed, newStart)
+        }
+
+        // Keyboard Hold can enter recording without first showing a mouse preview.
+        let direct = indicatorTiming(
+            wasVisible: true, wasPending: false, wasPhase: 3,
+            pending: false, phase: 1, now: newStart,
+            started: previousStart, changed: previousStart)
+        XCTAssertEqual(direct.started, newStart)
+
+        // Re-arming a pending preview also starts a fresh recording, even if
+        // the previous live recording snapshot has not yet been dismissed.
+        let rearmed = indicatorTiming(
+            wasVisible: true, wasPending: false, wasPhase: 1,
+            pending: true, phase: 1, now: newStart,
+            started: previousStart, changed: previousStart)
+        XCTAssertEqual(rearmed.started, newStart)
+        XCTAssertEqual(rearmed.changed, newStart)
+    }
+
+    func testRecordingPhaseChangesDoNotRepeatedlyResetElapsedClock() {
+        let started = Date(timeIntervalSince1970: 20)
+        let confirmedAt = started.addingTimeInterval(0.25)
+        let confirmed = indicatorTiming(
+            wasVisible: true, wasPending: true, wasPhase: 1,
+            pending: false, phase: 1, now: confirmedAt,
+            started: started, changed: started)
+        XCTAssertEqual(confirmed.started, started, "pending -> active is the same recording")
+        XCTAssertEqual(confirmed.changed, confirmedAt)
+
+        let processingAt = started.addingTimeInterval(3)
+        let processing = indicatorTiming(
+            wasVisible: true, wasPending: false, wasPhase: 1,
+            pending: false, phase: 2, now: processingAt,
+            started: confirmed.started, changed: confirmed.changed)
+        XCTAssertEqual(processing.started, started)
+        XCTAssertEqual(processing.changed, processingAt)
+
+        let completionAt = processingAt.addingTimeInterval(1)
+        let terminal = indicatorTiming(
+            wasVisible: true, wasPending: false, wasPhase: 2,
+            pending: false, phase: 3, now: completionAt,
+            started: processing.started, changed: processing.changed)
+        XCTAssertEqual(terminal.started, started)
+        XCTAssertEqual(terminal.changed, completionAt)
     }
 
     func testShortcutRefreshStopsBeforeTheLastParse() {
