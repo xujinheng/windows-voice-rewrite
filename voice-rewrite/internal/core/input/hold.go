@@ -17,12 +17,6 @@ func VoiceStartBlocked(paused, busy, recording, pendingSide, extra bool) bool {
 	return paused || busy || recording || pendingSide || extra
 }
 
-// ReportMissingWindow is the keyboard hold with no foreground window.
-// A side-button arm returns without NoTargetWindow.
-func ReportMissingWindow(sideArm bool) bool {
-	return !sideArm
-}
-
 // SideConfirmResult is what a side-button hold does when the button comes up into a voice hold.
 type SideConfirmResult int
 
@@ -49,21 +43,6 @@ func SideConfirm(hasPending, sameButton, ready, recorderFailed bool) SideConfirm
 		return SideConfirmReport
 	}
 	return SideConfirmActivate
-}
-
-// ConfirmSideReady keeps a pending side hold only while that window is still foreground.
-func ConfirmSideReady(paused, busy, recording, targetStillForeground bool) bool {
-	return !paused && !busy && !recording && targetStillForeground
-}
-
-// ShowFreshHoldStatus reports that the recording pill must be opened.
-// A keyboard hold has no mouse-down preview, so the promote result is ignored.
-// A side hold reuses that preview when promotion succeeds.
-func ShowFreshHoldStatus(sideButton, promoted bool) bool {
-	if !sideButton {
-		return true
-	}
-	return !promoted
 }
 
 // HoldModeLabel is the recording pill. Meeting dictation and meeting rewrite stay distinct.
@@ -105,11 +84,6 @@ const (
 	FinishMeeting
 )
 
-// HoldEventApplies reports that a posted release or timeout still belongs to the active hold.
-func HoldEventApplies(holdMode, recording, sameSession bool) bool {
-	return holdMode && recording && sameSession
-}
-
 func FinishRecording(holdMode, dictation, meeting bool) RecordingFinish {
 	if !holdMode {
 		return FinishToggle
@@ -121,12 +95,6 @@ func FinishRecording(holdMode, dictation, meeting bool) RecordingFinish {
 		return FinishDictation
 	}
 	return FinishSpokenRewrite
-}
-
-// FinishShowsProcessing is the pill for dictation and meeting. Spoken rewrite uses the selection pill.
-// Toggle mode does not change the pill here.
-func FinishShowsProcessing(kind RecordingFinish) bool {
-	return kind == FinishDictation || kind == FinishMeeting
 }
 
 func RewriteHotkeyAction(paused, busy, recording, holdMode bool) RewriteHotkey {
@@ -231,18 +199,6 @@ func CleanupToggle(fault ToggleFault) ToggleCleanup {
 	default:
 		return ToggleCleanup{}
 	}
-}
-
-// SideCancelApplies drops a pending side preview only for the same button.
-// A different button leaves the other preview in place.
-func SideCancelApplies(pending, sameButton bool) bool {
-	return pending && sameButton
-}
-
-// SideReleaseApplies finishes an active hold for the same side button.
-// It does not use the keyboard hold-session check.
-func SideReleaseApplies(holdMode, recording, sameButton bool) bool {
-	return holdMode && recording && sameButton
 }
 
 // SettingsMouseCapture is the shortcut name for a side button pressed while settings capture is aimed at that control.
