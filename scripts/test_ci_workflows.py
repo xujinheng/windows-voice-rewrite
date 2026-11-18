@@ -14,7 +14,7 @@ def workflow(name):
 
 def events(name):
     # Workflow top-level 'on' uses zero indentation; 'permissions' marks its end.
-    return workflow(name).split("\non:\\n", 1)[1].split("\npermissions:", 1)[0]
+    return workflow(name).split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
 
 
 class WorkflowEventOwnership(unittest.TestCase):
