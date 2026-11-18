@@ -30,9 +30,9 @@ jobs:
           - case: xcode16-baseline
             runner: macos-15-intel
             cache: 'off'
-          - case: xcode16-no-auto-package-resolution
+          - case: xcode16-deriveddata-cache
             runner: macos-15-intel
-            cache: 'skip-package'
+            cache: 'derived'
           - case: xcode26-no-cache
             runner: macos-26-intel
             cache: 'off'
@@ -57,6 +57,45 @@ jobs:
           sw_vers
           printf 'Experiment: %s\nCommit: %s\n' "$EXPERIMENT_CASE" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
           xcodebuild -version >> "$GITHUB_STEP_SUMMARY"
+      # DerivedData's incremental build database tracks source modification
+      # timestamps, which git checkout ordinarily resets. Normalize checkout
+      # mtimes to stable *content-derived* nanosecond timestamps so unchanged
+      # sources retain their metadata on a clean hosted runner. Any modified
+      # source obtains a different timestamp, triggering a rebuild.
+      - name: Normalize tracked source mtimes for incremental build
+        if: matrix.cache == 'derived'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import os
+          import pathlib
+          import subprocess
+
+          names = subprocess.check_output(["git", "ls-files", "-z"]).split(b"\0")
+          count = 0
+          for raw in names:
+              if not raw:
+                  continue
+              path = pathlib.Path(os.fsdecode(raw))
+              if not path.is_file() or path.is_symlink():
+                  continue
+              digest = hashlib.sha256(path.read_bytes()).digest()
+              seconds = 1_200_000_000 + int.from_bytes(digest[:4], "big") % 200_000_000
+              nanos = int.from_bytes(digest[4:8], "big") % 1_000_000_000
+              stamp = seconds * 1_000_000_000 + nanos
+              os.utime(path, ns=(stamp, stamp))
+              count += 1
+          print(f"Normalized {count} tracked files using their content hashes")
+          PY
+      - name: Restore Xcode 16 incremental Build directory
+        if: matrix.cache == 'derived'
+        id: derived
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.temp }}/experiment-derived/Build
+          key: xcode16-intel-derived-${{ hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj', 'macos/**/Package.swift') }}-v1
       # The CAS store is content-addressed, so keep the same cache key across
       # source changes. Isolate by runner architecture and Xcode major version.
       # Only cache compiler outputs, not the derived build products or tests.
@@ -127,6 +166,7 @@ jobs:
         shell: bash
         env:
           CACHE_HIT: ${{ steps.cas.outputs.cache-hit }}
+          DERIVED_HIT: ${{ steps.derived.outputs.cache-hit }}
           XCODE_SECONDS: ${{ steps.xctest.outputs.xcode_seconds }}
         run: |
           {
@@ -136,8 +176,12 @@ jobs:
             echo "- Xcode test + build seconds: ${XCODE_SECONDS:-not-finished}"
             echo "- CAS cache hit: ${CACHE_HIT:-not-applicable}"
             echo "- CAS disk usage: $(du -sh "$COMPILATION_CACHE_DIR" 2>/dev/null | cut -f1 || echo none)"
+            echo "- Incremental Build directory size: $(du -sh "$RUNNER_TEMP/experiment-derived/Build" 2>/dev/null | cut -f1 || echo none)"
+            echo "- Incremental cache hit: ${DERIVED_HIT:-not-applicable}"
             echo "- XCTest: full scheme, native Intel, including visual fixture captures"
           } >> "$GITHUB_STEP_SUMMARY"
 # Measurement repeat 2: unchanged source tree; verify warm CAS restoration.
 
 # Measurement repeat 3: same application source with package-resolution probe.
+
+# Measurement repeat 4: cold incremental build cache (same tests, source).
