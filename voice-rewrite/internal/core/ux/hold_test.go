@@ -1,33 +1,24 @@
 package ux
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
 
 func TestHoldWindowStopsStayDistinct(t *testing.T) {
-	before := HoldEditorReady(false)
-	after := HoldCapturedWindow(false)
-	closed := ApplyEditorOpen(false)
-	if before == nil || after == nil || closed == nil {
-		t.Fatal("missing stop")
-	}
 	seen := map[string]bool{}
-	for _, err := range []error{before, after, closed} {
-		if seen[err.Error()] {
+	for _, message := range []string{HoldWindowChanged, HoldSelectionMoved, ApplyWindowClosed} {
+		if seen[message] {
 			t.Fatal("window stops collapsed")
 		}
-		seen[err.Error()] = true
-		if err.Error() == ReplaceWindowSwitched || err.Error() == DictationWindowChanged || err.Error() == ReplaceBeforePaste {
-			t.Fatal(err)
+		seen[message] = true
+		if message == ReplaceWindowSwitched || message == DictationWindowChanged || message == ReplaceBeforePaste {
+			t.Fatal(message)
 		}
-		got, ok := Classify(err)
-		if !ok || got != selectionMoved {
-			t.Fatalf("%v classified as %q %v", err, got, ok)
+		if got, ok := Classify(errors.New(message)); !ok || got != selectionMoved {
+			t.Fatalf("%s classified as %q %v", message, got, ok)
 		}
-	}
-	if HoldEditorReady(true) != nil || HoldCapturedWindow(true) != nil || ApplyEditorOpen(true) != nil {
-		t.Fatal("open window")
 	}
 	if ApplySettle == 35*time.Millisecond {
 		t.Fatal("apply settle matched the copy poll")

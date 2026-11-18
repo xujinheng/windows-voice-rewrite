@@ -6,12 +6,6 @@ import (
 	"testing"
 )
 
-func TestMeetingWindowClose(t *testing.T) {
-	if ChooseClose(false) != CloseLocal || ChooseClose(true) != CloseOwner {
-		t.Fatal("close")
-	}
-}
-
 func TestMeetingPreferencesRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "meeting-ui.json")
 	want := Preferences{FontSize: 22, Panes: PaneWeights{110, 40, 80, 50, 300, 30}, CaptionsOnly: true, X: -900, Y: 30, Width: 640, Height: 720}

@@ -676,10 +676,9 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			}
 			return 0
 		case WM_CLOSE:
-			switch meetingcore.ChooseClose(p.owner != 0) {
-			case meetingcore.CloseOwner:
+			if p.owner != 0 {
 				procPostMessage.Call(p.owner, WM_MEETING_STOP, 0, 0)
-			default:
+			} else {
 				closeMeetingHUD()
 				postMeetingQuit.Call(0)
 			}

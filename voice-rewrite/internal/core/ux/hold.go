@@ -1,9 +1,6 @@
 package ux
 
-import (
-	"errors"
-	"time"
-)
+import "time"
 
 const (
 	// ApplySettle is the pause after focusing the editor and before replacement.
@@ -16,27 +13,3 @@ const (
 	HoldSelectionMoved = "选区所属窗口已变化"
 	ApplyWindowClosed  = "原编辑窗口已关闭"
 )
-
-// HoldEditorReady stops a held-shortcut rewrite before the selection is copied.
-func HoldEditorReady(same bool) error {
-	if same {
-		return nil
-	}
-	return errors.New(HoldWindowChanged)
-}
-
-// HoldCapturedWindow stops when the copied selection belongs to another window.
-func HoldCapturedWindow(matches bool) error {
-	if matches {
-		return nil
-	}
-	return errors.New(HoldSelectionMoved)
-}
-
-// ApplyEditorOpen stops a manual apply when the original editor is gone.
-func ApplyEditorOpen(open bool) error {
-	if open {
-		return nil
-	}
-	return errors.New(ApplyWindowClosed)
-}

@@ -25,7 +25,7 @@ func EditorText(body string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(body, "\r\n", "\n"), "\n", "\r\n")
 }
 
-// ApplyContinuation is the manual apply after ApplyIgnored returned false.
+// ApplyContinuation is the manual apply after the native host checks its input.
 type ApplyContinuation int
 
 const (
@@ -47,12 +47,4 @@ func ContinueApply(busyTaken, editorOpen bool) ApplyContinuation {
 		return ApplyEditorClosed
 	}
 	return ApplyReplace
-}
-
-// ResultWritten refuses a control that stayed empty after the text was set.
-func ResultWritten(length int) error {
-	if length == 0 {
-		return errors.New(UnwrittenCard)
-	}
-	return nil
 }

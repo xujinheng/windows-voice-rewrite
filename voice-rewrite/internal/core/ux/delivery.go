@@ -35,14 +35,6 @@ func DictationInsertReady(text string, keysReleased, windowOK, password func() b
 	return nil
 }
 
-// DictationWindowStillOpen repeats the window check after the clipboard already holds the transcript.
-func DictationWindowStillOpen(windowOK func() bool) error {
-	if !windowOK() {
-		return errors.New(DictationWindowChanged)
-	}
-	return nil
-}
-
 // DictationClipboardRestored wraps a restore error. A nil error stays nil.
 func DictationClipboardRestored(err error) error {
 	if err == nil {
@@ -98,11 +90,6 @@ func DictationInserted(err error) Delivery {
 	}
 	// A nil error means the OS accepted SendInput, not that the editor wrote text.
 	return Delivery{Phase: indicator.Success, SetPhase: true, TraySuccess: true}
-}
-
-// RewriteApplying is the pill shown while a spoken rewrite is pasted.
-func RewriteApplying() Delivery {
-	return Delivery{Phase: indicator.Applying, SetPhase: true}
 }
 
 // RewritePasted is the pill after that paste.

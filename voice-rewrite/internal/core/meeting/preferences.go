@@ -17,21 +17,6 @@ type Preferences struct {
 	Height       int32       `json:"height"`
 }
 
-type CloseChoice int
-
-const (
-	CloseLocal CloseChoice = iota
-	CloseOwner
-)
-
-// ChooseClose quits a demo window. A live meeting asks its owner to stop.
-func ChooseClose(hasOwner bool) CloseChoice {
-	if hasOwner {
-		return CloseOwner
-	}
-	return CloseLocal
-}
-
 func LoadPreferences(path string) (Preferences, error) {
 	p := Preferences{FontSize: 16, Panes: DefaultPaneWeights}
 	data, err := os.ReadFile(path)

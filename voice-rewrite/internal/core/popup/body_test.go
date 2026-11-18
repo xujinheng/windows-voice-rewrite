@@ -19,7 +19,4 @@ func TestEmptyCardStaysDifferentFromAModelFailure(t *testing.T) {
 	if ContinueApply(true, false) != ApplyEditorClosed || ContinueApply(true, true) != ApplyReplace {
 		t.Fatal("editor")
 	}
-	if ResultWritten(0) == nil || ResultWritten(0).Error() != UnwrittenCard || ResultWritten(3) != nil {
-		t.Fatal("written")
-	}
 }

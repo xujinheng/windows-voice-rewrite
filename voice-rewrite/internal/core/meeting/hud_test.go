@@ -100,4 +100,3 @@ func TestHistoryReplyAndExpressionCopy(t *testing.T) {
 		t.Fatal("live caption")
 	}
 }
-
