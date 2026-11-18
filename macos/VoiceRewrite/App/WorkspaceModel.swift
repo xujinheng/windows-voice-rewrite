@@ -2399,7 +2399,16 @@ final class WorkspaceModel: ObservableObject {
                     response?.result?["allowed"]?.boolValue == true)
             }
         }
-        return allowed && voiceEpochSessionID == sessionID && resultGeneration.accepts(token)
+        let current = voiceEpochSessionID == sessionID && resultGeneration.accepts(token)
+        if !allowed && current {
+            // Never leave a pending microphone/ASR/selection/write task stuck
+            // after helper disconnection or a Go authorization rejection.
+            cancelCurrent()
+            recordingStatus = "语音任务验证失败，已安全取消本次处理"
+            interactionStatus = recordingStatus
+            showIndicator(phase: .error, mode: indicatorSnapshot.mode, pending: false)
+        }
+        return allowed && current
     }
 
     // The timer only wakes the Go controller. A late timer from a previous
@@ -2447,6 +2456,13 @@ final class WorkspaceModel: ObservableObject {
                         guard !Task.isCancelled else { return }
                         self?.requestVoiceEpochTimeout(token: token, sessionID: sessionID, stage: stage)
                     }
+                } else {
+                    // A dead helper or a lost timer receipt must not strand
+                    // an indefinitely spinning native task in progress.
+                    self.cancelCurrent()
+                    self.recordingStatus = "共享任务计时响应不可用，已取消本次处理"
+                    self.interactionStatus = self.recordingStatus
+                    self.showIndicator(phase: .error, mode: self.indicatorSnapshot.mode, pending: false)
                 }
             }
         }
