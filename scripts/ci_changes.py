@@ -69,6 +69,12 @@ def classify(paths):
                 scope["windows"] = True
             if "portable-core" in path or "contract" in path:
                 scope["core"] = True
+    # Matched-state UI acceptance requires screenshots from *both* native hosts.
+    # Never schedule its comparison without the corresponding ARM/Intel and
+    # Windows capture jobs, even if the edited source belongs to one host.
+    if scope["ui"]:
+        scope["macos"] = True
+        scope["windows"] = True
     return scope
 
 

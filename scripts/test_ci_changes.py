@@ -41,12 +41,26 @@ class ClassifyTests(unittest.TestCase):
 
     def test_mixed_change(self):
         self.assertEqual(classify(["macos/VoiceRewrite/App/Main.swift", "oneclick/go.mod"]),
-                         {"core": False, "macos": True, "windows": False, "oneclick": True, "ui": True, "direct2d": False})
+                         {"core": False, "macos": True, "windows": True, "oneclick": True, "ui": True, "direct2d": False})
 
     def test_ui_acceptance(self):
         self.assertTrue(classify(["macos/VoiceRewrite/UI/RecordingIndicator.swift"])["ui"])
         self.assertTrue(classify(["voice-rewrite/settings_windows.go"])["ui"])
         self.assertFalse(classify(["macos/Modules/Microphone/Recorder.swift"])["ui"])
+
+    def test_windows_ui_requires_both_platforms(self):
+        routed = classify(["voice-rewrite/settings_windows.go"])
+        self.assertTrue(routed["ui"])
+        self.assertTrue(routed["windows"])
+        self.assertTrue(routed["macos"])
+        self.assertFalse(routed["core"])
+
+    def test_macos_ui_requires_windows_capture(self):
+        routed = classify(["macos/VoiceRewrite/UI/RecordingIndicator.swift"])
+        self.assertTrue(routed["ui"])
+        self.assertTrue(routed["macos"])
+        self.assertTrue(routed["windows"])
+        self.assertFalse(routed["oneclick"])
 
     def test_direct2d_acceptance(self):
         self.assertTrue(classify(["voice-rewrite/popup_layout.go"])["direct2d"])
