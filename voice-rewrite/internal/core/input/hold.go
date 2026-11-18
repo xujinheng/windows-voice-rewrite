@@ -148,8 +148,6 @@ func RewriteHotkeyAction(paused, busy, recording, holdMode bool) RewriteHotkey {
 const (
 	// WindowsSideHold is how long Mouse4 or Mouse5 must stay down before recording starts.
 	WindowsSideHold = 250 * time.Millisecond
-	// MacSideHold matches the Windows 250ms threshold so button navigation feels the same.
-	MacSideHold = 250 * time.Millisecond
 )
 
 // Hold is one physical button's press, hold, and release.

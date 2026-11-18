@@ -77,3 +77,16 @@ func TestDictationDeliveryKeepsTheCardAndPillPair(t *testing.T) {
 		t.Fatalf("missed %+v", missed)
 	}
 }
+
+func TestDictationDeliveryUncertaintyIsVisibleButNeverRetried(t *testing.T) {
+	// A paste/restore error may happen after SendInput fired. The result card
+	// must be shown without showing a successful tray indication or retry path.
+	failed := DictationInserted(errors.New("paste may have been sent"))
+	if failed != (Delivery{ShowCard: true, Title: DictationCopyManually, Phase: indicator.Fallback, SetPhase: true}) {
+		t.Fatalf("uncertain paste was reported as delivered: %+v", failed)
+	}
+	sent := DictationInserted(nil)
+	if sent != (Delivery{Phase: indicator.Success, SetPhase: true, TraySuccess: true}) {
+		t.Fatalf("accepted SendInput must keep its existing outcome: %+v", sent)
+	}
+}
