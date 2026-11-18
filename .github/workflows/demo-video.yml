@@ -1,10 +1,16 @@
 name: README demo video
 
 on:
+  # Direct human edits to published screenshots must still regenerate the video.
+  # Automated screenshot commits use GITHUB_TOKEN, so they are handled by
+  # workflow_run instead of causing a second push-triggered render.
+  push:
+    branches: [main]
+    paths:
+      - 'docs/ui/*.png'
   workflow_dispatch:
-  # One owner for automatic rendering: a successful screenshot workflow.
-  # Screenshot commits use GITHUB_TOKEN, so listening for a docs/ui push
-  # misses them and can duplicate a regular main push.
+  # Source/UI changes: a successful screenshot workflow owns rendering.
+  # Direct edits to docs/ui: the dedicated push event handles them.
   workflow_run:
     workflows: ['Windows UI screenshots']
     types: [completed]
