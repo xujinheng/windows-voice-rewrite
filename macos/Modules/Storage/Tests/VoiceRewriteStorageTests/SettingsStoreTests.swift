@@ -283,7 +283,7 @@ final class SettingsStoreTests: XCTestCase {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
         object["max_record_seconds"] = 181
         try JSONSerialization.data(withJSONObject: object).write(to: file)
-        XCTAssertEqual(try store.load().maxRecordSeconds, 60)
+        XCTAssertEqual(try store.load().maxRecordSeconds, ContractLimits.defaultRecordSeconds)
 
         settings = MacSettings.defaults
         settings.llmBaseURL = "https://example.invalid/v1?key=leak"
