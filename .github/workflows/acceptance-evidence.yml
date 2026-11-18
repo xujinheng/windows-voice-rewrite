@@ -11,7 +11,15 @@ on:
       - 'voice-rewrite/settings*.go'
       - 'voice-rewrite/handy_status_windows.go'
       - 'voice-rewrite/popup_windows.go'
-      - 'macos/VoiceRewrite/**'
+      - 'voice-rewrite/meeting*.go'
+      - 'voice-rewrite/internal/core/meeting/**'
+      - 'voice-rewrite/internal/core/indicator/**'
+      - 'voice-rewrite/internal/core/settingsform/**'
+      - 'macos/VoiceRewrite/UI/**'
+      - 'macos/VoiceRewrite/App/**'
+      - 'macos/VoiceRewrite/Tests/**'
+      - 'macos/VoiceRewrite.xcodeproj/**'
+      - 'macos/Modules/Interaction/**'
   push:
     branches: [main]
     paths:
@@ -24,7 +32,15 @@ on:
       - 'voice-rewrite/settings*.go'
       - 'voice-rewrite/handy_status_windows.go'
       - 'voice-rewrite/popup_windows.go'
-      - 'macos/VoiceRewrite/**'
+      - 'voice-rewrite/meeting*.go'
+      - 'voice-rewrite/internal/core/meeting/**'
+      - 'voice-rewrite/internal/core/indicator/**'
+      - 'voice-rewrite/internal/core/settingsform/**'
+      - 'macos/VoiceRewrite/UI/**'
+      - 'macos/VoiceRewrite/App/**'
+      - 'macos/VoiceRewrite/Tests/**'
+      - 'macos/VoiceRewrite.xcodeproj/**'
+      - 'macos/Modules/Interaction/**'
   workflow_dispatch:
 permissions:
   contents: read
@@ -48,17 +64,16 @@ jobs:
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
-      - name: Test native Meeting Win32 controls and result-card close actions
+      - name: Test native popup close actions (Meeting E2E runs in screenshot suite)
         working-directory: voice-rewrite
         shell: pwsh
         env:
-          VOICEREWRITE_MEETING_E2E: '1'
           VOICE_REWRITE_NATIVE_POPUP_TEST: '1'
         run: |
           New-Item -Force -ItemType Directory ../acceptance-output/logs | Out-Null
-          go test -count=1 -timeout 4m -run '^(TestMeetingWindowsE2E|TestNativePopupPaintAndClose)$' -v . *>&1 |
+          go test -count=1 -timeout 4m -run '^TestNativePopupPaintAndClose$' -v . *>&1 |
             Tee-Object ../acceptance-output/logs/windows-meeting-tests.txt
-          if ($LASTEXITCODE -ne 0) { throw 'native Meeting E2E failed' }
+          if ($LASTEXITCODE -ne 0) { throw 'native popup E2E failed' }
       - name: Build production Windows GUI
         working-directory: voice-rewrite
         shell: pwsh
@@ -144,14 +159,6 @@ jobs:
           }
           file "$app/Contents/MacOS/VoiceRewrite" "$app/Contents/MacOS/voicebridge" |
             tee "acceptance-output/logs/$VOICEREWRITE_ACCEPTANCE_PLATFORM-arch.txt"
-      - name: Exercise native Interaction clipboard, focus and shortcut adapters
-        shell: bash
-        env:
-          VOICEREWRITE_ACCEPTANCE_PLATFORM: ${{ matrix.platform }}
-        run: |
-          set -o pipefail
-          (cd macos/Modules/Interaction && swift test) 2>&1 |
-            tee "acceptance-output/logs/$VOICEREWRITE_ACCEPTANCE_PLATFORM-interaction.txt"
       - name: Preserve screenshots and logs even on failure
         if: always()
         uses: actions/upload-artifact@v4
