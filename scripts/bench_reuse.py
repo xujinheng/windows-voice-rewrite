@@ -287,7 +287,7 @@ def main() -> int:
             removed = catalog_keys(old_catalog) - catalog_keys(catalog)
             if removed:
                 errors.append("removed journey decisions without review: " + ", ".join(sorted(removed)))
-        old_report = run(old_snap, old_catalog if old_text is not None else catalog)
+        old_report = run(old_snap, catalog)
         errors.extend(compare(current, old_report))
     if args.json_output:
         Path(args.json_output).write_text(
