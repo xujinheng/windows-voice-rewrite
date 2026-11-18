@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'voice-rewrite/meeting*.go'
+      - 'voice-rewrite/cmd/voicebridge/**'
+      - 'voice-rewrite/internal/contract/**'
       - 'voice-rewrite/internal/core/audio/**'
       - 'voice-rewrite/internal/core/config/**'
       - 'voice-rewrite/internal/core/meeting/**'
@@ -20,10 +22,13 @@ on:
       - 'voice-rewrite/go.sum'
       - 'scripts/test-meeting-ui.ps1'
       - '.github/workflows/meeting-ui.yml'
+      - '.github/workflows/acceptance-evidence.yml'
   push:
     branches: [main, meeting-preview]
     paths:
       - 'voice-rewrite/meeting*.go'
+      - 'voice-rewrite/cmd/voicebridge/**'
+      - 'voice-rewrite/internal/contract/**'
       - 'voice-rewrite/internal/core/audio/**'
       - 'voice-rewrite/internal/core/config/**'
       - 'voice-rewrite/internal/core/meeting/**'
@@ -40,6 +45,7 @@ on:
       - 'voice-rewrite/go.sum'
       - 'scripts/test-meeting-ui.ps1'
       - '.github/workflows/meeting-ui.yml'
+      - '.github/workflows/acceptance-evidence.yml'
   workflow_dispatch:
 
 permissions:

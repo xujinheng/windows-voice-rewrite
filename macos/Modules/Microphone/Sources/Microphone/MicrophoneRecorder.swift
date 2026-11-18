@@ -36,6 +36,25 @@ public protocol VoiceRecordingDevice: AnyObject {
 /// The returned Data is headerless, 16,000 Hz, mono, signed little-endian PCM16,
 /// suitable for base64 encoding as `transcribe.pcm_base64` by the host integration.
 /// Lifecycle state belongs to the main actor; blocking CoreAudio calls run on a worker.
+/// Keeps native CoreAudio preparation owned by the specific start attempt.
+/// Cancellation invalidates recordingID but must not free this gate while a
+/// background AVAudioEngine start or its queued cleanup is still in flight.
+struct NativePreparationGate {
+    private(set) var owner: UUID?
+    var isBusy: Bool { owner != nil }
+
+    mutating func begin(_ attempt: UUID) -> Bool {
+        guard owner == nil else { return false }
+        owner = attempt
+        return true
+    }
+
+    mutating func finish(_ attempt: UUID) {
+        guard owner == attempt else { return }
+        owner = nil
+    }
+}
+
 @MainActor
 public final class MicrophoneRecorder: VoiceRecordingDevice {
     private enum State {
@@ -52,7 +71,7 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
     private var recordingID: UUID?
     // Cancellation must not overlap a new native engine start with an
     // abandoned start still returning from the CoreAudio lifecycle queue.
-    private var preparationInFlight = false
+    private var nativePreparation = NativePreparationGate()
     private var recordingDeviceUID = ""
     private var engine: AVAudioEngine?
     private var pipeline: CapturePipeline?
@@ -170,7 +189,7 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
     }
 
     public func start(deviceUID: String = "", maximumSeconds: Int = 60) async throws {
-        guard case .idle = state, !preparationInFlight else {
+        guard case .idle = state, !nativePreparation.isBusy else {
             throw MicrophoneError.alreadyRecording
         }
         // Host configuration owns the requested limit; native PCM bounds
@@ -187,7 +206,9 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
             case .denied, .notDetermined: throw MicrophoneError.permissionDenied
             case .restricted: throw MicrophoneError.permissionRestricted
             }
-            preparationInFlight = true
+            guard nativePreparation.begin(attempt) else {
+                throw MicrophoneError.alreadyRecording
+            }
             // AVAudioEngine inputNode, AudioUnitSetProperty, installTap and
             // start() can synchronously wait on a missing/reconfiguring driver.
             // They must not run on the key/indicator AppKit event loop.
@@ -210,10 +231,10 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
             guard recordingID == attempt else {
                 // The cleanup must be queued *before* admitting a fresh start.
                 Self.cleanupEngineAsync(instance, hasTap: true)
-                preparationInFlight = false
+                nativePreparation.finish(attempt)
                 throw MicrophoneError.cancelled
             }
-            preparationInFlight = false
+            nativePreparation.finish(attempt)
             engine = instance
             hasTap = true
             pipeline = processor
@@ -256,7 +277,7 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
                 self?.handleFailure(id: id, error: .durationExceeded)
             }
         } catch {
-            preparationInFlight = false
+            nativePreparation.finish(attempt)
             if recordingID == attempt {
                 teardownEngine()
                 pipeline?.cancel()

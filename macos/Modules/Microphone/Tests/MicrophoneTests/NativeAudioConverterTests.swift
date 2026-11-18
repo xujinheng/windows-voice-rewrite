@@ -57,6 +57,29 @@ final class NativeAudioConverterTests: XCTestCase {
                             frameSizes: Array(repeating: 441, count: 100))
     }
 
+    func testNativeStartOwnershipSurvivesLateCancelledAttempt() {
+        var gate = NativePreparationGate()
+        let waitingForPermission = UUID()
+        let preparing = UUID()
+        let next = UUID()
+
+        XCTAssertTrue(gate.begin(preparing))
+        // The cancelled old request resumes after the new request has
+        // already reserved native CoreAudio startup.
+        gate.finish(waitingForPermission)
+        XCTAssertEqual(gate.owner, preparing)
+        XCTAssertFalse(gate.begin(next), "A late result cannot admit a parallel native startup")
+
+        // Once preparation has finished (or queued stale-engine cleanup),
+        // the next attempt can safely queue behind that cleanup.
+        gate.finish(preparing)
+        XCTAssertTrue(gate.begin(next))
+        gate.finish(preparing)
+        XCTAssertEqual(gate.owner, next, "An old completion cannot clear the new owner")
+        gate.finish(next)
+        XCTAssertFalse(gate.isBusy)
+    }
+
     func testDisconnectedExplicitMicrophoneIsNotSilentlyReplaced() {
         let devices = [
             MicrophoneInputDevice(id: "mic-a", name: "Desk microphone"),

@@ -2969,6 +2969,13 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    #if DEBUG
+    func pendingRecordingIndicatorForCI() -> (count: UInt64, panel: NSPanel?) {
+        (recordingIndicator.pendingRecordingPresentationCount,
+         recordingIndicator.panelForCI)
+    }
+    #endif
+
     private func showIndicator(phase: IndicatorPhase, mode: String, pending: Bool) {
         let now = Date()
         let timing = indicatorTiming(wasVisible: indicatorSnapshot.visible, wasPending: indicatorSnapshot.pending, wasPhase: indicatorSnapshot.phase.rawValue, pending: pending, phase: phase.rawValue, now: now, started: indicatorSnapshot.started, changed: indicatorSnapshot.changed)

@@ -28,6 +28,13 @@ final class RecordingIndicatorController {
     private var onAutoDismiss: () -> Void = {}
     private var smoothed = 0.0
 
+    #if DEBUG
+    // Test evidence must belong to the *new* pending recording presentation,
+    // rather than any status-bar panel left visible by the previous cycle.
+    private(set) var pendingRecordingPresentationCount: UInt64 = 0
+    var panelForCI: NSPanel? { panel }
+    #endif
+
     /// Allocate the non-activating AppKit/SwiftUI panel once at launch.
     /// A cold NSHostingView layout must not delay the first Hold indicator.
     func prepare() { ensurePanel() }
@@ -47,6 +54,11 @@ final class RecordingIndicatorController {
         renderFrame()
         startTimer()
         panel?.orderFrontRegardless()
+        #if DEBUG
+        if snapshot.phase == .recording && snapshot.pending {
+            pendingRecordingPresentationCount &+= 1
+        }
+        #endif
     }
 
     func dismiss() {

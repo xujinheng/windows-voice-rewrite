@@ -427,6 +427,7 @@ final class BridgeClientTests: XCTestCase {
         var insertionTimes: [Double] = []
         let text = "CI latency test."
         for cycle in 0..<loopCount {
+            let previousPendingCount = model.pendingRecordingIndicatorForCI().count
             let onset = ProcessInfo.processInfo.systemUptime
             // Clock starts BEFORE MacModifierHoldDriver schedules the hold
             // activation timer. The scheduler/threshold are genuinely exercised.
@@ -435,11 +436,13 @@ final class BridgeClientTests: XCTestCase {
                 activationCount == cycle + 1
             }
             activationTimes.append((ProcessInfo.processInfo.systemUptime - onset) * 1000)
-            let panel = NSApp.windows.first {
-                $0 is NSPanel && $0.isVisible && $0.level == .statusBar
-            }
-            guard let panel else {
-                XCTFail("No visible user recording indicator on key-down")
+            let presentation = model.pendingRecordingIndicatorForCI()
+            // A previously visible status-bar panel is not evidence of a
+            // pending recording presentation for this key press.
+            guard presentation.count == previousPendingCount + 1,
+                  let panel = presentation.panel, panel.isVisible,
+                  panel.level == .statusBar else {
+                XCTFail("No new pending recording indicator for cycle \(cycle)")
                 throw PerformanceFixtureFailure.timeout
             }
             panel.contentView?.layoutSubtreeIfNeeded()
