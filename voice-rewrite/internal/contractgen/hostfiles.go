@@ -685,9 +685,17 @@ func emitSettings() (string, error) {
 			b.WriteString("                            else if selectedPage == ")
 		}
 		b.WriteString(strconv.Quote(page.ID) + " {\n")
-		b.WriteString("                                Text(" + strconv.Quote(page.Section) + ").font(.headline)\n")
+		if page.ID == "speech" || page.ID == "writing" {
+			action, ident := "model.checkASRService()", "probe_asr"
+			if page.ID == "writing" {
+				action, ident = "model.checkLLMService()", "probe_llm"
+			}
+			b.WriteString("                                HStack {\n                                    Text(" + strconv.Quote(page.Section) + ").font(.headline)\n                                    Spacer()\n                                    Button(\"测试连接\") { " + action + " }\n                                        .disabled(model.isCheckingServices)\n                                        .accessibilityIdentifier(" + strconv.Quote(ident) + ")\n                                }\n")
+		} else {
+			b.WriteString("                                Text(" + strconv.Quote(page.Section) + ").font(.headline)\n")
+		}
 		for _, control := range contract.PageControls(page.ID, contract.MacOS) {
-			if strings.HasPrefix(control.ID, "capture_") || control.ID == "discover_asr_models" || control.ID == "discover_llm_models" || control.ID == "max_record_seconds" || control.ID == "record_note" || control.ID == "meeting_asr_mode" || control.ID == "system_prompt" || control.ID == "max_response_tokens" || control.ID == "max_selected_characters" || control.ID == "selection_copy_attempts" || control.ID == "selection_copy_timeout_ms" {
+			if strings.HasPrefix(control.ID, "capture_") || control.ID == "probe_asr" || control.ID == "probe_llm" || control.ID == "discover_asr_models" || control.ID == "discover_llm_models" || control.ID == "max_record_seconds" || control.ID == "record_note" || control.ID == "meeting_asr_mode" || control.ID == "system_prompt" || control.ID == "max_response_tokens" || control.ID == "max_selected_characters" || control.ID == "selection_copy_attempts" || control.ID == "selection_copy_timeout_ms" {
 				continue
 			}
 			if control.Kind == contract.Shortcut {
@@ -787,7 +795,7 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 			line = "                Text(\"System Prompt\").font(.subheadline)\n                TextEditor(text: $model.settings.systemPrompt)\n                    .frame(minHeight: 96)\n                    " + id + "\n"
 		}
 		if control.ID == "asr_model" || control.ID == "text_model" {
-			line += renderModelDiscovery(control.ID)
+			line = renderModelDiscovery(control.ID)
 		}
 		return line, nil
 	case contract.Choice:
@@ -874,31 +882,45 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 
 // These choices are generated beside the canonical settings controls rather
 // than maintained as a separate Swift form or duplicate UI state machine.
+// Put model discovery in the model row, matching the native Windows form.
 func renderModelDiscovery(id string) string {
-	operation, models, busy, status, setting, prefix := "", "", "", "", "", ""
+	operation, models, busy, status, setting, fieldID, prefix := "", "", "", "", "", "", ""
 	switch id {
 	case "asr_model":
-		operation, models, busy, status, setting, prefix = "transcribe", "asrAvailableModels", "isDiscoveringASRModels", "asrModelDiscoveryStatus", "asrModel", "asr"
+		operation, models, busy, status, setting, fieldID, prefix = "transcribe", "asrAvailableModels", "isDiscoveringASRModels", "asrModelDiscoveryStatus", "asrModel", "asr_model", "asr"
 	case "text_model":
-		operation, models, busy, status, setting, prefix = "selectedTask", "llmAvailableModels", "isDiscoveringLLMModels", "llmModelDiscoveryStatus", "textModel", "llm"
+		operation, models, busy, status, setting, fieldID, prefix = "selectedTask", "llmAvailableModels", "isDiscoveringLLMModels", "llmModelDiscoveryStatus", "textModel", "text_model", "llm"
 	}
-	return fmt.Sprintf(`                HStack {
-                    Button("发现模型") { model.discoverModels(for: .%s) }
-                        .disabled(model.%s)
-                        .accessibilityIdentifier("discover_%s_models")
-                    Menu("选择发现的模型") {
-                        ForEach(model.%s, id: \.self) { id in
-                            Button(id) { model.settings.%s = id }
+	return fmt.Sprintf(`                HStack(spacing: 12) {
+                    Text("模型 ID")
+                        .font(.system(size: 13))
+                        .frame(width: 112, alignment: .leading)
+                    HStack(spacing: 6) {
+                        TextField("模型 ID", text: $model.settings.%s)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(height: 32)
+                            .accessibilityIdentifier("%s")
+                        Button("发现模型") { model.discoverModels(for: .%s) }
+                            .controlSize(.small)
+                            .disabled(model.%s)
+                            .accessibilityIdentifier("discover_%s_models")
+                        Menu {
+                            ForEach(model.%s, id: \.self) { id in
+                                Button(id) { model.settings.%s = id }
+                            }
+                        } label: {
+                            Image(systemName: "chevron.down").frame(width: 20)
                         }
+                        .disabled(model.%s.isEmpty)
+                        .accessibilityLabel("选择发现的模型")
+                        .accessibilityIdentifier("select_%s_model")
                     }
-                    .disabled(model.%s.isEmpty)
-                    .accessibilityIdentifier("select_%s_model")
                 }
                 if !model.%s.isEmpty {
                     Text(model.%s).font(.footnote).foregroundStyle(.secondary)
                         .accessibilityIdentifier("%s_models_status")
                 }
-`, operation, busy, prefix, models, setting, models, prefix, status, status, prefix)
+`, setting, fieldID, operation, busy, prefix, models, setting, models, prefix, status, status, prefix)
 }
 
 func requiredBinding(control contract.Control, bindings map[string]string) (string, error) {

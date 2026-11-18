@@ -101,7 +101,13 @@ struct SettingsView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
                             if selectedPage == "speech" {
-                                Text("连接配置").font(.headline)
+                                HStack {
+                                    Text("连接配置").font(.headline)
+                                    Spacer()
+                                    Button("测试连接") { model.checkASRService() }
+                                        .disabled(model.isCheckingServices)
+                                        .accessibilityIdentifier("probe_asr")
+                                }
                 HStack(spacing: 12) {
                     Text("API 地址")
                         .font(.system(size: 13))
@@ -115,26 +121,30 @@ struct SettingsView: View {
                     Text("模型 ID")
                         .font(.system(size: 13))
                         .frame(width: 112, alignment: .leading)
-                    TextField("模型 ID", text: $model.settings.asrModel)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(height: 32)
-                        .accessibilityIdentifier("asr_model")
-                }
-                HStack {
-                    Button("发现模型") { model.discoverModels(for: .transcribe) }
-                        .disabled(model.isDiscoveringASRModels)
-                        .accessibilityIdentifier("discover_asr_models")
-                    Menu("选择发现的模型") {
-                        ForEach(model.asrAvailableModels, id: \.self) { id in
-                            Button(id) { model.settings.asrModel = id }
+                    HStack(spacing: 6) {
+                        TextField("模型 ID", text: $model.settings.textModel)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(height: 32)
+                            .accessibilityIdentifier("text_model")
+                        Button("发现模型") { model.discoverModels(for: .selectedTask) }
+                            .controlSize(.small)
+                            .disabled(model.isDiscoveringLLMModels)
+                            .accessibilityIdentifier("discover_llm_models")
+                        Menu {
+                            ForEach(model.llmAvailableModels, id: \.self) { id in
+                                Button(id) { model.settings.textModel = id }
+                            }
+                        } label: {
+                            Image(systemName: "chevron.down").frame(width: 20)
                         }
+                        .disabled(model.llmAvailableModels.isEmpty)
+                        .accessibilityLabel("选择发现的模型")
+                        .accessibilityIdentifier("select_llm_model")
                     }
-                    .disabled(model.asrAvailableModels.isEmpty)
-                    .accessibilityIdentifier("select_asr_model")
                 }
-                if !model.asrModelDiscoveryStatus.isEmpty {
-                    Text(model.asrModelDiscoveryStatus).font(.footnote).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("asr_models_status")
+                if !model.llmModelDiscoveryStatus.isEmpty {
+                    Text(model.llmModelDiscoveryStatus).font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("llm_models_status")
                 }
                 HStack(spacing: 12) {
                     Text("API Key")
@@ -146,15 +156,18 @@ struct SettingsView: View {
                         .accessibilityLabel("API Key")
                         .accessibilityIdentifier("asr_api_key")
                 }
-                Button("测试连接") { model.checkASRService() }
-                    .disabled(model.isCheckingServices)
-                    .accessibilityIdentifier("probe_asr")
                 Text(model.asrProbeStatus).font(.footnote).foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .accessibilityIdentifier("probe_asr_status")
                             } 
                             else if selectedPage == "writing" {
-                                Text("模型配置").font(.headline)
+                                HStack {
+                                    Text("模型配置").font(.headline)
+                                    Spacer()
+                                    Button("测试连接") { model.checkLLMService() }
+                                        .disabled(model.isCheckingServices)
+                                        .accessibilityIdentifier("probe_llm")
+                                }
                 HStack(spacing: 12) {
                     Text("API 地址")
                         .font(.system(size: 13))
@@ -199,9 +212,6 @@ struct SettingsView: View {
                         .accessibilityLabel("API Key")
                         .accessibilityIdentifier("llm_api_key")
                 }
-                Button("测试连接") { model.checkLLMService() }
-                    .disabled(model.isCheckingServices)
-                    .accessibilityIdentifier("probe_llm")
                 Text(model.llmProbeStatus).font(.footnote).foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .accessibilityIdentifier("probe_llm_status")
