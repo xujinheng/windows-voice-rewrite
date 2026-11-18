@@ -345,8 +345,10 @@ final class HostStatusTests: XCTestCase {
         let phase = indicatorTiming(wasVisible: true, wasPending: true, wasPhase: 1, pending: true, phase: 2, now: now, started: earlier, changed: earlier)
         XCTAssertEqual(phase.started, earlier)
         XCTAssertEqual(phase.changed, now)
+        // Re-arming a new pending capture while the old pill remains visible
+        // is a new recording and must not inherit the old elapsed seconds.
         let pending = indicatorTiming(wasVisible: true, wasPending: false, wasPhase: 1, pending: true, phase: 1, now: now, started: earlier, changed: earlier)
-        XCTAssertEqual(pending.started, earlier)
+        XCTAssertEqual(pending.started, now)
         XCTAssertEqual(pending.changed, now)
     }
 
