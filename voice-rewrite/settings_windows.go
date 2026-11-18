@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -66,6 +67,8 @@ const (
 	uxWSTabStop               = 0x00010000
 	uxESAutoScroll            = 0x0080
 	uxESPassword              = 0x0020
+	uxESNumber                = 0x2000
+	uxWSBorder                = 0x00800000
 	uxWSCaption               = 0x00C00000
 	uxWSSysMenu               = 0x00080000
 	uxWSMinimizeBox           = 0x00020000
@@ -89,6 +92,7 @@ type uxSettings struct {
 	capturingShortcut                       uintptr
 	captureButtons                          [2]uintptr
 	microphone                              uintptr
+	recordDuration                           uintptr
 	microphoneIDs                           []int
 	hint                                    uintptr
 	font, titleFont, sectionFont, mutedFont uintptr
@@ -647,6 +651,12 @@ func (p *uxSettings) save() error {
 		return err
 	}
 	cfg.HotkeyRecord, cfg.DictationHotkey = newRewrite, newDictation
+	seconds, err := uxRecordingSeconds(uxWinText(p.recordDuration))
+	if err != nil {
+		return err
+	}
+	changedDuration := cfg.MaxRecordSeconds != seconds
+	cfg.MaxRecordSeconds = seconds
 	selected, _, _ := procSendMessage.Call(p.microphone, uxCBGetCurSel, 0, 0)
 	deviceID, changedAudioDevice := coreconfig.ChooseAudioDevice(cfg.AudioDeviceID, int(selected), p.microphone != 0 && selected != ^uintptr(0), p.microphoneIDs)
 	cfg.AudioDeviceID = deviceID
@@ -654,7 +664,7 @@ func (p *uxSettings) save() error {
 		return err
 	}
 	p.app.cfg = cfg
-	uxSetText(p.hint, ux.WindowsSaveNotice(ux.WindowsSaveRestarts(changedShortcut, changedAudioDevice)))
+	uxSetText(p.hint, ux.WindowsSaveNotice(ux.WindowsSaveRestarts(changedShortcut || changedDuration, changedAudioDevice)))
 	p.app.logger.Print("settings updated: connection configuration saved (endpoint/key values redacted)")
 	return nil
 }
@@ -952,6 +962,11 @@ func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t stri
 		p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, list.X, list.Y, list.W, list.H, uxMicrophoneInput, false)
 		p.populateMicrophones(app.cfg.AudioDeviceID)
 		resultStyleNativeEdit(p.microphone, p.palette.dark)
+	case "max_record_seconds":
+		label := settingsform.FieldLabel(row)
+		field := settingsform.FieldEdit(row)
+		makeOne("STATIC", control.Label+"（秒）", stat, label.X, label.Y, label.W, label.H, 0, false)
+		p.recordDuration = makeOne("EDIT", strconv.Itoa(app.cfg.MaxRecordSeconds), edit|uxESNumber|uxWSBorder, field.X, field.Y, 130, field.H, 9152, false)
 	case "input_note_windows":
 		note := settingsform.WindowsInputNote()
 		info := makeOne("STATIC", control.Label, stat, note.X, note.Y, note.W, note.H, 0, false)
