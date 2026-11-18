@@ -92,7 +92,7 @@ type uxSettings struct {
 	capturingShortcut                       uintptr
 	captureButtons                          [2]uintptr
 	microphone                              uintptr
-	recordDuration                           uintptr
+	recordDuration                          uintptr
 	microphoneIDs                           []int
 	hint                                    uintptr
 	font, titleFont, sectionFont, mutedFont uintptr
