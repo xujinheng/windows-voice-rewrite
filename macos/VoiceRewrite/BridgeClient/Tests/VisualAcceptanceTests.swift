@@ -115,14 +115,22 @@ final class VisualAcceptanceTests: XCTestCase {
 
         let text = "这是 VoiceRewrite 的真实结果卡片。\n\n使用本地模型可以完成：\n• 改写与润色\n• 翻译与总结\n• 对选中文本提问\n\n所有内容均为视觉验收用的固定示例文字。"
         for theme in ["light", "dark"] {
-            let card = ResultCardActionSession(text: text)
-            let height = CGFloat(ResultCardMetrics.height(unicodeScalars: text.unicodeScalars.count))
-            try store("result.copy", fixture: "result-v1", theme: theme,
-                      width: ResultCardMetrics.width, height: height,
-                      content: ResultCardView(title: "AI 回答", session: card,
+            for editable in [false, true] {
+                // An inert authorized action exercises the real Apply/Copy
+                // layout, but never pastes into a real editor in CI.
+                let applyAction: ResultCardApplyAction? = editable
+                    ? ResultCardApplyAction(isBusy: { false }, perform: {}, cancel: {})
+                    : nil
+                let card = ResultCardActionSession(text: text, applyAction: applyAction)
+                let height = CGFloat(ResultCardMetrics.height(unicodeScalars: text.unicodeScalars.count))
+                try store(editable ? "result.apply" : "result.copy",
+                          fixture: editable ? "result-apply-v1" : "result-v1", theme: theme,
                           width: ResultCardMetrics.width, height: height,
-                          onCopy: {}, onApply: {}, onClose: {})
-                      .environment(\.colorScheme, theme == "dark" ? .dark : .light))
+                          content: ResultCardView(title: editable ? "AI 改写结果" : "AI 回答",
+                              session: card, width: ResultCardMetrics.width, height: height,
+                              onCopy: {}, onApply: {}, onClose: {})
+                              .environment(\.colorScheme, theme == "dark" ? .dark : .light))
+            }
         }
 
         // The empty state is not a substitute for Windows's populated demo.
@@ -180,6 +188,6 @@ final class VisualAcceptanceTests: XCTestCase {
         let manifest = Manifest(platform: platform, captures: captures)
         try JSONEncoder().encode(manifest).write(
             to: directory.appendingPathComponent("manifest.json"), options: .atomic)
-        XCTAssertEqual(captures.count, 15)
+        XCTAssertEqual(captures.count, 17)
     }
 }

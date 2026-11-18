@@ -23,6 +23,8 @@ REQUIRED_CAPTURE_STATES = (
     ("pill.success-event-sent", "synthetic-dictation-v1", "dark"),
     ("result.copy", "result-v1", "light"),
     ("result.copy", "result-v1", "dark"),
+    ("result.apply", "result-apply-v1", "light"),
+    ("result.apply", "result-apply-v1", "dark"),
     ("meeting.full", "populated-demo-v1", "light"),
     ("meeting.focus", "populated-demo-v1", "light"),
     ("meeting.expanded", "populated-demo-v1", "light"),

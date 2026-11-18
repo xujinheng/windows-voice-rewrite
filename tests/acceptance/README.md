@@ -15,9 +15,9 @@ Every image is recorded with `state`, `fixture`, `theme`, `locale`, and `scale`.
 
 The initial capture set includes:
 * Windows — three settings pages; preview, recording, processing, error and event-sent pill; copy-only result (light/dark); real Win32 Meeting demo full/focus/expanded/large text.
-* macOS ARM and Intel — all three settings pages (at the same 860×530 viewport as the actual settings windows), the same five pill phases, copy-only result (light/dark), and populated Go Core offline Meeting full/focus/expanded/large-type views. Each architecture also captures an intentionally **unpaired** empty Meeting reader.
-* The CI report requires **14 specific matched states per Mac architecture, 28 pairs total**. Incomplete or mismatched manifests fail the evidence job; matched states remain **review-only** and do not prove visual parity.
-* **Not covered by the synthetic screenshots** — result-card manual apply, live audio and third-party editor delivery, native permission recovery and signed installation. Windows Meeting E2E exercises buttons, pane drags, font and scroll state; Swift Interaction tests exercise native clipboard and input decisions, not physical third-party insertion.
+* macOS ARM and Intel — all three settings pages (at the same 860×530 viewport as the actual settings windows), the same five pill phases, copy-only and manually applicable result cards (light/dark, with a synthetic non-writing Apply action), and populated Go Core offline Meeting full/focus/expanded/large-type views. Each architecture also captures an intentionally **unpaired** empty Meeting reader.
+* The CI report requires **16 specific matched states per Mac architecture, 32 pairs total**. Incomplete or mismatched manifests fail the evidence job; matched states remain **review-only** and do not prove visual parity.
+* **Not covered by the synthetic screenshots** — actual result-card manual replacement into a third-party editor, live audio and third-party editor delivery, native permission recovery and signed installation. Windows Meeting E2E exercises buttons, pane drags, font and scroll state; Swift Interaction tests exercise native clipboard and input decisions, not physical third-party insertion.
 
 ## Release-gate matrix (#73)
 
