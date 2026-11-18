@@ -1,7 +1,7 @@
 # VoiceRewrite macOS: Go-first headless host
 
 This is a **minimal menu-bar host**, not a second SwiftUI business application.
-The existing Go `cmd/voicebridge` owns ASR, LLM and result-route decisions.
+The existing Go `cmd/voicebridge` owns config validation, ASR, LLM, result-route decisions and the one-time shared Go indicator presentation profile.
 Swift contains only Quartz keyboard/side-button input, AVAudioEngine capture,
 Accessibility selection, focus-checked paste, a native NSStatusItem menu icon and
 a non-activating AppKit recording pill (232×50, expanding to 252×50).
@@ -37,7 +37,7 @@ sent, **not** confirmed insertion.
 ## Scope and validation
 
 No settings GUI, Meeting, history panel or result cards. This host reuses the
-Go `transcribe` and `selected_voice_task` operations; it does not introduce
+Go `host_profile`, `transcribe` and `selected_voice_task` operations; it does not introduce
 another Go task reducer or duplicate portable ASR/LLM logic.
 
 CI compilation is not physical end-to-end acceptance. Validate both modifier

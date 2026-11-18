@@ -8,7 +8,7 @@ enum PillAppearance {
 
 @MainActor
 final class RecordingPill {
-    private let view = PillSurface(frame: NSRect(x: 0, y: 0, width: 232, height: 50))
+    private let view = PillSurface(frame: .zero)
     private var panel: NSPanel?
     private var timer: Timer?
     private var terminalAt: Date?
@@ -17,6 +17,11 @@ final class RecordingPill {
     var onCancel: (() -> Void)?
 
     var isVisible: Bool { panel?.isVisible == true }
+
+    func configure(_ spec: PillSpec) {
+        view.spec = spec
+        if isVisible { reposition(); view.needsDisplay = true }
+    }
 
     func prepare() {
         guard panel == nil else { return }
@@ -89,13 +94,14 @@ final class RecordingPill {
 
     private func tick() {
         guard isVisible else { dismiss(); return }
-        if let terminalAt, Date().timeIntervalSince(terminalAt) >= 1.75 {
+        if let terminalAt, let spec = view.spec,
+           Date().timeIntervalSince(terminalAt) * 1000 >= Double(spec.terminalMS) {
             dismiss()
             return
         }
         if view.phase == .recording {
             let raw = levelSource()
-            let normalized = raw.isFinite ? min(1, max(0, raw * 5)) : 0
+            let normalized = raw.isFinite ? min(1, max(0, raw * (view.spec?.levelGain ?? 0))) : 0
             smoothed = 0.72 * smoothed + 0.28 * normalized
             view.level = smoothed
         }
@@ -105,19 +111,21 @@ final class RecordingPill {
 
     private func reposition() {
         guard let panel else { return }
-        let width: CGFloat = view.phase == .recording ? 232 : 252
+        guard let spec = view.spec else { return }
+        let width = CGFloat(view.phase == .recording ? spec.recordingWidth : spec.workingWidth)
         let cursor = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(cursor, $0.frame, false) } ?? NSScreen.main
         guard let bounds = screen?.visibleFrame else { return }
         let frame = NSRect(
             x: max(bounds.minX, min(bounds.maxX - width, bounds.midX - width / 2)),
-            y: bounds.minY + 5, width: width, height: 50)
+            y: bounds.minY + 5, width: width, height: CGFloat(spec.height))
         if panel.frame != frame { panel.setFrame(frame, display: true) }
         view.frame = NSRect(origin: .zero, size: frame.size)
     }
 }
 
 private final class PillSurface: NSView {
+    var spec: PillSpec?
     var phase: PillAppearance = .recording
     var rewrite = false
     var started = Date()
@@ -128,14 +136,16 @@ private final class PillSurface: NSView {
 
     override var isFlipped: Bool { false }
 
-    private func rgb(_ red: Int, _ green: Int, _ blue: Int, alpha: CGFloat = 1) -> NSColor {
-        NSColor(calibratedRed: CGFloat(red) / 255, green: CGFloat(green) / 255,
-                blue: CGFloat(blue) / 255, alpha: alpha)
+    private func rgb(_ components: [Int], alpha: CGFloat = 1) -> NSColor {
+        NSColor(calibratedRed: CGFloat(components[0]) / 255,
+                green: CGFloat(components[1]) / 255,
+                blue: CGFloat(components[2]) / 255, alpha: alpha)
     }
 
     private var accent: NSColor {
-        if phase == .error { return rgb(255, 129, 138) }
-        return rewrite ? rgb(175, 165, 255) : rgb(233, 129, 170)
+        let spec = spec!
+        return rgb(phase == .error ? spec.errorAccent :
+                   rewrite ? spec.rewriteAccent : spec.dictationAccent)
     }
 
     private func capsule(_ rect: NSRect, radius: CGFloat, color: NSColor) {
@@ -144,90 +154,103 @@ private final class PillSurface: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        guard let spec else { return }
         let w = bounds.width
         capsule(NSRect(x: 3, y: 2, width: w - 6, height: 40),
-                radius: 20, color: rgb(0, 0, 0, alpha: 17.0 / 255))
+                radius: 20, color: NSColor.black.withAlphaComponent(17.0 / 255))
         capsule(NSRect(x: 4, y: 3, width: w - 8, height: 40),
-                radius: 20, color: rgb(0, 0, 0, alpha: 34.0 / 255))
-        capsule(bounds.insetBy(dx: 5, dy: 5), radius: 20, color: rgb(32, 36, 46))
+                radius: 20, color: NSColor.black.withAlphaComponent(34.0 / 255))
+        capsule(bounds.insetBy(dx: 5, dy: 5), radius: 20, color: rgb(spec.pillColor))
         let color = accent
         if phase == .recording {
             capsule(NSRect(x: 12, y: 18, width: 3, height: 14), radius: 1.5, color: color)
             color.setFill()
-            NSBezierPath(ovalIn: NSRect(x: 23, y: 21, width: 8, height: 8)).fill()
-            for index in 0..<9 {
+            NSBezierPath(ovalIn: NSRect(x: 23, y: CGFloat(spec.iconY - 4), width: 8, height: 8)).fill()
+            for index in 0..<spec.waveBars {
                 let envelope = 0.44 + 0.56 * abs(sin(Double(index) * 0.75 + Double(tick) * 0.24))
                 let h = CGFloat(min(18, max(4, (4 + 14 * pow(level, 0.7) * envelope).rounded())))
-                capsule(NSRect(x: CGFloat(52 + index * 8), y: 25 - h / 2, width: 3, height: h),
-                        radius: 1.5, color: color)
+                capsule(NSRect(x: CGFloat(spec.waveStartX + index * spec.waveStep),
+                               y: CGFloat(spec.iconY) - h / 2,
+                               width: CGFloat(spec.waveBarWidth), height: h),
+                        radius: CGFloat(spec.waveBarWidth) / 2, color: color)
             }
             let seconds = max(0, Int(Date().timeIntervalSince(started)))
             let time = String(format: "%02d:%02d", seconds / 60, seconds % 60)
-            label(time, x: 145, width: 50, size: 14, centered: true)
+            label(time, x: CGFloat(spec.clockX), width: CGFloat(spec.clockWidth),
+                  size: 14, centered: true, color: rgb(spec.clockColor))
         } else {
             drawMark()
             let message: String
             switch phase {
-            case .processing: message = rewrite ? "识别指令…" : "正在转写…"
-            case .sent: message = "已发送粘贴指令"
-            case .error: message = "操作未完成 · 查看日志"
-            case .fallback: message = "结果未写入"
+            case .processing: message = rewrite ? spec.processingRewrite : spec.processingDictation
+            case .sent: message = spec.sentLabel
+            case .error: message = spec.errorLabel
+            case .fallback: message = spec.fallbackLabel
             case .recording: message = ""
             }
-            label(message, x: 53, width: w - 91, size: 13, centered: false)
+            label(message, x: CGFloat(spec.textX),
+                  width: w - CGFloat(spec.textX + spec.textRightGap),
+                  size: 13, centered: false, color: rgb(spec.labelColor))
         }
         if hovered {
             capsule(NSRect(x: w - 32, y: 11, width: 28, height: 28),
-                    radius: 14, color: rgb(52, 58, 73))
+                    radius: 14, color: rgb(spec.closeHover))
         }
-        rgb(170, 165, 179).setStroke()
+        rgb(spec.closeColor).setStroke()
         let cross = NSBezierPath()
         cross.lineWidth = 1.6
-        cross.move(to: NSPoint(x: w - 22, y: 21))
-        cross.line(to: NSPoint(x: w - 14, y: 29))
-        cross.move(to: NSPoint(x: w - 14, y: 21))
-        cross.line(to: NSPoint(x: w - 22, y: 29))
+        let cx = w - CGFloat(spec.cancelInset)
+        cross.move(to: NSPoint(x: cx - 4, y: CGFloat(spec.iconY - 4)))
+        cross.line(to: NSPoint(x: cx + 4, y: CGFloat(spec.iconY + 4)))
+        cross.move(to: NSPoint(x: cx + 4, y: CGFloat(spec.iconY - 4)))
+        cross.line(to: NSPoint(x: cx - 4, y: CGFloat(spec.iconY + 4)))
         cross.stroke()
     }
 
     private func label(_ message: String, x: CGFloat, width: CGFloat,
-                       size: CGFloat, centered: Bool) {
+                       size: CGFloat, centered: Bool, color: NSColor) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = centered ? .center : .left
         let text = message as NSString
         text.draw(in: NSRect(x: x, y: 16, width: width, height: 21), withAttributes: [
             .font: NSFont.systemFont(ofSize: size, weight: centered ? .semibold : .medium),
-            .foregroundColor: rgb(245, 243, 247),
+            .foregroundColor: color,
             .paragraphStyle: paragraph
         ])
     }
 
     private func drawMark() {
+        guard let spec else { return }
         let color = accent
         if phase == .processing {
-            for index in 0..<8 {
+            for index in 0..<spec.spinnerDots {
                 let angle = Double(tick) * 0.2 + Double(index) * .pi / 4
-                let x = CGFloat(30 + 8 * cos(angle))
-                let y = CGFloat(25 + 8 * sin(angle))
-                color.withAlphaComponent(CGFloat(65 + index * 25) / 255).setFill()
-                NSBezierPath(ovalIn: NSRect(x: x - 2, y: y - 2, width: 4, height: 4)).fill()
+                let x = CGFloat(Double(spec.spinnerX) + Double(spec.spinnerRadius) * cos(angle))
+                let y = CGFloat(Double(spec.iconY) + Double(spec.spinnerRadius) * sin(angle))
+                color.withAlphaComponent(CGFloat(min(255, 65 + index * 25)) / 255).setFill()
+                let size = CGFloat(spec.spinnerDotSize)
+                NSBezierPath(ovalIn: NSRect(x: x - size / 2, y: y - size / 2,
+                                            width: size, height: size)).fill()
             }
         } else {
             let fill: NSColor
             switch phase {
-            case .sent: fill = rgb(141, 189, 232)
-            case .fallback: fill = rgb(245, 197, 107)
-            default: fill = rgb(255, 129, 138)
+            case .sent: fill = rgb(spec.sentMark)
+            case .fallback: fill = rgb(spec.fallbackMark)
+            default: fill = rgb(spec.errorAccent)
             }
             fill.setFill()
             NSBezierPath(ovalIn: NSRect(x: 22, y: 17, width: 16, height: 16)).fill()
-            label(phase == .sent ? "✓" : "!", x: 22, width: 16, size: 11, centered: true)
+            label(phase == .sent ? "✓" : "!", x: 22, width: 16, size: 11,
+                  centered: true, color: rgb(spec.attentionGlyph))
         }
     }
 
     override func updateTrackingAreas() {
         for area in trackingAreas { removeTrackingArea(area) }
-        addTrackingArea(NSTrackingArea(rect: NSRect(x: bounds.width - 36, y: 0, width: 36, height: 50),
+        let width = CGFloat(spec?.cancelWidth ?? 0)
+        addTrackingArea(NSTrackingArea(rect: NSRect(x: bounds.width - width, y: 0,
+                                                   width: width, height: bounds.height),
                                        options: [.mouseEnteredAndExited, .activeAlways],
                                        owner: self))
         super.updateTrackingAreas()
@@ -237,7 +260,7 @@ private final class PillSurface: NSView {
     override func mouseExited(with event: NSEvent) { hovered = false; needsDisplay = true }
 
     override func mouseDown(with event: NSEvent) {
-        if convert(event.locationInWindow, from: nil).x >= bounds.width - 36 {
+        if convert(event.locationInWindow, from: nil).x >= bounds.width - CGFloat(spec?.cancelWidth ?? 0) {
             onCancel?()
         }
     }
