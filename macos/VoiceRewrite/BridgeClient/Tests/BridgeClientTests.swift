@@ -323,6 +323,43 @@ final class BridgeClientTests: XCTestCase {
     }
 
 
+    /// Dictation must begin capturing audio while a third-party Accessibility
+    /// service is slow; waiting on AX before starting CoreAudio loses speech.
+    @MainActor
+    func testDictationMicrophoneStartsWhileAXTargetCaptureIsBlocked() async throws {
+        let microphone = PerformanceFixtureMicrophone()
+        let writer = PerformanceFixtureWriter(editor: NSTextView())
+        writer.deferTargetCaptureForCI = true
+        let model = WorkspaceModel(microphone: microphone, dictationDelivery: writer)
+        model.setKeyboardHoldEnabled(true)
+        defer {
+            writer.resumeTargetCaptureForCI()
+            model.cancelCurrent()
+            model.shutdown()
+        }
+
+        model.keyboardPressed(.dictation, targetPID: 4242)
+        let deadline = ProcessInfo.processInfo.systemUptime + 3
+        while !writer.targetCapturePendingForCI &&
+              ProcessInfo.processInfo.systemUptime < deadline {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertTrue(writer.targetCapturePendingForCI)
+
+        while !microphone.recording && ProcessInfo.processInfo.systemUptime < deadline {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertTrue(microphone.recording,
+                      "Audio should start before blocked third-party AX capture finishes")
+        XCTAssertFalse(model.isRecording,
+                       "UI should remain pending until the target is safely captured")
+        writer.resumeTargetCaptureForCI()
+        while !model.isRecording && ProcessInfo.processInfo.systemUptime < deadline {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertTrue(model.isRecording)
+    }
+
     /// This is the same keyboard state machine and presentation controller as
     /// production, with only the external mic, ASR endpoint and OS paste
     /// replaced by deterministic CI fixtures. It is NOT a real-hardware test.
@@ -577,11 +614,26 @@ private final class PerformanceFixtureMicrophone: VoiceRecordingDevice {
 @MainActor
 private final class PerformanceFixtureWriter: DictationDelivering {
     let editor: NSTextView
+    var deferTargetCaptureForCI = false
+    private(set) var targetCapturePendingForCI = false
+    private var deferredCapture: CheckedContinuation<MacDictationTarget, Never>?
 
     init(editor: NSTextView) { self.editor = editor }
 
     func captureAsync(processID: Int32) async throws -> MacDictationTarget {
-        MacDictationTarget.performanceFixture(processID: processID)
+        guard deferTargetCaptureForCI else {
+            return MacDictationTarget.performanceFixture(processID: processID)
+        }
+        return await withCheckedContinuation { continuation in
+            targetCapturePendingForCI = true
+            deferredCapture = continuation
+        }
+    }
+
+    func resumeTargetCaptureForCI() {
+        deferredCapture?.resume(returning: .performanceFixture(processID: 4242))
+        deferredCapture = nil
+        targetCapturePendingForCI = false
     }
 
     func deliver(_ text: String, to target: MacDictationTarget,

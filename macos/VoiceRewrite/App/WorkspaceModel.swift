@@ -2390,6 +2390,18 @@ final class WorkspaceModel: ObservableObject {
             guard let self else { return }
             defer { self.refreshMicrophonePermission() }
             let startupStarted = ProcessInfo.processInfo.systemUptime
+            // The focused application's AX service may be slow even though
+            // dictation must still record when AX capture fails. Start native
+            // audio independently and overlap it with the optional AX query.
+            // The existing generation fence cancels either stale operation.
+            let deviceUID = settings.microphoneUID
+            let maximumSeconds = settings.maxRecordSeconds
+            let microphoneStartup = Task { @MainActor [weak self] () throws -> Void in
+                try Task.checkCancellation()
+                guard let self else { throw CancellationError() }
+                try await self.microphone.start(deviceUID: deviceUID,
+                                                maximumSeconds: maximumSeconds)
+            }
             var captured = false
             var failure: String?
             var snapshot: MacDictationTarget?
@@ -2398,12 +2410,20 @@ final class WorkspaceModel: ObservableObject {
                     snapshot = try await dictationDelivery.captureAsync(processID: pid)
                     captured = true
                 } catch {
-                    guard resultGeneration.accepts(token) else { return }
+                    guard resultGeneration.accepts(token) else {
+                        microphoneStartup.cancel()
+                        microphone.cancel()
+                        return
+                    }
                     DiagnosticLog.note("stage=dictation_capture status=failed code=\(insertionDiagnosticCode(error))")
                     failure = captureStatus(error, password: ResultCopy.passwordDictation)
                 }
             }
-            guard resultGeneration.accepts(token) else { return }
+            guard resultGeneration.accepts(token) else {
+                microphoneStartup.cancel()
+                microphone.cancel()
+                return
+            }
             DiagnosticLog.note("stage=dictation_target status=done elapsed_ms=\(Self.elapsedMilliseconds(since: startupStarted))")
             let arm = dictationArm(hasTarget: (targetPID ?? 0) > 0, tokenValid: resultGeneration.accepts(token), captured: captured, captureFailure: failure)
             if let status = arm.interactionStatus { interactionStatus = status }
@@ -2411,6 +2431,8 @@ final class WorkspaceModel: ObservableObject {
                 activeInsert = snapshot
             }
             guard arm.startMicrophone else {
+                microphoneStartup.cancel()
+                microphone.cancel()
                 guard resultGeneration.accepts(token) else { return }
                 finishProcessingWatchdog()
                 isStarting = false
@@ -2418,8 +2440,7 @@ final class WorkspaceModel: ObservableObject {
                 return
             }
             do {
-                try await microphone.start(deviceUID: settings.microphoneUID,
-                                               maximumSeconds: settings.maxRecordSeconds)
+                try await microphoneStartup.value
                 let ready = dictationMicrophoneReady(started: true, tokenValid: resultGeneration.accepts(token), failure: "")
                 if ready.cancelMicrophone {
                     microphone.cancel()
