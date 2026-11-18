@@ -95,11 +95,6 @@ func HistoryRestoreTitle(storedTitle string) string {
 	return strings.TrimSpace(storedTitle) + " · 历史结果"
 }
 
-// WindowsSaveRestarts is the restart notice. Either a shortcut change or an audio-device change uses it.
-func WindowsSaveRestarts(shortcutChanged, audioChanged bool) bool {
-	return shortcutChanged || audioChanged
-}
-
 func WindowsSaveNotice(restart bool) string {
 	if restart {
 		return WindowsSaveRestart

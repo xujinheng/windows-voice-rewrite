@@ -36,9 +36,6 @@ func TestResultCardTitles(t *testing.T) {
 	if WindowsSaveNotice(true) != "设置已保存。快捷键和录音设备将在重启 VoiceRewrite 后生效。" || WindowsSaveNotice(false) != "✓ 已保存，API 地址和模型立即生效" || SaveFailedPrefix != "保存失败：" || OpenAdvancedFailedPrefix != "打开高级配置失败：" {
 		t.Fatal("windows save notice")
 	}
-	if !WindowsSaveRestarts(true, false) || !WindowsSaveRestarts(false, true) || WindowsSaveRestarts(false, false) {
-		t.Fatal("restart notice")
-	}
 	if VoicePaused != "已暂停 · 鼠标侧键恢复正常功能" || PauseWhileBusy != "当前任务仍在处理；结束后可暂停语音操作。" {
 		t.Fatal("pause")
 	}

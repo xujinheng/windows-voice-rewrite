@@ -4,16 +4,6 @@ import "time"
 
 const TrayResetAfter = 4500 * time.Millisecond
 
-// TrayShowsError reports that a non-terminal pill still belongs to this session.
-func TrayShowsError(isError, hasPill, terminal, owned bool) bool {
-	return isError && hasPill && !terminal && owned
-}
-
-// TrayArmsReset starts the return-to-rest timer after success or failure.
-func TrayArmsReset(isSuccess, isError bool) bool {
-	return isSuccess || isError
-}
-
 type TrayRest int
 
 const (

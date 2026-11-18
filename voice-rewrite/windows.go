@@ -735,8 +735,7 @@ func runApp() {
 		}
 		if msg.Message == WM_TRAY_UPDATE {
 			state := trayState(app.status.Load())
-			hasPill := activeHandyStatus != nil
-			if ux.TrayShowsError(state == trayError, hasPill, hasPill && indicator.Terminal(activeHandyStatus.phase), hasPill && app.epoch.Valid(activeHandyStatus.owner)) {
+			if state == trayError && activeHandyStatus != nil && !indicator.Terminal(activeHandyStatus.phase) && app.epoch.Valid(activeHandyStatus.owner) {
 				updateHandyStatus(indicator.Error)
 			}
 			// Always run Shell_NotifyIconW on the thread that owns the tray window.
@@ -744,7 +743,7 @@ func runApp() {
 				l.Printf("tray state update failed: %v", err)
 			}
 			procKillTimer.Call(0, TRAY_RESET_TIMER_ID)
-			if ux.TrayArmsReset(state == traySuccess, state == trayError) {
+			if state == traySuccess || state == trayError {
 				procSetTimer.Call(0, TRAY_RESET_TIMER_ID, uintptr(ux.TrayResetAfter/time.Millisecond), 0)
 			}
 			continue

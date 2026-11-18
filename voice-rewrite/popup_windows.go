@@ -221,7 +221,8 @@ func (p *answerPopup) setNote(s string) {
 	runtime.KeepAlive(label)
 }
 func (p *answerPopup) apply() {
-	if p == nil || p.app == nil || corepopup.ApplyIgnored(p.selection != nil, p.allowApply, p.canceled.Load(), p.app.epoch.Valid(p.generation)) {
+	if p == nil || p.app == nil || p.selection == nil || !p.allowApply ||
+		p.canceled.Load() || !p.app.epoch.Valid(p.generation) {
 		return
 	}
 	var app *appState
