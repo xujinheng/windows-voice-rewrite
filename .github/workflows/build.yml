@@ -1,4 +1,4 @@
-name: Build VoiceRewrite Windows
+name: VoiceRewrite CI, builds and release
 on:
   push:
     branches: [main]
@@ -16,12 +16,61 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      core: ${{ steps.scope.outputs.core }}
+      macos: ${{ steps.scope.outputs.macos }}
+      windows: ${{ steps.scope.outputs.windows }}
+      oneclick: ${{ steps.scope.outputs.oneclick }}
+      ui: ${{ steps.scope.outputs.ui }}
+      direct2d: ${{ steps.scope.outputs.direct2d }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Verify CI path classifier
+        run: python3 -m unittest discover -s scripts -p 'test_ci_*.py' -v
+      - name: Compute affected platforms
+        id: scope
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' ]]; then
+            # Include renamed/deleted paths, with no deep clone.
+            gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
+              --jq '.[] | .filename, (.previous_filename // empty)' |
+              python3 scripts/ci_changes.py --output "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_EVENT_NAME" == 'push' && "$GITHUB_REF" == 'refs/heads/main' &&
+                  "$BASE_SHA" != '0000000000000000000000000000000000000000' ]]; then
+            # Always run full host/core tests on main, but only run supplemental
+            # UI/Direct2D capture when a relevant path actually changed.
+            # The compare API caps file listings at 300: fail open to full UI
+            # testing for such large commits instead of silently missing files.
+            gh api "repos/$GITHUB_REPOSITORY/compare/$BASE_SHA...$GITHUB_SHA" \
+              --jq 'if (.files | length) >= 300 then ".github/workflows/_large_commit.yml" else .files[] | .filename, (.previous_filename // empty) end' |
+              python3 scripts/ci_changes.py --output "$RUNNER_TEMP/ci-scope.txt"
+            source "$RUNNER_TEMP/ci-scope.txt"
+            printf 'core=true\nmacos=true\nwindows=true\noneclick=true\nui=%s\ndirect2d=%s\n' "$ui" "$direct2d" >> "$GITHUB_OUTPUT"
+          else
+            # Tags and explicit workflow dispatch validate every host; release
+            # signing is gated separately by a trusted v* ref.
+            printf 'core=true\nmacos=true\nwindows=true\noneclick=true\nui=false\ndirect2d=false\n' >> "$GITHUB_OUTPUT"
+          fi
   test-core:
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
@@ -46,15 +95,76 @@ jobs:
         env:
           CGO_ENABLED: '0'
         run: go build ./internal/core/...
-  test-core-macos:
+  test-swift-modules:
+    name: Native Swift adapter, macOS Go core and bridge suites (parallel)
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
     runs-on: macos-15
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
+      - name: Cache SwiftPM downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/.swiftpm
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('macos/**/Package.swift', 'macos/**/Package.resolved') }}
+          restore-keys: |
+            swiftpm-${{ runner.os }}-${{ runner.arch }}-
+      - name: Test independent native Swift packages concurrently
+        shell: bash
+        run: |
+          set -euo pipefail
+          logs="$(mktemp -d)"
+          trap 'rm -rf "$logs"' EXIT
+          # Each package has an independent .build directory and no external
+          # Package.swift dependencies. Limit per-package compiler parallelism
+          # so three processes do not overwhelm the 3-core hosted ARM runner.
+          for module in Microphone Storage Interaction; do
+            test -f "macos/Modules/$module/Package.swift"
+            (
+              cd "macos/Modules/$module"
+              swift test --jobs 1
+            ) > "$logs/$module.log" 2>&1 &
+            printf '%s\n' "$!" > "$logs/$module.pid"
+          done
+          errors=0
+          for module in Microphone Storage Interaction; do
+            if ! wait "$(cat "$logs/$module.pid")"; then
+              echo "::error::Swift module $module failed"
+              errors=1
+            fi
+            echo "===== $module Swift package test output ====="
+            cat "$logs/$module.log"
+          done
+          if [[ "$errors" != 0 ]]; then exit "$errors"; fi
+          # Maintain all three suites: 17 + 12 + 95 = 124 native package
+          # tests in the verified baseline, in addition to 69 Xcode XCTest.
+          python3 - "$logs" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          logdir = Path(sys.argv[1])
+          for module, minimum in [("Microphone", 17), ("Storage", 12),
+                                  ("Interaction", 95)]:
+              log = (logdir / f"{module}.log").read_text(
+                  encoding="utf-8", errors="replace"
+              )
+              counts = [int(n) for n in re.findall(
+                  r"Executed (\d+) tests?, with 0 failures", log
+              )]
+              if "Test Suite 'All tests' passed" not in log or max(counts, default=0) < minimum:
+                  raise SystemExit(
+                      f"{module}: expected at least {minimum} passing native tests"
+                  )
+              print(f"{module}: {max(counts)} native Swift tests passed")
+          PY
       - name: Execute portable core tests on real macOS
         working-directory: voice-rewrite
         run: go test -count=1 ./internal/core/...
@@ -63,30 +173,109 @@ jobs:
         run: |
           GOOS=darwin GOARCH=arm64 go build ./internal/core/...
           GOOS=darwin GOARCH=amd64 go build ./internal/core/...
-      - name: Test native macOS Swift packages
+      - name: Verify Swift-to-Go local process handshake on macOS
+        working-directory: voice-rewrite
         run: |
-          for module in Microphone Storage Interaction; do
-            package="macos/Modules/$module/Package.swift"
-            if [ -f "$package" ]; then
-              echo "Testing native Swift module $module"
-              (cd "macos/Modules/$module" && swift test)
-            fi
-          done
-      - name: Enable user-perceived latency measurements
+          go build -o "$RUNNER_TEMP/voicebridge" ./cmd/voicebridge
+          swift ../scripts/macos-bridge-probe.swift "$RUNNER_TEMP/voicebridge"
+          GOOS=darwin GOARCH=amd64 go build ./cmd/voicebridge
+          GOOS=darwin GOARCH=arm64 go build ./cmd/voicebridge
+
+  test-core-macos:
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # Cache only Build outputs; never reuse XCTest execution results.
+      # The same deterministic source mtime normalization is verified on Intel
+      # with changed-source recompilation. Keep architecture-specific caches.
+      - name: Normalize tracked mtimes for ARM incremental builds
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/ci_xcode_mtimes.py
+      - name: Fingerprint exact Apple Silicon Xcode toolchain
+        if: github.event_name == 'pull_request'
+        id: arm-xcode
+        shell: bash
         run: |
-          mkdir -p performance-output
-          touch performance-output/.enabled
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          xcodebuild -version
+          { xcodebuild -version; xcode-select -p; } |
+            shasum -a 256 | awk '{ print "fingerprint=" $1 }' >> "$GITHUB_OUTPUT"
+      - name: Restore ARM Xcode incremental Build products
+        if: github.event_name == 'pull_request'
+        id: arm-derived
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.temp }}/voicerewrite-derived/Build
+          key: arm-xcode-build-${{ steps.arm-xcode.outputs.fingerprint }}-${{ hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj', 'macos/**/Package.swift', 'macos/**/Package.resolved') }}-v1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
+        with:
+          go-version: '1.23'
+          cache-dependency-path: voice-rewrite/go.mod
+      - name: Cache SwiftPM downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/.swiftpm
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('macos/**/Package.swift', 'macos/**/Package.resolved') }}
+          restore-keys: |
+            swiftpm-${{ runner.os }}-${{ runner.arch }}-
+      - name: Enable visual acceptance screenshots
+        if: needs.changes.outputs.ui == 'true' && !startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p acceptance-output performance-output
+          touch acceptance-output/.enabled performance-output/.enabled
       - name: Build and test native macOS application
+        id: arm-xctest
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        env:
+          VOICEREWRITE_ACCEPTANCE_PLATFORM: macos-arm64
         run: |
+          set -euo pipefail
+          start="$(date +%s)"
           xcodebuild -project macos/VoiceRewrite.xcodeproj \
             -scheme VoiceRewrite -configuration Debug \
             -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/voicerewrite-derived" test
+            -derivedDataPath "$RUNNER_TEMP/voicerewrite-derived" test \
+            2>&1 | tee "$RUNNER_TEMP/voicerewrite-arm-xcode.log"
+          echo "xcode_seconds=$(( $(date +%s) - start ))" >> "$GITHUB_OUTPUT"
           app="$RUNNER_TEMP/voicerewrite-derived/Build/Products/Debug/VoiceRewrite.app"
           test -d "$app"
           test -x "$app/Contents/MacOS/voicebridge"
           file "$app/Contents/MacOS/voicebridge"
+      - name: Assert full ARM XCTest coverage (no cached test results)
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/voicerewrite-arm-xcode.log" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          log = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+          counts = [int(x) for x in re.findall(r"Executed (\d+) tests?, with 0 failures", log)]
+          print(f"ARM XCTest passing suite counts: {counts[-8:]}")
+          if "** TEST SUCCEEDED **" not in log or max(counts, default=0) < 69:
+              raise SystemExit("ARM full XCTest suite missing or below 69 passing tests")
+          PY
+      - name: Report ARM incremental cache and Xcode timing
+        if: always() && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          CACHE_HIT: ${{ steps.arm-derived.outputs.cache-hit }}
+          XCODE_SECONDS: ${{ steps.arm-xctest.outputs.xcode_seconds }}
+        run: |
+          {
+            echo '### ARM Xcode incremental CI'
+            echo "- Cache hit: ${CACHE_HIT:-false}"
+            echo "- Full XCTest build/test: ${XCODE_SECONDS:-not-finished} seconds"
+            echo '- XCTest always reruns; only Xcode Build products are reused'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Verify Apple Silicon app and helper architecture
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         run: |
@@ -96,8 +285,48 @@ jobs:
           test "$(lipo -archs "$app/Contents/MacOS/VoiceRewrite")" = arm64
           test "$(lipo -archs "$app/Contents/MacOS/voicebridge")" = arm64
           codesign --verify --deep --strict "$app"
-      - name: Package Apple Silicon macOS developer app
-        if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+      - name: Verify and upload native UI evidence (macos-arm64)
+        if: always() && needs.changes.outputs.ui == 'true' && !startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          test -s "acceptance-output/macos-arm64/manifest.json"
+          find "acceptance-output/macos-arm64" -name '*.png' | grep -q .
+      - name: Upload native UI evidence (macos-arm64)
+        if: always() && needs.changes.outputs.ui == 'true' && !startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: acceptance-macos-arm64
+          path: acceptance-output/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Upload arm64 user-journey latency (native XCTest, no extra build)
+        if: always() && needs.changes.outputs.ui == 'true' && !startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: user-latency-arm64
+          path: performance-output/macos-arm64/journey.json
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Preserve the single Apple Silicon macOS app for main
+        if: github.ref == 'refs/heads/main' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/voicerewrite-derived/Build/Products/Debug/VoiceRewrite.app"
+          test -x "$app/Contents/MacOS/VoiceRewrite"
+          test -x "$app/Contents/MacOS/voicebridge"
+          codesign --verify --deep --strict "$app"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/VoiceRewrite-macOS-arm64-Dev.app.zip"
+      - name: Upload main Apple Silicon runnable app
+        if: github.ref == 'refs/heads/main' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: VoiceRewrite-macOS-arm64-Dev-App
+          path: ${{ runner.temp }}/VoiceRewrite-macOS-arm64-Dev.app.zip
+          retention-days: 7
+          if-no-files-found: error
+      - name: Package Apple Silicon macOS developer app for release
+        if: startsWith(github.ref, 'refs/tags/v') && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         run: |
           set -euo pipefail
           app="$RUNNER_TEMP/voicerewrite-derived/Build/Products/Debug/VoiceRewrite.app"
@@ -111,9 +340,9 @@ jobs:
           bash scripts/verify-macos-package.sh zip "$zip" arm64 "$version" dev
           bash scripts/verify-macos-package.sh dmg "$dmg" arm64 "$version" dev
           bash scripts/test-macos-package-verifier.sh "$app" arm64 "$version"
-      - name: Upload Apple Silicon macOS developer app
-        if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
-        uses: actions/upload-artifact@v4
+      - name: Upload Apple Silicon macOS release ZIP and DMG
+        if: startsWith(github.ref, 'refs/tags/v') && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-macOS-arm64-Dev
           path: |
@@ -123,52 +352,159 @@ jobs:
             ${{ runner.temp }}/VoiceRewrite-*-macOS-arm64-Dev.dmg.sha256
           retention-days: 7
           if-no-files-found: error
-      - name: Verify Swift-to-Go local process handshake on macOS
-        working-directory: voice-rewrite
-        run: |
-          go build -o "$RUNNER_TEMP/voicebridge" ./cmd/voicebridge
-          swift ../scripts/macos-bridge-probe.swift "$RUNNER_TEMP/voicebridge"
-          GOOS=darwin GOARCH=amd64 go build ./cmd/voicebridge
-          GOOS=darwin GOARCH=arm64 go build ./cmd/voicebridge
-      - name: Upload Apple Silicon user-journey latency report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: user-latency-arm64
-          path: performance-output/macos-arm64/journey.json
-          retention-days: 7
-          if-no-files-found: warn
   build-macos-intel:
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
     runs-on: macos-15-intel
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
-        with:
-          go-version: '1.23'
-          cache-dependency-path: voice-rewrite/go.mod
-      - name: Enable user-perceived latency measurements
-        run: |
-          mkdir -p performance-output
-          touch performance-output/.enabled
-      - name: Build and test Intel macOS native app
-        if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # Xcode's incremental database persists absolute paths and file mtimes.
+      # Cache only compiled Build products, never xcresult/test outcomes.
+      # Normalize tracked file times from content before restoring the cache,
+      # so a changed Swift/resource file invalidates its own previous build.
+      - name: Normalize tracked mtimes for Intel incremental builds
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/ci_xcode_mtimes.py
+      - name: Fingerprint exact Intel Xcode toolchain
+        if: github.event_name == 'pull_request'
+        id: intel-xcode
+        shell: bash
         run: |
           set -euo pipefail
           test "$(uname -m)" = x86_64
+          xcodebuild -version
+          { xcodebuild -version; xcode-select -p; } |
+            shasum -a 256 | awk '{ print "fingerprint=" $1 }' >> "$GITHUB_OUTPUT"
+      - name: Restore Intel Xcode incremental Build products
+        if: github.event_name == 'pull_request'
+        id: intel-derived
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.temp }}/voicerewrite-intel-derived/Build
+          # New Xcode binary, project graph or package graph => cold rebuild.
+          # Swift source changes retain the key but get fresh content-derived
+          # mtimes, allowing safe per-file invalidation.
+          key: intel-xcode-build-${{ steps.intel-xcode.outputs.fingerprint }}-${{ hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj', 'macos/**/Package.swift', 'macos/**/Package.resolved') }}-v1
+      # setup-go does not normally find Go 1.23 in the fresh Intel toolcache.
+      # Cache the *complete* official installed version (including marker)
+      # to avoid the observed 64s Go download on repeated PR runs.
+      - name: Cache official Intel Go 1.23.12 toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.tool_cache }}/go/1.23.12
+          key: official-go-macos-intel-1.23.12-v1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
+        if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        with:
+          go-version: '1.23.12'
+          cache-dependency-path: voice-rewrite/go.mod
+      - name: Cache SwiftPM downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/.swiftpm
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('macos/**/Package.swift', 'macos/**/Package.resolved') }}
+          restore-keys: |
+            swiftpm-${{ runner.os }}-${{ runner.arch }}-
+      - name: Enable visual acceptance screenshots
+        if: needs.changes.outputs.ui == 'true' && !startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p acceptance-output performance-output
+          touch acceptance-output/.enabled performance-output/.enabled
+      - name: Build and test Intel macOS native app
+        id: intel-xctest
+        if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        env:
+          VOICEREWRITE_ACCEPTANCE_PLATFORM: macos-x64
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          start="$(date +%s)"
           xcodebuild -project macos/VoiceRewrite.xcodeproj \
             -scheme VoiceRewrite -configuration Debug \
             -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/voicerewrite-intel-derived" test
+            -derivedDataPath "$RUNNER_TEMP/voicerewrite-intel-derived" test \
+            2>&1 | tee "$RUNNER_TEMP/voicerewrite-intel-xcode.log"
+          echo "xcode_seconds=$(( $(date +%s) - start ))" >> "$GITHUB_OUTPUT"
           app="$RUNNER_TEMP/voicerewrite-intel-derived/Build/Products/Debug/VoiceRewrite.app"
           test -x "$app/Contents/MacOS/VoiceRewrite"
           test -x "$app/Contents/MacOS/voicebridge"
           test "$(lipo -archs "$app/Contents/MacOS/VoiceRewrite")" = x86_64
           test "$(lipo -archs "$app/Contents/MacOS/voicebridge")" = x86_64
           codesign --verify --deep --strict "$app"
-      - name: Package Intel macOS developer app
-        if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+      - name: Assert full Intel XCTest coverage (no cached test results)
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/voicerewrite-intel-xcode.log" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          log = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+          counts = [int(x) for x in re.findall(r"Executed (\d+) tests?, with 0 failures", log)]
+          print(f"Intel XCTest passing suite counts: {counts[-8:]}")
+          if "** TEST SUCCEEDED **" not in log or max(counts, default=0) < 69:
+              raise SystemExit("Intel full XCTest suite missing or below 69 passing tests")
+          PY
+      - name: Report Intel incremental cache and Xcode timing
+        if: always() && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          CACHE_HIT: ${{ steps.intel-derived.outputs.cache-hit }}
+          XCODE_SECONDS: ${{ steps.intel-xctest.outputs.xcode_seconds }}
+        run: |
+          {
+            echo '### Intel Xcode incremental CI'
+            echo "- Cache hit: ${CACHE_HIT:-false}"
+            echo "- Full XCTest build/test: ${XCODE_SECONDS:-not-finished} seconds"
+            echo '- XCTest always reruns; only Xcode Build products are reused'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify and upload native UI evidence (macos-x64)
+        if: always() && needs.changes.outputs.ui == 'true' && !startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          test -s "acceptance-output/macos-x64/manifest.json"
+          find "acceptance-output/macos-x64" -name '*.png' | grep -q .
+      - name: Upload native UI evidence (macos-x64)
+        if: always() && needs.changes.outputs.ui == 'true' && !startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: acceptance-macos-x64
+          path: acceptance-output/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Upload x64 user-journey latency (native XCTest, no extra build)
+        if: always() && needs.changes.outputs.ui == 'true' && !startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: user-latency-x64
+          path: performance-output/macos-x64/journey.json
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Preserve the single Intel macOS app for main
+        if: github.ref == 'refs/heads/main' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/voicerewrite-intel-derived/Build/Products/Debug/VoiceRewrite.app"
+          test -x "$app/Contents/MacOS/VoiceRewrite"
+          test -x "$app/Contents/MacOS/voicebridge"
+          codesign --verify --deep --strict "$app"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/VoiceRewrite-macOS-x64-Dev.app.zip"
+      - name: Upload main Intel runnable app
+        if: github.ref == 'refs/heads/main' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: VoiceRewrite-macOS-x64-Dev-App
+          path: ${{ runner.temp }}/VoiceRewrite-macOS-x64-Dev.app.zip
+          retention-days: 7
+          if-no-files-found: error
+      - name: Package Intel macOS developer app for release
+        if: startsWith(github.ref, 'refs/tags/v') && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         run: |
           set -euo pipefail
           app="$RUNNER_TEMP/voicerewrite-intel-derived/Build/Products/Debug/VoiceRewrite.app"
@@ -182,9 +518,9 @@ jobs:
           bash scripts/verify-macos-package.sh zip "$zip" x86_64 "$version" dev
           bash scripts/verify-macos-package.sh dmg "$dmg" x86_64 "$version" dev
           bash scripts/test-macos-package-verifier.sh "$app" x86_64 "$version"
-      - name: Upload Intel macOS developer app
-        if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
-        uses: actions/upload-artifact@v4
+      - name: Upload Intel macOS release ZIP and DMG
+        if: startsWith(github.ref, 'refs/tags/v') && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-macOS-x64-Dev
           path: |
@@ -194,15 +530,9 @@ jobs:
             ${{ runner.temp }}/VoiceRewrite-*-macOS-x64-Dev.dmg.sha256
           retention-days: 7
           if-no-files-found: error
-      - name: Upload Intel user-journey latency report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: user-latency-x64
-          path: performance-output/macos-x64/journey.json
-          retention-days: 7
-          if-no-files-found: warn
   build:
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     permissions:
@@ -210,8 +540,8 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
@@ -222,6 +552,13 @@ jobs:
         working-directory: voice-rewrite
         # Win32 callbacks pass OS-owned pointers as uintptr; keep every other vet check.
         run: go vet -unsafeptr=false ./...
+      - name: Compile Windows GUI on PRs
+        if: github.event_name == 'pull_request'
+        working-directory: voice-rewrite
+        shell: pwsh
+        run: |
+          go build -trimpath -ldflags '-H=windowsgui' -o "$env:RUNNER_TEMP/VoiceRewrite.exe" .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build x64 GUI
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         working-directory: voice-rewrite
@@ -233,8 +570,8 @@ jobs:
         run: |
           $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.29.0-dev' }
           go build -trimpath -ldflags "-H=windowsgui -s -w -X main.buildID=$version" -o VoiceRewrite.exe .
-      - name: Package portable Windows build
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+      - name: Package portable Windows release
+        if: startsWith(github.ref, 'refs/tags/v')
         working-directory: voice-rewrite
         shell: pwsh
         run: |
@@ -247,9 +584,9 @@ jobs:
           Compress-Archive -Path 'package/VoiceRewrite' -DestinationPath 'VoiceRewrite-windows-x64.zip' -Force
           $hash = (Get-FileHash -LiteralPath 'VoiceRewrite-windows-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash *VoiceRewrite-windows-x64.zip" | Set-Content -LiteralPath 'SHA256SUMS.txt' -Encoding ascii
-      - name: Upload portable package and checksum
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
+      - name: Upload portable release package and checksum
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-portable-windows-x64
           path: |
@@ -258,13 +595,13 @@ jobs:
           if-no-files-found: error
       - name: Upload standalone EXE
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-windows-x64
           path: voice-rewrite/VoiceRewrite.exe
           if-no-files-found: error
       - name: Ensure Inno Setup compiler
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
@@ -275,7 +612,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
       - name: Build per-user installer
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
           $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.29.0' }
@@ -291,22 +628,24 @@ jobs:
       # short-lived OIDC credentials. This is NOT Authenticode publisher signing.
       - name: Attest portable archive provenance
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: voice-rewrite/VoiceRewrite-windows-x64.zip
       - name: Attest installer provenance
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: installer/output/VoiceRewrite-Setup-*-x64.exe
       - name: Upload installer and checksum
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-installer-windows-x64
           path: installer/output/*
           if-no-files-found: error
   build-oneclick:
+    needs: changes
+    if: needs.changes.outputs.oneclick == 'true'
     runs-on: windows-latest
     timeout-minutes: 15
     permissions:
@@ -314,8 +653,8 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
           cache-dependency-path: oneclick/go.mod
@@ -332,7 +671,7 @@ jobs:
         run: go build -trimpath -ldflags '-s -w' -o Qwen3-ASR-OneClick-Windows-x64.exe .
       - name: Attest OneClick provenance
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: oneclick/Qwen3-ASR-OneClick-Windows-x64.exe
       - name: Stage OneClick executable and license
@@ -344,14 +683,14 @@ jobs:
           Copy-Item -LiteralPath 'LICENSE' -Destination 'oneclick/package/'
       - name: Upload Qwen3-ASR OneClick executable
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: Qwen3-ASR-OneClick-Windows-x64
           path: oneclick/package/*
           if-no-files-found: error
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test-core, test-core-macos, build, build-oneclick]
+    needs: [test-core, test-swift-modules, test-core-macos, build-macos-intel, build, build-oneclick]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -360,7 +699,7 @@ jobs:
       # Read curated notes from main (not from the tag's historical build
       # snapshot). A release without dedicated notes must fail, never fall back
       # to GitHub's automatic PR/commit history.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
           path: release-metadata
@@ -377,13 +716,13 @@ jobs:
             echo "Release notes contain auto-generated or internal development history" >&2
             exit 1
           fi
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: VoiceRewrite-*
           path: release
           merge-multiple: true
       - name: Publish unsigned release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           prerelease: ${{ github.ref_name != 'v0.1.0' }}
           name: VoiceRewrite ${{ github.ref_name }}
@@ -396,3 +735,140 @@ jobs:
             release/VoiceRewrite-Setup-*-x64.exe
             release/VoiceRewrite-windows-x64.zip
           fail_on_unmatched_files: true
+
+  windows-acceptance:
+    name: Windows UI capture (parallel)
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && needs.changes.outputs.ui == 'true' }}
+    needs: changes
+    permissions:
+      contents: read
+    uses: ./.github/workflows/acceptance-evidence.yml
+    with:
+      phase: capture
+
+  ui-acceptance:
+    name: Compare cross-platform UI evidence
+    if: always() && !startsWith(github.ref, 'refs/tags/') && needs.changes.outputs.ui == 'true' && needs.test-core-macos.result == 'success' && needs.build-macos-intel.result == 'success' && needs.windows-acceptance.result == 'success'
+    needs: [changes, test-core-macos, build-macos-intel, windows-acceptance]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/acceptance-evidence.yml
+    with:
+      phase: compare
+
+  direct2d-acceptance:
+    name: Direct2D result acceptance
+    if: github.event_name == 'pull_request' && needs.changes.outputs.direct2d == 'true'
+    needs: changes
+    permissions:
+      contents: read
+    uses: ./.github/workflows/direct2d-result.yml
+
+  ci-gate:
+    name: CI Gate
+    if: always() && github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      actions: read
+    needs: [changes, test-core, test-swift-modules, test-core-macos, build-macos-intel, build, build-oneclick, windows-acceptance, ui-acceptance, direct2d-acceptance]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every selected platform
+        shell: bash
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CORE_REQUIRED: ${{ needs.changes.outputs.core }}
+          CORE_RESULT: ${{ needs.test-core.result }}
+          MAC_REQUIRED: ${{ needs.changes.outputs.macos }}
+          SWIFT_MODULES_RESULT: ${{ needs.test-swift-modules.result }}
+          MAC_ARM_RESULT: ${{ needs.test-core-macos.result }}
+          MAC_INTEL_RESULT: ${{ needs.build-macos-intel.result }}
+          WIN_REQUIRED: ${{ needs.changes.outputs.windows }}
+          WIN_RESULT: ${{ needs.build.result }}
+          ONECLICK_REQUIRED: ${{ needs.changes.outputs.oneclick }}
+          ONECLICK_RESULT: ${{ needs.build-oneclick.result }}
+          UI_REQUIRED: ${{ needs.changes.outputs.ui }}
+          UI_CAPTURE_RESULT: ${{ needs.windows-acceptance.result }}
+          UI_RESULT: ${{ needs.ui-acceptance.result }}
+          D2D_REQUIRED: ${{ needs.changes.outputs.direct2d }}
+          D2D_RESULT: ${{ needs.direct2d-acceptance.result }}
+        run: |
+          set -euo pipefail
+          [[ "$CHANGES_RESULT" == 'success' ]] || { echo "::error::Change classification failed"; exit 1; }
+          check() {
+            local label="$1" required="$2" outcome="$3"
+            if [[ "$required" == 'true' && "$outcome" != 'success' ]]; then
+              echo "::error::$label expected success, got $outcome"
+              return 1
+            fi
+            if [[ "$required" != 'true' && "$outcome" != 'skipped' ]]; then
+              echo "::error::$label expected skip, got $outcome"
+              return 1
+            fi
+            echo "$label: $outcome (required=$required)"
+          }
+          errors=0
+          check 'Go Core' "$CORE_REQUIRED" "$CORE_RESULT" || errors=1
+          check 'macOS Swift modules' "$MAC_REQUIRED" "$SWIFT_MODULES_RESULT" || errors=1
+          check 'macOS ARM64' "$MAC_REQUIRED" "$MAC_ARM_RESULT" || errors=1
+          check 'macOS Intel' "$MAC_REQUIRED" "$MAC_INTEL_RESULT" || errors=1
+          check 'Windows' "$WIN_REQUIRED" "$WIN_RESULT" || errors=1
+          check 'OneClick' "$ONECLICK_REQUIRED" "$ONECLICK_RESULT" || errors=1
+          check 'Windows UI capture' "$UI_REQUIRED" "$UI_CAPTURE_RESULT" || errors=1
+          check 'Cross-platform UI acceptance' "$UI_REQUIRED" "$UI_RESULT" || errors=1
+          check 'Direct2D result acceptance' "$D2D_REQUIRED" "$D2D_RESULT" || errors=1
+          exit "$errors"
+      - name: Summarize actual runner usage
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" > "$RUNNER_TEMP/jobs.json"
+          python3 - "$RUNNER_TEMP/jobs.json" <<'PY'
+          import collections
+          import datetime
+          import json
+          import os
+          import sys
+
+          def timestamp(value):
+              return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              data = json.load(stream)
+          rows = []
+          for job in data.get("jobs", []):
+              start, end = job.get("started_at"), job.get("completed_at")
+              if not start or not end or not job.get("runner_name"):
+                  continue
+              elapsed = max(0, (timestamp(end) - timestamp(start)).total_seconds())
+              runner = (job.get("labels") or ["unknown"])[0]
+              rows.append((runner, elapsed))
+          by_runner = collections.defaultdict(lambda: [0, 0.0])
+          for runner, elapsed in rows:
+              by_runner[runner][0] += 1
+              by_runner[runner][1] += elapsed / 60.0
+          lines = ["### CI runner usage", "",
+                   "Observed job execution time; not a GitHub billing statement.",
+                   "", "| Runner | Executed jobs | Runner minutes |",
+                   "| --- | ---: | ---: |"]
+          for runner, (count, minutes) in sorted(by_runner.items()):
+              lines.append(f"| {runner} | {count} | {minutes:.1f} |")
+          lines.append(f"| **Total** | **{len(rows)}** | **{sum(v[1] for v in by_runner.values()):.1f}** |")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
+              out.write("\n".join(lines) + "\n")
+          print("\n".join(lines))
+          PY
+
+  macos-signed-distribution:
+    name: Publish signed macOS packages
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/macos-distribution.yml
+    secrets: inherit

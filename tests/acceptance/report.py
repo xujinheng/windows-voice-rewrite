@@ -2,6 +2,7 @@
 """Review-only same-state visual evidence. No screenshot can prove hardware acceptance."""
 import argparse
 import hashlib
+import html
 import json
 from pathlib import Path
 
@@ -145,6 +146,8 @@ def generate(paths, output):
     (output / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     md = [
         "# Same-state UI evidence — review required", "",
+        "**Compare links below are local PNGs inside the downloaded acceptance-comparison artifact.**",
+        "**For the full gallery, open index.html after extracting the artifact.**", "",
         "**NOT a hardware verification or an automatic parity pass.**",
         "Only identical state, fixture, theme, locale and logical scale are paired.", "",
         "| Platform | State | Fixture | Theme | Evidence |",
@@ -159,6 +162,37 @@ def generate(paths, output):
                "Mouse4/5, microphone, permissions, Zoom/Teams, editor delivery and signed installs",
                "remain in Issue #73's physical acceptance matrix."])
     (output / "report.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    # GitHub Actions summaries cannot serve relative Artifact PNG URLs: those
+    # were resolving to /actions/runs/<filename>.png and returning 404.
+    # Provide an offline HTML index with working relative links instead.
+    figures = []
+    for row in rows:
+        if "side_by_side" not in row:
+            continue
+        identity = row["identity"]
+        label = " · ".join([row["platform"], identity["state"],
+                            identity["theme"], identity["fixture"]])
+        filename = row["side_by_side"]
+        figures.append("<figure><figcaption>" + html.escape(label) +
+                       "</figcaption><a href=\"" + html.escape(filename, quote=True) +
+                       "\"><img loading=\"lazy\" alt=\"" + html.escape(label, quote=True) +
+                       "\" src=\"" + html.escape(filename, quote=True) +
+                       "\"></a></figure>")
+    gallery = (
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<title>VoiceRewrite side-by-side visual review</title>"
+        "<style>body{font:16px system-ui,sans-serif;max-width:1500px;margin:2em auto;"
+        "padding:0 1em;background:#f8fafc;color:#0f172a}"
+        "figure{margin:1.5em 0;padding:1em;border:1px solid #cbd5e1;border-radius:8px;"
+        "background:white}figcaption{font-weight:600;margin-bottom:1em}"
+        "img{max-width:100%;height:auto}p{line-height:1.5}</style></head><body>"
+        "<h1>VoiceRewrite side-by-side visual review</h1>"
+        "<p>Simulated UI only — NOT_VERIFIED_ON_PHYSICAL_DEVICE. "
+        "Images are stored in this same directory; review each pair visually.</p>"
+        + "\n".join(figures) + "</body></html>\n"
+    )
+    (output / "index.html").write_text(gallery, encoding="utf-8")
     return report
 
 
