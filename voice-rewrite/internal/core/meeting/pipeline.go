@@ -113,8 +113,14 @@ func (p *Pipeline) QueueAudio(turn AudioTurn) {
 		return
 	}
 	queue := p.previews
+	kind := QueuePreview
 	if turn.Final {
 		queue = p.finals
+		kind = QueueFinal
+	}
+	if DecideQueue(kind, len(queue), cap(queue)) == QueueDropIncoming {
+		p.dropped(turn.Epoch)
+		return
 	}
 	select {
 	case queue <- turn:
@@ -251,6 +257,10 @@ func (p *Pipeline) queueCaption(job CaptionTask) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.currentLocked(job) {
+		return
+	}
+	if DecideQueue(QueueCaption, len(p.captions), cap(p.captions)) == QueueDropIncoming {
+		p.dropped(job.Epoch)
 		return
 	}
 	select {

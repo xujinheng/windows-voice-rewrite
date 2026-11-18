@@ -85,7 +85,7 @@ func newBridgeMeeting(cfg coreconfig.Config) (*bridgeMeeting, error) {
 	m := &bridgeMeeting{
 		id:             hex.EncodeToString(key[:]),
 		runtime:        meetingcore.NewSessionRuntime(),
-		source:         &meetingPacketSource{packets: make(chan []byte, 12)},
+		source:         &meetingPacketSource{packets: make(chan []byte, meetingcore.PacketBacklog)},
 		audioDone:      make(chan struct{}),
 		status:         meetingcore.ListeningPrompt,
 		config:         cfg,
@@ -320,6 +320,20 @@ func (m *bridgeMeeting) feed(pcm []byte, expectedEpoch uint64) error {
 	if expectedEpoch != 0 && expectedEpoch != epoch {
 		return errMeetingStaleEpoch
 	}
+	decision, err := m.runtime.AdmitPCM(epoch, len(pcm), len(m.source.packets), cap(m.source.packets))
+	if err != nil {
+		if errors.Is(err, meetingcore.ErrCaptureEpoch) {
+			return errMeetingStaleEpoch
+		}
+		return errMeetingPaused
+	}
+	if decision == meetingcore.QueueDropIncoming {
+		m.dropped++
+		m.status = meetingcore.DroppedWork
+		return errMeetingBusy
+	}
+	// Admission and send are protected by m.mu; the consumer may only
+	// remove packets, so this send cannot make the bounded queue larger.
 	select {
 	case m.source.packets <- pcm:
 		return nil
@@ -328,6 +342,61 @@ func (m *bridgeMeeting) feed(pcm []byte, expectedEpoch uint64) error {
 		m.status = meetingcore.DroppedWork
 		return errMeetingBusy
 	}
+}
+
+// noteTransportDrops accounts for callbacks discarded by the native transport
+// after the Go-advertised in-flight budget was exhausted. It does not create
+// an additional RPC; the count rides on the next normal meeting_feed.
+func (m *bridgeMeeting) noteTransportDrops(count uint32, epoch uint64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, current, paused := m.runtime.Snapshot()
+	if epoch != current || paused || !m.runtime.Active(epoch) {
+		return
+	}
+	// Bound potentially hostile counters without allowing integer overflow.
+	if count > 100000 {
+		count = 100000
+	}
+	m.dropped += int(count)
+	m.status = meetingcore.DroppedWork
+}
+
+// switchSource revokes the old capture epoch before a new native source can
+// publish a frame; the host must stop its old capture before invoking this.
+func (m *bridgeMeeting) switchSource(source string, epoch uint64) error {
+	if source == "" || len(source) > 256 || epoch == 0 {
+		return meetingcore.ErrCaptureSource
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, err := m.runtime.CaptureRoute(meetingcore.CaptureSwitch, source, epoch)
+	if err != nil {
+		return err
+	}
+	m.discardPacketsLocked()
+	m.level = 0
+	m.asrFirstMS, m.asrDoneMS, m.translationFirstMS, m.translationDoneMS = 0, 0, 0, 0
+	m.captions = meetingcore.KeepCompletedCaptions(m.captions)
+	m.replies.ResetWork()
+	m.status = meetingcore.CaptureConnecting
+	return nil
+}
+
+func (m *bridgeMeeting) sourceLost(epoch uint64) error {
+	if epoch == 0 {
+		return meetingcore.ErrCaptureEpoch
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, err := m.runtime.CaptureRoute(meetingcore.CaptureLost, "", epoch)
+	if err != nil {
+		return err
+	}
+	m.discardPacketsLocked()
+	m.level = 0
+	m.status = meetingcore.CapturePausedStatus
+	return nil
 }
 
 func (m *bridgeMeeting) discardPacketsLocked() {
@@ -349,7 +418,16 @@ func (m *bridgeMeeting) setPaused(paused bool) error {
 	if m.runtime.Context().Err() != nil {
 		return context.Canceled
 	}
-	if m.runtime.SetPaused(paused) {
+	event := meetingcore.CaptureResume
+	if paused {
+		event = meetingcore.CapturePause
+	}
+	_, _, wasPaused := m.runtime.Snapshot()
+	_, err := m.runtime.CaptureRoute(event, "", 0)
+	if err != nil {
+		return err
+	}
+	if wasPaused != paused {
 		m.discardPacketsLocked()
 		m.level = 0
 		// A new capture epoch must not display old inference latency.
@@ -377,7 +455,7 @@ func (m *bridgeMeeting) setPaused(paused bool) error {
 
 func (m *bridgeMeeting) stop() {
 	m.mu.Lock()
-	m.runtime.Stop()
+	_, _ = m.runtime.CaptureRoute(meetingcore.CaptureStop, "", 0)
 	m.discardPacketsLocked()
 	m.level = 0
 	m.mu.Unlock()
@@ -622,6 +700,7 @@ func (m *bridgeMeeting) snapshot() map[string]any {
 	}
 	return map[string]any{
 		"capture_paused": paused, "epoch": epoch,
+		"feed_window": meetingcore.PacketWindow, "source_id": m.runtime.CaptureSource(),
 		"profile_version": m.profileVersion, "asr_mode": m.config.MeetingASRMode,
 		"metrics": map[string]any{
 			"pending":      pending,

@@ -18,6 +18,8 @@ type SessionRuntime struct {
 	epoch            uint64
 	turnID           uint64
 	paused           bool
+	sourceID         string
+	sourceLost       bool
 	expressionSerial uint64
 	stopExpression   context.CancelFunc
 	stopReply        context.CancelFunc
@@ -41,6 +43,10 @@ func (s *SessionRuntime) Wake() <-chan struct{}    { return s.wake }
 func (s *SessionRuntime) Stop() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.stopLocked()
+}
+
+func (s *SessionRuntime) stopLocked() {
 	s.stop()
 	s.cancelWork()
 	if s.stopExpression != nil {
@@ -64,7 +70,7 @@ func (s *SessionRuntime) Snapshot() (context.Context, uint64, bool) {
 }
 
 func (s *SessionRuntime) activeLocked(epoch uint64) bool {
-	return s.ctx.Err() == nil && !s.paused && s.epoch == epoch && s.work.Err() == nil
+	return s.ctx.Err() == nil && !s.paused && !s.sourceLost && s.epoch == epoch && s.work.Err() == nil
 }
 
 // Active rejects work that was superseded by a pause, resume or config reset.
@@ -113,7 +119,7 @@ func (s *SessionRuntime) ResetWork() {
 func (s *SessionRuntime) SetPaused(paused bool) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.ctx.Err() != nil || s.paused == paused {
+	if s.ctx.Err() != nil || s.paused == paused || (!paused && s.sourceLost) {
 		return false
 	}
 	s.paused = paused
