@@ -95,7 +95,7 @@ func TestConfigAndPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.BackendPort != 8080 || cfg.ListenAddress != "127.0.0.1:8081" {
+	if cfg.BackendPort != 8082 || cfg.ListenAddress != "127.0.0.1:8080" {
 		t.Fatal(cfg)
 	}
 	for _, name := range []string{"Qwen3-ASR-1.7B-Q8_0.gguf", "mmproj-Qwen3-ASR-1.7B-bf16.gguf"} {
@@ -111,6 +111,13 @@ func TestConfigAndPaths(t *testing.T) {
 		t.Fatal(opts.mmprojPath)
 	}
 	data, _ := os.ReadFile(cfgFile)
+	var persisted config
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		t.Fatal(err)
+	}
+	if persisted.ListenAddress != cfg.ListenAddress || persisted.BackendPort != cfg.BackendPort {
+		t.Fatalf("written default config differs: %+v", persisted)
+	}
 	if strings.Contains(string(data), "Users\\") {
 		t.Fatal("private path in config")
 	}

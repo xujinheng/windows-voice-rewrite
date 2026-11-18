@@ -8,7 +8,7 @@ Shared Go launcher/proxy for `llama-server` on Windows and macOS with audio tran
 2. Place the EXE in a writable folder (for example, `D:\\ASR`) and double-click it.
 3. The launcher creates `Qwen3-ASR/` **beside the EXE**, downloads the Q8_0 GGUF and matching audio projector from **ModelScope (魔搭)**, then installs a pinned llama.cpp Windows release via mainland-friendly download mirrors. Both are verified against upstream SHA-256 digests.
 4. It detects an NVIDIA CUDA GPU and tries the CUDA 12.4 backend; otherwise it installs the CPU backend. If the CUDA device check fails, it falls back to CPU.
-5. When the console prints `READY!`, leave it open. The ASR API is `http://127.0.0.1:8081/v1` by default; set this in VoiceRewrite's ASR endpoint if using the default configuration.
+5. When the console prints `READY!`, leave it open. The ASR API is `http://127.0.0.1:8080/v1` by default, matching VoiceRewrite's default ASR endpoint; no manual endpoint change is needed. llama.cpp listens internally on `127.0.0.1:8082`.
 
 No Python, pip, Git, or manual model management is required. First setup needs internet and several gigabytes of free disk space. ModelScope hosts the weights and projector; the llama.cpp mirrors relay **official GitHub release archives**, so no direct access to GitHub or Hugging Face is required. Mirror availability varies by network.
 
@@ -23,7 +23,7 @@ Repeating the launch **does not download intact files again**. Interrupted downl
 
 ### Advanced manual configuration
 
-If you already have `llama-server.exe` and matching GGUF files, place them alongside the EXE or edit `config.json` to point at your existing files. Custom paths are not auto-downloaded or overwritten. The pre-existing `config.voicerewrite.example.json` is provided if you want the proxy to listen on port 8080 instead. Model loading and GPU support still need hardware validation on a Windows machine.
+If you already have `llama-server.exe` and matching GGUF files, place them alongside the EXE or edit `config.json` to point at your existing files. Custom paths are not auto-downloaded or overwritten. The legacy `config.voicerewrite.example.json` remains available for compatibility, but is now identical to the default port configuration. Existing `config.json` values are preserved; to migrate an older 8081 installation, change `listen_address` to `127.0.0.1:8080` and `backend_port` to `8082` before restarting. Model loading and GPU support still need hardware validation on a Windows machine.
 
 ## API contract
 
