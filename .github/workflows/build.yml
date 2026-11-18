@@ -24,6 +24,8 @@ jobs:
       macos: ${{ steps.scope.outputs.macos }}
       windows: ${{ steps.scope.outputs.windows }}
       oneclick: ${{ steps.scope.outputs.oneclick }}
+      ui: ${{ steps.scope.outputs.ui }}
+      direct2d: ${{ steps.scope.outputs.direct2d }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${{ github.event_name }}" != 'pull_request' ]]; then
-            printf 'core=true\nmacos=true\nwindows=true\noneclick=true\n' >> "$GITHUB_OUTPUT"
+            printf 'core=true\nmacos=true\nwindows=true\noneclick=true\nui=true\ndirect2d=true\n' >> "$GITHUB_OUTPUT"
           else
             git diff --name-only "$BASE_SHA" "$HEAD_SHA" |
               python3 scripts/ci_changes.py --output "$GITHUB_OUTPUT"
@@ -436,10 +438,26 @@ jobs:
             release/VoiceRewrite-windows-x64.zip
           fail_on_unmatched_files: true
 
+  ui-acceptance:
+    name: Cross-platform UI acceptance
+    if: github.event_name == 'pull_request' && needs.changes.outputs.ui == 'true'
+    needs: changes
+    permissions:
+      contents: read
+    uses: ./.github/workflows/acceptance-evidence.yml
+
+  direct2d-acceptance:
+    name: Direct2D result acceptance
+    if: github.event_name == 'pull_request' && needs.changes.outputs.direct2d == 'true'
+    needs: changes
+    permissions:
+      contents: read
+    uses: ./.github/workflows/direct2d-result.yml
+
   ci-gate:
     name: CI Gate
     if: always() && github.event_name == 'pull_request'
-    needs: [changes, test-core, test-core-macos, build-macos-intel, build, build-oneclick]
+    needs: [changes, test-core, test-core-macos, build-macos-intel, build, build-oneclick, ui-acceptance, direct2d-acceptance]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -456,6 +474,10 @@ jobs:
           WIN_RESULT: ${{ needs.build.result }}
           ONECLICK_REQUIRED: ${{ needs.changes.outputs.oneclick }}
           ONECLICK_RESULT: ${{ needs.build-oneclick.result }}
+          UI_REQUIRED: ${{ needs.changes.outputs.ui }}
+          UI_RESULT: ${{ needs.ui-acceptance.result }}
+          D2D_REQUIRED: ${{ needs.changes.outputs.direct2d }}
+          D2D_RESULT: ${{ needs.direct2d-acceptance.result }}
         run: |
           set -euo pipefail
           [[ "$CHANGES_RESULT" == 'success' ]] || { echo "::error::Change classification failed"; exit 1; }
@@ -477,6 +499,8 @@ jobs:
           check 'macOS Intel' "$MAC_REQUIRED" "$MAC_INTEL_RESULT" || errors=1
           check 'Windows' "$WIN_REQUIRED" "$WIN_RESULT" || errors=1
           check 'OneClick' "$ONECLICK_REQUIRED" "$ONECLICK_RESULT" || errors=1
+          check 'Cross-platform UI acceptance' "$UI_REQUIRED" "$UI_RESULT" || errors=1
+          check 'Direct2D result acceptance' "$D2D_REQUIRED" "$D2D_RESULT" || errors=1
           exit "$errors"
 
   macos-signed-distribution:
