@@ -122,29 +122,29 @@ struct SettingsView: View {
                         .font(.system(size: 13))
                         .frame(width: 112, alignment: .leading)
                     HStack(spacing: 6) {
-                        TextField("模型 ID", text: $model.settings.textModel)
+                        TextField("模型 ID", text: $model.settings.asrModel)
                             .textFieldStyle(.roundedBorder)
                             .frame(height: 32)
-                            .accessibilityIdentifier("text_model")
-                        Button("发现模型") { model.discoverModels(for: .selectedTask) }
+                            .accessibilityIdentifier("asr_model")
+                        Button("发现模型") { model.discoverModels(for: .transcribe) }
                             .controlSize(.small)
-                            .disabled(model.isDiscoveringLLMModels)
-                            .accessibilityIdentifier("discover_llm_models")
+                            .disabled(model.isDiscoveringASRModels)
+                            .accessibilityIdentifier("discover_asr_models")
                         Menu {
-                            ForEach(model.llmAvailableModels, id: \.self) { id in
-                                Button(id) { model.settings.textModel = id }
+                            ForEach(model.asrAvailableModels, id: \.self) { id in
+                                Button(id) { model.settings.asrModel = id }
                             }
                         } label: {
                             Image(systemName: "chevron.down").frame(width: 20)
                         }
-                        .disabled(model.llmAvailableModels.isEmpty)
+                        .disabled(model.asrAvailableModels.isEmpty)
                         .accessibilityLabel("选择发现的模型")
-                        .accessibilityIdentifier("select_llm_model")
+                        .accessibilityIdentifier("select_asr_model")
                     }
                 }
-                if !model.llmModelDiscoveryStatus.isEmpty {
-                    Text(model.llmModelDiscoveryStatus).font(.footnote).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("llm_models_status")
+                if !model.asrModelDiscoveryStatus.isEmpty {
+                    Text(model.asrModelDiscoveryStatus).font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("asr_models_status")
                 }
                 HStack(spacing: 12) {
                     Text("API Key")
@@ -181,22 +181,26 @@ struct SettingsView: View {
                     Text("模型 ID")
                         .font(.system(size: 13))
                         .frame(width: 112, alignment: .leading)
-                    TextField("模型 ID", text: $model.settings.textModel)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(height: 32)
-                        .accessibilityIdentifier("text_model")
-                }
-                HStack {
-                    Button("发现模型") { model.discoverModels(for: .selectedTask) }
-                        .disabled(model.isDiscoveringLLMModels)
-                        .accessibilityIdentifier("discover_llm_models")
-                    Menu("选择发现的模型") {
-                        ForEach(model.llmAvailableModels, id: \.self) { id in
-                            Button(id) { model.settings.textModel = id }
+                    HStack(spacing: 6) {
+                        TextField("模型 ID", text: $model.settings.textModel)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(height: 32)
+                            .accessibilityIdentifier("text_model")
+                        Button("发现模型") { model.discoverModels(for: .selectedTask) }
+                            .controlSize(.small)
+                            .disabled(model.isDiscoveringLLMModels)
+                            .accessibilityIdentifier("discover_llm_models")
+                        Menu {
+                            ForEach(model.llmAvailableModels, id: \.self) { id in
+                                Button(id) { model.settings.textModel = id }
+                            }
+                        } label: {
+                            Image(systemName: "chevron.down").frame(width: 20)
                         }
+                        .disabled(model.llmAvailableModels.isEmpty)
+                        .accessibilityLabel("选择发现的模型")
+                        .accessibilityIdentifier("select_llm_model")
                     }
-                    .disabled(model.llmAvailableModels.isEmpty)
-                    .accessibilityIdentifier("select_llm_model")
                 }
                 if !model.llmModelDiscoveryStatus.isEmpty {
                     Text(model.llmModelDiscoveryStatus).font(.footnote).foregroundStyle(.secondary)
