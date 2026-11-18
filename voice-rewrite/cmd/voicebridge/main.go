@@ -303,8 +303,8 @@ func headlessProfile(req request) response {
 		"dictation": cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
 		"maximumSeconds": cfg.MaxRecordSeconds, "modifierDelayMS": 200,
 		"pasteRestoreMS": clipboard.PasteReceiptMaxMilliseconds,
-		"mouseDelayMS": int(input.WindowsSideHold / time.Millisecond),
-		"pill":         indicator.HostSpec(),
+		"mouseDelayMS":   int(input.WindowsSideHold / time.Millisecond),
+		"pill":           indicator.HostSpec(),
 	}})
 }
 

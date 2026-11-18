@@ -114,6 +114,7 @@ private final class Microphone {
         samples = []
         rms = 0
         lock.unlock()
+        guard !captured.isEmpty else { return Data() }
         // AVAudioConverter supplies quality resampling; never resample on the audio callback.
         guard let source = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate,
                                          channels: 1, interleaved: false),
@@ -201,6 +202,8 @@ private enum GoCore {
         ]
         let request = try JSONSerialization.data(withJSONObject: payload)
         try process.run()
+        stdin.fileHandleForWriting.write(request + Data([10]))
+        try? stdin.fileHandleForWriting.close()
         if operation != "host_profile" {
             taskLock.lock()
             currentTask = process
@@ -213,8 +216,6 @@ private enum GoCore {
                 taskLock.unlock()
             }
         }
-        stdin.fileHandleForWriting.write(request + Data([10]))
-        try? stdin.fileHandleForWriting.close()
         // Drain stdout while the helper is alive to avoid pipe-buffer deadlocks.
         let output = stdout.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
@@ -252,7 +253,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         item.button?.title = "VR"
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Reload config", action: #selector(reload), keyEquivalent: "r"))
-        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         for entry in menu.items where entry.action != nil { entry.target = self }
         item.menu = menu
