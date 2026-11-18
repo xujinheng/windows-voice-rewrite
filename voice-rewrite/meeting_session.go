@@ -75,7 +75,7 @@ func (s *meetingSession) setCapturePaused(paused bool) {
 			event = meetingcore.CapturePause
 		}
 		_, _, wasPaused := s.runtime.Snapshot()
-		if _, err := s.runtime.CaptureRoute(event, "", 0); err != nil || wasPaused == paused {
+		if _, err := meetingcore.CaptureRoute(s.runtime, event, "", 0); err != nil || wasPaused == paused {
 			return
 		}
 		s.view.capturePaused = paused
@@ -392,7 +392,7 @@ func (s *meetingSession) start(source audio.FrameSource) {
 				err = errors.New(meetingcore.CaptureEnded)
 			}
 			s.applyWork(epoch, func() { s.captureErr = err })
-			_, _ = s.runtime.CaptureRoute(meetingcore.CaptureLost, "", epoch)
+			_, _ = meetingcore.CaptureRoute(s.runtime, meetingcore.CaptureLost, "", epoch)
 			return
 		}
 	}()
