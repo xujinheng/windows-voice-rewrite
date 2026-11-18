@@ -23,6 +23,7 @@ import (
 	"voicerewrite/internal/core/provider"
 	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/shortcut"
+	sessioncore "voicerewrite/internal/core/session"
 	"voicerewrite/internal/core/speech"
 	"voicerewrite/internal/core/textedit"
 	"voicerewrite/internal/core/update"
@@ -58,6 +59,13 @@ type request struct {
 	ReplyIndex      int             `json:"reply_index"`
 	ViewButton      int             `json:"button_id"`
 	FocusExpression bool            `json:"focus_expression"`
+	Event           string          `json:"event"`
+	Generation      uint64          `json:"generation"`
+	Stage           string          `json:"stage"`
+	RequestID       string          `json:"request_id"`
+	Reason          string          `json:"reason"`
+	AudioBytes      int             `json:"audio_bytes"`
+	RecordSeconds   int             `json:"record_seconds"`
 }
 
 type bridgeError struct {
@@ -116,6 +124,7 @@ type bridgeServer struct {
 	wg      sync.WaitGroup
 	options bridgeOptions
 	meeting *bridgeMeeting
+	voiceEpoch sessioncore.Policy
 
 	input    io.Reader
 	output   io.Writer
@@ -241,6 +250,8 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		switch req.Op {
 		case "meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop", "meeting_pause", "meeting_resume", "meeting_accept", "meeting_cancel", "meeting_view", "meeting_configure", "meeting_demo":
 			s.send(s.meetingRequest(req))
+		case "voice_epoch":
+			s.send(s.voiceEpochRequest(req))
 		case "hello":
 			s.send(success(req.ID, map[string]any{"name": jsonl.HelloName, "protocol": jsonl.Version}))
 		case "parse_shortcut":
@@ -296,6 +307,44 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	s.wg.Add(1)
 	s.mu.Unlock()
 	go s.runTask(ctx, task, req)
+}
+
+// voice_epoch is a lightweight control event, never a per-audio-frame RPC.
+// The same session.Policy code is consumed by the Windows worker. Each reply
+// echoes exact generation ownership and the Go-issued effects.
+func (s *bridgeServer) voiceEpochRequest(req request) response {
+    decision := s.voiceEpoch.Apply(sessioncore.Event{
+        Type: sessioncore.EventType(req.Event),
+        SessionID: req.SessionID,
+        Generation: req.Generation,
+        Stage: sessioncore.Stage(req.Stage),
+        RequestID: req.RequestID,
+        Reason: sessioncore.Reason(req.Reason),
+        AudioBytes: req.AudioBytes,
+        RecordSeconds: req.RecordSeconds,
+    })
+    effects := make([]map[string]any, 0, len(decision.Effects))
+    for _, effect := range decision.Effects {
+        effects = append(effects, map[string]any{
+            "id":effect.ID, "type":effect.Type,
+            "session_id":effect.SessionID, "generation":effect.Generation,
+            "stage":effect.Stage, "reason":effect.Reason, "request_id":effect.RequestID,
+        })
+        if effect.Type == "cancel_request" && effect.RequestID != "" {
+            s.mu.Lock()
+            if active := s.active[effect.RequestID]; active != nil {
+                active.canceled = true
+                active.cancel()
+            }
+            s.mu.Unlock()
+        }
+    }
+    return success(req.ID, map[string]any{
+        "allowed":decision.Allowed, "session_id":decision.SessionID,
+        "generation":decision.Generation, "stage":decision.Stage,
+        "reason":decision.Reason, "budget_ms":decision.BudgetMilliseconds,
+        "effects":effects,
+    })
 }
 
 func (s *bridgeServer) meetingRequest(req request) response {
