@@ -422,7 +422,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         activeAction = nil
         pending = true
         pill.processing()
-        show("Processing…")
+        show(action == .dictation ? config.profile.pill.processingDictation : config.profile.pill.processingRewrite)
         let configValue = config.raw
         let selectedValue = selected
         let pid = targetPID
@@ -440,14 +440,14 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     self.pending = false
                     switch result {
                     case .failure(let error):
-                        self.reset("ASR error")
+                        self.reset(self.config.profile.pill.errorLabel)
                         fputs("VoiceRewrite: \(error)\n", stderr)
                     case .success(let value):
                         guard let text = value.text, !text.isEmpty else {
                             self.reset("Empty"); return
                         }
                         guard value.route == "replace" || (action == .dictation && value.route == "insert") else {
-                            self.reset("Preview only"); return
+                            self.reset(self.config.profile.pill.fallbackLabel, phase: .fallback); return
                         }
                         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else {
                             self.reset("Focus changed"); return
@@ -526,7 +526,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         up.flags = .maskCommand
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
-        show("Sent ✓")
+        show(config.profile.pill.sentLabel)
         pill.result(.sent)
         // Text equality alone does not prove ownership: another app can copy
         // the very same text. changeCount protects that user's newer clipboard.
@@ -548,10 +548,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         show("Cancelled")
     }
 
-    private func reset(_ message: String) {
-        if pill.isVisible {
-            pill.result(message == "Preview only" ? .fallback : .error)
-        }
+    private func reset(_ message: String, phase: PillAppearance = .error) {
+        if pill.isVisible { pill.result(phase) }
         clearSession()
         show(message)
     }
