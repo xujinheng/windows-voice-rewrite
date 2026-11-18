@@ -178,13 +178,18 @@ private struct BridgeReply: Decodable {
 private enum GoCore {
     private static let taskLock = NSLock()
     private static var currentTask: Process?
-    static func cancel() {
-        taskLock.lock()
-        defer { taskLock.unlock() }
-        if currentTask?.isRunning == true { currentTask?.terminate() }
+    private static var canceledGeneration: UInt64 = 0
+    static func cancel(generation: UInt64 = 0) {
+        taskLock.withLock {
+            if generation != 0 { canceledGeneration = generation }
+            if currentTask?.isRunning == true { currentTask?.terminate() }
+        }
     }
     static func request(config: [String: Any], operation: String,
-                        audio: Data, selection: String?) throws -> BridgeReply.Output {
+                        audio: Data, selection: String?, generation: UInt64 = 0) throws -> BridgeReply.Output {
+        if taskLock.withLock({ generation != 0 && canceledGeneration == generation }) {
+            throw HostError.bridge("request canceled")
+        }
         let executable = Bundle.main.executableURL!
             .deletingLastPathComponent().appendingPathComponent("voicebridge")
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
@@ -205,16 +210,15 @@ private enum GoCore {
         try process.run()
         stdin.fileHandleForWriting.write(request + Data([10]))
         try? stdin.fileHandleForWriting.close()
-        if operation != "host_profile" {
-            taskLock.lock()
-            currentTask = process
-            taskLock.unlock()
+        if generation != 0 {
+            taskLock.withLock {
+                if canceledGeneration == generation { process.terminate() }
+                else { currentTask = process }
+            }
         }
         defer {
-            if operation != "host_profile" {
-                taskLock.lock()
+            taskLock.withLock {
                 if currentTask === process { currentTask = nil }
-                taskLock.unlock()
             }
         }
         // Drain stdout while the helper is alive to avoid pipe-buffer deadlocks.
@@ -240,8 +244,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private let pill = RecordingPill()
     private var config: HostConfig!
     private var configURL: URL!
-    private var pressed = Set<Int64>()
-    private var consumedMouse = Set<Int64>()
+    // An active physical press carries its native replay/consumed bit.
+    private var pressed = [Int64: Bool]()
     private var activeKey: Int64?
     private var activeAction: Action?
     private var generation: UInt64 = 0
@@ -349,32 +353,32 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         // Right-side flagsChanged events can fire while another modifier is held.
         // A tracked press is a release; a new press requires the matching flag.
         updatePress(code: code, name: name,
-                    down: !pressed.contains(code) && flags.contains(family),
+                    down: pressed[code] == nil && flags.contains(family),
                     delay: Double(config.profile.modifierDelayMS) / 1000)
     }
     private func updatePress(code: Int64, name: String, down: Bool, delay: TimeInterval,
                              cursor: CGPoint? = nil) {
         guard name == config.profile.dictation || name == config.profile.rewrite else { return }
         if down {
-            guard pressed.insert(code).inserted else { return }
-            arm(code: code, action: name == config.profile.dictation ? .dictation : .rewrite,
-                delay: delay)
-        } else if pressed.remove(code) != nil {
-            release(code)
-            let consumed = consumedMouse.remove(code) != nil
+            guard pressed[code] == nil else { return }
+            pressed[code] = false
+            guard activeKey == nil, !pending else { return }
+            activeKey = code
+            activeAction = name == config.profile.dictation ? .dictation : .rewrite
+            generation &+= 1
+            let token = generation
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.generation == token, self.pressed[code] != nil,
+                      self.activeKey == code, let action = self.activeAction else { return }
+                self.begin(action)
+            }
+        } else if let consumed = pressed.removeValue(forKey: code) {
+            if activeKey == code {
+                generation &+= 1
+                if microphone.running { finish() }
+                else { activeKey = nil; activeAction = nil }
+            }
             if let cursor, !consumed { replayClick(button: code - 100, cursor: cursor) }
-        }
-    }
-    private func arm(code: Int64, action: Action, delay: TimeInterval) {
-        guard activeKey == nil, !pending else { return }
-        activeKey = code
-        activeAction = action
-        generation &+= 1
-        let token = generation
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, self.generation == token, self.pressed.contains(code),
-                  self.activeKey == code else { return }
-            self.begin(action)
         }
     }
     private func replayClick(button: Int64, cursor: CGPoint) {
@@ -389,7 +393,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func begin(_ action: Action) {
-        if let key = activeKey, key >= 103 { consumedMouse.insert(key) }
+        if let key = activeKey, key >= 103 { pressed[key] = true }
         targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
         guard targetPID > 0 else { reset("No target"); return }
         targetWindow = focusedWindow()
@@ -412,12 +416,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             }
         } catch { reset("Mic error"); fputs("Microphone: \(error)\n", stderr) }
     }
-    private func release(_ code: Int64) {
-        guard activeKey == code else { return }
-        generation &+= 1
-        if microphone.running { finish() }
-        else { activeKey = nil; activeAction = nil }
-    }
     private func finish() {
         guard microphone.running, let action = activeAction else { return }
         activeKey = nil
@@ -435,7 +433,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 let result = Result {
                     try GoCore.request(config: configValue,
                                       operation: action == .dictation ? "transcribe" : "selected_voice_task",
-                                      audio: pcm, selection: selectedValue)
+                                      audio: pcm, selection: selectedValue, generation: token)
                 }
                 DispatchQueue.main.async {
                     guard let self, self.generation == token else { return }
@@ -541,8 +539,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     // Clicking the floating pill cancels the active capture or suppresses a
     // pending bridge result. It must never retry or deliver a stale write.
     private func cancelFromPill() {
+        let token = generation
         generation &+= 1
-        if pending { GoCore.cancel() }
+        if pending { GoCore.cancel(generation: token) }
         if microphone.running { _ = try? microphone.stop(discard: true) }
         clearSession()
         pill.dismiss()
