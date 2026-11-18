@@ -70,7 +70,7 @@ func TestSettingsChromeBoxesStayPut(t *testing.T) {
 	if ProbeStatusBox() != (Rect{352, 324, 435, 48}) || ProbeButtonBox() != (Rect{696, 130, 92, 30}) {
 		t.Fatal("probe boxes moved")
 	}
-	if WindowsInputNote() != (Rect{226, 345, 565, 44}) || SettingsHint() != (Rect{223, 457, 560, 22}) {
+	if WindowsInputNote() != (Rect{226, 374, 565, 32}) || SettingsHint() != (Rect{223, 457, 560, 22}) {
 		t.Fatal("note or hint moved")
 	}
 	if FooterButton(AnchorSave) != (Rect{220, 418, 124, 34}) || FooterButton(AnchorAdvanced) != (Rect{358, 418, 112, 34}) || FooterButton(AnchorClose) != (Rect{710, 418, 94, 34}) {
