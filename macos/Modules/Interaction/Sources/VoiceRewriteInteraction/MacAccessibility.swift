@@ -33,6 +33,17 @@ private let monitoredAXChange: AXObserverCallback = { _, _, _, opaque in
     Unmanaged<RevisionTracker>.fromOpaque(opaque).takeUnretainedValue().invalidate()
 }
 
+/// Same-process AX calls execute AppKit accessibility handlers inline on the calling
+/// thread. Remote AX calls use IPC and must stay off-main to avoid blocking the UI.
+enum AXCallThreading {
+    static func withSafeAppKitThread<T>(for pid: pid_t, _ operation: () throws -> T) rethrows -> T {
+        if pid == ProcessInfo.processInfo.processIdentifier && !Thread.isMainThread {
+            return try DispatchQueue.main.sync(execute: operation)
+        }
+        return try operation()
+    }
+}
+
 /// Internal to prevent bypassing InteractionSession's generation/selection authorization.
 /// A new instance should be owned by exactly one InteractionSession actor.
 final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
@@ -86,123 +97,127 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
         // An active secure-input session can hide a password field's AX subrole.
         guard !IsSecureEventInputEnabled() else { throw InteractionFailure.secureField }
 
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.4)
-        let focusedRef: CFTypeRef
-        do { focusedRef = try readAttribute(app, kAXFocusedUIElementAttribute) }
-        catch InteractionFailure.selectionUnavailable { throw InteractionFailure.noFocusedElement }
-        guard CFGetTypeID(focusedRef) == AXUIElementGetTypeID() else {
-            throw InteractionFailure.noFocusedElement
-        }
-        let focused = (focusedRef as! AXUIElement)
-        AXUIElementSetMessagingTimeout(focused, 0.4)
-        var focusedPID: pid_t = 0
-        let pidStatus = AXUIElementGetPid(focused, &focusedPID)
-        guard pidStatus == .success else { throw InteractionFailure.systemError(pidStatus.rawValue) }
-        guard focusedPID == pid else { throw InteractionFailure.applicationChanged }
+        return try AXCallThreading.withSafeAppKitThread(for: pid) {
+            let app = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(app, 0.4)
+            let focusedRef: CFTypeRef
+            do { focusedRef = try readAttribute(app, kAXFocusedUIElementAttribute) }
+            catch InteractionFailure.selectionUnavailable { throw InteractionFailure.noFocusedElement }
+            guard CFGetTypeID(focusedRef) == AXUIElementGetTypeID() else {
+                throw InteractionFailure.noFocusedElement
+            }
+            let focused = (focusedRef as! AXUIElement)
+            AXUIElementSetMessagingTimeout(focused, 0.4)
+            var focusedPID: pid_t = 0
+            let pidStatus = AXUIElementGetPid(focused, &focusedPID)
+            guard pidStatus == .success else { throw InteractionFailure.systemError(pidStatus.rawValue) }
+            guard focusedPID == pid else { throw InteractionFailure.applicationChanged }
 
-        // Do not read the actual contents until secure-field checks finish.
-        let role = (try readAttribute(focused, kAXRoleAttribute)) as? String ?? ""
-        let subrole = (try optionalAttribute(focused, kAXSubroleAttribute)) as? String ?? ""
-        guard !role.isEmpty else { throw InteractionFailure.noFocusedElement }
-        if role == "AXSecureTextField" || subrole == "AXSecureTextField" ||
-            role == "AXPasswordField" || subrole == "AXPasswordField" {
-            throw InteractionFailure.secureField
-        }
-        for flag in ["AXProtectedContent", "AXPassword", "AXIsPassword", "AXSecure"] {
-            if let protected = try optionalAttribute(focused, flag) as? Bool, protected {
+            // Do not read the actual contents until secure-field checks finish.
+            let role = (try readAttribute(focused, kAXRoleAttribute)) as? String ?? ""
+            let subrole = (try optionalAttribute(focused, kAXSubroleAttribute)) as? String ?? ""
+            guard !role.isEmpty else { throw InteractionFailure.noFocusedElement }
+            if role == "AXSecureTextField" || subrole == "AXSecureTextField" ||
+                role == "AXPasswordField" || subrole == "AXPasswordField" {
                 throw InteractionFailure.secureField
             }
+            for flag in ["AXProtectedContent", "AXPassword", "AXIsPassword", "AXSecure"] {
+                if let protected = try optionalAttribute(focused, flag) as? Bool, protected {
+                    throw InteractionFailure.secureField
+                }
+            }
+            if let enabled = try optionalAttribute(focused, kAXEnabledAttribute) as? Bool, !enabled {
+                throw InteractionFailure.notEditable
+            }
+            guard role == "AXTextArea" || role == "AXTextField" || role == "AXComboBox" ||
+                  role == "AXSearchField" else {
+                throw InteractionFailure.notEditable
+            }
+            let rangeValue = try readAttribute(focused, kAXSelectedTextRangeAttribute)
+            guard CFGetTypeID(rangeValue) == AXValueGetTypeID() else {
+                throw InteractionFailure.selectionUnavailable
+            }
+            let axValue = rangeValue as! AXValue
+            guard AXValueGetType(axValue) == .cfRange else { throw InteractionFailure.selectionUnavailable }
+            var range = CFRange(location: 0, length: 0)
+            guard AXValueGetValue(axValue, .cfRange, &range) else {
+                throw InteractionFailure.selectionUnavailable
+            }
+            // Browser content editors may omit AXSelectedText while preserving
+            // AXValue and the UTF-16 selection. Derive and verify the exact slice.
+            let fullValue = (try? optionalAttribute(focused, kAXValueAttribute)) as? String
+            let selected = try optionalAttribute(focused, kAXSelectedTextAttribute) as? String
+            guard let text = TextWriteVerification.selectedText(
+                reported: selected, fullValue: fullValue,
+                range: TextRange(location: range.location, length: range.length)) else {
+                throw InteractionFailure.selectionUnavailable
+            }
+            return SelectionObservation(processID: pid,
+                                        identity: AXFocusIdentity(element: focused),
+                                        identityDescription: "AX(pid:\(pid),hash:\(CFHash(focused)))",
+                                        selectedText: text,
+                                        range: TextRange(location: range.location, length: range.length),
+                                        isEditable: true, isSecure: false,
+                                        revision: tracker.revision,
+                                        fullValue: fullValue)
         }
-        if let enabled = try optionalAttribute(focused, kAXEnabledAttribute) as? Bool, !enabled {
-            throw InteractionFailure.notEditable
-        }
-        guard role == "AXTextArea" || role == "AXTextField" || role == "AXComboBox" ||
-              role == "AXSearchField" else {
-            throw InteractionFailure.notEditable
-        }
-        let rangeValue = try readAttribute(focused, kAXSelectedTextRangeAttribute)
-        guard CFGetTypeID(rangeValue) == AXValueGetTypeID() else {
-            throw InteractionFailure.selectionUnavailable
-        }
-        let axValue = rangeValue as! AXValue
-        guard AXValueGetType(axValue) == .cfRange else { throw InteractionFailure.selectionUnavailable }
-        var range = CFRange(location: 0, length: 0)
-        guard AXValueGetValue(axValue, .cfRange, &range) else {
-            throw InteractionFailure.selectionUnavailable
-        }
-        // Browser content editors may omit AXSelectedText while preserving
-        // AXValue and the UTF-16 selection. Derive and verify the exact slice.
-        let fullValue = (try? optionalAttribute(focused, kAXValueAttribute)) as? String
-        let selected = try optionalAttribute(focused, kAXSelectedTextAttribute) as? String
-        guard let text = TextWriteVerification.selectedText(
-            reported: selected, fullValue: fullValue,
-            range: TextRange(location: range.location, length: range.length)) else {
-            throw InteractionFailure.selectionUnavailable
-        }
-        return SelectionObservation(processID: pid,
-                                    identity: AXFocusIdentity(element: focused),
-                                    identityDescription: "AX(pid:\(pid),hash:\(CFHash(focused)))",
-                                    selectedText: text,
-                                    range: TextRange(location: range.location, length: range.length),
-                                    isEditable: true, isSecure: false,
-                                    revision: tracker.revision,
-                                    fullValue: fullValue)
     }
 
     func captureMonitoredSelection() throws -> SelectionObservation {
         stopMonitoring()
         let before = try read()
-        guard let identity = before.identity as? AXFocusIdentity else {
-            throw InteractionFailure.noFocusedElement
-        }
-        var created: AXObserver?
-        let result = AXObserverCreate(before.processID, monitoredAXChange, &created)
-        guard result == .success, let created else { throw InteractionFailure.monitoringUnavailable }
-        let app = AXUIElementCreateApplication(before.processID)
-        let ptr = Unmanaged.passUnretained(tracker).toOpaque()
-        let appStatus = AXObserverAddNotification(created, app,
-                                kAXFocusedUIElementChangedNotification as CFString, ptr)
-        // A selection change can be signaled via either notification, depending on app.
-        let textStatus = AXObserverAddNotification(created, identity.element,
-                                kAXSelectedTextChangedNotification as CFString, ptr)
-        let valueStatus = AXObserverAddNotification(created, identity.element,
-                                kAXValueChangedNotification as CFString, ptr)
-        // Some browser address bars do not publish text-change notifications.
-        // In that case, keep observing app focus and require a readable full
-        // value that is compared again immediately before any write.
-        let hasTextNotifications = textStatus == .success || valueStatus == .success
-        let unsupportedTextNotifications =
-            (textStatus == .notificationUnsupported || textStatus == .notImplemented) &&
-            (valueStatus == .notificationUnsupported || valueStatus == .notImplemented)
-        guard canMonitorSelection(
-            focusNotifications: appStatus == .success,
-            textNotifications: hasTextNotifications,
-            unsupportedTextNotifications: unsupportedTextNotifications,
-            fullValue: before.fullValue) else {
-            throw InteractionFailure.monitoringUnavailable
-        }
-        observer = created
-        observedApplication = app
-        observedElement = identity.element
-        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), CFRunLoopMode.commonModes)
-        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: nil
-        ) { [tracker] _ in tracker.invalidate() }
-        // Check again after monitoring is installed to close the setup window.
-        do {
-            let after = try read()
-            guard before.processID == after.processID,
-                  before.identity.isSameElement(as: after.identity),
-                  before.range == after.range,
-                  before.selectedText == after.selectedText,
-                  before.fullValue == nil || before.fullValue == after.fullValue else {
-                throw InteractionFailure.selectionChanged
+        return try AXCallThreading.withSafeAppKitThread(for: before.processID) {
+            guard let identity = before.identity as? AXFocusIdentity else {
+                throw InteractionFailure.noFocusedElement
             }
-            return after
-        } catch {
-            stopMonitoring()
-            throw error
+            var created: AXObserver?
+            let result = AXObserverCreate(before.processID, monitoredAXChange, &created)
+            guard result == .success, let created else { throw InteractionFailure.monitoringUnavailable }
+            let app = AXUIElementCreateApplication(before.processID)
+            let ptr = Unmanaged.passUnretained(tracker).toOpaque()
+            let appStatus = AXObserverAddNotification(created, app,
+                                    kAXFocusedUIElementChangedNotification as CFString, ptr)
+            // A selection change can be signaled via either notification, depending on app.
+            let textStatus = AXObserverAddNotification(created, identity.element,
+                                    kAXSelectedTextChangedNotification as CFString, ptr)
+            let valueStatus = AXObserverAddNotification(created, identity.element,
+                                    kAXValueChangedNotification as CFString, ptr)
+            // Some browser address bars do not publish text-change notifications.
+            // In that case, keep observing app focus and require a readable full
+            // value that is compared again immediately before any write.
+            let hasTextNotifications = textStatus == .success || valueStatus == .success
+            let unsupportedTextNotifications =
+                (textStatus == .notificationUnsupported || textStatus == .notImplemented) &&
+                (valueStatus == .notificationUnsupported || valueStatus == .notImplemented)
+            guard canMonitorSelection(
+                focusNotifications: appStatus == .success,
+                textNotifications: hasTextNotifications,
+                unsupportedTextNotifications: unsupportedTextNotifications,
+                fullValue: before.fullValue) else {
+                throw InteractionFailure.monitoringUnavailable
+            }
+            observer = created
+            observedApplication = app
+            observedElement = identity.element
+            CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), CFRunLoopMode.commonModes)
+            workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: nil
+            ) { [tracker] _ in tracker.invalidate() }
+            // Check again after monitoring is installed to close the setup window.
+            do {
+                let after = try read()
+                guard before.processID == after.processID,
+                      before.identity.isSameElement(as: after.identity),
+                      before.range == after.range,
+                      before.selectedText == after.selectedText,
+                      before.fullValue == nil || before.fullValue == after.fullValue else {
+                    throw InteractionFailure.selectionChanged
+                }
+                return after
+            } catch {
+                stopMonitoring()
+                throw error
+            }
         }
     }
 
@@ -239,15 +254,22 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
             guard Self.accessibilityPermissionGranted(),
                   NSWorkspace.shared.frontmostApplication?.processIdentifier == expected.processID,
                   !IsSecureEventInputEnabled() else { return false }
-            let app = AXUIElementCreateApplication(expected.processID)
-            AXUIElementSetMessagingTimeout(app, 0.4)
-            guard let focused = try? readAttribute(app, kAXFocusedUIElementAttribute),
-                  CFGetTypeID(focused) == AXUIElementGetTypeID(),
-                  CFEqual(focused, target) else { return false }
-            if let value = try? wholeValue(target),
-               TextWriteVerification.confirms(actual: value, expected: expectedValue) {
-                return true
+            // Each own-process AX read must run on AppKit's main thread.
+            // Keep the bounded confirmation polling and sleeps off-main.
+            let (stillFocused, confirmed) = AXCallThreading.withSafeAppKitThread(for: expected.processID) {
+                () -> (Bool, Bool) in
+                let app = AXUIElementCreateApplication(expected.processID)
+                AXUIElementSetMessagingTimeout(app, 0.4)
+                guard let focused = try? readAttribute(app, kAXFocusedUIElementAttribute),
+                      CFGetTypeID(focused) == AXUIElementGetTypeID(),
+                      CFEqual(focused, target) else { return (false, false) }
+                guard let value = try? wholeValue(target) else { return (true, false) }
+                return (true, TextWriteVerification.confirms(actual: value, expected: expectedValue))
             }
+            guard stillFocused else { return false }
+            if confirmed { return true }
+            // Never sleep the AppKit run loop while waiting for AXValue to update.
+            if Thread.isMainThread { return false }
             Thread.sleep(forTimeInterval: 0.025)
         } while ProcessInfo.processInfo.systemUptime < deadline
         return false
@@ -306,18 +328,34 @@ final class MacAccessibilityClient: AccessibilityClient, @unchecked Sendable {
 
     func writeSelectedText(_ text: String, expected: SelectionObservation) throws {
         let target = try revalidate(expected)
-        let baseline = try wholeValue(target)
+        let baseline = try AXCallThreading.withSafeAppKitThread(for: expected.processID) {
+            try wholeValue(target)
+        }
         guard let expectedValue = TextWriteVerification.expectedValue(
             original: baseline, selectedText: expected.selectedText,
             range: expected.range, replacement: text) else {
             throw InteractionFailure.unsupportedNativeWrite
         }
 
-        var settable = DarwinBoolean(false)
-        let support = AXUIElementIsAttributeSettable(
-            target, kAXSelectedTextAttribute as CFString, &settable)
-        if support == .success && settable.boolValue {
-            let code = AXUIElementSetAttributeValue(target, kAXSelectedTextAttribute as CFString, text as CFString)
+        // An AX write to our own NSTextView runs its AppKit handler synchronously.
+        // Performing it off-main crashes on Touch Bar keyboards when AppKit updates
+        // the candidate list (dispatch_assert_queue_fail in HIToolbox).
+        // Revalidate within the main-thread handoff so focus changes cannot
+        // redirect this single-use authorized replacement.
+        let (support, settable, code) = try AXCallThreading.withSafeAppKitThread(for: expected.processID) {
+            () throws -> (AXError, Bool, AXError?) in
+            if expected.processID == ProcessInfo.processInfo.processIdentifier {
+                _ = try revalidate(expected)
+            }
+            var canSet = DarwinBoolean(false)
+            let support = AXUIElementIsAttributeSettable(
+                target, kAXSelectedTextAttribute as CFString, &canSet)
+            let result: AXError? = support == .success && canSet.boolValue
+                ? AXUIElementSetAttributeValue(target, kAXSelectedTextAttribute as CFString, text as CFString)
+                : nil
+            return (support, canSet.boolValue, result)
+        }
+        if support == .success && settable, let code {
             if code == .success {
                 // Some browsers update AXValue after SetAttributeValue returns.
                 // Confirm asynchronously visible content before reporting failure;
