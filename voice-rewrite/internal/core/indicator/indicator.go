@@ -181,6 +181,34 @@ const (
 	CancelWork    = 3
 )
 
+// HostSpec exposes the Windows recording pill's presentation model once to
+// native hosts. Swift does not need a per-frame bridge or a second palette.
+func HostSpec() map[string]any {
+	rgb := func(c RGB) []int { return []int{int(c.R), int(c.G), int(c.B)} }
+	return map[string]any{
+		"recordingWidth": RecordingWidth, "workingWidth": WorkingWidth, "height": Height,
+		"cancelWidth": CancelWidth, "cancelInset": CancelGlyphInset,
+		"clockX": ClockX, "clockWidth": ClockWidth, "iconY": IconCenterY,
+		"waveStartX": WaveformX(0), "waveStep": WaveformX(1)-WaveformX(0),
+		"waveBarWidth": WaveBarWidth, "waveBars": 9,
+		"textX": WorkingTextX, "textRightGap": WorkingTextRightGap,
+		"spinnerDots": SpinnerDots, "spinnerX": SpinnerCenterX,
+		"spinnerRadius": SpinnerRadius, "spinnerDotSize": SpinnerDotSize,
+		"terminalMS": int(TerminalDuration/time.Millisecond),
+		"levelGain": MicrophoneLevelGain,
+		"pillColor": rgb(Pill), "clockColor": rgb(ClockText),
+		"labelColor": rgb(LabelText), "dictationAccent": rgb(DictationAccent),
+		"rewriteAccent": rgb(RewriteAccent), "errorAccent": rgb(ErrorAccent),
+		"sentMark": rgb(SuccessMark), "fallbackMark": rgb(FallbackMark),
+		"closeColor": rgb(CloseGlyph), "closeHover": rgb(CloseHover),
+		"attentionGlyph": rgb(AttentionGlyph),
+		"processingDictation": Label(Processing,"听写"),
+		"processingRewrite": Label(Processing,"改写"),
+		"sentLabel": Label(Success,"听写"), "errorLabel": Label(Error,"听写"),
+		"fallbackLabel": "结果未写入",
+	}
+}
+
 // PhaseUpdateApplies reports that a posted phase still belongs to the visible pill.
 func PhaseUpdateApplies(epochValid, hasPill, ownerMatches bool) bool {
 	return epochValid && hasPill && ownerMatches

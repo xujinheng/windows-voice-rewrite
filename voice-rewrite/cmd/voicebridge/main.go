@@ -17,6 +17,8 @@ import (
 
 	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
+	"voicerewrite/internal/core/indicator"
+	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/jsonl"
 	"voicerewrite/internal/core/speech"
 	"voicerewrite/internal/core/textedit"
@@ -221,6 +223,8 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		switch req.Op {
 		case "hello":
 			s.send(success(req.ID, map[string]any{"name": jsonl.HelloName, "protocol": jsonl.Version}))
+		case "host_profile":
+			s.send(headlessProfile(req))
 		case "cancel":
 			if req.TargetID == "" {
 				s.send(failure(req.ID, "invalid_request", "target_id is required"))
@@ -282,6 +286,38 @@ func (s *bridgeServer) runTask(ctx context.Context, task *bridgeTask, req reques
 	delete(s.active, req.ID)
 	s.mu.Unlock()
 	s.send(reply)
+}
+
+// headlessProfile shares the existing config normalizer and indicator with
+// Windows; only physical Mac shortcut identifiers differ.
+func headlessProfile(req request) response {
+	var provided map[string]json.RawMessage
+	if len(req.Config) == 0 || json.Unmarshal(req.Config, &provided) != nil || provided == nil {
+		return failure(req.ID, "invalid_config", msgInvalidConfig)
+	}
+	cfg, err := coreconfig.Parse(req.Config)
+	if err != nil {
+		return failure(req.ID, "invalid_config", msgInvalidConfig)
+	}
+	if _, ok := provided["dictation_hotkey"]; !ok { cfg.DictationHotkey = "RightCommand" }
+	if _, ok := provided["hotkey_record"]; !ok { cfg.HotkeyRecord = "RightOption" }
+	allowed := func(s string) bool {
+		return s == "RightCommand" || s == "RightOption" || s == "Mouse4" || s == "Mouse5"
+	}
+	if !allowed(cfg.DictationHotkey) || !allowed(cfg.HotkeyRecord) ||
+		cfg.DictationHotkey == cfg.HotkeyRecord ||
+		cfg.MaxRecordSeconds < coreconfig.RecordSecondsMin ||
+		cfg.MaxRecordSeconds > coreconfig.RecordSecondsMax {
+		return failure(req.ID, "invalid_config", msgInvalidConfig)
+	}
+	cfg, err = coreconfig.Normalize(cfg)
+	if err != nil { return failure(req.ID, "invalid_config", msgInvalidConfig) }
+	return success(req.ID, map[string]any{"profile":map[string]any{
+		"dictation":cfg.DictationHotkey, "rewrite":cfg.HotkeyRecord,
+		"maximumSeconds":cfg.MaxRecordSeconds, "modifierDelayMS":200,
+		"mouseDelayMS":int(input.WindowsSideHold/time.Millisecond),
+		"pill":indicator.HostSpec(),
+	}})
 }
 
 func decodeRequestPCM(req request, cfg coreconfig.Config) ([]byte, string) {

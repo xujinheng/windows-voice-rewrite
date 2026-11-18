@@ -21,6 +21,13 @@ This file describes the **current product**, not its history. Read `voice-rewrit
   boundary files. Never keep unreferenced Meeting Go packages merely to maintain
   a Go percentage; check the actual shared task entrypoints and native LOC cap. Preserve real Windows Go tests and macOS Swift compilation checks. This static metric is not dynamic runtime ownership; verify actual ASR and paste paths on real devices.
 
+## Strict Go-first ownership
+
+- **macOS Swift is an OS adapter, not another business app.** Keep only AVAudioEngine/CoreAudio capture, Quartz/HID events, AX selection/focus, AppKit status and rendering, clipboard delivery, and their OS-specific safety/cancellation handling in Swift. Shared Go owns config defaults/validation, transcription, rewrite, route decisions, status labels, palette, geometry and presentation timings.
+- **Reuse existing Windows Go Core first.** Before adding a macOS behavior, locate its existing Go implementation. Extend that shared owner rather than adding a Swift policy layer or a second controller/state machine.
+- **Render natively from one Go specification.** macOS may read a small validated Go startup profile; do not maintain a second list of UI colors, strings, sizes or delays, and never add per-frame IPC. Platform-specific pixels/window APIs remain native and cannot be copied verbatim from Windows.
+- **Delete duplicates instead of adding wrappers.** Each migration must remove the superseded Swift decisions, protect Windows call chains, retain clipboard/focus/cancellation guarantees, and show actual before/after native LOC. No Go/Swift reuse percentage or pixel-perfect parity claim without runtime evidence.
+
 ## Final-state only
 
 - **No legacy obligations.** No user base requires old internal APIs, configs or workflows. Preserve working UX, not obsolete code; choose the clean final design.
