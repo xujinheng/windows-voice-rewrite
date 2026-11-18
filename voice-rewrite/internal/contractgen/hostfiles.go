@@ -791,6 +791,11 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 			return "", err
 		}
 		line := "                HStack(spacing: 12) {\n                    Text(" + strconv.Quote(control.Label) + ")\n                        .font(.system(size: 13))\n                        .frame(width: 112, alignment: .leading)\n                    TextField(" + strconv.Quote(control.Label) + ", text: $" + binding + ")\n                        .textFieldStyle(.roundedBorder)\n                        .frame(height: 32)\n                        " + id + "\n                }\n"
+		if control.Kind == contract.Shortcut {
+			// The outer input-page HStack already owns the capture button.
+			// Avoid a nested layout that squeezes the editor on small windows.
+			line = "                Text(" + strconv.Quote(control.Label) + ")\n                    .font(.system(size: 13))\n                    .frame(width: 112, alignment: .leading)\n                TextField(" + strconv.Quote(control.Label) + ", text: $" + binding + ")\n                    .textFieldStyle(.roundedBorder)\n                    .frame(height: 32)\n                    " + id + "\n"
+		}
 		if control.ID == "system_prompt" {
 			line = "                Text(\"System Prompt\").font(.subheadline)\n                TextEditor(text: $model.settings.systemPrompt)\n                    .frame(minHeight: 96)\n                    " + id + "\n"
 		}
