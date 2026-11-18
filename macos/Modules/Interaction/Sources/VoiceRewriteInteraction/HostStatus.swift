@@ -328,34 +328,3 @@ public func serviceProbeStatus(name: String, ok: Bool, kind: String?, message: S
     return "\(name)：检测失败（\(failure)）"
 }
 
-public enum TranscriptReply: Equatable, Sendable {
-    case failed
-    case empty
-    case ready(String)
-}
-
-public func transcriptReply(ok: Bool, text: String?) -> TranscriptReply {
-    guard ok, let text else { return .failed }
-    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        return .empty
-    }
-    return .ready(text)
-}
-
-public enum ModelReply: Equatable, Sendable {
-    case rejected
-    case missingSpokenInstruction
-    case preview(String)
-    case write(String)
-}
-
-public func modelReply(ok: Bool, text: String?, spoken: Bool, instruction: String?, mayWrite: Bool, previewOnly: Bool) -> ModelReply {
-    guard ok, let text else { return .rejected }
-    if spoken {
-        guard let instruction, !instruction.isEmpty else { return .missingSpokenInstruction }
-    }
-    if mayWrite && !previewOnly {
-        return .write(text)
-    }
-    return .preview(text)
-}

@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"runtime/debug"
@@ -128,8 +129,14 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	if !app.epoch.Valid(generation) {
 		return
 	}
-	// Focus may have changed while ASR ran: never insert in another app.
-	if !isSameForegroundWindow(expectedWindow) {
+	// Core owns the transcript routing on both hosts. The native editor
+	// continues to revalidate the target immediately before the write.
+	switch ux.RouteDictationTranscript(text, isSameForegroundWindow(expectedWindow)) {
+	case ux.DictationRouteEmpty:
+		app.fail(errors.New(ux.DictationEmpty))
+		app.postHandyPhase(indicator.Error, generation)
+		return
+	case ux.DictationRoutePreview:
 		// A result card preserves the transcript without requiring the user to
 		// guess what happened to their clipboard after a focus change.
 		follow := ux.DictationUnfocused()

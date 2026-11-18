@@ -110,43 +110,44 @@ final class HostStatusTests: XCTestCase {
         XCTAssertEqual(serviceProbeConfigStatus(name: "LLM", detail: "缺密钥"), "LLM：无法读取服务配置（缺密钥）")
     }
 
-    func testTranscriptAndModelRepliesKeepEmptyAndPreviewRules() {
-        XCTAssertEqual(transcriptReply(ok: false, text: "a"), .failed)
-        XCTAssertEqual(transcriptReply(ok: true, text: nil), .failed)
-        XCTAssertEqual(transcriptReply(ok: true, text: "  \n"), .empty)
-        XCTAssertEqual(transcriptReply(ok: true, text: "你好"), .ready("你好"))
-        XCTAssertEqual(modelReply(ok: false, text: "a", spoken: false, instruction: nil, mayWrite: true, previewOnly: false), .rejected)
-        XCTAssertEqual(modelReply(ok: true, text: "a", spoken: true, instruction: "", mayWrite: true, previewOnly: false), .missingSpokenInstruction)
-        XCTAssertEqual(modelReply(ok: true, text: "a", spoken: true, instruction: " ", mayWrite: false, previewOnly: true), .preview("a"))
-        XCTAssertEqual(modelReply(ok: true, text: "a", spoken: false, instruction: nil, mayWrite: true, previewOnly: false), .write("a"))
+    func testUnknownCoreDeliveryRouteNeverWrites() {
+        let failed = dictationTranscriptFollowUp(ok: true, text: "你好", route: "unexpected",
+            transport: nil, failureStatus: "协议错误", emptyStatus: "空", historyTitle: "历史", notInsertedTitle: "未插入")
+        XCTAssertEqual(failed.phase, .error)
+        XCTAssertNil(failed.insertText)
+        let rejected = selectedTaskFollowUp(ok: true, text: "结果", spoken: true,
+            instruction: "请改写", route: "unexpected", transport: nil, failureStatus: "协议错误",
+            historyTitle: "标题", cardTitle: "卡片", spokenHistoryTitle: "语音")
+        XCTAssertTrue(rejected.cancelTask)
+        XCTAssertNil(rejected.replaceText)
     }
 
     func testDictationFollowUpInsertsOnlyWhenTheCaretIsHeld() {
-        let failed = dictationTranscriptFollowUp(ok: false, text: "x", transport: nil, hasInsertion: true, failureStatus: "ASR失败", emptyStatus: "空", historyTitle: "历史", notInsertedTitle: "未插入")
+        let failed = dictationTranscriptFollowUp(ok: false, text: "x", route: "insert", transport: nil, failureStatus: "ASR失败", emptyStatus: "空", historyTitle: "历史", notInsertedTitle: "未插入")
         XCTAssertEqual(failed.phase, .error)
         XCTAssertEqual(failed.recordingStatus, "ASR失败")
         XCTAssertNil(failed.cardTitle)
         XCTAssertNil(failed.insertText)
         XCTAssertFalse(failed.cancelTask)
 
-        let empty = dictationTranscriptFollowUp(ok: true, text: "  ", transport: nil, hasInsertion: true, failureStatus: "ASR失败", emptyStatus: "空", historyTitle: "历史", notInsertedTitle: "未插入")
+        let empty = dictationTranscriptFollowUp(ok: true, text: "  ", route: "insert", transport: nil, failureStatus: "ASR失败", emptyStatus: "空", historyTitle: "历史", notInsertedTitle: "未插入")
         XCTAssertEqual(empty.recordingStatus, "空")
         XCTAssertEqual(empty.phase, .error)
         XCTAssertNil(empty.insertText)
 
-        let held = dictationTranscriptFollowUp(ok: true, text: "你好", transport: nil, hasInsertion: true, failureStatus: "ASR失败", emptyStatus: "空", historyTitle: "历史", notInsertedTitle: "未插入")
+        let held = dictationTranscriptFollowUp(ok: true, text: "你好", route: "insert", transport: nil, failureStatus: "ASR失败", emptyStatus: "空", historyTitle: "历史", notInsertedTitle: "未插入")
         XCTAssertEqual(held.phase, .applying)
         XCTAssertEqual(held.insertText, "你好")
         XCTAssertEqual(held.history, [TaskHistory(title: "历史", value: "你好")])
         XCTAssertNil(held.cardText)
         XCTAssertEqual(held.recordingStatus, dictationRecognized())
 
-        let loose = dictationTranscriptFollowUp(ok: true, text: "你好", transport: nil, hasInsertion: false, failureStatus: "ASR失败", emptyStatus: "空", historyTitle: "历史", notInsertedTitle: "未插入")
+        let loose = dictationTranscriptFollowUp(ok: true, text: "你好", route: "preview", transport: nil, failureStatus: "ASR失败", emptyStatus: "空", historyTitle: "历史", notInsertedTitle: "未插入")
         XCTAssertEqual(loose.phase, .fallback)
         XCTAssertEqual(loose.cardTitle, "未插入")
         XCTAssertNil(loose.insertText)
 
-        let dropped = dictationTranscriptFollowUp(ok: true, text: "你好", transport: "断开", hasInsertion: true, failureStatus: "ASR失败", emptyStatus: "空", historyTitle: "历史", notInsertedTitle: "未插入")
+        let dropped = dictationTranscriptFollowUp(ok: true, text: "你好", route: "insert", transport: "断开", failureStatus: "ASR失败", emptyStatus: "空", historyTitle: "历史", notInsertedTitle: "未插入")
         XCTAssertEqual(dropped.recordingStatus, dictationRecognizeFailed("断开"))
         XCTAssertEqual(dropped.phase, .error)
         XCTAssertFalse(dropped.cancelTask)
@@ -170,7 +171,7 @@ final class HostStatusTests: XCTestCase {
     }
 
     func testSelectedTaskFollowUpKeepsPreviewAndWriteApart() {
-        let rejected = selectedTaskFollowUp(ok: false, text: "a", spoken: true, instruction: "说", mayWrite: true, previewOnly: false, transport: nil, failureStatus: "模型失败", historyTitle: "标题", cardTitle: "卡片", spokenHistoryTitle: "语音")
+        let rejected = selectedTaskFollowUp(ok: false, text: "a", spoken: true, instruction: "说", route: "replace", transport: nil, failureStatus: "模型失败", historyTitle: "标题", cardTitle: "卡片", spokenHistoryTitle: "语音")
         XCTAssertEqual(rejected.interactionStatus, "模型失败")
         XCTAssertEqual(rejected.recordingStatus, rewriteVoiceIncomplete())
         XCTAssertEqual(rejected.asrProbe, probeVoiceTaskFailed())
@@ -179,16 +180,16 @@ final class HostStatusTests: XCTestCase {
         XCTAssertTrue(rejected.cancelTask)
         XCTAssertNil(rejected.cardText)
 
-        let quiet = selectedTaskFollowUp(ok: false, text: nil, spoken: false, instruction: nil, mayWrite: false, previewOnly: true, transport: nil, failureStatus: "模型失败", historyTitle: "标题", cardTitle: "卡片", spokenHistoryTitle: "语音")
+        let quiet = selectedTaskFollowUp(ok: false, text: nil, spoken: false, instruction: nil, route: "preview", transport: nil, failureStatus: "模型失败", historyTitle: "标题", cardTitle: "卡片", spokenHistoryTitle: "语音")
         XCTAssertNil(quiet.recordingStatus)
         XCTAssertNil(quiet.asrProbe)
 
-        let missing = selectedTaskFollowUp(ok: true, text: "a", spoken: true, instruction: "", mayWrite: true, previewOnly: false, transport: nil, failureStatus: "模型失败", historyTitle: "标题", cardTitle: "卡片", spokenHistoryTitle: "语音")
+        let missing = selectedTaskFollowUp(ok: true, text: "a", spoken: true, instruction: "", route: "replace", transport: nil, failureStatus: "模型失败", historyTitle: "标题", cardTitle: "卡片", spokenHistoryTitle: "语音")
         XCTAssertEqual(missing.interactionStatus, rewriteInstructionMissing())
         XCTAssertNil(missing.llmProbe)
         XCTAssertTrue(missing.cancelTask)
 
-        let preview = selectedTaskFollowUp(ok: true, text: "结果", spoken: true, instruction: "说清楚", mayWrite: true, previewOnly: true, transport: nil, failureStatus: "模型失败", historyTitle: "标题", cardTitle: "卡片", spokenHistoryTitle: "语音")
+        let preview = selectedTaskFollowUp(ok: true, text: "结果", spoken: true, instruction: "说清楚", route: "preview", transport: nil, failureStatus: "模型失败", historyTitle: "标题", cardTitle: "卡片", spokenHistoryTitle: "语音")
         XCTAssertEqual(preview.phase, .answer)
         XCTAssertEqual(preview.interactionStatus, rewritePreviewOnly())
         XCTAssertEqual(preview.transcription, "说清楚")
@@ -201,7 +202,7 @@ final class HostStatusTests: XCTestCase {
         XCTAssertEqual(preview.asrProbe, probeVoiceInstructionReady())
         XCTAssertEqual(preview.llmProbe, probeTaskSucceeded())
 
-        let write = selectedTaskFollowUp(ok: true, text: "结果", spoken: false, instruction: nil, mayWrite: true, previewOnly: false, transport: nil, failureStatus: "模型失败", historyTitle: "标题", cardTitle: "卡片", spokenHistoryTitle: "语音")
+        let write = selectedTaskFollowUp(ok: true, text: "结果", spoken: false, instruction: nil, route: "replace", transport: nil, failureStatus: "模型失败", historyTitle: "标题", cardTitle: "卡片", spokenHistoryTitle: "语音")
         XCTAssertEqual(write.phase, .applying)
         XCTAssertEqual(write.replaceText, "结果")
         XCTAssertNil(write.cardText)
@@ -210,7 +211,7 @@ final class HostStatusTests: XCTestCase {
         XCTAssertFalse(write.cancelTask)
         XCTAssertEqual(write.history, [TaskHistory(title: "标题", value: "结果")])
 
-        let spokenWrite = selectedTaskFollowUp(ok: true, text: "结果", spoken: true, instruction: "说清楚", mayWrite: true, previewOnly: false, transport: nil, failureStatus: "模型失败", historyTitle: "标题", cardTitle: "卡片", spokenHistoryTitle: "语音")
+        let spokenWrite = selectedTaskFollowUp(ok: true, text: "结果", spoken: true, instruction: "说清楚", route: "replace", transport: nil, failureStatus: "模型失败", historyTitle: "标题", cardTitle: "卡片", spokenHistoryTitle: "语音")
         XCTAssertEqual(spokenWrite.phase, .applying)
         XCTAssertEqual(spokenWrite.replaceText, "结果")
         XCTAssertEqual(spokenWrite.transcription, "说清楚")
@@ -228,7 +229,7 @@ final class HostStatusTests: XCTestCase {
         XCTAssertEqual(kept.cardText, "结果")
         XCTAssertFalse(kept.cancelTask)
 
-        let dropped = selectedTaskFollowUp(ok: true, text: "结果", spoken: true, instruction: "说", mayWrite: true, previewOnly: false, transport: "断开", failureStatus: "模型失败", historyTitle: "标题", cardTitle: "卡片", spokenHistoryTitle: "语音")
+        let dropped = selectedTaskFollowUp(ok: true, text: "结果", spoken: true, instruction: "说", route: "replace", transport: "断开", failureStatus: "模型失败", historyTitle: "标题", cardTitle: "卡片", spokenHistoryTitle: "语音")
         XCTAssertEqual(dropped.recordingStatus, rewriteVoiceFailed())
         XCTAssertEqual(dropped.interactionStatus, rewriteTaskFailed("断开"))
         XCTAssertEqual(dropped.llmProbe, probeTaskCanceled())

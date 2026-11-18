@@ -95,8 +95,8 @@ public struct TaskFollowUp: Equatable, Sendable {
 public func dictationTranscriptFollowUp(
     ok: Bool,
     text: String?,
+    route: String?,
     transport: String?,
-    hasInsertion: Bool,
     failureStatus: String,
     emptyStatus: String,
     historyTitle: String,
@@ -109,32 +109,37 @@ public func dictationTranscriptFollowUp(
             phase: .error,
             mode: "听写")
     }
-    switch transcriptReply(ok: ok, text: text) {
-    case .failed:
+    // Go Core already chose the route. Swift validates the transport envelope
+    // and paints/executes the returned action; it does not reroute by target.
+    guard ok else {
         return TaskFollowUp(recordingStatus: failureStatus, asrProbe: probeTranscribeFailed(), phase: .error, mode: "听写")
-    case .empty:
+    }
+    if route == "empty" {
         return TaskFollowUp(recordingStatus: emptyStatus, asrProbe: probeTranscribeFailed(), phase: .error, mode: "听写")
-    case .ready(let recognized):
-        if hasInsertion {
-            return TaskFollowUp(
-                recordingStatus: dictationRecognized(),
-                asrProbe: probeTranscribeSucceeded(),
-                phase: .applying,
-                mode: "听写",
-                transcription: recognized,
-                history: [TaskHistory(title: historyTitle, value: recognized)],
-                insertText: recognized)
-        }
+    }
+    guard let recognized = text, !recognized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          route == "insert" || route == "preview" else {
+        return TaskFollowUp(recordingStatus: failureStatus, asrProbe: probeTranscribeFailed(), phase: .error, mode: "听写")
+    }
+    if route == "insert" {
         return TaskFollowUp(
             recordingStatus: dictationRecognized(),
             asrProbe: probeTranscribeSucceeded(),
-            phase: .fallback,
+            phase: .applying,
             mode: "听写",
             transcription: recognized,
             history: [TaskHistory(title: historyTitle, value: recognized)],
-            cardTitle: notInsertedTitle,
-            cardText: recognized)
+            insertText: recognized)
     }
+    return TaskFollowUp(
+        recordingStatus: dictationRecognized(),
+        asrProbe: probeTranscribeSucceeded(),
+        phase: .fallback,
+        mode: "听写",
+        transcription: recognized,
+        history: [TaskHistory(title: historyTitle, value: recognized)],
+        cardTitle: notInsertedTitle,
+        cardText: recognized)
 }
 
 /// Native delivery evidence, not mere CGEvent.post completion, determines
@@ -169,8 +174,7 @@ public func selectedTaskFollowUp(
     text: String?,
     spoken: Bool,
     instruction: String?,
-    mayWrite: Bool,
-    previewOnly: Bool,
+    route: String?,
     transport: String?,
     failureStatus: String,
     historyTitle: String,
@@ -186,8 +190,8 @@ public func selectedTaskFollowUp(
             mode: "改写",
             cancelTask: true)
     }
-    switch modelReply(ok: ok, text: text, spoken: spoken, instruction: instruction, mayWrite: mayWrite, previewOnly: previewOnly) {
-    case .rejected:
+    guard ok, let body = text, !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          route == "preview" || route == "replace" else {
         return TaskFollowUp(
             recordingStatus: spoken ? rewriteVoiceIncomplete() : nil,
             interactionStatus: failureStatus,
@@ -196,17 +200,17 @@ public func selectedTaskFollowUp(
             phase: .error,
             mode: "改写",
             cancelTask: true)
-    case .missingSpokenInstruction:
+    }
+    guard !spoken || (instruction != nil && !(instruction?.isEmpty ?? true)) else {
         return TaskFollowUp(
             interactionStatus: rewriteInstructionMissing(),
             phase: .error,
             mode: "改写",
             cancelTask: true)
-    case .preview(let body):
-        return finishedSelection(body, spoken: spoken, instruction: instruction, intentHistory: historyTitle, cardTitle: cardTitle, spokenHistoryTitle: spokenHistoryTitle, write: false)
-    case .write(let body):
-        return finishedSelection(body, spoken: spoken, instruction: instruction, intentHistory: historyTitle, cardTitle: cardTitle, spokenHistoryTitle: spokenHistoryTitle, write: true)
     }
+    return finishedSelection(body, spoken: spoken, instruction: instruction,
+        intentHistory: historyTitle, cardTitle: cardTitle,
+        spokenHistoryTitle: spokenHistoryTitle, write: route == "replace")
 }
 
 public func selectedWriteFollowUp(succeeded: Bool, status: String, cardTitle: String, text: String) -> TaskFollowUp {
