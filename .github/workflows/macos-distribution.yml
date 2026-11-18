@@ -1,18 +1,18 @@
 name: macOS signed distribution
 
 on:
-  push:
-    tags: [v*]
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Tag-triggered builds append macOS assets to the existing curated Windows release.
+# Reusable signed distribution runs after the curated Windows Release is created.
 # Without Apple credentials this workflow skips signing: only the separately
 # labeled developer CI packages are available, never a counterfeit "notarized" ZIP.
 jobs:
   credentials:
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     outputs:
       ready: ${{ steps.gate.outputs.ready }}
@@ -219,15 +219,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Windows' release job owns release notes and creates the Release.
-          # Never create an empty, uncurated Release from this workflow.
-          found=0
-          for attempt in $(seq 1 120); do
-            if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              found=1
-              break
-            fi
-            sleep 10
-          done
-          [[ "$found" == 1 ]] || { echo "::error::Windows curated Release not found; notarized packages remain in Actions artifacts"; exit 1; }
+          # Windows' release job has already created the curated release.
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null ||
+            { echo "::error::Curated Windows Release not found"; exit 1; }
           gh release upload "$GITHUB_REF_NAME" release-macos/* --repo "$GITHUB_REPOSITORY" --clobber
