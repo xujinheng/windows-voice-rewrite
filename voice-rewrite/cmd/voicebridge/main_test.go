@@ -30,25 +30,36 @@ func TestHelloProtocol(t *testing.T) {
 
 func TestHeadlessProfileValidatesSettingsAndNeverLeaksKeys(t *testing.T) {
 	secret := "keep-me-private"
-	tests := []struct{ config, want string; valid bool }{
+	tests := []struct {
+		config, want string
+		valid        bool
+	}{
 		{`{}`, `"dictation":"RightCommand"`, true},
 		{`{"dictation_hotkey":"Mouse4","hotkey_record":"Mouse5","max_record_seconds":30}`, `"maximumSeconds":30`, true},
 		{`{"dictation_hotkey":"Mouse4","hotkey_record":"Mouse4"}`, "invalid_config", false},
 		{`{"dictation_hotkey":"LeftCommand"}`, "invalid_config", false},
 		{`{"max_record_seconds":181}`, "invalid_config", false},
-		{`{"asr_api_key":"`+secret+`"}`, `"pillColor":[32,36,46]`, true},
+		{`{"asr_api_key":"` + secret + `"}`, `"pillColor":[32,36,46]`, true},
 	}
 	for _, tt := range tests {
-		frame,err:=json.Marshal(map[string]any{"v":1,"id":"profile","op":"host_profile","config":json.RawMessage(tt.config)})
-		if err!=nil { t.Fatal(err) }
+		frame, err := json.Marshal(map[string]any{"v": 1, "id": "profile", "op": "host_profile", "config": json.RawMessage(tt.config)})
+		if err != nil {
+			t.Fatal(err)
+		}
 		var out bytes.Buffer
-		if err:=serve(bytes.NewReader(append(frame,'\n')),&out);err!=nil {t.Fatal(err)}
-		if strings.Contains(out.String(),secret) || !strings.Contains(out.String(),tt.want) {
+		if err := serve(bytes.NewReader(append(frame, '\n')), &out); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(out.String(), secret) || !strings.Contains(out.String(), tt.want) {
 			t.Fatalf("invalid profile result: %s",out.String())
 		}
 		var result response
-		if err:=json.Unmarshal(out.Bytes(),&result);err!=nil {t.Fatal(err)}
-		if result.OK!=tt.valid {t.Fatalf("unexpected status for %s: %s",tt.config,out.String())}
+		if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.OK != tt.valid {
+			t.Fatalf("unexpected status for %s: %s", tt.config, out.String())
+		}
 	}
 }
 
