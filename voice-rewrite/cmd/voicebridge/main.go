@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -19,19 +18,14 @@ import (
 	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/jsonl"
-	"voicerewrite/internal/core/provider"
-	"voicerewrite/internal/core/serviceprobe"
-	"voicerewrite/internal/core/shortcut"
 	"voicerewrite/internal/core/speech"
 	"voicerewrite/internal/core/textedit"
-	"voicerewrite/internal/core/update"
 	"voicerewrite/internal/core/ux"
 )
 
 const (
 	maxPCMBytes         = audio.PCMBytesPerSecond * coreconfig.RecordSecondsMax
 	maxSelectedBytes    = 1 << 20
-	maxInstructionBytes = 32 << 10
 	msgUnsupported      = "unsupported operation"
 	msgCanceled         = "request canceled"
 	msgTimedOut         = "request timed out"
@@ -49,8 +43,6 @@ type request struct {
 	SelectedText   string          `json:"selected_text"`
 	CanInsert      bool            `json:"can_insert"`
 	Instruction    string          `json:"instruction"`
-	CurrentVersion string          `json:"current_version"`
-	Shortcut       string          `json:"shortcut"`
 	TargetID       string          `json:"target_id"`
 }
 
@@ -70,12 +62,11 @@ type response struct {
 type bridgeOptions struct {
 	MaxInFlight           int
 	TranscribeTimeout     time.Duration
-	SelectedTimeout       time.Duration
 	SpokenSelectedTimeout time.Duration
 }
 
 func defaultOptions() bridgeOptions {
-	return bridgeOptions{MaxInFlight: 4, TranscribeTimeout: 220 * time.Second, SelectedTimeout: 150 * time.Second, SpokenSelectedTimeout: 360 * time.Second}
+	return bridgeOptions{MaxInFlight: 4, TranscribeTimeout: 220 * time.Second, SpokenSelectedTimeout: 360 * time.Second}
 }
 
 // Short dictations should not remain in "processing" for the entire 220s
@@ -225,13 +216,11 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	}
 	s.seen[req.ID] = struct{}{}
 
-	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "selected_voice_task" && req.Op != "probe_asr" && req.Op != "probe_llm" && req.Op != "list_asr_models" && req.Op != "list_llm_models" && req.Op != "check_update" {
+	if req.Op != "transcribe" && req.Op != "selected_voice_task" {
 		s.mu.Unlock()
 		switch req.Op {
 		case "hello":
 			s.send(success(req.ID, map[string]any{"name": jsonl.HelloName, "protocol": jsonl.Version}))
-		case "parse_shortcut":
-			s.send(parseShortcut(req))
 		case "cancel":
 			if req.TargetID == "" {
 				s.send(failure(req.ID, "invalid_request", "target_id is required"))
@@ -261,14 +250,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 			timeout = budget
 		}
 	}
-	if req.Op == "check_update" {
-		timeout = 8 * time.Second
-	} else if req.Op == "list_asr_models" || req.Op == "list_llm_models" {
-		timeout = 12 * time.Second
-	}
-	if req.Op == "selected_task" {
-		timeout = s.options.SelectedTimeout
-	} else if req.Op == "selected_voice_task" {
+	if req.Op == "selected_voice_task" {
 		timeout = s.options.SpokenSelectedTimeout
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -331,7 +313,7 @@ func rejectPCM(id, op, reason string) response {
 	return failure(id, "invalid_pcm", "PCM must be 16 kHz mono PCM16, at least 0.1s and within duration limit")
 }
 
-func selectedTaskSuccess(id string, result textedit.AssistantResult, instruction string, spoken bool) response {
+func selectedTaskSuccess(id string, result textedit.AssistantResult, instruction string) response {
 	action := textedit.RouteTask(result, instruction, false)
 	route := "preview"
 	if action == textedit.TryReplace || action == textedit.Replace {
@@ -342,45 +324,16 @@ func selectedTaskSuccess(id string, result textedit.AssistantResult, instruction
 		"text":   result.Result,
 		"route":  route,
 	}
-	if spoken {
-		payload["instruction"] = instruction
-	}
+	payload["instruction"] = instruction
 	return success(id, payload)
 }
 
-func parseShortcut(req request) response {
-	binding, err := shortcut.Bind(req.Shortcut)
-	if err != nil {
-		return failure(req.ID, "invalid_shortcut", err.Error())
-	}
-	return success(req.ID, map[string]any{
-		"normalized": binding.Normalized,
-		"key":        binding.Key,
-		"mouse":      binding.Mouse,
-		"ctrl":       binding.Ctrl,
-		"alt":        binding.Alt,
-		"shift":      binding.Shift,
-	})
-}
-
 func processRequest(ctx context.Context, req request) response {
-	if req.Op == "check_update" {
-		notice := update.Fetch(ctx, req.CurrentVersion, &http.Client{
-			Timeout:       8 * time.Second,
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		})
-		if notice.Err != nil {
-			return failure(req.ID, "update_failed", notice.Summary(req.CurrentVersion))
-		}
-		return success(req.ID, map[string]any{
-			"found": notice.Found, "newer": notice.Newer, "latest": notice.Latest,
-			"page": update.ReleasesPage, "summary": notice.Summary(req.CurrentVersion),
-		})
-	}
-	if len(req.Config) == 0 || bytes.Equal(bytes.TrimSpace(req.Config), []byte("null")) {
+	trimmed := bytes.TrimSpace(req.Config)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
 		return failure(req.ID, "invalid_config", "config object is required")
 	}
-	if len(bytes.TrimSpace(req.Config)) == 0 || bytes.TrimSpace(req.Config)[0] != '{' {
+	if trimmed[0] != '{' {
 		return failure(req.ID, "invalid_config", "config must be an object")
 	}
 	cfg, err := coreconfig.Parse(req.Config)
@@ -395,29 +348,6 @@ func processRequest(ctx context.Context, req request) response {
 		return contextFailure(req.ID, err)
 	}
 	switch req.Op {
-	case "list_asr_models", "list_llm_models":
-		base, key := cfg.ASRBaseURL, cfg.ASRAPIKey
-		if req.Op == "list_llm_models" {
-			base, key = cfg.LLMBaseURL, cfg.LLMAPIKey
-		}
-		models, err := provider.ListModels(ctx, base, key)
-		if err != nil {
-			if ctx.Err() != nil {
-				return contextFailure(req.ID, ctx.Err())
-			}
-			return providerFailure(req.ID, "model_list_failed", "无法读取模型列表；请检查服务地址和 API Key", err)
-		}
-		truncated := len(models) > 100
-		if truncated {
-			models = models[:100]
-		}
-		return success(req.ID, map[string]any{"models": models, "truncated": truncated})
-	case "probe_asr":
-		message := serviceprobe.ProbeModel(ctx, "ASR", cfg.ASRBaseURL, cfg.ASRAPIKey, cfg.ASRModel)
-		return success(req.ID, map[string]string{"kind": "ASR", "message": message})
-	case "probe_llm":
-		message := serviceprobe.ProbeModel(ctx, "LLM", cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.TextModel)
-		return success(req.ID, map[string]string{"kind": "LLM", "message": message})
 	case "transcribe":
 		pcm, reason := decodeRequestPCM(req, cfg)
 		if reason != "" {
@@ -437,27 +367,16 @@ func processRequest(ctx context.Context, req request) response {
 			"text":  text,
 			"route": ux.RouteDictationTranscript(text, req.CanInsert),
 		})
-	case "selected_task", "selected_voice_task":
+	case "selected_voice_task":
 		if len(req.SelectedText) == 0 || len(req.SelectedText) > maxSelectedBytes ||
-			!utf8.ValidString(req.SelectedText) || len(req.Instruction) > maxInstructionBytes ||
-			!utf8.ValidString(req.Instruction) {
+			!utf8.ValidString(req.SelectedText) || req.Instruction != "" {
 			return failure(req.ID, "invalid_request", "selected text or instruction exceeds limits")
 		}
-		var result textedit.AssistantResult
-		var instruction string
-		if req.Op == "selected_voice_task" {
-			if req.Instruction != "" {
-				return failure(req.ID, "invalid_request", "spoken selected text task must not supply a text instruction")
-			}
-			pcm, reason := decodeRequestPCM(req, cfg)
-			if reason != "" {
-				return rejectPCM(req.ID, req.Op, reason)
-			}
-			result, instruction, err = textedit.ResolveSpokenTask(ctx, cfg, req.SelectedText, pcm, nil)
-		} else {
-			instruction = req.Instruction
-			result, err = textedit.ResolveSelectedTask(ctx, cfg, req.SelectedText, instruction)
+		pcm, reason := decodeRequestPCM(req, cfg)
+		if reason != "" {
+			return rejectPCM(req.ID, req.Op, reason)
 		}
+		result, instruction, err := textedit.ResolveSpokenTask(ctx, cfg, req.SelectedText, pcm, nil)
 		if err != nil {
 			if ctx.Err() != nil {
 				return contextFailure(req.ID, ctx.Err())
@@ -467,7 +386,7 @@ func processRequest(ctx context.Context, req request) response {
 		if ctx.Err() != nil {
 			return contextFailure(req.ID, ctx.Err())
 		}
-		return selectedTaskSuccess(req.ID, result, instruction, req.Op == "selected_voice_task")
+		return selectedTaskSuccess(req.ID, result, instruction)
 	}
 	return failure(req.ID, "unsupported_op", msgUnsupported)
 }
@@ -489,7 +408,7 @@ func contextFailure(id string, err error) response {
 }
 
 func serveWithOptions(input io.Reader, output io.Writer, options bridgeOptions) error {
-	if options.MaxInFlight < 1 || options.TranscribeTimeout <= 0 || options.SelectedTimeout <= 0 || options.SpokenSelectedTimeout <= 0 {
+	if options.MaxInFlight < 1 || options.TranscribeTimeout <= 0 || options.SpokenSelectedTimeout <= 0 {
 		return errors.New("invalid bridge options")
 	}
 	s := &bridgeServer{
