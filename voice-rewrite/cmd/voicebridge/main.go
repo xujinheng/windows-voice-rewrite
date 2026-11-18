@@ -299,8 +299,12 @@ func headlessProfile(req request) response {
 	if err != nil {
 		return failure(req.ID, "invalid_config", msgInvalidConfig)
 	}
-	if _, ok := provided["dictation_hotkey"]; !ok { cfg.DictationHotkey = "RightCommand" }
-	if _, ok := provided["hotkey_record"]; !ok { cfg.HotkeyRecord = "RightOption" }
+	if _, ok := provided["dictation_hotkey"]; !ok {
+		cfg.DictationHotkey = "RightCommand"
+	}
+	if _, ok := provided["hotkey_record"]; !ok {
+		cfg.HotkeyRecord = "RightOption"
+	}
 	allowed := func(s string) bool {
 		return s == "RightCommand" || s == "RightOption" || s == "Mouse4" || s == "Mouse5"
 	}
@@ -311,12 +315,14 @@ func headlessProfile(req request) response {
 		return failure(req.ID, "invalid_config", msgInvalidConfig)
 	}
 	cfg, err = coreconfig.Normalize(cfg)
-	if err != nil { return failure(req.ID, "invalid_config", msgInvalidConfig) }
-	return success(req.ID, map[string]any{"profile":map[string]any{
-		"dictation":cfg.DictationHotkey, "rewrite":cfg.HotkeyRecord,
-		"maximumSeconds":cfg.MaxRecordSeconds, "modifierDelayMS":200,
-		"mouseDelayMS":int(input.WindowsSideHold/time.Millisecond),
-		"pill":indicator.HostSpec(),
+	if err != nil {
+		return failure(req.ID, "invalid_config", msgInvalidConfig)
+	}
+	return success(req.ID, map[string]any{"profile": map[string]any{
+		"dictation": cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
+		"maximumSeconds": cfg.MaxRecordSeconds, "modifierDelayMS": 200,
+		"mouseDelayMS": int(input.WindowsSideHold / time.Millisecond),
+		"pill":         indicator.HostSpec(),
 	}})
 }
 
