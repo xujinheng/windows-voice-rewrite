@@ -1,45 +1,8 @@
 name: Windows Meeting E2E
 
+# Automatic Meeting controls and screenshots are validated by
+# acceptance-evidence.yml; this is a manually invoked diagnostic tool.
 on:
-  pull_request:
-    paths:
-      - 'voice-rewrite/meeting*.go'
-      - 'voice-rewrite/internal/core/audio/**'
-      - 'voice-rewrite/internal/core/config/**'
-      - 'voice-rewrite/internal/core/meeting/**'
-      - 'voice-rewrite/internal/core/provider/**'
-      - 'voice-rewrite/internal/core/speech/**'
-      - 'voice-rewrite/config*.go'
-      - 'voice-rewrite/config_store.go'
-      - 'voice-rewrite/settings_config.go'
-      - 'voice-rewrite/windows.go'
-      - 'voice-rewrite/appearance_windows.go'
-      - 'voice-rewrite/visual_skin_windows.go'
-      - 'voice-rewrite/settings_windows.go'
-      - 'voice-rewrite/go.mod'
-      - 'voice-rewrite/go.sum'
-      - 'scripts/test-meeting-ui.ps1'
-      - '.github/workflows/meeting-ui.yml'
-  push:
-    branches: [main, meeting-preview]
-    paths:
-      - 'voice-rewrite/meeting*.go'
-      - 'voice-rewrite/internal/core/audio/**'
-      - 'voice-rewrite/internal/core/config/**'
-      - 'voice-rewrite/internal/core/meeting/**'
-      - 'voice-rewrite/internal/core/provider/**'
-      - 'voice-rewrite/internal/core/speech/**'
-      - 'voice-rewrite/config*.go'
-      - 'voice-rewrite/config_store.go'
-      - 'voice-rewrite/settings_config.go'
-      - 'voice-rewrite/windows.go'
-      - 'voice-rewrite/appearance_windows.go'
-      - 'voice-rewrite/visual_skin_windows.go'
-      - 'voice-rewrite/settings_windows.go'
-      - 'voice-rewrite/go.mod'
-      - 'voice-rewrite/go.sum'
-      - 'scripts/test-meeting-ui.ps1'
-      - '.github/workflows/meeting-ui.yml'
   workflow_dispatch:
 
 permissions:
