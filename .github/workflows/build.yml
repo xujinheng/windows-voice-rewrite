@@ -19,6 +19,9 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       core: ${{ steps.scope.outputs.core }}
       macos: ${{ steps.scope.outputs.macos }}
@@ -28,22 +31,23 @@ jobs:
       direct2d: ${{ steps.scope.outputs.direct2d }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - name: Verify CI path classifier
         run: python3 -m unittest discover -s scripts -p 'test_ci_changes.py' -v
       - name: Compute affected platforms
         id: scope
         shell: bash
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          if [[ "${{ github.event_name }}" != 'pull_request' ]]; then
+          if [[ "$GITHUB_EVENT_NAME" != 'pull_request' ]]; then
             printf 'core=true\nmacos=true\nwindows=true\noneclick=true\nui=true\ndirect2d=true\n' >> "$GITHUB_OUTPUT"
           else
-            git diff --name-only "$BASE_SHA" "$HEAD_SHA" |
+            # Fetch only changed filenames, including the old name on rename.
+            # No deep clone or unrelated changes from the target branch.
+            gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
+              --jq '.[] | .filename, (.previous_filename // empty)' |
               python3 scripts/ci_changes.py --output "$GITHUB_OUTPUT"
           fi
   test-core:
