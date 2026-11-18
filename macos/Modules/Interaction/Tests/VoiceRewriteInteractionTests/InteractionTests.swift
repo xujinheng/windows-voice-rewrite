@@ -47,6 +47,32 @@ private final class FakeUptime: @unchecked Sendable {
 }
 
 #if os(macOS)
+final class AXCallThreadingTests: XCTestCase {
+    func testOwnProcessAccessibilityRunsOnMainFromWorker() async {
+        let onMain = await Task.detached {
+            AXCallThreading.withSafeAppKitThread(
+                for: ProcessInfo.processInfo.processIdentifier) { Thread.isMainThread }
+        }.value
+        XCTAssertTrue(onMain)
+    }
+
+    func testOtherProcessAccessibilityStaysOffMain() async {
+        let onMain = await Task.detached {
+            AXCallThreading.withSafeAppKitThread(
+                for: ProcessInfo.processInfo.processIdentifier + 1) { Thread.isMainThread }
+        }.value
+        XCTAssertFalse(onMain)
+    }
+
+    func testOwnProcessAccessibilityAlreadyOnMainDoesNotDispatchAgain() async {
+        let onMain = await MainActor.run {
+            AXCallThreading.withSafeAppKitThread(
+                for: ProcessInfo.processInfo.processIdentifier) { Thread.isMainThread }
+        }
+        XCTAssertTrue(onMain)
+    }
+}
+
 final class NativeClipboardReceiptTests: XCTestCase {
     func testDictationTargetPolicyChecksWindowWhenAvailableWithoutRequiringAX() {
         XCTAssertTrue(DictationTargetPolicy.maySend(
