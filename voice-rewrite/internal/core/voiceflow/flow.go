@@ -52,17 +52,17 @@ const (
 type Phase string
 
 const (
-	Armed      Phase = "armed"
-	Starting   Phase = "starting"
-	Recording  Phase = "recording"
-	Stopping   Phase = "stopping"
+	Armed       Phase = "armed"
+	Starting    Phase = "starting"
+	Recording   Phase = "recording"
+	Stopping    Phase = "stopping"
 	Recognizing Phase = "recognizing"
-	Modeling   Phase = "modeling"
-	Writing    Phase = "writing"
-	Preview    Phase = "preview"
-	Success    Phase = "success"
-	Failed     Phase = "failed"
-	Canceled   Phase = "canceled"
+	Modeling    Phase = "modeling"
+	Writing     Phase = "writing"
+	Preview     Phase = "preview"
+	Success     Phase = "success"
+	Failed      Phase = "failed"
+	Canceled    Phase = "canceled"
 )
 
 // CommandID identifies the incoming event, independently of the JSONL envelope
@@ -126,9 +126,9 @@ type task struct {
 }
 
 type Engine struct {
-	mu      sync.Mutex
-	tasks   map[string]*task
-	latest  map[string]uint64
+	mu     sync.Mutex
+	tasks  map[string]*task
+	latest map[string]uint64
 }
 
 // New constructs a process-local engine. Apply is thread-safe. It never
@@ -206,7 +206,9 @@ func (e *Engine) Apply(ev Event) (Transition, error) {
 		}
 		if ev.Generation <= e.latest[ev.SessionID] {
 			out.Reason = "stale_generation"
-			if t != nil { out.Phase = t.phase }
+			if t != nil {
+				out.Phase = t.phase
+			}
 			return out, nil
 		}
 		if t != nil && !terminal(t.phase) {
@@ -227,7 +229,9 @@ func (e *Engine) Apply(ev Event) (Transition, error) {
 	}
 	if t == nil || t.generation != ev.Generation {
 		out.Reason = "stale_generation"
-		if t != nil { out.Phase = t.phase }
+		if t != nil {
+			out.Phase = t.phase
+		}
 		return out, nil
 	}
 	out.Phase = t.phase
@@ -252,7 +256,9 @@ func (e *Engine) Apply(ev Event) (Transition, error) {
 	applied := false
 	switch ev.Type {
 	case Press:
-		if t.phase != Armed { break }
+		if t.phase != Armed {
+			break
+		}
 		applied = true
 		t.pendingEffect(&out, StartNativeCapture, Starting, ev)
 	case Release, RecordLimit:
@@ -265,9 +271,13 @@ func (e *Engine) Apply(ev Event) (Transition, error) {
 		} else if t.phase == Armed && ev.Type == Release {
 			applied = true
 			t.finish(&out, Canceled, ev)
-		} else { break }
+		} else {
+			break
+		}
 	case RecordReady:
-		if t.phase != Starting { break }
+		if t.phase != Starting {
+			break
+		}
 		applied = true
 		if !ev.Success {
 			t.finish(&out, Failed, ev)
@@ -278,7 +288,9 @@ func (e *Engine) Apply(ev Event) (Transition, error) {
 			t.phaseTo(&out, Recording, ev)
 		}
 	case AudioStopped:
-		if t.phase != Stopping { break }
+		if t.phase != Stopping {
+			break
+		}
 		applied = true
 		if !ev.Success {
 			t.finish(&out, Failed, ev)
@@ -286,7 +298,9 @@ func (e *Engine) Apply(ev Event) (Transition, error) {
 			t.pendingEffect(&out, SendASR, Recognizing, ev)
 		}
 	case ASRResult:
-		if t.phase != Recognizing { break }
+		if t.phase != Recognizing {
+			break
+		}
 		applied = true
 		t.text = strings.TrimSpace(ev.Text)
 		if !ev.Success || t.text == "" {
@@ -297,7 +311,9 @@ func (e *Engine) Apply(ev Event) (Transition, error) {
 			t.writeOrPreview(&out, ev, true)
 		}
 	case ModelResult:
-		if t.phase != Modeling { break }
+		if t.phase != Modeling {
+			break
+		}
 		applied = true
 		t.text = strings.TrimSpace(ev.Text)
 		if !ev.Success || t.text == "" {
@@ -306,7 +322,9 @@ func (e *Engine) Apply(ev Event) (Transition, error) {
 			t.writeOrPreview(&out, ev, ev.Authorized)
 		}
 	case WriteReceipt:
-		if t.phase != Writing { break }
+		if t.phase != Writing {
+			break
+		}
 		applied = true
 		if ev.Success {
 			t.emit(&out, AppendHistory, ev)
