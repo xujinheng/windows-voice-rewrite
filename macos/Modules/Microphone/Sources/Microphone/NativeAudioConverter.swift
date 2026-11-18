@@ -77,7 +77,7 @@ final class NativeAudioConverter {
                 }
                 let samples = UnsafeBufferPointer(start: channels[0],
                                                   count: Int(converted.frameLength))
-                try pcm.append(samples)
+                try pcm.appendCapped(samples)
             }
             switch result {
             case .haveData:
