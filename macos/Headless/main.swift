@@ -19,6 +19,7 @@ struct PillSpec: Decodable {
     let textX, textRightGap, spinnerDots, spinnerX, spinnerRadius, spinnerDotSize: Int
     let terminalMS: Int
     let levelGain: Double
+    let waveShape, levelWeights, spinnerShape: [Double]
     let pillColor, clockColor, labelColor, dictationAccent, rewriteAccent: [Int]
     let errorAccent, sentMark, fallbackMark, closeColor, closeHover, attentionGlyph: [Int]
     let processingDictation, processingRewrite, sentLabel, errorLabel, fallbackLabel: String
@@ -244,6 +245,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var activeAction: Action?
     private var generation: UInt64 = 0
     private var targetPID: pid_t = 0
+    private var targetWindow: AXUIElement?
     private var selected: String?
     private var pending = false
 
@@ -309,11 +311,17 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             } else if type == .keyDown {
                 if app.activeKey != nil && !app.microphone.running { app.generation &+= 1 }
             } else if type == .otherMouseDown || type == .otherMouseUp {
+                if event.getIntegerValueField(.eventSourceUserData) == 0x56525842 {
+                    return Unmanaged.passUnretained(event)
+                }
                 if mouse == 3 || mouse == 4 {
                     let name = mouse == 3 ? "Mouse4" : "Mouse5"
                     if name == app.config.profile.dictation || name == app.config.profile.rewrite {
-                        app.handleButton(code: 100 + mouse, down: type == .otherMouseDown)
-                        return nil // a configured voice button must not navigate the browser
+                        app.updatePress(code: 100 + mouse, name: name,
+                                        down: type == .otherMouseDown,
+                                        delay: Double(app.config.profile.mouseDelayMS) / 1000,
+                                        cursor: event.location)
+                        return nil // Intercept hold; replay an ordinary short click below
                     }
                 }
             }
@@ -343,18 +351,19 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     down: !pressed.contains(code) && flags.contains(family),
                     delay: Double(config.profile.modifierDelayMS) / 1000)
     }
-    private func handleButton(code: Int64, down: Bool) {
-        updatePress(code: code, name: code == 103 ? "Mouse4" : "Mouse5",
-                    down: down, delay: Double(config.profile.mouseDelayMS) / 1000)
-    }
-    private func updatePress(code: Int64, name: String, down: Bool, delay: TimeInterval) {
+    private func updatePress(code: Int64, name: String, down: Bool, delay: TimeInterval,
+                             cursor: CGPoint? = nil) {
         guard name == config.profile.dictation || name == config.profile.rewrite else { return }
         if down {
             guard pressed.insert(code).inserted else { return }
             arm(code: code, action: name == config.profile.dictation ? .dictation : .rewrite,
                 delay: delay)
         } else if pressed.remove(code) != nil {
+            let wasRecording = activeKey == code && microphone.running
             release(code)
+            if let cursor, !wasRecording {
+                replayClick(button: code - 100, cursor: cursor)
+            }
         }
     }
     private func arm(code: Int64, action: Action, delay: TimeInterval) {
@@ -369,9 +378,21 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             self.begin(action)
         }
     }
+    private func replayClick(button: Int64, cursor: CGPoint) {
+        let source = CGEventSource(stateID: .hidSystemState)
+        for kind in [CGEventType.otherMouseDown, .otherMouseUp] {
+            guard let event = CGEvent(mouseEventSource: source, mouseType: kind,
+                                      mouseCursorPosition: cursor, mouseButton: .center) else { return }
+            event.setIntegerValueField(.mouseEventButtonNumber, value: button)
+            event.setIntegerValueField(.eventSourceUserData, value: 0x56525842)
+            event.post(tap: .cghidEventTap)
+        }
+    }
+
     private func begin(_ action: Action) {
         targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
         guard targetPID > 0 else { reset("No target"); return }
+        targetWindow = focusedWindow()
         selected = nil
         if action == .rewrite {
             guard let text = selectionFromAX(), !text.isEmpty else {
@@ -433,6 +454,11 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else {
                             self.reset("Focus changed"); return
                         }
+                        if let window = self.targetWindow {
+                            guard let current = self.focusedWindow(), CFEqual(window, current) else {
+                                self.reset("Window changed"); return
+                            }
+                        }
                         if action == .rewrite && self.selectionFromAX() != selectedValue {
                             self.reset("Selection changed"); return
                         }
@@ -441,6 +467,13 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 }
             }
         } catch { pending = false; reset("Audio error"); fputs("Audio: \(error)\n", stderr) }
+    }
+
+    private func focusedWindow() -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(targetPID),
+                kAXFocusedWindowAttribute as CFString, &value) == .success, let value else { return nil }
+        return value as! AXUIElement
     }
 
     private func selectionFromAX() -> String? {
@@ -528,6 +561,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         activeKey = nil
         activeAction = nil
         selected = nil
+        targetWindow = nil
         pending = false
     }
 }

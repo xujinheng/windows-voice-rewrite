@@ -113,7 +113,7 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 		app.postHandyPhase(indicator.Error, generation)
 		return
 	}
-	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), speech.TranscribeTimeout(len(r.pcm)))
+	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), speech.TranscribeTimeout)
 	defer cancel()
 	start := time.Now()
 	text, err := speech.Transcribe(ctx, app.cfg, r.pcm)
@@ -233,7 +233,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		return
 	}
 	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/audio.PCMBytesPerSecond)
-	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), 240*time.Second)
+	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), textedit.SpokenTaskTimeout)
 	defer cancel()
 	started := time.Now()
 	answer, instruction, e := textedit.ResolveSpokenTask(ctx, app.cfg, sel.Text, r.pcm, func(text string) {

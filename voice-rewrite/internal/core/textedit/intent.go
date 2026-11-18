@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
@@ -23,6 +24,9 @@ type AssistantResult struct {
 	Result      string `json:"result"`
 	PreviewOnly bool   `json:"-"`
 }
+
+// One spoken selected-text budget shared by desktop hosts.
+const SpokenTaskTimeout = 240 * time.Second
 
 type Action string
 

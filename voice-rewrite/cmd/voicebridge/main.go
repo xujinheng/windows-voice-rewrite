@@ -69,7 +69,7 @@ type bridgeOptions struct {
 }
 
 func defaultOptions() bridgeOptions {
-	return bridgeOptions{MaxInFlight: 4, TranscribeTimeout: 220 * time.Second, SpokenSelectedTimeout: 240 * time.Second}
+	return bridgeOptions{MaxInFlight: 4, TranscribeTimeout: speech.TranscribeTimeout, SpokenSelectedTimeout: textedit.SpokenTaskTimeout}
 }
 
 type bridgeTask struct {
@@ -230,11 +230,6 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		return
 	}
 	timeout := s.options.TranscribeTimeout
-	if req.Op == "transcribe" {
-		if budget := speech.TranscribeTimeout(len(req.PCMBase64) / 4 * 3); budget < timeout {
-			timeout = budget
-		}
-	}
 	if req.Op == "selected_voice_task" {
 		timeout = s.options.SpokenSelectedTimeout
 	}
@@ -302,7 +297,7 @@ func headlessProfile(req request) response {
 	return success(req.ID, map[string]any{"profile": map[string]any{
 		"dictation": cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
 		"maximumSeconds": cfg.MaxRecordSeconds, "modifierDelayMS": 200,
-		"pasteRestoreMS": clipboard.PasteReceiptMaxMilliseconds,
+		"pasteRestoreMS": clipboard.PasteReceiptMinimumMilliseconds,
 		"mouseDelayMS":   int(input.WindowsSideHold / time.Millisecond),
 		"pill":           indicator.HostSpec(),
 	}})

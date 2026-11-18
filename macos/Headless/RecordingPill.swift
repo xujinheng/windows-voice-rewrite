@@ -102,7 +102,7 @@ final class RecordingPill {
         if view.phase == .recording {
             let raw = levelSource()
             let normalized = raw.isFinite ? min(1, max(0, raw * (view.spec?.levelGain ?? 0))) : 0
-            smoothed = 0.72 * smoothed + 0.28 * normalized
+            smoothed = view.spec!.levelWeights[0] * smoothed + view.spec!.levelWeights[1] * normalized
             view.level = smoothed
         }
         view.tick &+= 1
@@ -167,8 +167,9 @@ private final class PillSurface: NSView {
             color.setFill()
             NSBezierPath(ovalIn: NSRect(x: 23, y: CGFloat(spec.iconY - 4), width: 8, height: 8)).fill()
             for index in 0..<spec.waveBars {
-                let envelope = 0.44 + 0.56 * abs(sin(Double(index) * 0.75 + Double(tick) * 0.24))
-                let h = CGFloat(min(18, max(4, (4 + 14 * pow(level, 0.7) * envelope).rounded())))
+                let a = spec.waveShape
+                let envelope = a[3] + a[4] * abs(sin(Double(index) * a[5] + Double(tick) * a[6]))
+                let h = CGFloat((a[0] + a[1] * pow(level, a[2]) * envelope).rounded())
                 capsule(NSRect(x: CGFloat(spec.waveStartX + index * spec.waveStep),
                                y: CGFloat(spec.iconY) - h / 2,
                                width: CGFloat(spec.waveBarWidth), height: h),
@@ -226,22 +227,17 @@ private final class PillSurface: NSView {
         let color = accent
         if phase == .processing {
             for index in 0..<spec.spinnerDots {
-                let angle = Double(tick) * 0.2 + Double(index) * .pi / 4
+                let angle = Double(tick) * spec.spinnerShape[0] + Double(index) * spec.spinnerShape[1]
                 let x = CGFloat(Double(spec.spinnerX) + Double(spec.spinnerRadius) * cos(angle))
                 let y = CGFloat(Double(spec.iconY) + Double(spec.spinnerRadius) * sin(angle))
-                color.withAlphaComponent(CGFloat(min(255, 65 + index * 25)) / 255).setFill()
+                color.withAlphaComponent(CGFloat(min(255, Int(spec.spinnerShape[2] + Double(index) * spec.spinnerShape[3]))) / 255).setFill()
                 let size = CGFloat(spec.spinnerDotSize)
                 NSBezierPath(ovalIn: NSRect(x: x - size / 2, y: y - size / 2,
                                             width: size, height: size)).fill()
             }
         } else {
-            let fill: NSColor
-            switch phase {
-            case .sent: fill = rgb(spec.sentMark)
-            case .fallback: fill = rgb(spec.fallbackMark)
-            default: fill = rgb(spec.errorAccent)
-            }
-            fill.setFill()
+            rgb(phase == .sent ? spec.sentMark :
+                phase == .fallback ? spec.fallbackMark : spec.errorAccent).setFill()
             NSBezierPath(ovalIn: NSRect(x: 22, y: 17, width: 16, height: 16)).fill()
             label(phase == .sent ? "✓" : "!", x: 22, width: 16, size: 11,
                   centered: true, color: rgb(spec.attentionGlyph))

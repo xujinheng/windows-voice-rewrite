@@ -45,6 +45,19 @@ const (
 	SpinnerCenterX      = 30
 	SpinnerRadius       = 8
 	SpinnerDotSize      = 4
+	WaveMinHeight       = 4
+	WaveHeightRange     = 14
+	WaveLevelExponent   = 0.7
+	WaveEnvelopeBase    = 0.44
+	WaveEnvelopeRange   = 0.56
+	WaveBarPhase        = 0.75
+	WaveTickPhase       = 0.24
+	LevelPastWeight     = 0.72
+	LevelCurrentWeight  = 0.28
+	SpinnerTickPhase    = 0.2
+	SpinnerBarPhase     = math.Pi / 4
+	SpinnerBaseAlpha    = 65
+	SpinnerAlphaStep    = 25
 )
 
 func CancelHit(x, width int) bool { return x >= width-CancelWidth && x < width }
@@ -69,10 +82,10 @@ func WaveformX(i int) int { return 52 + i*8 }
 
 // SpinnerDot is one bead of the progress wheel. The point is the bead center.
 func SpinnerDot(index int, tick uint32) (x, y int, alpha uint8) {
-	angle := float64(tick)*0.2 + float64(index)*math.Pi/4
+	angle := float64(tick)*SpinnerTickPhase + float64(index)*SpinnerBarPhase
 	x = int(math.Round(float64(SpinnerCenterX) + float64(SpinnerRadius)*math.Cos(angle)))
 	y = int(math.Round(float64(IconCenterY) + float64(SpinnerRadius)*math.Sin(angle)))
-	value := 65 + index*25
+	value := SpinnerBaseAlpha + index*SpinnerAlphaStep
 	if value > 255 {
 		value = 255
 	}
@@ -86,13 +99,13 @@ func WaveHeight(i int, level float64, tick uint32) int {
 	if level > 1 {
 		level = 1
 	}
-	envelope := 0.44 + 0.56*math.Abs(math.Sin(float64(i)*0.75+float64(tick)*0.24))
-	h := int(math.Round(4 + 14*math.Pow(level, 0.7)*envelope))
-	if h < 4 {
-		h = 4
+	envelope := WaveEnvelopeBase + WaveEnvelopeRange*math.Abs(math.Sin(float64(i)*WaveBarPhase+float64(tick)*WaveTickPhase))
+	h := int(math.Round(WaveMinHeight + WaveHeightRange*math.Pow(level, WaveLevelExponent)*envelope))
+	if h < WaveMinHeight {
+		h = WaveMinHeight
 	}
-	if h > 18 {
-		h = 18
+	if h > WaveMinHeight+WaveHeightRange {
+		h = WaveMinHeight+WaveHeightRange
 	}
 	return h
 }
@@ -143,7 +156,7 @@ func SmoothedLevel(previous, incoming float64) float64 {
 	if previous > 1 {
 		previous = 1
 	}
-	return previous*0.72 + incoming*0.28
+	return previous*LevelPastWeight + incoming*LevelCurrentWeight
 }
 
 // NormalizeMicrophoneLevel applies the same gain the Windows capture meter uses
@@ -196,6 +209,9 @@ func HostSpec() map[string]any {
 		"spinnerRadius": SpinnerRadius, "spinnerDotSize": SpinnerDotSize,
 		"terminalMS": int(TerminalDuration / time.Millisecond),
 		"levelGain":  MicrophoneLevelGain,
+		"waveShape": []float64{WaveMinHeight, WaveHeightRange, WaveLevelExponent, WaveEnvelopeBase, WaveEnvelopeRange, WaveBarPhase, WaveTickPhase},
+		"levelWeights": []float64{LevelPastWeight, LevelCurrentWeight},
+		"spinnerShape": []float64{SpinnerTickPhase, SpinnerBarPhase, SpinnerBaseAlpha, SpinnerAlphaStep},
 		"pillColor":  rgb(Pill), "clockColor": rgb(ClockText),
 		"labelColor": rgb(LabelText), "dictationAccent": rgb(DictationAccent),
 		"rewriteAccent": rgb(RewriteAccent), "errorAccent": rgb(ErrorAccent),

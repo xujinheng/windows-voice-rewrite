@@ -80,11 +80,8 @@ func EncodeWAV(pcm []byte) ([]byte, error) {
 	return b, nil
 }
 
-// TranscribeTimeout is shared by Windows and macOS to bound stalled ASR requests.
-func TranscribeTimeout(pcmBytes int) time.Duration {
-	seconds := (max(0, pcmBytes) + audio.PCMBytesPerSecond - 1) / audio.PCMBytesPerSecond
-	return time.Duration(min(220, max(65, 45+2*seconds))) * time.Second
-}
+// One end-to-end ASR budget for both desktop hosts.
+const TranscribeTimeout = 220 * time.Second
 
 // Transcribe sends the exact multipart request expected by Handy-compatible ASR.
 func Transcribe(ctx context.Context, cfg coreconfig.Config, pcm []byte) (string, error) {

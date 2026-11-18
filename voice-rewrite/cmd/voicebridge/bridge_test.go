@@ -17,32 +17,13 @@ import (
 	"time"
 
 	"voicerewrite/internal/core/jsonl"
-	"voicerewrite/internal/core/speech"
 	"voicerewrite/internal/core/ux"
 )
 
-func TestSharedTranscribeBudgetMatchesAudioLength(t *testing.T) {
-	// Short audio gets a bounded service wait rather than the former 220s
-	// default, but long clips retain the multi-chunk upper bound.
-	cases := []struct {
-		seconds int
-		want    time.Duration
-	}{
-		{1, 65 * time.Second},
-		{10, 67 * time.Second},
-		{30, 105 * time.Second},
-		{60, 165 * time.Second},
-		{180, 220 * time.Second},
-	}
-	for _, tc := range cases {
-		pcmBytes := tc.seconds * 32000
-		encodedLength := base64.StdEncoding.EncodedLen(pcmBytes)
-		if got := speech.TranscribeTimeout(encodedLength / 4 * 3); got != tc.want {
-			t.Errorf("%ds: got %s, want %s", tc.seconds, got, tc.want)
-		}
-	}
-	if got := speech.TranscribeTimeout(-1); got != 65*time.Second {
-		t.Fatalf("invalid size: got %s", got)
+func TestSharedHostTimeouts(t *testing.T) {
+	limits := defaultOptions()
+	if limits.TranscribeTimeout != 220*time.Second || limits.SpokenSelectedTimeout != 240*time.Second {
+		t.Fatalf("unexpected shared timeouts: %+v", limits)
 	}
 }
 
