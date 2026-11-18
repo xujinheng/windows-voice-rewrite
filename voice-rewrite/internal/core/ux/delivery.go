@@ -9,6 +9,8 @@ import (
 )
 
 const (
+	PasteReceiptMinimumMilliseconds = 700
+
 	// DictationReleaseKeys is the Windows wait for a held shortcut. Callers keep their own timeouts.
 	DictationReleaseKeys = "请松开快捷键后重试"
 	// DictationWindowChanged is the Windows dictation paste cancelled because the target window moved.

@@ -16,7 +16,6 @@ import (
 	"unicode/utf8"
 
 	"voicerewrite/internal/core/audio"
-	"voicerewrite/internal/core/clipboard"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
@@ -297,7 +296,7 @@ func headlessProfile(req request) response {
 	return success(req.ID, map[string]any{"profile": map[string]any{
 		"dictation": cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
 		"maximumSeconds": cfg.MaxRecordSeconds, "modifierDelayMS": 200,
-		"pasteRestoreMS": clipboard.PasteReceiptMinimumMilliseconds,
+		"pasteRestoreMS": ux.PasteReceiptMinimumMilliseconds,
 		"mouseDelayMS":   int(input.WindowsSideHold / time.Millisecond),
 		"pill":           indicator.HostSpec(),
 	}})
