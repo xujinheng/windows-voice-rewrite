@@ -14,6 +14,51 @@ PRs do not build or upload general-purpose GUI/OneClick executables, installers 
 
 `.github/workflows/meeting-ui.yml` runs the Win32 Meeting E2E Go test and a real GUI screenshot/interaction script on matching pull requests, pushes to `main` or `meeting-preview`, or manual dispatch. `.github/workflows/direct2d-result.yml` runs native Direct2D result-card tests on matching pull requests, pushes to `main`, or manual dispatch. These UI jobs build temporary test executables on Windows, not distributable packages. `.github/workflows/visual-matrix.yml` captures the Windows UI on relevant `main` pushes or manual dispatch; `.github/workflows/demo-video.yml` renders demo media on its configured `main` paths or manual dispatch.
 
+## Cross-platform business-code reuse benchmark
+
+Run `python3 scripts/bench_reuse.py` from the repository root. The existing
+`changes` CI job runs it **on every PR**, even when the change only affects
+macOS. It writes the scorecard and each audited step's Go/Swift owner to the
+GitHub Actions step summary; a small JSON report is also generated on the
+runner. No new Xcode build, additional runner or paid service is involved.
+
+The benchmark intentionally reports **two different quantities**:
+
+1. **Audited portable business-decision ownership** (primary): five canonical
+   macOS user journeys (dictation, spoken selection rewrite, recording limit,
+   cancellation/failure and Meeting). A decision point counts once per
+   journey. If a shared Go owner is actually referenced by the Windows path
+   and macOS voicebridge, it counts as Go; otherwise the evidence-backed Swift
+   implementation counts as Swift. A known competing Swift decision takes
+   precedence until removed. Hardware capture, AX, pasteboard and UI rendering
+   count separately as native adapters, **not** in the portable denominator.
+2. **Scoped source inventory** (secondary): nonblank lines in portable Go
+   `internal/core` plus `cmd/voicebridge`, compared with the macOS Swift host
+   and native module source files. Go-generated Swift contracts are listed
+   separately. This **does not measure which code executed** and is not a
+   cross-platform reuse percentage.
+
+The report compares the checked-out PR merge commit against its first parent
+(base branch) with `git show`; CI fetches two commits in its existing checkout.
+A decrease in the Go-owned share for any catalogued journey or overall fails
+the reuse gate, as do unresolvable decision evidence and silently removed
+catalogue steps. Deliberate scope additions must be reviewed in
+`scripts/reuse_journeys.json` alongside the production code.
+
+Example local commands:
+
+```bash
+python3 -m unittest discover -s scripts -p 'test_reuse_*.py' -v
+python3 scripts/bench_reuse.py --baseline-revision HEAD^ --no-regression --json-output /tmp/reuse.json
+```
+
+**Limitations:** this is an inspected *static journey map*, not sampled
+instruction counts, runtime branch coverage, Go-vs-Swift CPU time, microphone
+or cross-app paste reliability. Changes to unlisted branches are not
+automatically discovered: reviewers must register new portable decisions in
+the catalog. Native device acceptance and real user-perceived latency remain
+separate requirements.
+
 ## Local Windows checks
 
 Run the Go test suite and Windows GUI build before merging:
