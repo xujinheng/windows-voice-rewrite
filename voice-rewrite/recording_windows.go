@@ -158,5 +158,12 @@ func (r *audioRecorder) collect() {
 		}
 	}
 	r.closeHardware()
-	r.result <- audioResult{pcm: pcm.Bytes(), err: lastError}
+	// WinMM may return one last partially filled buffer when waveInReset
+	// drains the device. Never submit samples past the configured duration:
+	// the shared Go ASR input contract rejects an oversized PCM payload.
+	captured := pcm.Bytes()
+	if limit := r.maxSeconds * audio.PCMBytesPerSecond; limit > 0 && len(captured) > limit {
+		captured = captured[:limit]
+	}
+	r.result <- audioResult{pcm: captured, err: lastError}
 }
