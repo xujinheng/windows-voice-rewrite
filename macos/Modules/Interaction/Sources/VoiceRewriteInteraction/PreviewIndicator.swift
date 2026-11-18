@@ -31,8 +31,8 @@ public func previewDismiss(pending: Bool) -> PreviewDismiss {
 }
 
 /// The recording pill clock.
-/// Becoming visible starts both clocks.
-/// A phase or pending change moves only the change clock.
+/// Becoming visible or beginning a new recording starts both clocks.
+/// Other phase/pending changes move only the change clock.
 /// A mode-name change does not, because this function does not take the mode.
 public struct IndicatorTiming: Equatable, Sendable {
     public var started: Date
@@ -42,10 +42,15 @@ public struct IndicatorTiming: Equatable, Sendable {
 public func indicatorTiming(wasVisible: Bool, wasPending: Bool, wasPhase: Int, pending: Bool, phase: Int, now: Date, started: Date, changed: Date) -> IndicatorTiming {
     var nextStarted = started
     var nextChanged = changed
-    if !wasVisible {
+    // Phase 1 is indicator.Recording in the shared Go indicator contract.
+    // An old terminal/processing pill may still be visible when the next
+    // recording begins. Do not carry its elapsed time into the new session.
+    // Pending -> active, however, is still the *same* recording.
+    let newRecording = phase == 1 && (wasPhase != 1 || (pending && !wasPending))
+    if !wasVisible || newRecording {
         nextStarted = now
     }
-    if !wasVisible || wasPhase != phase || wasPending != pending {
+    if !wasVisible || newRecording || wasPhase != phase || wasPending != pending {
         nextChanged = now
     }
     return IndicatorTiming(started: nextStarted, changed: nextChanged)
