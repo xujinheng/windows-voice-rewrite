@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Verify CI path classifier
-        run: python3 -m unittest discover -s scripts -p 'test_ci_changes.py' -v
+        run: python3 -m unittest discover -s scripts -p 'test_ci_*.py' -v
       - name: Compute affected platforms
         id: scope
         shell: bash
@@ -256,6 +256,33 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # Xcode's incremental database persists absolute paths and file mtimes.
+      # Cache only compiled Build products, never xcresult/test outcomes.
+      # Normalize tracked file times from content before restoring the cache,
+      # so a changed Swift/resource file invalidates its own previous build.
+      - name: Normalize tracked mtimes for Intel incremental builds
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/ci_xcode_mtimes.py
+      - name: Fingerprint exact Intel Xcode toolchain
+        if: github.event_name == 'pull_request'
+        id: intel-xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          xcodebuild -version
+          { xcodebuild -version; xcode-select -p; } |
+            shasum -a 256 | awk '{ print "fingerprint=" $1 }' >> "$GITHUB_OUTPUT"
+      - name: Restore Intel Xcode incremental Build products
+        if: github.event_name == 'pull_request'
+        id: intel-derived
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.temp }}/voicerewrite-intel-derived/Build
+          # New Xcode binary, project graph or package graph => cold rebuild.
+          # Swift source changes retain the key but get fresh content-derived
+          # mtimes, allowing safe per-file invalidation.
+          key: intel-xcode-build-${{ steps.intel-xcode.outputs.fingerprint }}-${{ hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj', 'macos/**/Package.swift', 'macos/**/Package.resolved') }}-v1
       # setup-go does not normally find Go 1.23 in the fresh Intel toolcache.
       # Cache the *complete* official installed version (including marker)
       # to avoid the observed 64s Go download on repeated PR runs.
@@ -284,22 +311,55 @@ jobs:
           mkdir -p acceptance-output
           touch acceptance-output/.enabled
       - name: Build and test Intel macOS native app
+        id: intel-xctest
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         env:
           VOICEREWRITE_ACCEPTANCE_PLATFORM: macos-x64
         run: |
           set -euo pipefail
           test "$(uname -m)" = x86_64
+          start="$(date +%s)"
           xcodebuild -project macos/VoiceRewrite.xcodeproj \
             -scheme VoiceRewrite -configuration Debug \
             -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/voicerewrite-intel-derived" test
+            -derivedDataPath "$RUNNER_TEMP/voicerewrite-intel-derived" test \
+            2>&1 | tee "$RUNNER_TEMP/voicerewrite-intel-xcode.log"
+          echo "xcode_seconds=$(( $(date +%s) - start ))" >> "$GITHUB_OUTPUT"
           app="$RUNNER_TEMP/voicerewrite-intel-derived/Build/Products/Debug/VoiceRewrite.app"
           test -x "$app/Contents/MacOS/VoiceRewrite"
           test -x "$app/Contents/MacOS/voicebridge"
           test "$(lipo -archs "$app/Contents/MacOS/VoiceRewrite")" = x86_64
           test "$(lipo -archs "$app/Contents/MacOS/voicebridge")" = x86_64
           codesign --verify --deep --strict "$app"
+      - name: Assert full Intel XCTest coverage (no cached test results)
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/voicerewrite-intel-xcode.log" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          log = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
+          counts = [int(x) for x in re.findall(r"Executed (\d+) tests?, with 0 failures", log)]
+          print(f"Intel XCTest passing suite counts: {counts[-8:]}")
+          if "** TEST SUCCEEDED **" not in log or max(counts, default=0) < 69:
+              raise SystemExit("Intel full XCTest suite missing or below 69 passing tests")
+          PY
+      - name: Report Intel incremental cache and Xcode timing
+        if: always() && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          CACHE_HIT: ${{ steps.intel-derived.outputs.cache-hit }}
+          XCODE_SECONDS: ${{ steps.intel-xctest.outputs.xcode_seconds }}
+        run: |
+          {
+            echo '### Intel Xcode incremental CI'
+            echo "- Cache hit: ${CACHE_HIT:-false}"
+            echo "- Full XCTest build/test: ${XCODE_SECONDS:-not-finished} seconds"
+            echo '- XCTest always reruns; only Xcode Build products are reused'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Verify and upload native UI evidence (macos-x64)
         if: always() && needs.changes.outputs.ui == 'true' && !startsWith(github.ref, 'refs/tags/')
         shell: bash

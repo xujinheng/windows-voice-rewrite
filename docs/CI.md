@@ -80,6 +80,19 @@ keyed Actions cache keeps the complete installed official Go toolchain
 official setup-go installation. This caches only the reusable toolchain, not
 Xcode test results, and does not bypass compilation or validation.
 
+PR Intel Xcode builds also restore the `DerivedData/Build` directory using an
+exact Xcode toolchain/project/package cache key and a fixed runner path. Before
+restoration, `scripts/ci_xcode_mtimes.py` assigns content-derived nanosecond
+timestamps to tracked regular files. Changed sources therefore get different
+timestamps and must rebuild; unchanged Swift objects can be reused. The full
+native Intel XCTest scheme is executed on every selected PR, with a minimum
+69-passing-tests log assertion, native x86_64 app/helper architecture checks
+and unchanged visual evidence upload. `xcresult` and XCTest pass/fail outputs
+are not in the saved cache. This cache is enabled only for PR Intel jobs;
+main and release builds retain a cold clean Xcode Build directory. Cache-hit
+and actual Xcode seconds are reported in the job summary. Any toolchain
+fingerprint or project/package graph change forces a new cache.
+
 ## Opening side-by-side visual comparisons
 
 GitHub Actions artifacts are downloads, not a web-hosted PNG directory. In the
