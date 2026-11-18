@@ -113,7 +113,7 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 		app.postHandyPhase(indicator.Error, generation)
 		return
 	}
-	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), 220*time.Second)
+	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), speech.TranscribeTimeout(len(r.pcm)))
 	defer cancel()
 	start := time.Now()
 	text, err := speech.Transcribe(ctx, app.cfg, r.pcm)

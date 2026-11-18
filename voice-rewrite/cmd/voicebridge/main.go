@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"voicerewrite/internal/core/audio"
+	"voicerewrite/internal/core/clipboard"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
@@ -68,27 +69,7 @@ type bridgeOptions struct {
 }
 
 func defaultOptions() bridgeOptions {
-	return bridgeOptions{MaxInFlight: 4, TranscribeTimeout: 220 * time.Second, SpokenSelectedTimeout: 360 * time.Second}
-}
-
-// Short dictations should not remain in "processing" for the entire 220s
-// multi-chunk maximum when a local or remote ASR service has stalled.
-// Allow more time for longer audio; never extend an explicit test/host limit.
-func transcribeBudget(base64Bytes int) time.Duration {
-	if base64Bytes < 0 {
-		base64Bytes = 0
-	}
-	// Base64 expands three PCM bytes to four characters, rounded upward.
-	pcmBytes := base64Bytes / 4 * 3
-	seconds := (pcmBytes + audio.PCMBytesPerSecond - 1) / audio.PCMBytesPerSecond
-	budget := time.Duration(45+2*seconds) * time.Second
-	if budget < 65*time.Second {
-		return 65 * time.Second
-	}
-	if budget > 220*time.Second {
-		return 220 * time.Second
-	}
-	return budget
+	return bridgeOptions{MaxInFlight: 4, TranscribeTimeout: 220 * time.Second, SpokenSelectedTimeout: 240 * time.Second}
 }
 
 type bridgeTask struct {
@@ -250,7 +231,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	}
 	timeout := s.options.TranscribeTimeout
 	if req.Op == "transcribe" {
-		if budget := transcribeBudget(len(req.PCMBase64)); budget < timeout {
+		if budget := speech.TranscribeTimeout(len(req.PCMBase64) / 4 * 3); budget < timeout {
 			timeout = budget
 		}
 	}
@@ -321,6 +302,7 @@ func headlessProfile(req request) response {
 	return success(req.ID, map[string]any{"profile": map[string]any{
 		"dictation": cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
 		"maximumSeconds": cfg.MaxRecordSeconds, "modifierDelayMS": 200,
+		"pasteRestoreMS": clipboard.PasteReceiptMaxMilliseconds,
 		"mouseDelayMS": int(input.WindowsSideHold / time.Millisecond),
 		"pill":         indicator.HostSpec(),
 	}})

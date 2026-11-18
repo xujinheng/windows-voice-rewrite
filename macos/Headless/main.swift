@@ -26,16 +26,13 @@ struct PillSpec: Decodable {
 
 private struct HostProfile: Decodable {
     let dictation, rewrite: String
-    let maximumSeconds, modifierDelayMS, mouseDelayMS: Int
+    let maximumSeconds, modifierDelayMS, mouseDelayMS, pasteRestoreMS: Int
     let pill: PillSpec
 }
 
 private struct HostConfig {
     let raw: [String: Any]
     let profile: HostProfile
-    var dictation: String { profile.dictation }
-    var rewrite: String { profile.rewrite }
-    var maximumSeconds: Int { profile.maximumSeconds }
 
     static func load(_ url: URL) throws -> HostConfig {
         let data = try Data(contentsOf: url)
@@ -117,9 +114,6 @@ private final class Microphone {
         samples = []
         rms = 0
         lock.unlock()
-        guard captured.count >= Int(rate / 10) else {
-            throw HostError.microphone("audio shorter than 100 ms")
-        }
         // AVAudioConverter supplies quality resampling; never resample on the audio callback.
         guard let source = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate,
                                          channels: 1, interleaved: false),
@@ -180,6 +174,13 @@ private struct BridgeReply: Decodable {
 }
 
 private enum GoCore {
+    private static let taskLock = NSLock()
+    private static var currentTask: Process?
+    static func cancel() {
+        taskLock.lock()
+        defer { taskLock.unlock() }
+        if currentTask?.isRunning == true { currentTask?.terminate() }
+    }
     static func request(config: [String: Any], operation: String,
                         audio: Data, selection: String?) throws -> BridgeReply.Output {
         let executable = Bundle.main.executableURL!
@@ -200,6 +201,18 @@ private enum GoCore {
         ]
         let request = try JSONSerialization.data(withJSONObject: payload)
         try process.run()
+        if operation != "host_profile" {
+            taskLock.lock()
+            currentTask = process
+            taskLock.unlock()
+        }
+        defer {
+            if operation != "host_profile" {
+                taskLock.lock()
+                if currentTask === process { currentTask = nil }
+                taskLock.unlock()
+            }
+        }
         stdin.fileHandleForWriting.write(request + Data([10]))
         try? stdin.fileHandleForWriting.close()
         // Drain stdout while the helper is alive to avoid pipe-buffer deadlocks.
@@ -221,7 +234,6 @@ private enum GoCore {
 private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var item: NSStatusItem!
     private var tap: CFMachPort?
-    private var source: CFRunLoopSource?
     private var microphone = Microphone()
     private let pill = RecordingPill()
     private var config: HostConfig!
@@ -229,8 +241,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var pressed = Set<Int64>()
     private var activeKey: Int64?
     private var activeAction: Action?
-    private var started: Date?
-    private var timer: Timer?
     private var generation: UInt64 = 0
     private var targetPID: pid_t = 0
     private var selected: String?
@@ -241,7 +251,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "VR"
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "VoiceRewrite — headless", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Reload config", action: #selector(reload), keyEquivalent: "r"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
@@ -276,7 +285,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             fputs("VoiceRewrite config: \(error)\n", stderr)
         }
     }
-    @objc private func quit() { NSApp.terminate(nil) }
+    @objc private func quit() { GoCore.cancel(); NSApp.terminate(nil) }
     private func show(_ text: String) { item.button?.title = text }
 
     private func startEventTap() {
@@ -302,7 +311,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             } else if type == .otherMouseDown || type == .otherMouseUp {
                 if mouse == 3 || mouse == 4 {
                     let name = mouse == 3 ? "Mouse4" : "Mouse5"
-                    if name == app.config.dictation || name == app.config.rewrite {
+                    if name == app.config.profile.dictation || name == app.config.profile.rewrite {
                         app.handleButton(code: 100 + mouse, down: type == .otherMouseDown)
                         return nil // a configured voice button must not navigate the browser
                     }
@@ -315,8 +324,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                 callback: callback,
                                 userInfo: Unmanaged.passUnretained(self).toOpaque())
         guard let tap else { show("Input denied"); return }
-        source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        if let source { CFRunLoopAddSource(CFRunLoopGetMain(), source, CFRunLoopMode.commonModes) }
+        if let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) {
+            CFRunLoopAddSource(CFRunLoopGetMain(), source, CFRunLoopMode.commonModes)
+        }
         CGEvent.tapEnable(tap: tap, enable: true)
     }
 
@@ -338,10 +348,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     down: down, delay: Double(config.profile.mouseDelayMS) / 1000)
     }
     private func updatePress(code: Int64, name: String, down: Bool, delay: TimeInterval) {
-        guard name == config.dictation || name == config.rewrite else { return }
+        guard name == config.profile.dictation || name == config.profile.rewrite else { return }
         if down {
             guard pressed.insert(code).inserted else { return }
-            arm(code: code, action: name == config.dictation ? .dictation : .rewrite,
+            arm(code: code, action: name == config.profile.dictation ? .dictation : .rewrite,
                 delay: delay)
         } else if pressed.remove(code) != nil {
             release(code)
@@ -370,20 +380,14 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             selected = text
         }
         do {
-            try microphone.start(maximumSeconds: config.maximumSeconds)
-            let startTime = Date()
-            started = startTime
-            pill.recording(rewrite: action == .rewrite, started: startTime,
+            try microphone.start(maximumSeconds: config.profile.maximumSeconds)
+            pill.recording(rewrite: action == .rewrite, started: Date(),
                            meter: { [weak self] in self?.microphone.meterLevel ?? 0 })
-            show("● 0s")
-            timer?.invalidate()
-            timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-                DispatchQueue.main.async {
-                    guard let self, let started = self.started else { return }
-                    let elapsed = Int(Date().timeIntervalSince(started))
-                    self.show("● \(elapsed)s")
-                    if elapsed >= self.config.maximumSeconds { self.finish() }
-                }
+            show("●")
+            let token = generation
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.profile.maximumSeconds)) { [weak self] in
+                guard let self, self.generation == token, self.microphone.running else { return }
+                self.finish()
             }
         } catch { reset("Mic error"); fputs("Microphone: \(error)\n", stderr) }
     }
@@ -395,9 +399,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
     private func finish() {
         guard microphone.running, let action = activeAction else { return }
-        timer?.invalidate()
-        timer = nil
-        started = nil
         activeKey = nil
         activeAction = nil
         pending = true
@@ -498,7 +499,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         pill.result(.sent)
         // Text equality alone does not prove ownership: another app can copy
         // the very same text. changeCount protects that user's newer clipboard.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.profile.pasteRestoreMS) / 1000) {
             guard board.changeCount == lease else { return }
             board.clearContents()
             if !saved.isEmpty { _ = board.writeObjects(saved) }
@@ -508,6 +509,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     // pending bridge result. It must never retry or deliver a stale write.
     private func cancelFromPill() {
         generation &+= 1
+        if pending { GoCore.cancel() }
         if microphone.running { _ = try? microphone.stop() }
         clearSession()
         pill.dismiss()
@@ -523,11 +525,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func clearSession() {
-        timer?.invalidate()
-        timer = nil
         activeKey = nil
         activeAction = nil
-        started = nil
         selected = nil
         pending = false
     }
