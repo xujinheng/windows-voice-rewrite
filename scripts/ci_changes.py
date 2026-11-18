@@ -26,7 +26,7 @@ def classify(paths):
             "voice-rewrite/internal/core/indicator/**",
             "voice-rewrite/internal/core/settingsform/**",
             "macos/VoiceRewrite/UI/**", "macos/VoiceRewrite/App/**",
-            "macos/VoiceRewrite/Tests/**", "macos/VoiceRewrite.xcodeproj/**",
+            "macos/VoiceRewrite/BridgeClient/Tests/**", "macos/VoiceRewrite.xcodeproj/**",
             "macos/Modules/Interaction/**",
         )):
             scope["ui"] = True
