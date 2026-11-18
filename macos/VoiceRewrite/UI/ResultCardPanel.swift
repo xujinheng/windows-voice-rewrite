@@ -294,7 +294,7 @@ struct ResultCardView: View {
             Rectangle().fill(palette.border).frame(width: width - 32, height: 1)
                 .position(x: width / 2, y: height - 56)
             Text(title)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(palette.text)
                 .lineLimit(1)
                 .frame(width: note.isEmpty ? CGFloat(close.x - 34) : CGFloat(status.x - 24), alignment: .leading)
@@ -312,7 +312,7 @@ struct ResultCardView: View {
             }
             ScrollView {
                 Text(session.text)
-                    .font(.system(size: 16))
+                    .font(.system(size: 14))
                     .textSelection(.enabled)
                     .foregroundStyle(palette.text)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -355,6 +355,7 @@ struct ResultCardView: View {
                     .font(.system(size: 21))
                     .frame(width: CGFloat(close.w), height: CGFloat(close.h))
                     .foregroundStyle(palette.muted)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(palette.secondary))
             }
             .buttonStyle(.plain)
             .position(x: CGFloat(close.x) + CGFloat(close.w) / 2,

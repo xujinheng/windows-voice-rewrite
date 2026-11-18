@@ -31,15 +31,16 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("VoiceRewrite").font(.title3.bold())
-                    Text("设置分类").font(.caption).foregroundStyle(.secondary)
+                    Text("VoiceRewrite").font(.system(size: 18, weight: .bold)).padding(.bottom, 24)
+                    Text("设置分类").font(.caption).foregroundStyle(.secondary).padding(.bottom, 12)
                     Button("语音识别") { selectPage("speech") }
                         .buttonStyle(.plain)
                         .font(.system(size: 13, weight: selectedPage == "speech" ? .semibold : .regular))
                         .padding(.vertical, 9)
                         .padding(.horizontal, 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(selectedPage == "speech" ? Color.accentColor.opacity(0.12) : Color.clear)
+                        .background(Color.clear)
+                        .overlay(alignment: .leading) { Rectangle().fill(Color(red: 0.43, green: 0.32, blue: 0.82)).frame(width: 3).offset(x: -13).opacity(selectedPage == "speech" ? 1 : 0) }
                         .clipShape(RoundedRectangle(cornerRadius: 9))
                         .accessibilityIdentifier("nav_speech")
                     Button("AI 写作") { selectPage("writing") }
@@ -48,7 +49,8 @@ struct SettingsView: View {
                         .padding(.vertical, 9)
                         .padding(.horizontal, 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(selectedPage == "writing" ? Color.accentColor.opacity(0.12) : Color.clear)
+                        .background(Color.clear)
+                        .overlay(alignment: .leading) { Rectangle().fill(Color(red: 0.43, green: 0.32, blue: 0.82)).frame(width: 3).offset(x: -13).opacity(selectedPage == "writing" ? 1 : 0) }
                         .clipShape(RoundedRectangle(cornerRadius: 9))
                         .accessibilityIdentifier("nav_writing")
                     Button("快捷键与设备") { selectPage("input") }
@@ -57,13 +59,16 @@ struct SettingsView: View {
                         .padding(.vertical, 9)
                         .padding(.horizontal, 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(selectedPage == "input" ? Color.accentColor.opacity(0.12) : Color.clear)
+                        .background(Color.clear)
+                        .overlay(alignment: .leading) { Rectangle().fill(Color(red: 0.43, green: 0.32, blue: 0.82)).frame(width: 3).offset(x: -13).opacity(selectedPage == "input" ? 1 : 0) }
                         .clipShape(RoundedRectangle(cornerRadius: 9))
                         .accessibilityIdentifier("nav_input")
                     Spacer(minLength: 0)
                 }
-                .frame(width: 160, alignment: .leading)
-                .padding(16)
+                .frame(width: 162, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.top, 32)
+                .padding(.bottom, 16)
                 .frame(maxHeight: .infinity)
                 .background(Color(nsColor: .controlBackgroundColor))
                 Divider()
@@ -90,8 +95,8 @@ struct SettingsView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 24)
-                    .padding(.top, 22)
-                    .padding(.bottom, 14)
+                    .padding(.top, 28)
+                    .padding(.bottom, 40)
                     Divider()
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
@@ -103,6 +108,7 @@ struct SettingsView: View {
                         .frame(width: 112, alignment: .leading)
                     TextField("API 地址", text: $model.settings.asrBaseURL)
                         .textFieldStyle(.roundedBorder)
+                        .frame(height: 32)
                         .accessibilityIdentifier("asr_base_url")
                 }
                 HStack(spacing: 12) {
@@ -111,6 +117,7 @@ struct SettingsView: View {
                         .frame(width: 112, alignment: .leading)
                     TextField("模型 ID", text: $model.settings.asrModel)
                         .textFieldStyle(.roundedBorder)
+                        .frame(height: 32)
                         .accessibilityIdentifier("asr_model")
                 }
                 HStack {
@@ -135,6 +142,7 @@ struct SettingsView: View {
                         .frame(width: 112, alignment: .leading)
                     SecureField("ASR API Key（本地服务可留空；留空保留旧值）", text: $model.asrKeyInput)
                         .textFieldStyle(.roundedBorder)
+                        .frame(height: 32)
                         .accessibilityLabel("API Key")
                         .accessibilityIdentifier("asr_api_key")
                 }
@@ -153,6 +161,7 @@ struct SettingsView: View {
                         .frame(width: 112, alignment: .leading)
                     TextField("API 地址", text: $model.settings.llmBaseURL)
                         .textFieldStyle(.roundedBorder)
+                        .frame(height: 32)
                         .accessibilityIdentifier("llm_base_url")
                 }
                 HStack(spacing: 12) {
@@ -161,6 +170,7 @@ struct SettingsView: View {
                         .frame(width: 112, alignment: .leading)
                     TextField("模型 ID", text: $model.settings.textModel)
                         .textFieldStyle(.roundedBorder)
+                        .frame(height: 32)
                         .accessibilityIdentifier("text_model")
                 }
                 HStack {
@@ -185,6 +195,7 @@ struct SettingsView: View {
                         .frame(width: 112, alignment: .leading)
                     SecureField("LLM API Key（本地服务可留空；留空保留旧值）", text: $model.llmKeyInput)
                         .textFieldStyle(.roundedBorder)
+                        .frame(height: 32)
                         .accessibilityLabel("API Key")
                         .accessibilityIdentifier("llm_api_key")
                 }
@@ -204,6 +215,7 @@ struct SettingsView: View {
                         .frame(width: 112, alignment: .leading)
                     TextField("语音指令", text: $model.settings.rewriteShortcut)
                         .textFieldStyle(.roundedBorder)
+                        .frame(height: 32)
                         .accessibilityIdentifier("rewrite_shortcut")
                 }
                 Button(captureTarget == "rewrite_shortcut" ? "等待按键…" : "录入按键") { beginCapture("rewrite_shortcut") }
@@ -216,6 +228,7 @@ struct SettingsView: View {
                         .frame(width: 112, alignment: .leading)
                     TextField("听写快捷键", text: $model.settings.dictationShortcut)
                         .textFieldStyle(.roundedBorder)
+                        .frame(height: 32)
                         .accessibilityIdentifier("dictation_shortcut")
                 }
                 Button(captureTarget == "dictation_shortcut" ? "等待按键…" : "录入按键") { beginCapture("dictation_shortcut") }
@@ -249,6 +262,7 @@ struct SettingsView: View {
                         .frame(width: 112, alignment: .leading)
                     TextField("全局退出快捷键（不是语音操作）", text: $model.settings.exitShortcut)
                         .textFieldStyle(.roundedBorder)
+                        .frame(height: 32)
                         .accessibilityIdentifier("exit_shortcut")
                 }
                 Button(captureTarget == "exit_shortcut" ? "等待按键…" : "录入按键") { beginCapture("exit_shortcut") }
@@ -329,7 +343,10 @@ struct SettingsView: View {
                             } 
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(24)
+                        .padding(.leading, 48)
+                        .padding(.trailing, 28)
+                        .padding(.top, 20)
+                        .padding(.bottom, 24)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -338,6 +355,7 @@ struct SettingsView: View {
             HStack(spacing: 12) {
                 Button("保存设置") { model.saveSettings() }
                     .buttonStyle(.borderedProminent)
+                    .frame(width: 124, height: 34)
                     .accessibilityIdentifier("save")
                 Button("高级配置") {
                     selectPage("input")
@@ -364,6 +382,7 @@ struct SettingsView: View {
         }
         .frame(minWidth: 480, minHeight: 420)
         .background(Color(nsColor: .windowBackgroundColor))
+        .tint(Color(red: 0.43, green: 0.32, blue: 0.82))
         .onChange(of: model.settings.asrBaseURL) { _, _ in
             model.markConnectionProbeStale(.transcribe)
             model.invalidateDiscoveredModels(.transcribe)
