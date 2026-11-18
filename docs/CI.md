@@ -83,17 +83,20 @@ keyed Actions cache keeps the complete installed official Go toolchain
 official setup-go installation. This caches only the reusable toolchain, not
 Xcode test results, and does not bypass compilation or validation.
 
-PR Intel and ARM Xcode builds also restore architecture-separated `DerivedData/Build`
+PR and `main` Intel and ARM Xcode builds restore architecture-separated `DerivedData/Build`
 directories using exact Xcode toolchain/project/package cache keys and fixed
 runner paths. Before
 restoration, `scripts/ci_xcode_mtimes.py` assigns content-derived nanosecond
 timestamps to tracked regular files. Changed sources therefore get different
 timestamps and must rebuild; unchanged Swift objects can be reused. The full native ARM and Intel XCTest schemes are executed on every selected
-PR, each with a minimum 69-passing-tests log assertion, architecture-specific
+PR and `main` push, each with a minimum 69-passing-tests log assertion, architecture-specific
 app/helper checks and unchanged visual evidence uploads. `xcresult` and XCTest pass/fail outputs
-are not in the saved cache. These caches are enabled only for PR native Xcode jobs;
-main and release builds retain a cold clean Xcode Build directory. Cache-hit
-and actual Xcode seconds are reported in the job summary. Any toolchain
+are not in the saved cache. These caches are enabled on pull requests **and main pushes**, with the same
+content-based invalidation and full XCTest execution. GitHub keeps branch cache
+scopes separate: the first main build can be cold, while later main builds can
+reuse compiled products. **Version tags remain cold, clean Xcode builds** to
+avoid reusing non-release Build outputs in release packaging. Cache-hit
+and actual Xcode seconds are reported for PR and main jobs in the job summary. Any toolchain
 fingerprint or project/package graph change forces a new cache.
 
 ## Opening side-by-side visual comparisons
