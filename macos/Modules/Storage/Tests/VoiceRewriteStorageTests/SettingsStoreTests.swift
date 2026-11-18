@@ -14,7 +14,7 @@ final class SettingsStoreTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir.deletingLastPathComponent()) }
         let store = SettingsStore(directory: dir)
         XCTAssertEqual(try store.load(), .defaults)
-        XCTAssertEqual(MacSettings.defaults.maxRecordSeconds, 60)
+        XCTAssertEqual(MacSettings.defaults.maxRecordSeconds, 180)
         var settings = MacSettings.defaults
         settings.textModel = "text-model"
         settings.maxRecordSeconds = 90
