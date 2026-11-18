@@ -130,7 +130,7 @@ final class HostStatusTests: XCTestCase {
         XCTAssertNil(failed.insertText)
         XCTAssertFalse(failed.cancelTask)
 
-        let empty = dictationTranscriptFollowUp(ok: true, text: "  ", route: "insert", transport: nil, failureStatus: "ASR失败", emptyStatus: "空", historyTitle: "历史", notInsertedTitle: "未插入")
+        let empty = dictationTranscriptFollowUp(ok: true, text: "  ", route: "empty", transport: nil, failureStatus: "ASR失败", emptyStatus: "空", historyTitle: "历史", notInsertedTitle: "未插入")
         XCTAssertEqual(empty.recordingStatus, "空")
         XCTAssertEqual(empty.phase, .error)
         XCTAssertNil(empty.insertText)
