@@ -25,7 +25,7 @@ type audioRecorder struct {
 	pins       []runtime.Pinner
 	done       chan struct{}
 	finished   chan struct{} // closed after audio collection and hardware cleanup
-	maxReached atomic.Bool    // physical capture deadline, not a lost release event
+	maxReached atomic.Bool   // physical capture deadline, not a lost release event
 	result     chan audioResult
 	once       sync.Once
 	maxSeconds int
