@@ -13,6 +13,7 @@ enum SettingsWindowMetrics {
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var model: WorkspaceModel
     var onClose: (() -> Void)? = nil
     @State private var selectedPage = "speech"
@@ -36,6 +37,7 @@ struct SettingsView: View {
                     Button("语音识别") { selectPage("speech") }
                         .buttonStyle(.plain)
                         .font(.system(size: 13, weight: selectedPage == "speech" ? .semibold : .regular))
+                        .foregroundStyle(selectedPage == "speech" ? Color(red: 0.43, green: 0.32, blue: 0.82) : Color.primary)
                         .padding(.vertical, 9)
                         .padding(.horizontal, 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -46,6 +48,7 @@ struct SettingsView: View {
                     Button("AI 写作") { selectPage("writing") }
                         .buttonStyle(.plain)
                         .font(.system(size: 13, weight: selectedPage == "writing" ? .semibold : .regular))
+                        .foregroundStyle(selectedPage == "writing" ? Color(red: 0.43, green: 0.32, blue: 0.82) : Color.primary)
                         .padding(.vertical, 9)
                         .padding(.horizontal, 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -56,6 +59,7 @@ struct SettingsView: View {
                     Button("快捷键与设备") { selectPage("input") }
                         .buttonStyle(.plain)
                         .font(.system(size: 13, weight: selectedPage == "input" ? .semibold : .regular))
+                        .foregroundStyle(selectedPage == "input" ? Color(red: 0.43, green: 0.32, blue: 0.82) : Color.primary)
                         .padding(.vertical, 9)
                         .padding(.horizontal, 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -70,33 +74,33 @@ struct SettingsView: View {
                 .padding(.top, 32)
                 .padding(.bottom, 16)
                 .frame(maxHeight: .infinity)
-                .background(Color(nsColor: .controlBackgroundColor))
+                .background(colorScheme == .dark ? Color(red: 24.0 / 255, green: 27.0 / 255, blue: 35.0 / 255) : Color(red: 240.0 / 255, green: 241.0 / 255, blue: 246.0 / 255))
                 Divider()
                 VStack(alignment: .leading, spacing: 0) {
                     Group {
                         if selectedPage == "speech" {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("语音识别").font(.title2.bold())
+                                Text("语音识别").font(.system(size: 25, weight: .bold))
                                 Text("连接语音识别服务，将录音转换为文字。").font(.subheadline).foregroundStyle(.secondary)
                             }
                         } 
                         else if selectedPage == "writing" {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("AI 写作").font(.title2.bold())
+                                Text("AI 写作").font(.system(size: 25, weight: .bold))
                                 Text("配置用于改写、翻译与问答的文本模型。").font(.subheadline).foregroundStyle(.secondary)
                             }
                         } 
                         else if selectedPage == "input" {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("快捷键与设备").font(.title2.bold())
+                                Text("快捷键与设备").font(.system(size: 25, weight: .bold))
                                 Text("设置语音快捷键、录音模式和麦克风。").font(.subheadline).foregroundStyle(.secondary)
                             }
                         } 
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 28)
-                    .padding(.bottom, 40)
+                    .padding(.horizontal, 28)
+                    .padding(.top, 68)
+                    .padding(.bottom, 30)
                     Divider()
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
@@ -351,8 +355,8 @@ struct SettingsView: View {
                             } 
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.leading, 48)
-                        .padding(.trailing, 28)
+                        .padding(.leading, 28)
+                        .padding(.trailing, 66)
                         .padding(.top, 20)
                         .padding(.bottom, 24)
                     }
@@ -361,9 +365,15 @@ struct SettingsView: View {
             }
             Divider()
             HStack(spacing: 12) {
-                Button("保存设置") { model.saveSettings() }
-                    .buttonStyle(.borderedProminent)
-                    .frame(width: 124, height: 34)
+                Button(action: { model.saveSettings() }) {
+                    Text("保存设置")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 124, height: 34)
+                        .background(RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(red: 0.43, green: 0.32, blue: 0.82)))
+                }
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier("save")
                 Button("高级配置") {
                     selectPage("input")
@@ -374,19 +384,22 @@ struct SettingsView: View {
                 Button("关闭") { if let onClose { onClose() } else { dismiss() } }
                     .accessibilityIdentifier("close")
             }
-            .padding(.horizontal, 20)
+            .padding(.leading, 198)
+            .padding(.trailing, 20)
             .padding(.top, 12)
             Text(model.settingsStatus)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 20)
+                .padding(.leading, 198)
+                .padding(.trailing, 20)
             Text("API Key 仅保存在 Keychain；连接检测不发送真实录音或文字。")
                 .font(.footnote).foregroundStyle(.secondary)
                 .lineLimit(1)
                 .accessibilityIdentifier("save_note")
-                .padding(.horizontal, 20)
+                .padding(.leading, 198)
+                .padding(.trailing, 20)
                 .padding(.bottom, 12)
         }
         .frame(minWidth: 480, minHeight: 420)
