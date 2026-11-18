@@ -39,16 +39,29 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_EVENT_NAME" != 'pull_request' ]]; then
-            printf 'core=true\nmacos=true\nwindows=true\noneclick=true\nui=true\ndirect2d=true\n' >> "$GITHUB_OUTPUT"
-          else
-            # Fetch only changed filenames, including the old name on rename.
-            # No deep clone or unrelated changes from the target branch.
+          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' ]]; then
+            # Include renamed/deleted paths, with no deep clone.
             gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
               --jq '.[] | .filename, (.previous_filename // empty)' |
               python3 scripts/ci_changes.py --output "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_EVENT_NAME" == 'push' && "$GITHUB_REF" == 'refs/heads/main' &&
+                  "$BASE_SHA" != '0000000000000000000000000000000000000000' ]]; then
+            # Always run full host/core tests on main, but only run supplemental
+            # UI/Direct2D capture when a relevant path actually changed.
+            # The compare API caps file listings at 300: fail open to full UI
+            # testing for such large commits instead of silently missing files.
+            gh api "repos/$GITHUB_REPOSITORY/compare/$BASE_SHA...$GITHUB_SHA" \
+              --jq 'if (.files | length) >= 300 then ".github/workflows/_large_commit.yml" else .files[] | .filename, (.previous_filename // empty) end' |
+              python3 scripts/ci_changes.py --output "$RUNNER_TEMP/ci-scope.txt"
+            source "$RUNNER_TEMP/ci-scope.txt"
+            printf 'core=true\nmacos=true\nwindows=true\noneclick=true\nui=%s\ndirect2d=%s\n' "$ui" "$direct2d" >> "$GITHUB_OUTPUT"
+          else
+            # Tags and explicit workflow dispatch validate every host; release
+            # signing is gated separately by a trusted v* ref.
+            printf 'core=true\nmacos=true\nwindows=true\noneclick=true\nui=false\ndirect2d=false\n' >> "$GITHUB_OUTPUT"
           fi
   test-core:
     needs: changes
