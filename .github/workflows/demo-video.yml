@@ -89,6 +89,7 @@ jobs:
           path: |
             docs/demo/voicerewrite-demo.mp4
             docs/demo/voicerewrite-preview.webp
+          retention-days: 7
           if-no-files-found: error
       - name: Update README media on main (only for the current revision)
         if: github.ref == 'refs/heads/main'
