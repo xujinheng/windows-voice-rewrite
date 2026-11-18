@@ -79,7 +79,6 @@ const (
 	WM_TIMER         = 0x0113
 	WM_HOLD_RELEASE  = 0x8000 + 50
 	WM_HOLD_TIMEOUT  = 0x8000 + 51
-	WM_RECORD_LIMIT  = 0x8000 + 75
 	WM_TOGGLE_READY  = 0x8000 + 56
 	WM_SHOW_ANSWER   = 0x8000 + 61
 	WM_APPLY_RESULT  = 0x8000 + 74
@@ -434,24 +433,10 @@ func runApp() {
 	var holdGeneration uint64
 	var selectedGeneration uint64
 	var holdSession uintptr
-	var recordingSession uintptr
 	var holdWatch chan struct{}
-	// The native recorder can reach its duration limit before a held key or
-	// mouse button is released. Observe recorder completion without consuming
-	// its PCM result (the worker is its sole reader).
-	watchRecordingLimit := func(rec *audioRecorder) {
-		recordingSession++
-		session := recordingSession
-		go func() {
-			<-rec.finished
-			if !rec.maxReached.Load() {
-				return
-			}
-			if ok, _, err := procPostMessage.Call(hwnd, WM_RECORD_LIMIT, session, 0); ok == 0 {
-				l.Printf("ERROR: cannot notify UI of recording limit: %v", err)
-			}
-		}()
-	}
+	var inputFlow input.Coordinator
+	var inputFlowGeneration uint64
+	var inputFlowSource, inputFlowAction string
 	stopHoldWatch := func() {
 		if holdWatch != nil {
 			close(holdWatch)
@@ -468,6 +453,7 @@ func runApp() {
 		}
 		rec := active
 		active = nil
+		input.InputEvent(&inputFlow, input.Event{Kind: "cancel", Source: inputFlowSource})
 		rec.Stop()
 		app.busy.Store(true) // no second operation until the worker is finished
 		app.setStatus(trayTranscribing)
@@ -519,8 +505,17 @@ func runApp() {
 			holdMeeting = app.meeting
 		}
 		holdGeneration = app.epoch.Start()
+		inputFlowSource = "keyboard"
+		if button != 0 {
+			inputFlowSource = "side"
+		}
+		inputFlowAction = "rewrite"
+		if dictation {
+			inputFlowAction = "dictation"
+		}
+		inputFlowGeneration = input.InputEvent(&inputFlow, input.Event{Kind: "press", Source: inputFlowSource, Action: inputFlowAction, TargetPresent: target != 0}).Generation
+		input.InputEvent(&inputFlow, input.Event{Kind: "record_ready", Source: inputFlowSource, Action: inputFlowAction, Generation: inputFlowGeneration})
 		active = rec
-		watchRecordingLimit(rec)
 		app.setStatus(trayRecording)
 		holdSession++
 		holdWatch = make(chan struct{})
@@ -553,7 +548,7 @@ func runApp() {
 	}
 
 	startHold := func(dictation bool, button uint16) {
-		if input.VoiceStartBlocked(app.paused.Load(), app.busy.Load(), active != nil, pendingSide != nil, uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window)) {
+		if input.InputAdmission(input.Event{Paused: app.paused.Load(), Busy: app.busy.Load(), Recording: active != nil, Starting: pendingSide != nil, Processing: uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window)}).Decision != input.InputStart {
 			return
 		}
 		win, _, _ := procGetForegroundWindow.Call()
@@ -572,7 +567,7 @@ func runApp() {
 	}
 
 	armSide := func(button uint16) {
-		if input.VoiceStartBlocked(app.paused.Load(), app.busy.Load(), active != nil, pendingSide != nil, input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "ignore") {
+		if input.InputAdmission(input.Event{Paused: app.paused.Load(), Busy: app.busy.Load(), Recording: active != nil, Starting: pendingSide != nil, Processing: input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "ignore"}).Decision != input.InputStart {
 			return
 		}
 		if uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
@@ -731,7 +726,6 @@ func runApp() {
 			}
 			selectedGeneration = result.generation
 			active = result.rec
-			watchRecordingLimit(active)
 			selected = result.sel
 			app.busy.Store(false)
 			app.setStatus(trayRecording)
@@ -888,25 +882,24 @@ func runApp() {
 			return
 		}
 		if msg.Message == WM_HOLD_RELEASE {
-			if input.HoldEventApplies(cfg.RecordMode == "hold", active != nil, msg.WParam == holdSession) {
+			if input.HoldEventApplies(cfg.RecordMode == "hold", active != nil, msg.WParam == holdSession) &&
+				input.InputEvent(&inputFlow, input.Event{Kind: "release", Source: inputFlowSource, Action: inputFlowAction, Generation: inputFlowGeneration, Recording: true}).Decision == input.InputStop {
 				l.Print("hold key released; completing recording")
 				finish()
 			}
 			continue
 		}
-		if msg.Message == WM_RECORD_LIMIT {
-			if active != nil && msg.WParam == recordingSession {
-				l.Print("recording reached configured duration; submitting captured audio")
-				finish()
-			}
-			continue
-		}
 		if msg.Message == WM_HOLD_TIMEOUT {
-			if input.HoldEventApplies(cfg.RecordMode == "hold", active != nil, msg.WParam == holdSession) {
-				// The safety watcher is not proof that the mouse driver lost
-				// a release. Preserve the captured speech instead of discarding it.
-				l.Print("hold safety deadline reached; submitting available audio")
-				finish()
+			if input.HoldEventApplies(cfg.RecordMode == "hold", active != nil, msg.WParam == holdSession) &&
+				input.InputEvent(&inputFlow, input.Event{Kind: "timeout", Source: inputFlowSource, Action: inputFlowAction, Generation: inputFlowGeneration, Recording: true}).Decision == input.InputStop {
+				stopHoldWatch()
+				rec := active
+				active = nil
+				rec.Stop()
+				go func() { <-rec.result }()
+				l.Print("ERROR: hold watcher exceeded maximum duration without observing key release")
+				app.postHandyPhase(indicator.Error, holdGeneration)
+				app.fail(errors.New(input.HoldReleaseMissed))
 			}
 			continue
 		}
@@ -937,7 +930,8 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_SIDE_UP {
-			if input.SideReleaseApplies(cfg.RecordMode == "hold", active != nil, uint16(msg.WParam) == holdButton) {
+			if input.SideReleaseApplies(cfg.RecordMode == "hold", active != nil, uint16(msg.WParam) == holdButton) &&
+				input.InputEvent(&inputFlow, input.Event{Kind: "release", Source: inputFlowSource, Action: inputFlowAction, Generation: inputFlowGeneration, Recording: true}).Decision == input.InputStop {
 				l.Printf("mouse button %d released; completing recording", holdButton)
 				finish()
 			}
@@ -970,16 +964,22 @@ func runApp() {
 			}
 			continue
 		case HOTKEY_RECORD:
-			switch input.RewriteHotkeyAction(app.paused.Load(), app.busy.Load(), active != nil, cfg.RecordMode == "hold") {
-			case input.RewriteFinishToggle:
+			// The same Go input route chooses recording, ignore or selection.
+			// Native Windows still captures the clipboard only after release.
+			switch input.InputRoute(input.Event{
+				Action: "rewrite", Paused: app.paused.Load(), Busy: app.busy.Load(),
+				Recording: active != nil, VoiceSelection: cfg.RecordMode != "hold",
+				TargetPresent: true,
+			}).Decision {
+			case input.InputStop:
 				finish()
 				continue
-			case input.RewriteStartHold:
-				// Hold mode records immediately and does NOT touch the clipboard
-				// while the hotkey is physically held. Capture is performed on release.
-				startHold(false, selectedMouseButton)
-				continue
-			case input.RewriteIgnore:
+			case input.InputSpoken:
+				if cfg.RecordMode == "hold" {
+					startHold(false, selectedMouseButton)
+					continue
+				}
+			default:
 				continue
 			}
 			// Legacy toggle mode also prepares its selection on a worker.

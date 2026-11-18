@@ -22,23 +22,29 @@
           "kind": "portable_decision",
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
-            "contains": "keyboardGate.begin(action)"
+            "contains": "func keyboardPressed("
           },
           "go": [
             {
-              "path": "voice-rewrite/internal/core/input/hold.go",
-              "contains": "func VoiceStartBlocked("
+              "path": "voice-rewrite/internal/core/input/coordinator.go",
+              "contains": "func InputEvent("
             },
             {
-              "path": "voice-rewrite/task_worker_windows.go",
-              "contains": "input.VoiceStartBlocked("
+              "path": "voice-rewrite/windows.go",
+              "contains": "input.InputEvent("
             },
             {
               "path": "voice-rewrite/cmd/voicebridge/main.go",
-              "contains": "input.VoiceStartBlocked("
+              "contains": "inputcore.InputEvent("
             }
           ],
-          "logical_unit_id": "dictation_hold/admission"
+          "logical_unit_id": "dictation_hold/admission",
+          "go_forbidden_when": [
+            {
+              "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/SideVoiceGate.swift",
+              "contains": "public mutating func hold("
+            }
+          ]
         },
         {
           "id": "duration",
@@ -66,9 +72,29 @@
           "kind": "portable_decision",
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
-            "contains": "keyboardGate.release("
+            "contains": "func keyboardReleased("
           },
-          "logical_unit_id": "dictation_hold/release"
+          "logical_unit_id": "dictation_hold/release",
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/input/coordinator.go",
+              "contains": "func InputEvent("
+            },
+            {
+              "path": "voice-rewrite/windows.go",
+              "contains": "input.InputEvent("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "inputcore.InputEvent("
+            }
+          ],
+          "go_forbidden_when": [
+            {
+              "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/SideVoiceGate.swift",
+              "contains": "public mutating func release("
+            }
+          ]
         },
         {
           "id": "stop_dispatch",
@@ -184,7 +210,27 @@
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "private func triggerSelectionRewrite("
           },
-          "logical_unit_id": "spoken_selection/input_route"
+          "logical_unit_id": "spoken_selection/input_route",
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/input/flow.go",
+              "contains": "func InputRoute("
+            },
+            {
+              "path": "voice-rewrite/windows.go",
+              "contains": "input.InputRoute("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "inputcore.InputRoute("
+            }
+          ],
+          "go_forbidden_when": [
+            {
+              "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/SideVoiceGate.swift",
+              "contains": "public mutating func hold("
+            }
+          ]
         },
         {
           "id": "record_dispatch",

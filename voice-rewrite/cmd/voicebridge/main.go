@@ -18,6 +18,7 @@ import (
 
 	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
+	inputcore "voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/jsonl"
 	meetingcore "voicerewrite/internal/core/meeting"
 	"voicerewrite/internal/core/provider"
@@ -60,6 +61,7 @@ type request struct {
 	ViewButton      int             `json:"button_id"`
 	FocusExpression bool            `json:"focus_expression"`
 	VoiceEvent      voiceflow.Event `json:"event"`
+	Input           inputcore.Event `json:"input"`
 }
 
 type bridgeError struct {
@@ -112,13 +114,14 @@ type bridgeTask struct {
 }
 
 type bridgeServer struct {
-	mu      sync.Mutex
-	active  map[string]*bridgeTask
-	seen    map[string]struct{}
-	wg      sync.WaitGroup
-	options bridgeOptions
-	meeting *bridgeMeeting
-	voice   *voiceflow.Engine
+	mu        sync.Mutex
+	active    map[string]*bridgeTask
+	seen      map[string]struct{}
+	wg        sync.WaitGroup
+	options   bridgeOptions
+	meeting   *bridgeMeeting
+	voice     *voiceflow.Engine
+	inputFlow inputcore.Coordinator
 
 	input    io.Reader
 	output   io.Writer
@@ -244,6 +247,12 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		switch req.Op {
 		case "meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop", "meeting_pause", "meeting_resume", "meeting_accept", "meeting_cancel", "meeting_view", "meeting_configure", "meeting_demo":
 			s.send(s.meetingRequest(req))
+		case "input_event":
+			if req.Input.Kind == "route" {
+				s.send(success(req.ID, inputcore.InputRoute(req.Input)))
+			} else {
+				s.send(success(req.ID, inputcore.InputEvent(&s.inputFlow, req.Input)))
+			}
 		case "voice_event":
 			effects, err := s.voice.Apply(req.VoiceEvent)
 			if err != nil {

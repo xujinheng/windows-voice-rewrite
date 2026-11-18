@@ -2,33 +2,6 @@ import XCTest
 @testable import VoiceRewriteInteraction
 
 final class SideVoiceGateTests: XCTestCase {
-    func testKeyboardKeyReleaseDuringMicrophoneStartStopsOnce() {
-        var gate = KeyboardHoldGate()
-        XCTAssertTrue(gate.begin(.dictation))
-        XCTAssertFalse(gate.begin(.rewrite))
-        XCTAssertEqual(gate.release(.dictation, starting: true, recording: false), .none)
-        XCTAssertTrue(gate.releasedDuringStart)
-        XCTAssertFalse(gate.begin(.dictation))
-        XCTAssertEqual(gate.finishStart(.dictation, recording: true), .stop)
-        XCTAssertNil(gate.action)
-        XCTAssertEqual(gate.finishStart(.dictation, recording: true), .none)
-        XCTAssertTrue(gate.begin(.rewrite))
-        XCTAssertEqual(gate.release(.rewrite, starting: false, recording: true), .stop)
-    }
-
-    func testKeyboardFailureAndCancellationPermitRapidNextPress() {
-        var gate = KeyboardHoldGate()
-        XCTAssertTrue(gate.begin(.rewrite))
-        XCTAssertEqual(gate.release(.dictation, starting: true, recording: false), .none)
-        XCTAssertEqual(gate.release(.rewrite, starting: true, recording: false), .none)
-        XCTAssertEqual(gate.finishStart(.rewrite, recording: false), .clear)
-        XCTAssertTrue(gate.begin(.dictation))
-        gate.clear()
-        XCTAssertEqual(gate.release(.dictation, starting: false, recording: true), .none)
-        XCTAssertTrue(gate.begin(.rewrite))
-        XCTAssertEqual(gate.release(.rewrite, starting: false, recording: false), .clear)
-    }
-
     func testEarlyMicrophoneOnlyStartsForAuthorizedIdleDictation() {
         XCTAssertTrue(shouldPreCaptureDictation(action: .dictation, authorized: true,
                                                 paused: false, meetingRunning: false, busy: false))
@@ -44,40 +17,37 @@ final class SideVoiceGateTests: XCTestCase {
                                                  paused: false, meetingRunning: false, busy: true))
     }
 
-    func testSideReleaseDuringEarlyMicrophoneStartMustWaitForPromotion() {
-        var gate = SideVoiceGate()
-        gate.began(.dictation)
-        XCTAssertEqual(gate.release(.dictation, starting: true, recording: false), .wait)
-        XCTAssertEqual(gate.finishStart(.dictation, recording: true), .stop)
-        gate.clear()
-        XCTAssertEqual(gate.finishStart(.dictation, recording: true), .none)
+    func testSideRewriteNeverSpeculativelyStartsMicrophoneAcrossNativeAppStates() {
+        // Selection capture belongs to Go. Native Mouse5 pre-capture is
+        // forbidden even if AX is available and microphone permission exists.
+        for authorized in [false, true] {
+            for paused in [false, true] {
+                for meetingRunning in [false, true] {
+                    for busy in [false, true] {
+                        XCTAssertFalse(shouldPreCaptureDictation(
+                            action: .rewrite, authorized: authorized,
+                            paused: paused, meetingRunning: meetingRunning, busy: busy),
+                            "Mouse5 rewrite must not start microphone before Go admission")
+                    }
+                }
+            }
+        }
     }
 
-    func testHoldStartsOnlyWhenIdle() {
-        var gate = SideVoiceGate()
-        XCTAssertEqual(gate.hold(paused: true, busy: false), .dismissPreview)
-        XCTAssertEqual(gate.hold(paused: false, busy: true), .dismissPreview)
-        gate.began(.dictation)
-        XCTAssertEqual(gate.hold(paused: false, busy: false), .dismissPreview)
-        gate.clear()
-        gate.suppressNextHold()
-        XCTAssertEqual(gate.hold(paused: false, busy: false), .ignored)
-        XCTAssertFalse(gate.ignoreNext)
-        XCTAssertEqual(gate.hold(paused: false, busy: false), .start)
-    }
-
-    func testReleaseWaitsUntilRecordingHasStarted() {
-        var gate = SideVoiceGate()
-        gate.began(.rewrite)
-        XCTAssertEqual(gate.release(.dictation, starting: true, recording: false), .none)
-        XCTAssertEqual(gate.release(.rewrite, starting: true, recording: false), .wait)
-        XCTAssertEqual(gate.pendingRelease, .rewrite)
-        XCTAssertEqual(gate.finishStart(.dictation, recording: true), .none)
-        XCTAssertEqual(gate.finishStart(.rewrite, recording: true), .stop)
-        XCTAssertNil(gate.pendingRelease)
-        XCTAssertEqual(gate.active, .rewrite)
-        gate.began(.dictation)
-        XCTAssertEqual(gate.release(.dictation, starting: false, recording: false), .clear)
-        XCTAssertNil(gate.active)
+    func testSideDictationPreCaptureIsDeniedForEveryNativeBlockerCombination() {
+        // Partial combinations had only been checked one at a time. Verify
+        // that any independent OS blocker prevents speculative Mouse4 audio.
+        for paused in [false, true] {
+            for meetingRunning in [false, true] {
+                for busy in [false, true] {
+                    for authorized in [false, true] {
+                        let allowed = authorized && !paused && !meetingRunning && !busy
+                        XCTAssertEqual(shouldPreCaptureDictation(
+                            action: .dictation, authorized: authorized,
+                            paused: paused, meetingRunning: meetingRunning, busy: busy), allowed)
+                    }
+                }
+            }
+        }
     }
 }

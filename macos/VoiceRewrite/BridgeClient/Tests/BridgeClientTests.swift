@@ -366,8 +366,19 @@ final class BridgeClientTests: XCTestCase {
         let microphone = PerformanceFixtureMicrophone()
         let writer = PerformanceFixtureWriter(editor: NSTextView())
         writer.deferTargetCaptureForCI = true
-        let model = WorkspaceModel(microphone: microphone, dictationDelivery: writer)
+        let model = WorkspaceModel(microphone: microphone, dictationDelivery: writer,
+                                   helperExecutableURL: try bundledHelper())
         model.setKeyboardHoldEnabled(true)
+        model.connect()
+        let helperDeadline = ProcessInfo.processInfo.systemUptime + 10
+        while ProcessInfo.processInfo.systemUptime < helperDeadline {
+            if case .connected = model.connection { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        guard case .connected = model.connection else {
+            XCTFail("Real bundled Go helper did not connect for input test")
+            return
+        }
         defer {
             writer.resumeTargetCaptureForCI()
             model.cancelCurrent()
@@ -417,12 +428,39 @@ final class BridgeClientTests: XCTestCase {
         // physical audio device; BridgeClient's real Process/Pipe code runs.
         let script = """
         #!/bin/sh
+        ready=0
+        released=0
         while IFS= read -r line; do
           id="$(printf '%s' "$line" | /usr/bin/sed -n 's/.*"id":"\\([^"]*\\)".*/\\1/p')"
           [ -n "$id" ] || continue
           case "$line" in
             *'"op":"hello"'*)
               printf '{"v":1,"id":"%s","ok":true,"result":{"name":"VoiceRewrite","protocol":1}}\\n' "$id" ;;
+            *'"op":"input_event"'*)
+              case "$line" in
+                *'"kind":"press"'*)
+                  ready=0
+                  released=0
+                  printf '{"v":1,"id":"%s","ok":true,"result":{"decision":"start","generation":1,"effects":[{"type":"start_native_capture","session_id":"input/keyboard","generation":1,"command_id":"fixture/1","request_id":"fixture/1"}]}}\\n' "$id" ;;
+                *'"kind":"release"'*)
+                  released=1
+                  if [ "$ready" = 1 ]; then
+                    decision="stop"
+                  else
+                    decision="wait"
+                  fi
+                  printf '{"v":1,"id":"%s","ok":true,"result":{"decision":"%s","generation":1}}\\n' "$id" "$decision" ;;
+                *'"kind":"record_ready"'*)
+                  ready=1
+                  if [ "$released" = 1 ]; then
+                    decision="stop"
+                  else
+                    decision="record"
+                  fi
+                  printf '{"v":1,"id":"%s","ok":true,"result":{"decision":"%s","generation":1}}\\n' "$id" "$decision" ;;
+                *)
+                  printf '{"v":1,"id":"%s","ok":true,"result":{"decision":"ignore"}}\\n' "$id" ;;
+              esac ;;
             *'"op":"transcribe"'*)
               case "$line" in
                 *'"can_insert":true'*) route="insert" ;;
