@@ -1,0 +1,116 @@
+name: Nightly cross-platform regression
+
+on:
+  schedule:
+    - cron: '23 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  race-and-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: voice-rewrite/go.mod
+      - name: Repeat shared Go tests with race detection
+        working-directory: voice-rewrite
+        run: go test -race -count=3 -timeout 20m ./...
+      - name: Validate portable core boundaries and generated contracts
+        run: |
+          python3 scripts/check-portable-core.py
+          (cd voice-rewrite && go run ./cmd/contractgen -check)
+
+  native-macos:
+    name: macOS ${{ matrix.arch }} nightly
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: macos-15, arch: arm64, native: arm64}
+          - {runner: macos-15-intel, arch: x64, native: x86_64}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: voice-rewrite/go.mod
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/.swiftpm
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('macos/**/Package.swift', 'macos/**/Package.resolved') }}
+      - name: Native app integration and visual acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = '${{ matrix.native }}'
+          xcodebuild -project macos/VoiceRewrite.xcodeproj -scheme VoiceRewrite \
+            -configuration Debug -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/voicerewrite-nightly" test
+          app="$RUNNER_TEMP/voicerewrite-nightly/Build/Products/Debug/VoiceRewrite.app"
+          test -x "$app/Contents/MacOS/voicebridge"
+          test "$(lipo -archs "$app/Contents/MacOS/voicebridge")" = '${{ matrix.native }}'
+      - name: Test all native Swift adapters
+        shell: bash
+        run: |
+          set -euo pipefail
+          for module in Microphone Storage Interaction; do
+            (cd "macos/Modules/$module" && swift test)
+          done
+
+  native-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: voice-rewrite/go.mod
+      - name: Windows Go tests and vet
+        working-directory: voice-rewrite
+        shell: pwsh
+        run: |
+          go test -count=2 ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go vet -unsafeptr=false ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Native Meeting and result-card controls
+        working-directory: voice-rewrite
+        shell: pwsh
+        env:
+          VOICEREWRITE_MEETING_E2E: '1'
+          VOICE_REWRITE_NATIVE_POPUP_TEST: '1'
+        run: |
+          go test -count=1 -timeout 4m -run '^(TestMeetingWindowsE2E|TestNativePopupPaintAndClose)$' -v .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Win32 executable and capture Meeting UI
+        shell: pwsh
+        run: |
+          Push-Location voice-rewrite
+          try {
+            go build -trimpath -ldflags '-H=windowsgui' -o VoiceRewrite.exe .
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+          ./scripts/test-meeting-ui.ps1
+      - name: Preserve native diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-windows-meeting
+          path: meeting-e2e/
+          retention-days: 7
+          if-no-files-found: warn
