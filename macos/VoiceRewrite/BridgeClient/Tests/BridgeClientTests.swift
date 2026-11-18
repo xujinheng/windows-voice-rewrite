@@ -483,10 +483,16 @@ final class BridgeClientTests: XCTestCase {
               printf '{"v":1,"id":"%s","ok":true,"result":{"allowed":true,"budget_ms":30000,"effects":[]}}\\n' "$id" ;;
             *'"op":"transcribe"'*)
               case "$line" in
-                *'"can_insert":true'*) route="insert" ;;
-                *) route="preview" ;;
+                *'"can_insert":true'*)
+                  route="insert"
+                  effect='{"phase":6,"mode":"听写","recording_status":"语音识别已完成","transcription":"CI latency test.","history":[{"title":"听写","value":"CI latency test."}],"insert_text":"CI latency test."}' ;;
+                *)
+                  route="preview"
+                  effect='{"phase":9,"mode":"听写","recording_status":"语音识别已完成","transcription":"CI latency test.","history":[{"title":"听写","value":"CI latency test."}],"card_title":"未插入","card_text":"CI latency test."}' ;;
               esac
-              printf '{"v":1,"id":"%s","ok":true,"result":{"text":"CI latency test.","route":"%s"}}\\n' "$id" "$route" ;;
+              printf '{"v":1,"id":"%s","ok":true,"result":{"text":"CI latency test.","route":"%s","effect":%s}}\\n' "$id" "$route" "$effect" ;;
+            *'"op":"task_receipt"'*)
+              printf '{"v":1,"id":"%s","ok":true,"result":{"effect":{"phase":7,"mode":"听写","interaction_status":"已发送，待用户确认输入框"}}}\\n' "$id" ;;
             *)
               printf '{"v":1,"id":"%s","ok":false,"error":{"code":"unsupported_op","message":"test fixture"}}\\n' "$id" ;;
           esac
