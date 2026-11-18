@@ -796,7 +796,7 @@ final class WorkspaceModel: ObservableObject {
             "instruction": .string(instruction)
         ]
         bridge.send(operation: "input_event", fields: ["input": .object(fields)]) { [weak self] response in
-            Task { @MainActor [weak self] in
+            let deliver: @MainActor () -> Void = { [weak self] in
                 guard let self else { return }
                 guard case .success(let reply) = response, reply.ok,
                       let decision = reply.result?["decision"]?.string else {
@@ -806,6 +806,14 @@ final class WorkspaceModel: ObservableObject {
                 }
                 let generation = UInt64(reply.result?["generation"]?.int ?? 0)
                 completion(decision, generation)
+            }
+            // ReplyRegistry delivers all completions onto DispatchQueue.main.
+            // Do not add another Task hop on the hot press/ready/release path:
+            // an extra actor enqueue delays microphone readiness and text.
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { deliver() }
+            } else {
+                Task { @MainActor in deliver() }
             }
         }
     }
