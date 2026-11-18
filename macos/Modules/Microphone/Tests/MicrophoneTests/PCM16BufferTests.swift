@@ -46,6 +46,10 @@ final class PCM16BufferTests: XCTestCase {
         XCTAssertThrowsError(try pcm.append([0])) { error in
             XCTAssertEqual(error as? MicrophoneError, .durationExceeded)
         }
+        // AVAudioConverter may supply a final tail after the duration cap.
+        // The recorder must preserve already captured speech, never fail it.
+        try [Float(0), 0].withUnsafeBufferPointer { try pcm.appendCapped($0) }
+        XCTAssertEqual(pcm.frameCount, PCM16Buffer.maximumFrames)
         XCTAssertEqual(try pcm.finish().count, PCM16Buffer.maximumBytes)
     }
 

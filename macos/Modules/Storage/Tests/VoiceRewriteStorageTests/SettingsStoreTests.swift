@@ -14,7 +14,7 @@ final class SettingsStoreTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir.deletingLastPathComponent()) }
         let store = SettingsStore(directory: dir)
         XCTAssertEqual(try store.load(), .defaults)
-        XCTAssertEqual(MacSettings.defaults.maxRecordSeconds, 60)
+        XCTAssertEqual(MacSettings.defaults.maxRecordSeconds, 180)
         var settings = MacSettings.defaults
         settings.textModel = "text-model"
         settings.maxRecordSeconds = 90
@@ -283,7 +283,7 @@ final class SettingsStoreTests: XCTestCase {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
         object["max_record_seconds"] = 181
         try JSONSerialization.data(withJSONObject: object).write(to: file)
-        XCTAssertEqual(try store.load().maxRecordSeconds, 60)
+        XCTAssertEqual(try store.load().maxRecordSeconds, ContractLimits.defaultRecordSeconds)
 
         settings = MacSettings.defaults
         settings.llmBaseURL = "https://example.invalid/v1?key=leak"

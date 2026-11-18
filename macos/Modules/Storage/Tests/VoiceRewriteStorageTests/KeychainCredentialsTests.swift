@@ -38,7 +38,7 @@ final class KeychainCredentialsTests: XCTestCase {
         try factory.withEphemeralConfig(settings: settings, operation: .transcribe) { config in
             XCTAssertEqual(config["asr_api_key"] as? String, "fixture-asr-only")
             XCTAssertEqual(config["llm_api_key"] as? String, "")
-            XCTAssertEqual(config["max_record_seconds"] as? Int, 60)
+            XCTAssertEqual(config["max_record_seconds"] as? Int, ContractLimits.defaultRecordSeconds)
         }
         try factory.withEphemeralConfig(settings: settings, operation: .selectedTask) { config in
             XCTAssertEqual(config["asr_api_key"] as? String, "")

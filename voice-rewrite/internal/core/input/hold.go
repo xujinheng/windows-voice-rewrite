@@ -6,8 +6,6 @@ const (
 	// NoTargetWindow is the keyboard hold failure. A side-button arm with no
 	// foreground window returns without this sentence.
 	NoTargetWindow = "没有可用的目标窗口"
-	// HoldReleaseMissed is shown when the hold watcher never sees the key or button come up.
-	HoldReleaseMissed = "未收到录音按键或鼠标侧键的松开事件，已自动结束。请检查是否有鼠标驱动将侧键映射为其他按键。"
 	// ToggleUINotifyFailed is shown when the toggle worker cannot reach the UI thread.
 	ToggleUINotifyFailed = "无法通知 UI 线程准备录音"
 )

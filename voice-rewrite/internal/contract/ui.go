@@ -84,7 +84,7 @@ func Controls() []Control {
 		{ID: "record_mode", Page: "input", Label: "录音模式", Kind: Choice, Platform: MacOS, Gap: "#138"},
 		{ID: "exit_shortcut", Page: "input", Label: "全局退出快捷键（不是语音操作）", Kind: Shortcut, Platform: MacOS, Gap: "#139"},
 		{ID: "capture_exit", Page: "input", Label: "录入按键", Kind: Button, Platform: MacOS, Gap: "#139"},
-		{ID: "max_record_seconds", Page: "input", Label: "最长录音", Kind: Stepper, Platform: MacOS, Gap: "#61 #69"},
+		{ID: "max_record_seconds", Page: "input", Label: "最长录音", Kind: Stepper, Stacked: true},
 		{ID: "record_note", Page: "input", Label: "录音数据为 16 kHz 单声道 PCM16，最长 180 秒。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
 		{ID: "meeting_asr_mode", Page: "input", Label: "会议语音识别方式", Kind: Choice, Platform: MacOS, Gap: "#61 #69"},
 		{ID: "system_prompt", Page: "input", Label: "System Prompt", Kind: Text, Platform: MacOS, Gap: "#145"},

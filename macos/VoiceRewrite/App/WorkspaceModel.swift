@@ -211,6 +211,27 @@ final class WorkspaceModel: ObservableObject {
         } catch {
             settingsStatus = settingsLoadFailed()
         }
+        if let nativeRecorder = self.microphone as? MicrophoneRecorder {
+            nativeRecorder.onMaximumDuration = { [weak self] in
+                self?.finishRecordingAtLimit()
+            }
+        }
+    }
+
+    /// A duration cap must finish the user's speech, not discard it or claim
+    /// that a held shortcut lost its release event. All three voice flows use
+    /// the normal stop/ASR pipeline after the native recorder reaches its cap.
+    private func finishRecordingAtLimit() {
+        if meetingVoiceRecording {
+            DiagnosticLog.note("stage=meeting_voice_recording status=duration_limit")
+            meetingSideAction = nil
+            keyboardGate.clear()
+            keyboardHoldSequence &+= 1
+            toggleMeetingVoice()
+        } else if isRecording {
+            DiagnosticLog.note("stage=recording status=duration_limit")
+            stopRecording()
+        }
     }
 
     private var microphoneDiscoveryGeneration: UInt64 = 0
@@ -796,7 +817,7 @@ final class WorkspaceModel: ObservableObject {
             self.keyboardGate.clear()
             self.keyboardHoldSequence &+= 1
             self.hotKeyDriver?.resetHeldState()
-            self.interactionStatus = "未收到录音快捷键松开事件，已结束本次录音"
+            self.interactionStatus = "录音已达到最长时间，正在提交已录制内容"
             if self.meetingActive {
                 if self.meetingVoiceRecording { self.toggleMeetingVoice() }
                 else if self.meetingVoiceStarting { self.cancelMeetingVoiceStart() }

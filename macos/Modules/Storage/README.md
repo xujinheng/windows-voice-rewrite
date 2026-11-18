@@ -23,7 +23,7 @@ entitlements at integration time. No insecure fallback is provided.
 
     let store = try SettingsStore()
     var settings = try store.load()  // absent file -> MacSettings.defaults
-    settings.maxRecordSeconds = 60
+    settings.maxRecordSeconds = 180
     try store.save(settings)
 
     let keychain = KeychainCredentials()
@@ -46,7 +46,7 @@ Missing API keys are represented as empty strings for local unauthenticated prov
 ## Security boundaries
 
 MacSettings is Codable with exactly five keys: asr_base_url, llm_base_url,
-asr_model, text_model and max_record_seconds. Default recording limit: 60s.
+asr_model, text_model and max_record_seconds. Default recording limit: 180s.
 The file is ~/Library/Application Support/VoiceRewrite/settings.json.
 Directory mode is 0700 and file mode 0600. Symlinks, shared permissions,
 unknown JSON fields (including secret fields), malformed JSON, and

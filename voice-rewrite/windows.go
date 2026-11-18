@@ -79,6 +79,7 @@ const (
 	WM_TIMER         = 0x0113
 	WM_HOLD_RELEASE  = 0x8000 + 50
 	WM_HOLD_TIMEOUT  = 0x8000 + 51
+	WM_RECORD_LIMIT  = 0x8000 + 75
 	WM_TOGGLE_READY  = 0x8000 + 56
 	WM_SHOW_ANSWER   = 0x8000 + 61
 	WM_APPLY_RESULT  = 0x8000 + 74
@@ -433,7 +434,24 @@ func runApp() {
 	var holdGeneration uint64
 	var selectedGeneration uint64
 	var holdSession uintptr
+	var recordingSession uintptr
 	var holdWatch chan struct{}
+	// The native recorder can reach its duration limit before a held key or
+	// mouse button is released. Observe recorder completion without consuming
+	// its PCM result (the worker is its sole reader).
+	watchRecordingLimit := func(rec *audioRecorder) {
+		recordingSession++
+		session := recordingSession
+		go func() {
+			<-rec.finished
+			if !rec.maxReached.Load() {
+				return
+			}
+			if ok, _, err := procPostMessage.Call(hwnd, WM_RECORD_LIMIT, session, 0); ok == 0 {
+				l.Printf("ERROR: cannot notify UI of recording limit: %v", err)
+			}
+		}()
+	}
 	stopHoldWatch := func() {
 		if holdWatch != nil {
 			close(holdWatch)
@@ -502,6 +520,7 @@ func runApp() {
 		}
 		holdGeneration = app.epoch.Start()
 		active = rec
+		watchRecordingLimit(rec)
 		app.setStatus(trayRecording)
 		holdSession++
 		holdWatch = make(chan struct{})
@@ -712,6 +731,7 @@ func runApp() {
 			}
 			selectedGeneration = result.generation
 			active = result.rec
+			watchRecordingLimit(active)
 			selected = result.sel
 			app.busy.Store(false)
 			app.setStatus(trayRecording)
@@ -874,16 +894,19 @@ func runApp() {
 			}
 			continue
 		}
+		if msg.Message == WM_RECORD_LIMIT {
+			if active != nil && msg.WParam == recordingSession {
+				l.Print("recording reached configured duration; submitting captured audio")
+				finish()
+			}
+			continue
+		}
 		if msg.Message == WM_HOLD_TIMEOUT {
 			if input.HoldEventApplies(cfg.RecordMode == "hold", active != nil, msg.WParam == holdSession) {
-				stopHoldWatch()
-				rec := active
-				active = nil
-				rec.Stop()
-				go func() { <-rec.result }()
-				l.Print("ERROR: hold watcher exceeded maximum duration without observing key release")
-				app.postHandyPhase(indicator.Error, holdGeneration)
-				app.fail(errors.New(input.HoldReleaseMissed))
+				// The safety watcher is not proof that the mouse driver lost
+				// a release. Preserve the captured speech instead of discarding it.
+				l.Print("hold safety deadline reached; submitting available audio")
+				finish()
 			}
 			continue
 		}

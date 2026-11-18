@@ -73,6 +73,7 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
     // abandoned start still returning from the CoreAudio lifecycle queue.
     private var nativePreparation = NativePreparationGate()
     private var recordingDeviceUID = ""
+    private var recordingLimitSeconds = 180
     private var engine: AVAudioEngine?
     private var pipeline: CapturePipeline?
     private var hasTap = false
@@ -80,12 +81,23 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
     private var sleepObserver: NSObjectProtocol?
     private var deadline: Task<Void, Never>?
     private var captureLiveness: Task<Void, Never>?
+    /// The host owns whether the completed recording is dictation, rewrite or
+    /// a meeting voice task. It stops and submits the buffered PCM on this cue.
+    public var onMaximumDuration: (@MainActor () -> Void)?
 
     /// First input callback of the latest completed recording; a real audio
     /// readiness marker distinct from the native engine-start return.
     public private(set) var lastFirstCapturedAt: TimeInterval?
 
     public init() {}
+
+    /// A CoreAudio callback can arrive just after the requested limit. The
+    /// outgoing buffer must still fit Go Core's configured PCM payload bound.
+    nonisolated static func boundedRecordedPCM(_ pcm: Data, maximumSeconds: Int) -> Data {
+        let seconds = min(max(1, maximumSeconds), PCM16Buffer.maximumSeconds)
+        let bytes = seconds * PCM16Buffer.sampleRate * MemoryLayout<Int16>.size
+        return pcm.count > bytes ? Data(pcm.prefix(bytes)) : pcm
+    }
 
     /// Selectable physical devices are enumerated by the CoreAudio HAL.
     /// Stable device UIDs survive device-index changes.
@@ -192,7 +204,7 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
         return permissionStatus
     }
 
-    public func start(deviceUID: String = "", maximumSeconds: Int = 60) async throws {
+    public func start(deviceUID: String = "", maximumSeconds: Int = 180) async throws {
         guard case .idle = state, !nativePreparation.isBusy else {
             throw MicrophoneError.alreadyRecording
         }
@@ -258,6 +270,7 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
                 }
             }
             recordingDeviceUID = deviceUID
+            recordingLimitSeconds = duration
             state = .recording
             // This supervisor is independent of CoreAudio callback delivery.
             // A frozen device may deliver neither buffers nor an interruption
@@ -278,7 +291,15 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
                 do {
                     try await Task.sleep(nanoseconds: UInt64(duration) * 1_000_000_000)
                 } catch { return }
-                self?.handleFailure(id: id, error: .durationExceeded)
+                guard let self, self.recordingID == id,
+                      case .recording = self.state else { return }
+                if let onMaximumDuration = self.onMaximumDuration {
+                    // Reaching the configured limit is a normal completion.
+                    // Keep the PCM alive for the host's stop() and ASR path.
+                    onMaximumDuration()
+                } else {
+                    self.handleFailure(id: id, error: .durationExceeded)
+                }
             }
         } catch {
             nativePreparation.finish(attempt)
@@ -315,6 +336,7 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
         // on the main actor when the input device is disappearing.
         let engineWasRunning = engine != nil
         let stoppedDeviceUID = recordingDeviceUID
+        let stoppedLimitSeconds = recordingLimitSeconds
         recordingDeviceUID = ""
         // CoreAudio may block removeTap/stop/reset indefinitely when an input
         // device is reconfigured or disappears. Never wait for those native
@@ -351,7 +373,7 @@ public final class MicrophoneRecorder: VoiceRecordingDevice {
             pipeline = nil
             recordingID = nil
             state = .idle
-            return bytes
+            return Self.boundedRecordedPCM(bytes, maximumSeconds: stoppedLimitSeconds)
         } catch {
             if recordingID == id {
                 pipeline = nil

@@ -28,11 +28,11 @@ func TestSettingsCatalogKeepsSharedPagesAndOrder(t *testing.T) {
 		t.Fatalf("writing rows: %v", writing)
 	}
 	windowsInput := ids(Stacked("input", Windows))
-	if join(windowsInput) != "rewrite_shortcut dictation_shortcut microphone" {
+	if join(windowsInput) != "rewrite_shortcut dictation_shortcut microphone max_record_seconds" {
 		t.Fatalf("windows input: %v", windowsInput)
 	}
 	macInput := ids(Stacked("input", MacOS))
-	if join(macInput) != "rewrite_shortcut dictation_shortcut microphone" {
+	if join(macInput) != "rewrite_shortcut dictation_shortcut microphone max_record_seconds" {
 		t.Fatalf("macos input: %v", macInput)
 	}
 	for _, control := range Controls() {
