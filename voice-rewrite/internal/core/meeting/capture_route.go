@@ -31,6 +31,12 @@ var (
 // runtime; it does not create another session, worker or callback queue.
 // expectedEpoch must match for asynchronous source changes/loss notifications.
 func (s *SessionRuntime) CaptureRoute(event CaptureEvent, source string, expectedEpoch uint64) (uint64, error) {
+	return CaptureRoute(s, event, source, expectedEpoch)
+}
+
+// CaptureRoute is the shared Go entrypoint called by the Windows host and
+// macOS voicebridge, with identical epoch, source and cancellation rules.
+func CaptureRoute(s *SessionRuntime, event CaptureEvent, source string, expectedEpoch uint64) (uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.ctx.Err() != nil {
