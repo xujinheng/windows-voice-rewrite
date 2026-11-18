@@ -89,7 +89,14 @@ jobs:
         run: python3 scripts/check-portable-core.py
       - name: Check generated host contracts
         working-directory: voice-rewrite
-        run: go run ./cmd/contractgen -check
+        run: |
+          if ! go run ./cmd/contractgen -check; then
+            # Keep the check strict, but show the precise generated delta on
+            # failure so UI edits cannot hide behind an opaque mismatch.
+            go run ./cmd/contractgen
+            (cd .. && git diff -- macos/VoiceRewrite/UI/SettingsView.swift)
+            exit 1
+          fi
       - name: Compile core on Linux without CGO
         working-directory: voice-rewrite
         env:
