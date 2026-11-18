@@ -10,10 +10,10 @@ import (
 
 func TestLongDictationIsTheDefault(t *testing.T) {
 	if DefaultRecordSeconds != 180 || RecordSecondsMax != 180 {
-	    t.Fatalf("default=%d max=%d: dictation must support three minutes by default", DefaultRecordSeconds, RecordSecondsMax)
+		t.Fatalf("default=%d max=%d: dictation must support three minutes by default", DefaultRecordSeconds, RecordSecondsMax)
 	}
 	if Defaults().MaxRecordSeconds != DefaultRecordSeconds {
-	    t.Fatalf("defaults are not using the shared recording duration")
+		t.Fatalf("defaults are not using the shared recording duration")
 	}
 }
 
