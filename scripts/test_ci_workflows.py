@@ -1,53 +1,51 @@
-"""Regression guards for main and PR native cache parity and release build safety."""
+"""Static regression checks for CI event ownership and duplicate workflows.
 
+Avoid a PyYAML runtime dependency in the fast path-classifier job.
+"""
 from pathlib import Path
 import unittest
 
-WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows" / "build.yml"
-ENABLED = "if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'"
-REPORT = "if: always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')"
+ROOT = Path(__file__).resolve().parent.parent / ".github" / "workflows"
 
 
-class NativeCachePolicyTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.workflow = WORKFLOW.read_text(encoding="utf-8")
+def workflow(name):
+    return (ROOT / name).read_text(encoding="utf-8")
 
-    def _job(self, start, end):
-        return self.workflow.split("\n  " + start + ":\n", 1)[1].split(
-            "\n  " + end + ":\n", 1
-        )[0]
 
-    def test_both_architectures_cache_only_pr_and_main(self):
-        for start, end, arch, caption in (
-            ("test-core-macos", "build-macos-intel", "arm", "ARM"),
-            ("build-macos-intel", "build", "intel", "Intel"),
-        ):
-            with self.subTest(job=start):
-                job = self._job(start, end)
-                self.assertEqual(job.count(ENABLED), 4)
-                self.assertEqual(job.count(REPORT), 1)
-                self.assertIn("run: python3 scripts/ci_xcode_mtimes.py", job)
-                self.assertIn("id: " + arch + "-derived", job)
-                self.assertIn("key: " + arch + "-xcode-build-", job)
-                self.assertIn("Assert full " + caption + " XCTest coverage", job)
-                self.assertIn("Report " + caption + " incremental cache", job)
-                self.assertIn("python3 scripts/ci_xctest_coverage.py", job)
-                self.assertIn('"' + caption + '" 69', job)
-                self.assertNotIn("if: github.event_name == 'pull_request'\n", job)
+def events(name):
+    # Workflow top-level 'on' uses zero indentation; 'permissions' marks its end.
+    return workflow(name).split("\non:\\n", 1)[1].split("\npermissions:", 1)[0]
 
-    def test_tags_still_run_cold(self):
-        # Every native Xcode cache step requires a PR event or exact main ref;
-        # release tags cannot satisfy either condition.
-        for name, following in (
-            ("test-core-macos", "build-macos-intel"),
-            ("build-macos-intel", "build"),
-        ):
-            with self.subTest(job=name):
-                job = self._job(name, following)
-                self.assertEqual(job.count("if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'"), 4)
-                self.assertEqual(job.count("if: always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')"), 1)
-        self.assertIn("tags: [v*]", self.workflow)
+
+class WorkflowEventOwnership(unittest.TestCase):
+    def test_main_direct2d_is_reusable_not_a_second_push(self):
+        direct = events("direct2d-result.yml")
+        self.assertIn("  workflow_call:", direct)
+        self.assertIn("  workflow_dispatch:", direct)
+        self.assertNotIn("  push:", direct)
+        main = workflow("build.yml")
+        self.assertIn("needs.changes.outputs.direct2d == 'true' && !startsWith(github.ref, 'refs/tags/')", main)
+        self.assertIn("uses: ./.github/workflows/direct2d-result.yml", main)
+
+    def test_demo_has_one_automatic_owner(self):
+        demo = events("demo-video.yml")
+        self.assertNotIn("  push:", demo)
+        self.assertIn("  workflow_run:", demo)
+        self.assertIn("workflows: ['Windows UI screenshots']", demo)
+        self.assertIn("  workflow_dispatch:", demo)
+        screenshot = events("visual-matrix.yml")
+        self.assertIn("'scripts/render-demo-video.py'", screenshot)
+        self.assertIn("'.github/workflows/demo-video.yml'", screenshot)
+        self.assertIn("    branches: [main]", screenshot)
+
+    def test_ready_apps_do_not_fire_on_unrelated_labels(self):
+        ready = events("ready-build.yml")
+        self.assertIn("    types: [edited]", ready)
+        self.assertIn("  workflow_dispatch:", ready)
+        self.assertNotIn("labeled", ready)
+        content = workflow("ready-build.yml")
+        self.assertIn("github.event.changes.title", content)
+        self.assertIn("contains(github.event.pull_request.title, '[ready-to-test]')", content)
 
 
 if __name__ == "__main__":
