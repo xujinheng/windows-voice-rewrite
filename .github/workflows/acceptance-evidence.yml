@@ -8,13 +8,6 @@ concurrency:
   group: ui-acceptance-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
-  validate-evidence:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - run: python3 -m pip install --user Pillow
-      - run: python3 -m unittest discover -s tests/acceptance -v
-      - run: python3 tests/acceptance/manual_matrix.py tests/acceptance/device-matrix.csv
   windows-ui:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -141,7 +134,7 @@ jobs:
   compare-evidence:
     runs-on: ubuntu-latest
     if: always()
-    needs: [validate-evidence, windows-ui, macos-ui]
+    needs: [windows-ui, macos-ui]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
@@ -149,9 +142,11 @@ jobs:
           pattern: acceptance-*
           path: acceptance-output
           merge-multiple: true
-      - name: Produce review-only matched-state report
+      - name: Validate fixtures and compare cross-platform screenshots
         run: |
           python3 -m pip install --user Pillow
+          python3 -m unittest discover -s tests/acceptance -v
+          python3 tests/acceptance/manual_matrix.py tests/acceptance/device-matrix.csv
           python3 tests/acceptance/report.py \
             acceptance-output/windows/manifest.json \
             acceptance-output/macos-arm64/manifest.json \
