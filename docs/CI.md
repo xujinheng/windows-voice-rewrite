@@ -68,9 +68,17 @@ architecture. **Only version tags** produce the full Windows installer, Windows
 portable archive and macOS developer ZIP/DMG release assets. The separately
 signed/notarized release pipeline is unchanged.
 
-Native macOS Swift adapter suites are a separate required **parallel** job.
-This eliminates their previous serial placement before the Xcode app tests,
-without omitting the packages or weakening the final CI Gate.
+Native macOS Swift adapter suites, real-macOS Go Core tests, two Darwin
+cross-build checks, and the Swift-to-Go handshake share a separate required
+**parallel** job. Both Xcode app test jobs run concurrently with that job, so
+the ARM Xcode runner no longer waits for the independent adapter and bridge
+suites. All jobs still participate in the final CI Gate.
+
+Intel native tests use an exact Go 1.23.12 toolchain. A version-and-architecture
+keyed Actions cache keeps the complete installed official Go toolchain
+(including setup-go's completion marker); cache misses fall back to normal
+official setup-go installation. This caches only the reusable toolchain, not
+Xcode test results, and does not bypass compilation or validation.
 
 ## Opening side-by-side visual comparisons
 
