@@ -41,7 +41,7 @@ jobs:
           if [[ "${{ github.event_name }}" != 'pull_request' ]]; then
             printf 'core=true\nmacos=true\nwindows=true\noneclick=true\n' >> "$GITHUB_OUTPUT"
           else
-            git diff --name-only --diff-filter=ACMRT "$BASE_SHA" "$HEAD_SHA" |
+            git diff --name-only "$BASE_SHA" "$HEAD_SHA" |
               python3 scripts/ci_changes.py --output "$GITHUB_OUTPUT"
           fi
   test-core:
