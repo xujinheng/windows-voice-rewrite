@@ -52,14 +52,16 @@ func TestBridgeRejectsUnsupportedAndMalformedRequests(t *testing.T) {
 	}
 }
 
-func TestRetiredMeetingBridgeOperationsAreExplicitlyUnsupported(t *testing.T) {
+func TestRetiredGUIAndMeetingBridgeOperationsAreExplicitlyUnsupported(t *testing.T) {
 	// The headless macOS app has no Meeting client. Windows Meeting keeps its
-	// own Go Core pipeline; these old bridge requests must not create sessions.
+	// own Go Core pipeline; old GUI-only operations must not become parallel macOS business paths.
 	ops := []string{
 		"meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop",
 		"meeting_pause", "meeting_resume", "meeting_accept", "meeting_cancel",
 		"meeting_view", "meeting_configure", "meeting_demo",
 		"meeting_replies", "meeting_refine", "meeting_compose", "meeting_express",
+		"selected_task", "probe_asr", "probe_llm",
+		"list_asr_models", "list_llm_models", "check_update", "parse_shortcut",
 	}
 	var input strings.Builder
 	for i, op := range ops {
