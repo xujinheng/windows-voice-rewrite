@@ -1,4 +1,4 @@
-name: Build VoiceRewrite Windows
+name: VoiceRewrite CI, builds and release
 on:
   push:
     branches: [main]
@@ -16,7 +16,37 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      core: ${{ steps.scope.outputs.core }}
+      macos: ${{ steps.scope.outputs.macos }}
+      windows: ${{ steps.scope.outputs.windows }}
+      oneclick: ${{ steps.scope.outputs.oneclick }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify CI path classifier
+        run: python3 -m unittest discover -s scripts -p 'test_ci_changes.py' -v
+      - name: Compute affected platforms
+        id: scope
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" != 'pull_request' ]]; then
+            printf 'core=true\nmacos=true\nwindows=true\noneclick=true\n' >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only --diff-filter=ACMRT "$BASE_SHA" "$HEAD_SHA" |
+              python3 scripts/ci_changes.py --output "$GITHUB_OUTPUT"
+          fi
   test-core:
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -47,6 +77,8 @@ jobs:
           CGO_ENABLED: '0'
         run: go build ./internal/core/...
   test-core-macos:
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -55,6 +87,15 @@ jobs:
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
+      - name: Cache SwiftPM downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/.swiftpm
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('macos/**/Package.swift', 'macos/**/Package.resolved') }}
+          restore-keys: |
+            swiftpm-${{ runner.os }}-${{ runner.arch }}-
       - name: Execute portable core tests on real macOS
         working-directory: voice-rewrite
         run: go test -count=1 ./internal/core/...
@@ -93,7 +134,7 @@ jobs:
           test "$(lipo -archs "$app/Contents/MacOS/voicebridge")" = arm64
           codesign --verify --deep --strict "$app"
       - name: Package Apple Silicon macOS developer app
-        if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        if: github.event_name != 'pull_request' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         run: |
           set -euo pipefail
           app="$RUNNER_TEMP/voicerewrite-derived/Build/Products/Debug/VoiceRewrite.app"
@@ -108,7 +149,7 @@ jobs:
           bash scripts/verify-macos-package.sh dmg "$dmg" arm64 "$version" dev
           bash scripts/test-macos-package-verifier.sh "$app" arm64 "$version"
       - name: Upload Apple Silicon macOS developer app
-        if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        if: github.event_name != 'pull_request' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         uses: actions/upload-artifact@v4
         with:
           name: VoiceRewrite-macOS-arm64-Dev
@@ -127,6 +168,8 @@ jobs:
           GOOS=darwin GOARCH=amd64 go build ./cmd/voicebridge
           GOOS=darwin GOARCH=arm64 go build ./cmd/voicebridge
   build-macos-intel:
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
     runs-on: macos-15-intel
     timeout-minutes: 35
     steps:
@@ -136,6 +179,15 @@ jobs:
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
+      - name: Cache SwiftPM downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/.swiftpm
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('macos/**/Package.swift', 'macos/**/Package.resolved') }}
+          restore-keys: |
+            swiftpm-${{ runner.os }}-${{ runner.arch }}-
       - name: Build and test Intel macOS native app
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         run: |
@@ -152,7 +204,7 @@ jobs:
           test "$(lipo -archs "$app/Contents/MacOS/voicebridge")" = x86_64
           codesign --verify --deep --strict "$app"
       - name: Package Intel macOS developer app
-        if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        if: github.event_name != 'pull_request' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         run: |
           set -euo pipefail
           app="$RUNNER_TEMP/voicerewrite-intel-derived/Build/Products/Debug/VoiceRewrite.app"
@@ -167,7 +219,7 @@ jobs:
           bash scripts/verify-macos-package.sh dmg "$dmg" x86_64 "$version" dev
           bash scripts/test-macos-package-verifier.sh "$app" x86_64 "$version"
       - name: Upload Intel macOS developer app
-        if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        if: github.event_name != 'pull_request' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         uses: actions/upload-artifact@v4
         with:
           name: VoiceRewrite-macOS-x64-Dev
@@ -179,6 +231,8 @@ jobs:
           retention-days: 7
           if-no-files-found: error
   build:
+    needs: changes
+    if: needs.changes.outputs.windows == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     permissions:
@@ -198,6 +252,13 @@ jobs:
         working-directory: voice-rewrite
         # Win32 callbacks pass OS-owned pointers as uintptr; keep every other vet check.
         run: go vet -unsafeptr=false ./...
+      - name: Compile Windows GUI on PRs
+        if: github.event_name == 'pull_request'
+        working-directory: voice-rewrite
+        shell: pwsh
+        run: |
+          go build -trimpath -ldflags '-H=windowsgui' -o "$env:RUNNER_TEMP/VoiceRewrite.exe" .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build x64 GUI
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         working-directory: voice-rewrite
@@ -283,6 +344,8 @@ jobs:
           path: installer/output/*
           if-no-files-found: error
   build-oneclick:
+    needs: changes
+    if: needs.changes.outputs.oneclick == 'true'
     runs-on: windows-latest
     timeout-minutes: 15
     permissions:
@@ -327,7 +390,7 @@ jobs:
           if-no-files-found: error
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test-core, test-core-macos, build, build-oneclick]
+    needs: [test-core, test-core-macos, build-macos-intel, build, build-oneclick]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -372,3 +435,55 @@ jobs:
             release/VoiceRewrite-Setup-*-x64.exe
             release/VoiceRewrite-windows-x64.zip
           fail_on_unmatched_files: true
+
+  ci-gate:
+    name: CI Gate
+    if: always() && github.event_name == 'pull_request'
+    needs: [changes, test-core, test-core-macos, build-macos-intel, build, build-oneclick]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every selected platform
+        shell: bash
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CORE_REQUIRED: ${{ needs.changes.outputs.core }}
+          CORE_RESULT: ${{ needs.test-core.result }}
+          MAC_REQUIRED: ${{ needs.changes.outputs.macos }}
+          MAC_ARM_RESULT: ${{ needs.test-core-macos.result }}
+          MAC_INTEL_RESULT: ${{ needs.build-macos-intel.result }}
+          WIN_REQUIRED: ${{ needs.changes.outputs.windows }}
+          WIN_RESULT: ${{ needs.build.result }}
+          ONECLICK_REQUIRED: ${{ needs.changes.outputs.oneclick }}
+          ONECLICK_RESULT: ${{ needs.build-oneclick.result }}
+        run: |
+          set -euo pipefail
+          [[ "$CHANGES_RESULT" == 'success' ]] || { echo "::error::Change classification failed"; exit 1; }
+          check() {
+            local label="$1" required="$2" outcome="$3"
+            if [[ "$required" == 'true' && "$outcome" != 'success' ]]; then
+              echo "::error::$label expected success, got $outcome"
+              return 1
+            fi
+            if [[ "$required" != 'true' && "$outcome" != 'skipped' ]]; then
+              echo "::error::$label expected skip, got $outcome"
+              return 1
+            fi
+            echo "$label: $outcome (required=$required)"
+          }
+          errors=0
+          check 'Go Core' "$CORE_REQUIRED" "$CORE_RESULT" || errors=1
+          check 'macOS ARM64' "$MAC_REQUIRED" "$MAC_ARM_RESULT" || errors=1
+          check 'macOS Intel' "$MAC_REQUIRED" "$MAC_INTEL_RESULT" || errors=1
+          check 'Windows' "$WIN_REQUIRED" "$WIN_RESULT" || errors=1
+          check 'OneClick' "$ONECLICK_REQUIRED" "$ONECLICK_RESULT" || errors=1
+          exit "$errors"
+
+  macos-signed-distribution:
+    name: Publish signed macOS packages
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/macos-distribution.yml
+    secrets: inherit
