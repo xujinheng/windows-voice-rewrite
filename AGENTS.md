@@ -26,6 +26,7 @@ This file describes the **current product**, not its history. Read `voice-rewrit
 - **No legacy obligations.** No user base requires old internal APIs, configs or workflows. Preserve working UX, not obsolete code; choose the clean final design.
 - Delete duplicate state machines, transitional shims, obsolete functions, dead tests/assets and abandoned paths. A deliberate current input alternative is not a legacy compatibility shim.
 - Keep one owner per feature. Update all call sites, tests and docs and remove superseded code together. Git history stores old implementations; `main` describes only the current design.
+- **No speculative AI scaffolding.** Inline a single-caller wrapper that only negates flags, returns a constant struct, or translates one boolean into a string/error; do not write tests solely to legitimize that wrapper. Avoid hypothetical interfaces, extra controllers and redundant platform logic. Keep actual cancellation, privacy, clipboard, concurrency and OS security checks; test the real effect at its boundary.
 
 ## CI cost and execution efficiency
 
