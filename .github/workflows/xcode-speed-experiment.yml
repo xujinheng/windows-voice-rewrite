@@ -131,3 +131,4 @@ jobs:
             echo "- CAS disk usage: $(du -sh "$COMPILATION_CACHE_DIR" 2>/dev/null | cut -f1 || echo none)"
             echo "- XCTest: full scheme, native Intel, including visual fixture captures"
           } >> "$GITHUB_STEP_SUMMARY"
+# Measurement repeat 2: unchanged source tree; verify warm CAS restoration.
