@@ -158,8 +158,8 @@ jobs:
             acceptance-output/macos-arm64/manifest.json \
             acceptance-output/macos-x64/manifest.json \
             --output acceptance-report --require-complete-matrix
-          cat acceptance-report/report.md >> "$GITHUB_STEP_SUMMARY"
       - name: Upload comparison evidence
+        id: comparison_gallery
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -167,3 +167,32 @@ jobs:
           path: acceptance-report/
           retention-days: 14
           if-no-files-found: warn
+      - name: Publish working comparison gallery link
+        if: always() && steps.comparison_gallery.outputs.artifact-url != ''
+        shell: bash
+        env:
+          GALLERY_URL: ${{ steps.comparison_gallery.outputs.artifact-url }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import re
+
+          summary = Path("acceptance-report/report.md")
+          if summary.is_file():
+              report = summary.read_text(encoding="utf-8")
+              # Local PNG links are valid in the extracted artifact, but not in
+              # GitHub's Actions Summary web page. Never emit them there.
+              report = re.sub(r'\[Compare side by side\]\([^)]*\.png\)',
+                              'See comparison gallery', report)
+          else:
+              report = "Comparison report unavailable; inspect the artifact."
+          url = os.environ["GALLERY_URL"]
+          intro = (f"**[Download all side-by-side comparisons]({url})**\n\n"
+                   "Unzip the artifact and open **index.html** to browse the "
+                   "28 comparison PNGs. GitHub Actions cannot directly host "
+                   "individual artifact PNG links.\n\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
+              out.write(intro + report + "\n")
+          PY

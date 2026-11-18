@@ -71,3 +71,13 @@ signed/notarized release pipeline is unchanged.
 Native macOS Swift adapter suites are a separate required **parallel** job.
 This eliminates their previous serial placement before the Xcode app tests,
 without omitting the packages or weakening the final CI Gate.
+
+## Opening side-by-side visual comparisons
+
+GitHub Actions artifacts are downloads, not a web-hosted PNG directory. In the
+cross-platform comparison Job Summary, use **Download all side-by-side
+comparisons**, unzip the `acceptance-comparison` artifact and open `index.html`.
+Every "Compare side by side" relative PNG link also works from the downloaded
+`report.md`. Do **not** link to `/actions/runs/<png-filename>`: that path is
+invalid and produces a 404. The Job Summary links to the real upload-artifact
+`artifact-url`, which requires GitHub login and expires with retention.

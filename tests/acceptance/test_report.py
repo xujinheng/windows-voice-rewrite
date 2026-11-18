@@ -51,6 +51,21 @@ class EvidenceTest(unittest.TestCase):
         self.assertEqual(result["rows"][0]["status"], "matched-for-review")
         self.assertNotIn("pass", result["rows"][0])
 
+    def test_comparison_gallery_links_to_existing_local_png(self):
+        windows = self.make("windows")
+        macos = self.make("macos-x64")
+        output = self.root / "report"
+        result = generate([windows, macos], output)
+        image = result["rows"][0]["side_by_side"]
+        self.assertTrue((output / image).is_file())
+        gallery = (output / "index.html").read_text(encoding="utf-8")
+        self.assertIn(f'href="{image}"', gallery)
+        self.assertIn(f'src="{image}"', gallery)
+        self.assertIn("NOT_VERIFIED_ON_PHYSICAL_DEVICE", gallery)
+        markdown = (output / "report.md").read_text(encoding="utf-8")
+        self.assertIn(f"( {image} )".replace(" ", ""), markdown)
+        self.assertIn("inside the downloaded acceptance-comparison artifact", markdown)
+
     def test_theme_and_fixture_must_match(self):
         a = self.make("windows")
         b = self.make("macos-x64", fixture="another-fixture", theme="light")
