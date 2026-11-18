@@ -28,7 +28,7 @@ cat > "$app/Contents/Info.plist" <<EOF
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleExecutable</key><string>VoiceRewrite</string>
-<key>CFBundleIdentifier</key><string>io.github.xujinheng.voicerewrite.headless</string>
+<key>CFBundleIdentifier</key><string>com.xujinheng.VoiceRewrite</string>
 <key>CFBundleName</key><string>VoiceRewrite</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>$version</string>

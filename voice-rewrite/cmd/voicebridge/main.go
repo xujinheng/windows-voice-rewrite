@@ -27,7 +27,6 @@ import (
 	"voicerewrite/internal/core/textedit"
 	"voicerewrite/internal/core/update"
 	"voicerewrite/internal/core/ux"
-	"voicerewrite/internal/core/voiceflow"
 )
 
 const (
@@ -59,7 +58,6 @@ type request struct {
 	ReplyIndex      int             `json:"reply_index"`
 	ViewButton      int             `json:"button_id"`
 	FocusExpression bool            `json:"focus_expression"`
-	VoiceEvent      voiceflow.Event `json:"event"`
 }
 
 type bridgeError struct {
@@ -118,7 +116,6 @@ type bridgeServer struct {
 	wg      sync.WaitGroup
 	options bridgeOptions
 	meeting *bridgeMeeting
-	voice   *voiceflow.Engine
 
 	input    io.Reader
 	output   io.Writer
@@ -244,17 +241,6 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		switch req.Op {
 		case "meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop", "meeting_pause", "meeting_resume", "meeting_accept", "meeting_cancel", "meeting_view", "meeting_configure", "meeting_demo":
 			s.send(s.meetingRequest(req))
-		case "voice_event":
-			effects, err := s.voice.Apply(req.VoiceEvent)
-			if err != nil {
-				code := "invalid_voice_event"
-				if errors.Is(err, voiceflow.ErrVersion) {
-					code = "voice_event_version"
-				}
-				s.send(failure(req.ID, code, "invalid voice task event"))
-			} else {
-				s.send(success(req.ID, effects))
-			}
 		case "hello":
 			s.send(success(req.ID, map[string]any{"name": jsonl.HelloName, "protocol": jsonl.Version}))
 		case "parse_shortcut":
@@ -697,7 +683,6 @@ func serveWithOptions(input io.Reader, output io.Writer, options bridgeOptions) 
 	s := &bridgeServer{
 		active: make(map[string]*bridgeTask), seen: make(map[string]struct{}),
 		input: input, output: output, options: options,
-		voice: voiceflow.New(),
 	}
 	reader := bufio.NewReaderSize(input, 64<<10)
 	var readErr error

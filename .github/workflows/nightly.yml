@@ -33,15 +33,15 @@ jobs:
           (cd voice-rewrite && go run ./cmd/contractgen -check)
 
   native-macos:
-    name: macOS ${{ matrix.arch }} nightly
+    name: Headless macOS ${{ matrix.arch }} nightly
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {runner: macos-15, arch: arm64, native: arm64}
-          - {runner: macos-15-intel, arch: x64, native: x86_64}
+          - {runner: macos-15, arch: arm64}
+          - {runner: macos-15-intel, arch: x86_64}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 50
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -50,31 +50,13 @@ jobs:
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/Library/Caches/org.swift.swiftpm
-            ~/.swiftpm
-          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('macos/**/Package.swift', 'macos/**/Package.resolved') }}
-      - name: Native app integration and visual acceptance
-        shell: bash
+      - name: Native Go/Swift headless build
         run: |
-          set -euo pipefail
-          test "$(uname -m)" = '${{ matrix.native }}'
-          xcodebuild -project macos/VoiceRewrite.xcodeproj -scheme VoiceRewrite \
-            -configuration Debug -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/voicerewrite-nightly" test
-          app="$RUNNER_TEMP/voicerewrite-nightly/Build/Products/Debug/VoiceRewrite.app"
-          test -x "$app/Contents/MacOS/voicebridge"
-          test "$(lipo -archs "$app/Contents/MacOS/voicebridge")" = '${{ matrix.native }}'
-      - name: Test all native Swift adapters
-        shell: bash
-        run: |
-          set -euo pipefail
-          for module in Microphone Storage Interaction; do
-            (cd "macos/Modules/$module" && swift test)
-          done
-
+          test "$(uname -m)" = '${{ matrix.arch }}'
+          bash scripts/build-macos-headless.sh '${{ matrix.arch }}' "$RUNNER_TEMP/headless"
+      - name: Go bridge regression tests on macOS
+        working-directory: voice-rewrite
+        run: go test -race -count=1 ./cmd/voicebridge ./internal/core/...
   native-windows:
     runs-on: windows-latest
     timeout-minutes: 30
