@@ -6,11 +6,11 @@ import (
 	"voicerewrite/internal/core/ux"
 )
 
-// Values here are the single source for native pasteboard timing.
+// Clipboard lease timings; shared UX owns the minimum native paste dwell.
 const (
-	PasteReceiptQuietMilliseconds   = 200
-	PasteReceiptMaxMilliseconds     = 3000
-	WindowsPasteWaitMilliseconds    = 250
+	PasteReceiptQuietMilliseconds = 200
+	PasteReceiptMaxMilliseconds   = 3000
+	WindowsPasteWaitMilliseconds  = 250
 )
 
 type PasteReceipt struct {
