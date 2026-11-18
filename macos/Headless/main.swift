@@ -104,7 +104,7 @@ private final class Microphone {
         }
     }
 
-    func stop() throws -> Data {
+    func stop(discard: Bool = false) throws -> Data {
         guard running else { throw HostError.microphone("not recording") }
         running = false
         engine.stop()
@@ -115,7 +115,7 @@ private final class Microphone {
         samples = []
         rms = 0
         lock.unlock()
-        guard !captured.isEmpty else { return Data() }
+        guard !discard, !captured.isEmpty else { return Data() }
         // AVAudioConverter supplies quality resampling; never resample on the audio callback.
         guard let source = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate,
                                          channels: 1, interleaved: false),
@@ -543,7 +543,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func cancelFromPill() {
         generation &+= 1
         if pending { GoCore.cancel() }
-        if microphone.running { _ = try? microphone.stop() }
+        if microphone.running { _ = try? microphone.stop(discard: true) }
         clearSession()
         pill.dismiss()
         show("Cancelled")
