@@ -32,8 +32,8 @@ class NativeCachePolicyTests(unittest.TestCase):
                 self.assertIn("key: " + arch + "-xcode-build-", job)
                 self.assertIn("Assert full " + caption + " XCTest coverage", job)
                 self.assertIn("Report " + caption + " incremental cache", job)
-                self.assertIn("max(counts, default=0) < 69", job)
-                self.assertIn("** TEST SUCCEEDED **", job)
+                self.assertIn("python3 scripts/ci_xctest_coverage.py", job)
+                self.assertIn('"' + caption + '" 69', job)
                 self.assertNotIn("if: github.event_name == 'pull_request'\n", job)
 
     def test_tags_still_run_cold(self):
