@@ -116,19 +116,25 @@
           },
           "go": [
             {
-              "path": "voice-rewrite/internal/core/ux/route.go",
-              "contains": "func RouteDictationTranscript("
+              "path": "voice-rewrite/internal/core/ux/task_effects.go",
+              "contains": "func DictationTaskEffect("
             },
             {
               "path": "voice-rewrite/task_worker_windows.go",
-              "contains": "ux.RouteDictationTranscript("
+              "contains": "ux.DictationTaskEffect("
             },
             {
               "path": "voice-rewrite/cmd/voicebridge/main.go",
-              "contains": "ux.RouteDictationTranscript("
+              "contains": "ux.DictationTaskEffect("
             }
           ],
-          "logical_unit_id": "dictation_hold/result_route"
+          "logical_unit_id": "dictation_hold/result_route",
+          "go_forbidden_when": [
+            {
+              "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
+              "contains": "public func dictationTranscriptFollowUp("
+            }
+          ]
         },
         {
           "id": "paste",
@@ -148,7 +154,27 @@
             "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
             "contains": "public func dictationInsertFollowUp("
           },
-          "logical_unit_id": "dictation_hold/write_receipt"
+          "logical_unit_id": "dictation_hold/write_receipt",
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/ux/task_effects.go",
+              "contains": "func TaskWriteEffect("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "ux.TaskWriteEffect("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "ux.TaskWriteEffect("
+            }
+          ],
+          "go_forbidden_when": [
+            {
+              "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
+              "contains": "public func dictationInsertFollowUp("
+            }
+          ]
         },
         {
           "id": "history",
@@ -158,7 +184,27 @@
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "private func rememberHistory("
           },
-          "logical_unit_id": "dictation_hold/history"
+          "logical_unit_id": "dictation_hold/history",
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/ux/task_effects.go",
+              "contains": "func DictationTaskEffect("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "ux.DictationTaskEffect("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "ux.DictationTaskEffect("
+            }
+          ],
+          "go_forbidden_when": [
+            {
+              "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
+              "contains": "public func dictationTranscriptFollowUp("
+            }
+          ]
         }
       ]
     },
@@ -288,7 +334,27 @@
             "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
             "contains": "public func selectedTaskFollowUp("
           },
-          "logical_unit_id": "spoken_selection/ui_followup"
+          "logical_unit_id": "spoken_selection/ui_followup",
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/ux/task_effects.go",
+              "contains": "func SelectedTaskEffect("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "ux.SelectedTaskEffect("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "ux.SelectedTaskEffect("
+            }
+          ],
+          "go_forbidden_when": [
+            {
+              "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
+              "contains": "public func selectedTaskFollowUp("
+            }
+          ]
         },
         {
           "id": "ax_replace",
@@ -308,7 +374,27 @@
             "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
             "contains": "public func selectedWriteFollowUp("
           },
-          "logical_unit_id": "spoken_selection/write_receipt"
+          "logical_unit_id": "spoken_selection/write_receipt",
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/ux/task_effects.go",
+              "contains": "func TaskWriteEffect("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "ux.TaskWriteEffect("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "ux.TaskWriteEffect("
+            }
+          ],
+          "go_forbidden_when": [
+            {
+              "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
+              "contains": "public func selectedWriteFollowUp("
+            }
+          ]
         }
       ]
     },
@@ -512,7 +598,27 @@
             "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
             "contains": "public func dictationInsertFollowUp("
           },
-          "logical_unit_id": "dictation_hold/write_receipt"
+          "logical_unit_id": "dictation_hold/write_receipt",
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/ux/task_effects.go",
+              "contains": "func TaskWriteEffect("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "ux.TaskWriteEffect("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "ux.TaskWriteEffect("
+            }
+          ],
+          "go_forbidden_when": [
+            {
+              "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
+              "contains": "public func dictationInsertFollowUp("
+            }
+          ]
         }
       ]
     },

@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"runtime/debug"
@@ -13,6 +12,7 @@ import (
 
 	"voicerewrite/internal/core/audio"
 	"voicerewrite/internal/core/clipboard"
+	"voicerewrite/internal/core/delivery"
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/session"
@@ -134,42 +134,49 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	if !app.epoch.FinishStage(generation, session.StageASR) {
 		return
 	}
-	// Core owns the transcript routing on both hosts. The native editor
-	// continues to revalidate the target immediately before the write.
-	switch ux.RouteDictationTranscript(text, isSameForegroundWindow(expectedWindow)) {
-	case ux.DictationRouteEmpty:
-		app.fail(errors.New(ux.DictationEmpty))
+	// Both hosts execute the exact same Go effect. Record history only once,
+	// before the single native write; the receipt never adds another entry.
+	effect := ux.DictationTaskEffect(text, isSameForegroundWindow(expectedWindow))
+	if effect.Phase == int(indicator.Error) {
+		app.fail(fmt.Errorf("%s", effect.RecordingStatus))
 		app.postHandyPhase(indicator.Error, generation)
 		return
-	case ux.DictationRoutePreview:
-		// A result card preserves the transcript without requiring the user to
-		// guess what happened to their clipboard after a focus change.
-		follow := ux.DictationUnfocused()
-		app.history.Remember(ux.DictationHistoryTitle, text)
-		app.showAnswer(follow.Title, text, currentCursorPoint(), nil, false, generation)
-		app.postHandyPhase(follow.Phase, generation)
+	}
+	for _, entry := range effect.History {
+		app.history.Remember(entry.Title, entry.Value)
+	}
+	if effect.CardText != "" {
+		app.showAnswer(effect.CardTitle, effect.CardText, currentCursorPoint(), nil, false, generation)
+		app.postHandyPhase(indicator.Phase(effect.Phase), generation)
+		return
+	}
+	if effect.InsertText == "" || !app.epoch.Valid(generation) {
 		return
 	}
 	start = time.Now()
 	if !app.epoch.StartStage(generation, session.StageNativeWrite, session.StageBudget(session.StageNativeWrite, 0, 0)) {
 		return
 	}
-	err = insertDictationText(app.Window, expectedWindow, text, func() bool { return app.epoch.Valid(generation) })
+	err = insertDictationText(app.Window, expectedWindow, effect.InsertText, func() bool { return app.epoch.Valid(generation) })
 	if !app.epoch.FinishStage(generation, session.StageNativeWrite) {
 		return
 	}
-	follow := ux.DictationInserted(err)
-	if follow.ShowCard {
-		app.fail(err)
-		app.history.Remember(ux.DictationHistoryTitle, text)
-		app.showAnswer(follow.Title, text, currentCursorPoint(), nil, false, generation)
-		app.postHandyPhase(follow.Phase, generation)
+	if !app.epoch.Valid(generation) {
 		return
 	}
-	app.history.Remember(ux.DictationHistoryTitle, text)
-	app.logger.Printf("stage=paste flow=dictation ms=%d chars=%d status=unverified", time.Since(start).Milliseconds(), utf8.RuneCountInString(text))
-	app.setStatus(traySuccess)
-	app.postHandyPhase(follow.Phase, generation)
+	receipt := delivery.SentUnverified
+	if err != nil {
+		receipt = delivery.Uncertain // native input might already have been posted
+	}
+	follow := ux.TaskWriteEffect(delivery.Dictation, receipt, text, ux.DictationWriteUnconfirmed, ux.Present(err))
+	if follow.CardText != "" {
+		app.fail(err)
+		app.showAnswer(follow.CardTitle, follow.CardText, currentCursorPoint(), nil, false, generation)
+	} else {
+		app.logger.Printf("stage=paste flow=dictation ms=%d chars=%d receipt=sent_unverified", time.Since(start).Milliseconds(), utf8.RuneCountInString(text))
+		app.setStatus(traySuccess)
+	}
+	app.postHandyPhase(indicator.Phase(follow.Phase), generation)
 }
 
 // The selection must be copied AFTER releasing the held shortcut. This function
@@ -273,38 +280,58 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	editable := isSafelyEditableControl(sel.TargetWindow)
 	browserSurface := isBrowserEditorSurface(sel.TargetWindow)
 	action := textedit.RouteTask(answer, instruction, editable)
+	route := "preview"
+	if action == textedit.Replace || action == textedit.TryReplace {
+		route = "replace"
+	}
+	effect := ux.SelectedTaskEffect(answer.Intent, answer.Result, instruction, route, true)
 	app.logger.Printf("route=%s intent=%s native_editable=%t browser_surface=%t", action, answer.Intent, editable, browserSurface)
-	allowApply := action == textedit.Replace || action == textedit.TryReplace
-	app.history.Remember(ux.HistoryTitle(answer.Intent), answer.Result)
-	if allowApply {
-		app.postHandyPhase(ux.RewriteApplying().Phase, generation)
+	if effect.Phase == int(indicator.Error) {
+		app.fail(fmt.Errorf("%s", effect.InteractionStatus))
+		app.postHandyPhase(indicator.Error, generation)
+		return
+	}
+	for _, entry := range effect.History {
+		app.history.Remember(entry.Title, entry.Value)
+	}
+	if effect.ReplaceText != "" && app.epoch.Valid(generation) {
+		app.postHandyPhase(indicator.Phase(effect.Phase), generation)
 		startedPaste := time.Now()
-		// All unknown controls receive the same pre/post paste checks as a browser.
+		// Native target/snapshot checks remain platform-owned.
 		if !app.epoch.StartStage(generation, session.StageNativeWrite, session.StageBudget(session.StageNativeWrite, 0, 0)) {
 			return
 		}
-		e = replaceSelectionWithGuard(app.Window, sel, answer.Result, app.cfg, action == textedit.TryReplace, func() bool { return app.epoch.Valid(generation) })
+		e = replaceSelectionWithGuard(app.Window, sel, effect.ReplaceText, app.cfg, action == textedit.TryReplace, func() bool { return app.epoch.Valid(generation) })
 		if !app.epoch.FinishStage(generation, session.StageNativeWrite) {
 			return
 		}
+		if !app.epoch.Valid(generation) {
+			return
+		}
 		app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
-	}
-	follow := ux.RewritePasted(allowApply, e)
-	if !follow.ShowCard {
+		receipt := delivery.SentUnverified
+		if e != nil {
+			receipt = delivery.Uncertain
+			app.logger.Printf("auto replacement outcome uncertain: %v", e)
+		}
+		write := ux.TaskWriteEffect(delivery.ReplaceSelection, receipt, effect.ReplaceText,
+			effect.CardTitle, ux.Present(e))
+		if write.CardText == "" {
+			app.setStatus(traySuccess)
+			app.postHandyPhase(indicator.Phase(write.Phase), generation)
+			app.logger.Printf("paste_status=unverified intent=%s result_chars=%d", answer.Intent, utf8.RuneCountInString(answer.Result))
+			return
+		}
+		// Never offer a second apply for a possibly delivered edit.
+		app.showAnswer(write.CardTitle, write.CardText, sel.Anchor, nil, false, generation)
 		app.setStatus(traySuccess)
-		app.postHandyPhase(follow.Phase, generation)
-		// Completion is indicated by the non-blocking status bar; no sound.
-		app.logger.Printf("paste_status=unverified intent=%s result_chars=%d (SendInput accepted, editor insertion not provable)", answer.Intent, utf8.RuneCountInString(answer.Result))
+		app.postHandyPhase(indicator.Phase(write.Phase), generation)
 		return
 	}
-	if allowApply && e != nil {
-		app.logger.Printf("auto replacement failed; preview instead: %v", e)
-	}
-	title := ux.ResultCardTitle(answer.Intent)
-	selectionCopy := sel
-	app.showAnswer(title, answer.Result, sel.Anchor, &selectionCopy, allowApply, generation)
+	// Preview-only work never touches the source editor.
+	app.showAnswer(effect.CardTitle, effect.CardText, sel.Anchor, nil, false, generation)
 	app.setStatus(traySuccess)
-	app.logger.Printf("popup result queued; chars=%d", utf8.RuneCountInString(answer.Result))
+	app.postHandyPhase(indicator.Phase(effect.Phase), generation)
 }
 
 // Dispatch popup paint, command and close events through the Win32 message loop.

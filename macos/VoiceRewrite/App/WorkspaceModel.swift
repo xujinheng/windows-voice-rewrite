@@ -2804,15 +2804,11 @@ final class WorkspaceModel: ObservableObject {
                         self.isProcessing = false
                         DiagnosticLog.note("stage=asr_reply status=finished elapsed_ms=\(Self.elapsedMilliseconds(since: requestStarted))")
                         let response = try? reply.get()
-                        let follow = dictationTranscriptFollowUp(
-                            ok: response?.ok ?? false,
-                            text: response?.result?["text"]?.string,
-                            route: response?.result?["route"]?.string,
-                            transport: self.replyFailure(reply),
-                            failureStatus: FailureCopy.status(prefix: "ASR 请求失败：", message: response?.error?.userText ?? "invalid_reply"),
-                            emptyStatus: ResultCopy.dictationEmpty,
-                            historyTitle: ResultCopy.dictationHistory,
-                            notInsertedTitle: ResultCopy.dictationNotInserted)
+                        let follow = self.coreTaskFollowUp(response?.result) ?? TaskFollowUp(
+                            recordingStatus: FailureCopy.status(
+                                prefix: "ASR 请求失败：", message: response?.error?.userText ?? "invalid_reply"),
+                            asrProbe: probeTranscribeFailed(),
+                            phase: .error, mode: "听写")
                         self.applyTask(follow, token: token, insertion: insertion)
                     }
                 }
@@ -2950,32 +2946,17 @@ final class WorkspaceModel: ObservableObject {
         isProcessing = false
         let response = try? reply.get()
         let result = response?.result
-        let intent = result?["intent"]?.string ?? ""
-        let follow = selectedTaskFollowUp(
-            ok: response?.ok ?? false,
-            text: result?["text"]?.string,
-            spoken: spoken,
-            instruction: result?["instruction"]?.string,
-            route: result?["route"]?.string,
-            transport: replyFailure(reply),
-            failureStatus: FailureCopy.status(prefix: "模型处理失败：", message: response?.error?.userText ?? "invalid_reply"),
-            historyTitle: ResultCopy.historyTitle(intent: intent),
-            cardTitle: ResultCopy.cardTitle(intent: intent),
-            spokenHistoryTitle: ResultCopy.dictationHistory)
-        if !spoken, let body = follow.replaceText {
-            // An explicit typed edit is reviewed before its first write. Only a
-            // Go-approved replacement (never a preview/answer) receives Apply.
-            // Spoken edits preserve the Windows immediate-replacement workflow.
-            var review = follow
-            review.replaceText = nil
-            review.cardText = body
-            review.phase = .answer
-            applyTask(review, generation: generation, token: token,
-                      manualReplacement: (snapshot, generation, token))
-        } else {
-            applyTask(follow, generation: generation, token: token,
-                      replacement: (snapshot, generation))
-        }
+        let follow = coreTaskFollowUp(result) ?? TaskFollowUp(
+            recordingStatus: spoken ? rewriteVoiceIncomplete() : nil,
+            interactionStatus: FailureCopy.status(
+                prefix: "模型处理失败：", message: response?.error?.userText ?? "invalid_reply"),
+            llmProbe: probeTaskFailed(),
+            phase: .error, mode: "改写", cancelTask: true)
+        // Go alone decides whether a typed task has a reviewable Apply action.
+        // The host only verifies the same captured native selection at click time.
+        applyTask(follow, generation: generation, token: token,
+                  replacement: (snapshot, generation),
+                  manualReplacement: (snapshot, generation, token))
     }
 
     private func applyHelperConnection(_ event: HelperConnection) {
@@ -3039,6 +3020,81 @@ final class WorkspaceModel: ObservableObject {
         return nil
     }
 
+    // Pure JSONL effect mapping. Every branch that decides when to write,
+    // show a result, or record history lives in Go Core.
+    private func coreTaskFollowUp(_ result: [String: JSONValue]?) -> TaskFollowUp? {
+        guard case .object(let fields)? = result?["effect"],
+              let number = fields["phase"]?.int,
+              let phase = TaskFollowUp.Phase(rawValue: number) else { return nil }
+        let insert = fields["insert_text"]?.string
+        let replace = fields["replace_text"]?.string
+        let card = fields["card_text"]?.string
+        // Reject malformed or contradictory effects rather than guessing a route.
+        guard !(insert != nil && replace != nil),
+              !(card != nil && (insert != nil || replace != nil)) else { return nil }
+        var history: [TaskHistory] = []
+        if let raw = fields["history"] {
+            guard case .array(let rows) = raw else { return nil }
+            for row in rows {
+                guard case .object(let entry) = row,
+                      let title = entry["title"]?.string,
+                      let value = entry["value"]?.string else { return nil }
+                history.append(TaskHistory(title: title, value: value))
+            }
+        }
+        return TaskFollowUp(
+            recordingStatus: fields["recording_status"]?.string,
+            interactionStatus: fields["interaction_status"]?.string,
+            asrProbe: fields["asr_probe"]?.string,
+            llmProbe: fields["llm_probe"]?.string,
+            phase: phase,
+            mode: fields["mode"]?.string ?? "",
+            transcription: fields["transcription"]?.string,
+            processedText: fields["processed_text"]?.string,
+            history: history,
+            cardTitle: fields["card_title"]?.string,
+            cardText: card,
+            cancelTask: fields["cancel_task"]?.boolValue ?? false,
+            insertText: insert,
+            replaceText: replace,
+            manualReview: fields["manual_review"]?.boolValue ?? false)
+    }
+
+    // Go owns post-write presentation. Canceled and expired epochs cannot
+    // deliver late cards even when native callbacks finish after cancellation.
+    private func applyNativeReceipt(kind: String, outcome: DeliveryState, status: String,
+                                    title: String, text: String, token: UInt64) {
+        guard resultGeneration.accepts(token) else { return }
+        let states = ["blocked", "sent_unverified", "confirmed", "uncertain"]
+        let fallback = TaskFollowUp(interactionStatus: status, phase: .fallback,
+                                    mode: kind == "dictation" ? "听写" : "改写",
+                                    cardTitle: title, cardText: text)
+        guard let bridge, let sessionID = voiceEpochSessionID else {
+            applyTask(fallback, token: token)
+            return
+        }
+        Task { @MainActor [weak self] in
+            guard let self, self.voiceEpochSessionID == sessionID,
+                  await self.voiceEpochAllows(token: token, stage: "") else { return }
+            bridge.send(operation: "task_receipt", fields: [
+                "receipt_kind": .string(kind),
+                "receipt_state": .string(states[outcome.rawValue]),
+                "receipt_text": .string(text),
+                "receipt_title": .string(title),
+                "receipt_status": .string(status),
+                "session_id": .string(sessionID),
+                "generation": .number(Double(token))
+            ]) { [weak self] reply in
+                Task { @MainActor [weak self] in
+                    guard let self, self.resultGeneration.accepts(token),
+                          self.voiceEpochSessionID == sessionID else { return }
+                    let result = try? reply.get()
+                    self.applyTask(self.coreTaskFollowUp(result?.result) ?? fallback, token: token)
+                }
+            }
+        }
+    }
+
     private func applyTask(
         _ follow: TaskFollowUp,
         generation: UInt64? = nil,
@@ -3047,6 +3103,7 @@ final class WorkspaceModel: ObservableObject {
         replacement: (snapshot: SelectionSnapshot, generation: UInt64)? = nil,
         manualReplacement: (snapshot: SelectionSnapshot, generation: UInt64, token: UInt64)? = nil
     ) {
+        if let token, !resultGeneration.accepts(token) { return }
         if let text = follow.transcription { transcription = text }
         if let text = follow.processedText { processedText = text }
         for item in follow.history { rememberHistory(title: item.title, value: item.value) }
@@ -3059,7 +3116,7 @@ final class WorkspaceModel: ObservableObject {
         }
         if let title = follow.cardTitle, let text = follow.cardText {
             var action: ResultCardApplyAction?
-            if let manualReplacement, !follow.cancelTask,
+            if let manualReplacement, follow.manualReview, !follow.cancelTask,
                follow.replaceText == nil, resultGeneration.accepts(manualReplacement.token) {
                 let snapshot = manualReplacement.snapshot
                 let generation = manualReplacement.generation
@@ -3082,6 +3139,9 @@ final class WorkspaceModel: ObservableObject {
                             if self.resultGeneration.accepts(token) { self.isProcessing = false }
                         }
                         do {
+                            guard await self.voiceEpochAllows(token: token, stage: "") else {
+                                throw ResultCardApplyFailure.unsafe
+                            }
                             // InteractionSession consumes the captured authorization
                             // *before* the synchronous native verification/write.
                             try await self.interaction.replaceIfCurrent(
@@ -3091,7 +3151,8 @@ final class WorkspaceModel: ObservableObject {
                             guard self.resultGeneration.accepts(token) else {
                                 throw ResultCardApplyFailure.unconfirmed
                             }
-                            self.interactionStatus = rewriteReplaced()
+                            self.applyNativeReceipt(kind: "selection", outcome: .confirmed,
+                                                    status: "", title: title, text: text, token: token)
                         } catch {
                             if self.resultGeneration.accepts(token) {
                                 self.interactionStatus = insertionStatus(
@@ -3130,12 +3191,11 @@ final class WorkspaceModel: ObservableObject {
                         DiagnosticLog.note("journey=dictation event=delivery_returned elapsed_ms=\(Self.elapsedMilliseconds(since: released)) total_since_key_down_ms=\(Self.elapsedMilliseconds(since: journey.triggeredAt)) outcome=\(outcome)")
                     }
                     self.dictationJourney = nil
-                    self.applyTask(dictationInsertFollowUp(
-                        outcome: outcome,
+                    self.applyNativeReceipt(kind: "dictation", outcome: outcome,
                         status: insertionStatus(InteractionFailure.writeNotConfirmed, rewrite: false,
-                                                passwordRewrite: ResultCopy.passwordRewrite,
-                                                passwordDictation: ResultCopy.passwordDictation),
-                        manualTitle: ResultCopy.dictationWriteUnconfirmed, text: text))
+                            passwordRewrite: ResultCopy.passwordRewrite,
+                            passwordDictation: ResultCopy.passwordDictation),
+                        title: ResultCopy.dictationWriteUnconfirmed, text: text, token: token)
                 } catch {
                     guard self.resultGeneration.accepts(token) else { return }
                     self.finishProcessingWatchdog()
@@ -3145,12 +3205,14 @@ final class WorkspaceModel: ObservableObject {
                         DiagnosticLog.note("journey=dictation event=delivery_failed elapsed_ms=\(Self.elapsedMilliseconds(since: released)) total_since_key_down_ms=\(Self.elapsedMilliseconds(since: journey.triggeredAt))")
                     }
                     self.dictationJourney = nil
-                    self.applyTask(dictationInsertFollowUp(
+                    self.applyNativeReceipt(kind: "dictation",
                         outcome: (error as? InteractionFailure) == .writeNotConfirmed ? .uncertain : .blocked,
-                        status: insertionStatus(error, rewrite: false, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation),
-                        manualTitle: ((error as? InteractionFailure) == .writeNotConfirmed || error is ClipboardFailure)
+                        status: insertionStatus(error, rewrite: false,
+                            passwordRewrite: ResultCopy.passwordRewrite,
+                            passwordDictation: ResultCopy.passwordDictation),
+                        title: ((error as? InteractionFailure) == .writeNotConfirmed || error is ClipboardFailure)
                             ? ResultCopy.dictationWriteUnconfirmed : ResultCopy.dictationCopyManually,
-                        text: text))
+                        text: text, token: token)
                 }
             }
         }
@@ -3166,16 +3228,17 @@ final class WorkspaceModel: ObservableObject {
                     guard self.resultGeneration.accepts(token) else { return }
                     self.finishProcessingWatchdog()
                     self.isProcessing = false
-                    self.applyTask(selectedWriteFollowUp(succeeded: true, status: "", cardTitle: title, text: text))
+                    self.applyNativeReceipt(kind: "selection", outcome: .confirmed, status: "", title: title, text: text, token: token)
                 } catch {
                     guard self.resultGeneration.accepts(token) else { return }
                     self.finishProcessingWatchdog()
                     self.isProcessing = false
-                    self.applyTask(selectedWriteFollowUp(
-                        succeeded: false,
-                        status: insertionStatus(error, rewrite: true, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation),
-                        cardTitle: title,
-                        text: text))
+                    self.applyNativeReceipt(kind: "selection",
+                        outcome: (error as? InteractionFailure) == .writeNotConfirmed || error is ClipboardFailure ? .uncertain : .blocked,
+                        status: insertionStatus(error, rewrite: true,
+                            passwordRewrite: ResultCopy.passwordRewrite,
+                            passwordDictation: ResultCopy.passwordDictation),
+                        title: title, text: text, token: token)
                 }
             }
         }
