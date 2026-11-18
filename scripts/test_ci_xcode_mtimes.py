@@ -3,7 +3,6 @@
 from pathlib import Path
 import os
 import subprocess
-import sys
 import tempfile
 import unittest
 
@@ -41,6 +40,25 @@ class NormalizeMtimesTest(unittest.TestCase):
             source.write_text("let answer = 1\n", encoding="utf-8")
             normalize(root)
             self.assertEqual(source.stat().st_mtime_ns, first)
+
+    def test_unicode_tracked_path_and_symlink_are_handled(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            source = root / "中文 file.swift"
+            source.write_text("let value = 1\n", encoding="utf-8")
+            link = root / "alias.swift"
+            link.symlink_to(source.name)
+            subprocess.run(["git", "add", "中文 file.swift", "alias.swift"],
+                           cwd=root, check=True)
+            original_link_time = link.lstat().st_mtime_ns
+
+            self.assertEqual(normalize(root), 1)
+            self.assertEqual(link.lstat().st_mtime_ns, original_link_time)
+            stable = source.stat().st_mtime_ns
+            source.write_text("let value = 2\n", encoding="utf-8")
+            self.assertEqual(normalize(root), 1)
+            self.assertNotEqual(source.stat().st_mtime_ns, stable)
 
     def test_missing_tracked_path_is_skipped(self):
         with tempfile.TemporaryDirectory() as directory:
