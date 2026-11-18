@@ -1,0 +1,530 @@
+{
+  "schema_version": 1,
+  "description": "Audited macOS user-journey portable business-decision ownership; per-step source anchors, not runtime CPU sampling. Native adapters excluded from portable decision denominator.",
+  "journeys": [
+    {
+      "id": "dictation_hold",
+      "title": "长按听写 → 插入或预览",
+      "steps": [
+        {
+          "id": "trigger",
+          "title": "收到物理快捷键",
+          "kind": "native_adapter",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "func keyboardPressed("
+          }
+        },
+        {
+          "id": "admission",
+          "title": "是否允许开始录音",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "keyboardGate.begin(action)"
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/input/hold.go",
+              "contains": "func VoiceStartBlocked("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "input.VoiceStartBlocked("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "input.VoiceStartBlocked("
+            }
+          ]
+        },
+        {
+          "id": "duration",
+          "title": "配置时长后的录音截止",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/Modules/Microphone/Sources/Microphone/MicrophoneRecorder.swift",
+            "contains": "maximumSeconds: Int = 60"
+          }
+        },
+        {
+          "id": "capture",
+          "title": "调用原生麦克风",
+          "kind": "native_adapter",
+          "swift": {
+            "path": "macos/Modules/Microphone/Sources/Microphone/MicrophoneRecorder.swift",
+            "contains": "AVAudioEngine"
+          }
+        },
+        {
+          "id": "release",
+          "title": "松键处理",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "keyboardGate.release("
+          }
+        },
+        {
+          "id": "stop_dispatch",
+          "title": "录音结束任务分流",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/RecordingDispatch.swift",
+            "contains": "public func recordingDispatch("
+          }
+        },
+        {
+          "id": "asr",
+          "title": "语音识别与分段",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "operation: \"transcribe\""
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/speech/asr.go",
+              "contains": "func Transcribe("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "speech.Transcribe("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "speech.Transcribe("
+            }
+          ]
+        },
+        {
+          "id": "result_route",
+          "title": "识别结果决定插入/预览/空结果",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
+            "contains": "if hasInsertion {"
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/ux/route.go",
+              "contains": "func RouteDictationTranscript("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "ux.RouteDictationTranscript("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "ux.RouteDictationTranscript("
+            }
+          ]
+        },
+        {
+          "id": "paste",
+          "title": "系统粘贴或 Unicode 写入",
+          "kind": "native_adapter",
+          "swift": {
+            "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/MacDictationDelivery.swift",
+            "contains": "func deliver("
+          }
+        },
+        {
+          "id": "write_receipt",
+          "title": "回执决定成功或回退",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
+            "contains": "public func dictationInsertFollowUp("
+          }
+        },
+        {
+          "id": "history",
+          "title": "听写结果入历史",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "private func rememberHistory("
+          }
+        }
+      ]
+    },
+    {
+      "id": "spoken_selection",
+      "title": "语音改写选区 → 替换或预览",
+      "steps": [
+        {
+          "id": "ax_selection",
+          "title": "系统选区捕获",
+          "kind": "native_adapter",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "interaction.captureSelection("
+          }
+        },
+        {
+          "id": "input_route",
+          "title": "选择语音改写动作",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "private func triggerSelectionRewrite("
+          }
+        },
+        {
+          "id": "record_dispatch",
+          "title": "判断语音改写还是听写",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/RecordingDispatch.swift",
+            "contains": "public func recordingDispatch("
+          }
+        },
+        {
+          "id": "spoken_asr",
+          "title": "语音指令识别",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "operation: \"selected_voice_task\""
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/textedit/intent.go",
+              "contains": "func ResolveSpokenTask("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "textedit.ResolveSpokenTask("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "textedit.ResolveSpokenTask("
+            }
+          ]
+        },
+        {
+          "id": "model_inference",
+          "title": "改写模型编排",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
+            "contains": "public func selectedTaskFollowUp("
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/textedit/intent.go",
+              "contains": "func CompleteSelectedTask("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "textedit.ResolveSpokenTask("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "textedit.ResolveSpokenTask("
+            }
+          ]
+        },
+        {
+          "id": "write_authorization",
+          "title": "意图能否授权覆写",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/HostStatus.swift",
+            "contains": "public func modelReply("
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/textedit/intent.go",
+              "contains": "func RouteTask("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "textedit.RouteTask("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "textedit.RouteTask("
+            }
+          ],
+          "go_forbidden_when": [
+            {
+              "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/HostStatus.swift",
+              "contains": "public func modelReply("
+            }
+          ]
+        },
+        {
+          "id": "ui_followup",
+          "title": "整理改写任务展示状态",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
+            "contains": "public func selectedTaskFollowUp("
+          }
+        },
+        {
+          "id": "ax_replace",
+          "title": "原生安全选区替换",
+          "kind": "native_adapter",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "interaction.replaceIfCurrent("
+          }
+        },
+        {
+          "id": "write_receipt",
+          "title": "处理替换回执",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
+            "contains": "public func selectedWriteFollowUp("
+          }
+        }
+      ]
+    },
+    {
+      "id": "recording_deadline",
+      "title": "录满时限 → 保留并识别",
+      "steps": [
+        {
+          "id": "capture_stop",
+          "title": "停止音频设备",
+          "kind": "native_adapter",
+          "swift": {
+            "path": "macos/Modules/Microphone/Sources/Microphone/MicrophoneRecorder.swift",
+            "contains": "public func stop()"
+          }
+        },
+        {
+          "id": "max_clock",
+          "title": "时长阈值及计时",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/Modules/Microphone/Sources/Microphone/MicrophoneRecorder.swift",
+            "contains": "maximumSeconds"
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/input/hold.go",
+              "contains": "func HoldWatchLimit("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "input.HoldWatchLimit("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "input.HoldWatchLimit("
+            }
+          ]
+        },
+        {
+          "id": "deadline_stop",
+          "title": "到达时限后的任务结束",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "func stopRecording()"
+          }
+        },
+        {
+          "id": "stale_timeout",
+          "title": "丢失按键松开事件的看门狗",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "keyboardHoldSequence &+= 1"
+          }
+        },
+        {
+          "id": "asr",
+          "title": "停止后执行共享 ASR",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "operation: \"transcribe\""
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/speech/asr.go",
+              "contains": "func Transcribe("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "speech.Transcribe("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "speech.Transcribe("
+            }
+          ]
+        },
+        {
+          "id": "indicator",
+          "title": "渲染状态 UI",
+          "kind": "native_adapter",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "private func showIndicator("
+          }
+        }
+      ]
+    },
+    {
+      "id": "cancel_failure",
+      "title": "取消 / 焦点变化 / 不确定粘贴",
+      "steps": [
+        {
+          "id": "release",
+          "title": "接收真实按键事件",
+          "kind": "native_adapter",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "func keyboardReleased("
+          }
+        },
+        {
+          "id": "epoch",
+          "title": "隔离过期任务结果",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "resultGeneration.accepts("
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/session/session.go",
+              "contains": "func "
+            }
+          ]
+        },
+        {
+          "id": "cancel",
+          "title": "取消请求与任务状态",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "func cancelCurrent()"
+          }
+        },
+        {
+          "id": "deadline",
+          "title": "处理阶段超时处理",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "private func armProcessingWatchdog("
+          }
+        },
+        {
+          "id": "paste_lease",
+          "title": "原生剪贴板事务",
+          "kind": "native_adapter",
+          "swift": {
+            "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/MacDictationDelivery.swift",
+            "contains": "clipboard.beginWhenAvailable("
+          }
+        },
+        {
+          "id": "delivery_receipt",
+          "title": "不确定的写入不自动重试",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
+            "contains": "public func dictationInsertFollowUp("
+          }
+        }
+      ]
+    },
+    {
+      "id": "meeting_live",
+      "title": "实时会议采集 → 字幕与状态",
+      "steps": [
+        {
+          "id": "system_capture",
+          "title": "原生系统音频",
+          "kind": "native_adapter",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "systemAudio.start("
+          }
+        },
+        {
+          "id": "session_epoch",
+          "title": "会议会话状态与代次",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "meetingGeneration.begin()"
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/meeting/session_runtime.go",
+              "contains": "func NewSessionRuntime("
+            },
+            {
+              "path": "voice-rewrite/meeting_session.go",
+              "contains": "meetingcore.NewSessionRuntime("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/meeting.go",
+              "contains": "meetingcore.NewSessionRuntime("
+            }
+          ]
+        },
+        {
+          "id": "pipeline",
+          "title": "共享会议事件流水线",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "feedMeeting("
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/meeting/pipeline.go",
+              "contains": "func NewPipeline("
+            },
+            {
+              "path": "voice-rewrite/meeting_session.go",
+              "contains": "meetingcore.NewPipeline("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/meeting.go",
+              "contains": "meetingcore.NewPipeline("
+            }
+          ]
+        },
+        {
+          "id": "backpressure",
+          "title": "音频积压控制",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "meetingPendingPackets < 8"
+          }
+        },
+        {
+          "id": "source_route",
+          "title": "启动来源和任务控制",
+          "kind": "portable_decision",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "func startMeeting()"
+          }
+        },
+        {
+          "id": "render",
+          "title": "原生会议窗口状态展示",
+          "kind": "native_adapter",
+          "swift": {
+            "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+            "contains": "private func applyMeetingSnapshot("
+          }
+        }
+      ]
+    }
+  ]
+}
