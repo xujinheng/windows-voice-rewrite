@@ -118,10 +118,15 @@ jobs:
       - name: Build and test native macOS application
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         run: |
+          test_options=()
+          # UI acceptance runs VisualAcceptanceTests separately on the same PR.
+          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' && "${{ needs.changes.outputs.ui }}" == 'true' ]]; then
+            test_options+=('-skip-testing:VoiceRewriteTests/VisualAcceptanceTests')
+          fi
           xcodebuild -project macos/VoiceRewrite.xcodeproj \
             -scheme VoiceRewrite -configuration Debug \
             -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/voicerewrite-derived" test
+            -derivedDataPath "$RUNNER_TEMP/voicerewrite-derived" "${test_options[@]}" test
           app="$RUNNER_TEMP/voicerewrite-derived/Build/Products/Debug/VoiceRewrite.app"
           test -d "$app"
           test -x "$app/Contents/MacOS/voicebridge"
@@ -195,10 +200,14 @@ jobs:
         run: |
           set -euo pipefail
           test "$(uname -m)" = x86_64
+          test_options=()
+          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' && "${{ needs.changes.outputs.ui }}" == 'true' ]]; then
+            test_options+=('-skip-testing:VoiceRewriteTests/VisualAcceptanceTests')
+          fi
           xcodebuild -project macos/VoiceRewrite.xcodeproj \
             -scheme VoiceRewrite -configuration Debug \
             -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/voicerewrite-intel-derived" test
+            -derivedDataPath "$RUNNER_TEMP/voicerewrite-intel-derived" "${test_options[@]}" test
           app="$RUNNER_TEMP/voicerewrite-intel-derived/Build/Products/Debug/VoiceRewrite.app"
           test -x "$app/Contents/MacOS/VoiceRewrite"
           test -x "$app/Contents/MacOS/voicebridge"
