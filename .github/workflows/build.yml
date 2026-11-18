@@ -31,6 +31,8 @@ jobs:
       direct2d: ${{ steps.scope.outputs.direct2d }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: Verify CI path classifier
         run: python3 -m unittest discover -s scripts -p 'test_ci_*.py' -v
       - name: Compute affected platforms
@@ -70,6 +72,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
@@ -110,6 +114,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
@@ -195,6 +201,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       # Cache only Build outputs; never reuse XCTest execution results.
       # The same deterministic source mtime normalization is verified on Intel
       # with changed-source recompilation. Keep architecture-specific caches.
@@ -379,6 +387,8 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       # Xcode's incremental database persists absolute paths and file mtimes.
       # Cache only compiled Build products, never xcresult/test outcomes.
       # Normalize tracked file times from content before restoring the cache,
@@ -574,6 +584,8 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
@@ -687,6 +699,8 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
@@ -737,6 +751,7 @@ jobs:
           ref: main
           path: release-metadata
           sparse-checkout: release-notes
+          persist-credentials: false
       - name: Require user-facing release notes
         env:
           RELEASE_TAG: ${{ github.ref_name }}

@@ -21,6 +21,9 @@ on:
       - 'voice-rewrite/visual_preview_windows.go'
       - 'voice-rewrite/answer_visual_preview_windows.go'
       - '.github/workflows/visual-matrix.yml'
+      # Renderer changes must regenerate video via this single screenshot -> video chain.
+      - 'scripts/render-demo-video.py'
+      - '.github/workflows/demo-video.yml'
   workflow_dispatch:
 permissions:
   contents: write

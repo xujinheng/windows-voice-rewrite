@@ -42,10 +42,16 @@ def classify(paths):
             "voice-rewrite/windows.go", "voice-rewrite/go.mod", "voice-rewrite/go.sum",
         )):
             scope["direct2d"] = True
-        if path.startswith(".github/workflows/") or path in (
-            "scripts/ci_changes.py", "scripts/test_ci_changes.py", "AGENTS.md",
-        ):
+        # CI governance and reusable action changes must validate the whole matrix.
+        # Native Xcode support code below instead needs both macOS architectures.
+        if (path.startswith((".github/workflows/", ".github/actions/"))
+                or path == ".github/dependabot.yml"
+                or path == "AGENTS.md"
+                or path == "scripts/ci_changes.py"
+                or path.startswith("scripts/test_ci_")):
             return dict.fromkeys(scope, True)
+        if path in ("scripts/ci_xcode_mtimes.py", "scripts/ci_xctest_coverage.py"):
+            scope["macos"] = True
         if path.startswith("voice-rewrite/"):
             if path.startswith("voice-rewrite/cmd/voicebridge/"):
                 scope.update(core=True, macos=True)

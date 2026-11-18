@@ -1,15 +1,16 @@
 name: README demo video
 
 on:
+  # Direct human edits to published screenshots must still regenerate the video.
+  # Automated screenshot commits use GITHUB_TOKEN, so they are handled by
+  # workflow_run instead of causing a second push-triggered render.
   push:
     branches: [main]
     paths:
       - 'docs/ui/*.png'
-      - 'scripts/render-demo-video.py'
-      - '.github/workflows/demo-video.yml'
   workflow_dispatch:
-  # Screenshot commits use GITHUB_TOKEN and [skip ci], so a plain push
-  # trigger will NOT fire. Build the demo when the visual matrix completes.
+  # Source/UI changes: a successful screenshot workflow owns rendering.
+  # Direct edits to docs/ui: the dedicated push event handles them.
   workflow_run:
     workflows: ['Windows UI screenshots']
     types: [completed]
@@ -23,7 +24,7 @@ concurrency:
 
 jobs:
   render:
-    # workflow_run runs on the default branch even when the originating UI job ran elsewhere.
+    # workflow_run runs on the default branch, regardless of the source ref.
     if: >-
       github.event_name != 'workflow_run' ||
       (github.event.workflow_run.conclusion == 'success' &&

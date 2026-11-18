@@ -1,26 +1,7 @@
 name: VoiceRewrite Direct2D integrated rewrite UI
 on:
   workflow_call:
-  push:
-    branches: [main]
-    paths:
-      - 'voice-rewrite/result_direct2d_windows.go'
-      - 'voice-rewrite/appearance_windows.go'
-      - 'voice-rewrite/visual_skin_windows.go'
-      - 'voice-rewrite/popup_windows.go'
-      - 'voice-rewrite/popup_dismiss_windows.go'
-      - 'voice-rewrite/popup_layout.go'
-      - 'voice-rewrite/popup_layout_test.go'
-      - 'voice-rewrite/answer_visual_preview_windows.go'
-      - 'voice-rewrite/visual_preview_windows.go'
-      - 'voice-rewrite/desktop_geometry.go'
-      - 'voice-rewrite/desktop_monitor_windows.go'
-      - 'voice-rewrite/result_history.go'
-      - 'voice-rewrite/window_windows.go'
-      - 'voice-rewrite/windows.go'
-      - 'voice-rewrite/go.mod'
-      - 'voice-rewrite/go.sum'
-      - '.github/workflows/direct2d-result.yml'
+  # PR and main checks are invoked from build.yml; no duplicate standalone push.
   workflow_dispatch:
 permissions:
   contents: read
@@ -35,6 +16,8 @@ jobs:
     timeout-minutes: 16
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'

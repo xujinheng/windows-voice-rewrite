@@ -151,3 +151,21 @@ workflow dispatch. Labeling a PR (including Dependabot's automatic labels)
 no longer enqueues skipped ready-build runs. GitHub still retains historical
 workflow names in its Actions UI; removing an old YAML file does not delete
 past run records.
+
+## Checkout credentials and CI coverage
+
+Non-publishing CI, reusable acceptance, nightly and developer-build jobs use
+`actions/checkout` with `persist-credentials: false`. Code under test cannot
+read GitHub's checkout credential from the local Git configuration. The
+`changes` job still uses its separate, read-only `GH_TOKEN` specifically
+for GitHub's pull-request/compare APIs. The README screenshot and video
+workflows are the explicit exceptions: they commit generated media to
+`main`, retain `contents: write` only in their publishing workflows, and
+verify that `main` has not advanced before publishing.
+
+The PR path classifier treats workflow code, reusable actions, Dependabot
+configuration and CI policy regression tests as cross-platform changes.
+Changes to `ci_xcode_mtimes.py` and `ci_xctest_coverage.py` trigger both
+macOS ARM/Intel native XCTest jobs, even when no application source changed.
+Fast Python regression tests check both path-routing and checkout token
+policy on every PR. Ordinary documentation edits remain lightweight.
