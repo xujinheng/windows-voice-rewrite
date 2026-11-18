@@ -1,11 +1,22 @@
 package main
 
 import (
-	"errors"
-	"strings"
+    "errors"
+    "strconv"
+    "strings"
 
 	coreconfig "voicerewrite/internal/core/config"
 )
+
+// Recording duration is user-controlled on both hosts. It is applied on the
+// next application launch, like other Windows settings read by the host loop.
+func uxRecordingSeconds(value string) (int, error) {
+    seconds, err := strconv.Atoi(strings.TrimSpace(value))
+    if err != nil || seconds < coreconfig.RecordSecondsMin || seconds > coreconfig.RecordSecondsMax {
+        return 0, errors.New("最长录音必须是 1–180 秒之间的整数")
+    }
+    return seconds, nil
+}
 
 func uxUpdatedConfig(old Config, values [6]string) (Config, error) {
 	endpoints, err := coreconfig.CanonicalEndpoints(values[0], values[1], values[3], values[4])
