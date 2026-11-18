@@ -499,6 +499,11 @@ func main() {
 		fmt.Println("Qwen3-ASR 服务已经在运行：http://" + cfg.ListenAddress + "/v1")
 		return
 	}
+	if err == nil && runtime.GOOS == "windows" {
+		var unlock func()
+		unlock, err = acquireLaunchLock()
+		if err == nil { defer unlock() }
+	}
 	if err == nil {
 		cfg, err = bootstrapWindows(cfg, directory)
 	}
