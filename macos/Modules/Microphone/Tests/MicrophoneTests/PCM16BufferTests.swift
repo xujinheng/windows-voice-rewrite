@@ -67,6 +67,36 @@ final class PCM16BufferTests: XCTestCase {
         }
     }
 
+    func testInPlaceEncodingRollbackPreservesEarlierChunks() throws {
+        var pcm = PCM16Buffer(reserveFrames: 2)
+        try pcm.append([-1, 0.5])
+        let before = pcm.frameCount
+        XCTAssertThrowsError(try pcm.append([0.25, .nan, 1])) { error in
+            XCTAssertEqual(error as? MicrophoneError, .invalidAudioSample)
+        }
+        XCTAssertEqual(pcm.frameCount, before)
+        try pcm.append([-0.5, 1])
+        XCTAssertEqual(Array(try pcm.finish()),
+                       [0x00, 0x80, 0x00, 0x40, 0x00, 0xc0, 0xff, 0x7f])
+    }
+
+    func testInPlaceEncodingMatchesReferenceAcrossChunkSizes() throws {
+        var pcm = PCM16Buffer(reserveFrames: 1)
+        var expected = [UInt8]()
+        for size in [1, 7, 512, 4_096, 17] {
+            let samples = (0..<size).map { Float(($0 % 31) - 15) / 10 }
+            try pcm.append(samples)
+            for sample in samples {
+                let clipped = max(-1.0, min(1.0, sample))
+                let magnitude = Int((clipped * 32_768.0).rounded())
+                let word = UInt16(bitPattern: Int16(clamping: magnitude))
+                expected.append(UInt8(truncatingIfNeeded: word))
+                expected.append(UInt8(truncatingIfNeeded: word >> 8))
+            }
+        }
+        XCTAssertEqual(Array(try pcm.finish()), expected)
+    }
+
     func testEmptyInputCannotSucceed() {
         var pcm = PCM16Buffer()
         XCTAssertThrowsError(try pcm.finish()) { error in

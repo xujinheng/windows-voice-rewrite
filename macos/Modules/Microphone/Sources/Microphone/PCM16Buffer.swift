@@ -72,18 +72,32 @@ struct PCM16Buffer {
         guard samples.count <= Self.maximumFrames - frameCount else {
             throw MicrophoneError.durationExceeded
         }
-        var encoded = [UInt8]()
-        encoded.reserveCapacity(samples.count * 2)
-        for sample in samples {
-            guard sample.isFinite else { throw MicrophoneError.invalidAudioSample }
-            // Saturate before converting; -1 maps to -32768 and +1 to +32767.
-            let clipped = max(-1.0, min(1.0, sample))
-            let magnitude = Int((clipped * 32_768.0).rounded())
-            let word = UInt16(bitPattern: Int16(clamping: magnitude))
-            encoded.append(UInt8(truncatingIfNeeded: word))
-            encoded.append(UInt8(truncatingIfNeeded: word >> 8))
+        guard !samples.isEmpty else { return }
+        // The previous encoder allocated a temporary [UInt8] and then copied
+        // every audio chunk into Data. Write directly into the pre-reserved PCM
+        // buffer instead. A malformed sample must roll back this entire chunk
+        // without changing earlier audio or the recorded frame count.
+        let previousCount = bytes.count
+        bytes.count = previousCount + samples.count * 2
+        do {
+            try bytes.withUnsafeMutableBytes { raw in
+                let destination = raw.bindMemory(to: UInt8.self)
+                for index in 0..<samples.count {
+                    let sample = samples[index]
+                    guard sample.isFinite else { throw MicrophoneError.invalidAudioSample }
+                    // Saturate before converting; -1 maps to -32768 and +1 to +32767.
+                    let clipped = max(-1.0, min(1.0, sample))
+                    let magnitude = Int((clipped * 32_768.0).rounded())
+                    let word = UInt16(bitPattern: Int16(clamping: magnitude))
+                    let offset = previousCount + index * 2
+                    destination[offset] = UInt8(truncatingIfNeeded: word)
+                    destination[offset + 1] = UInt8(truncatingIfNeeded: word >> 8)
+                }
+            }
+        } catch {
+            bytes.count = previousCount
+            throw error
         }
-        bytes.append(contentsOf: encoded)
         frameCount += samples.count
     }
 
