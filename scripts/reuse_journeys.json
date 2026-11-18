@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "description": "Audited macOS user-journey portable business-decision ownership; per-step source anchors, not runtime CPU sampling. Native adapters excluded from portable decision denominator.",
+  "schema_version": 2,
+  "description": "Frozen 38 journey-stage occurrences (27 portable/11 native), plus stable de-duplicated logical units. Static source evidence, not runtime sampling.",
   "journeys": [
     {
       "id": "dictation_hold",
@@ -13,7 +13,8 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "func keyboardPressed("
-          }
+          },
+          "logical_unit_id": "dictation_hold/trigger"
         },
         {
           "id": "admission",
@@ -36,7 +37,8 @@
               "path": "voice-rewrite/cmd/voicebridge/main.go",
               "contains": "input.VoiceStartBlocked("
             }
-          ]
+          ],
+          "logical_unit_id": "dictation_hold/admission"
         },
         {
           "id": "duration",
@@ -44,8 +46,9 @@
           "kind": "portable_decision",
           "swift": {
             "path": "macos/Modules/Microphone/Sources/Microphone/MicrophoneRecorder.swift",
-            "contains": "public func start(deviceUID: String = \"\", maximumSeconds: Int"
-          }
+            "contains": "let duration = min(max(1, maximumSeconds), PCM16Buffer.maximumSeconds)"
+          },
+          "logical_unit_id": "dictation_hold/duration"
         },
         {
           "id": "capture",
@@ -54,7 +57,8 @@
           "swift": {
             "path": "macos/Modules/Microphone/Sources/Microphone/MicrophoneRecorder.swift",
             "contains": "AVAudioEngine"
-          }
+          },
+          "logical_unit_id": "dictation_hold/capture"
         },
         {
           "id": "release",
@@ -63,7 +67,8 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "keyboardGate.release("
-          }
+          },
+          "logical_unit_id": "dictation_hold/release"
         },
         {
           "id": "stop_dispatch",
@@ -72,7 +77,8 @@
           "swift": {
             "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/RecordingDispatch.swift",
             "contains": "public func recordingDispatch("
-          }
+          },
+          "logical_unit_id": "dictation_hold/stop_dispatch"
         },
         {
           "id": "asr",
@@ -89,13 +95,16 @@
             },
             {
               "path": "voice-rewrite/task_worker_windows.go",
-              "contains": "speech.Transcribe("
+              "contains": "speech.Transcribe(",
+              "within": "processDictationHold"
             },
             {
               "path": "voice-rewrite/cmd/voicebridge/main.go",
-              "contains": "speech.Transcribe("
+              "contains": "speech.Transcribe(",
+              "within": "processRequest"
             }
-          ]
+          ],
+          "logical_unit_id": "dictation_hold/asr"
         },
         {
           "id": "result_route",
@@ -118,7 +127,8 @@
               "path": "voice-rewrite/cmd/voicebridge/main.go",
               "contains": "ux.RouteDictationTranscript("
             }
-          ]
+          ],
+          "logical_unit_id": "dictation_hold/result_route"
         },
         {
           "id": "paste",
@@ -127,7 +137,8 @@
           "swift": {
             "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/MacDictationDelivery.swift",
             "contains": "func deliver("
-          }
+          },
+          "logical_unit_id": "dictation_hold/paste"
         },
         {
           "id": "write_receipt",
@@ -136,7 +147,8 @@
           "swift": {
             "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
             "contains": "public func dictationInsertFollowUp("
-          }
+          },
+          "logical_unit_id": "dictation_hold/write_receipt"
         },
         {
           "id": "history",
@@ -145,7 +157,8 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "private func rememberHistory("
-          }
+          },
+          "logical_unit_id": "dictation_hold/history"
         }
       ]
     },
@@ -160,7 +173,8 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "interaction.captureSelection("
-          }
+          },
+          "logical_unit_id": "spoken_selection/ax_selection"
         },
         {
           "id": "input_route",
@@ -169,7 +183,8 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "private func triggerSelectionRewrite("
-          }
+          },
+          "logical_unit_id": "spoken_selection/input_route"
         },
         {
           "id": "record_dispatch",
@@ -178,7 +193,8 @@
           "swift": {
             "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/RecordingDispatch.swift",
             "contains": "public func recordingDispatch("
-          }
+          },
+          "logical_unit_id": "dictation_hold/stop_dispatch"
         },
         {
           "id": "spoken_asr",
@@ -195,13 +211,16 @@
             },
             {
               "path": "voice-rewrite/task_worker_windows.go",
-              "contains": "textedit.ResolveSpokenTask("
+              "contains": "textedit.ResolveSpokenTask(",
+              "within": "processAudioAndRewrite"
             },
             {
               "path": "voice-rewrite/cmd/voicebridge/main.go",
-              "contains": "textedit.ResolveSpokenTask("
+              "contains": "textedit.ResolveSpokenTask(",
+              "within": "processRequest"
             }
-          ]
+          ],
+          "logical_unit_id": "spoken_selection/spoken_asr"
         },
         {
           "id": "model_inference",
@@ -218,13 +237,16 @@
             },
             {
               "path": "voice-rewrite/task_worker_windows.go",
-              "contains": "textedit.ResolveSpokenTask("
+              "contains": "textedit.ResolveSpokenTask(",
+              "within": "processAudioAndRewrite"
             },
             {
               "path": "voice-rewrite/cmd/voicebridge/main.go",
-              "contains": "textedit.ResolveSpokenTask("
+              "contains": "textedit.ResolveSpokenTask(",
+              "within": "processRequest"
             }
-          ]
+          ],
+          "logical_unit_id": "spoken_selection/model_inference"
         },
         {
           "id": "write_authorization",
@@ -241,11 +263,13 @@
             },
             {
               "path": "voice-rewrite/task_worker_windows.go",
-              "contains": "textedit.RouteTask("
+              "contains": "textedit.RouteTask(",
+              "within": "processAudioAndRewrite"
             },
             {
               "path": "voice-rewrite/cmd/voicebridge/main.go",
-              "contains": "textedit.RouteTask("
+              "contains": "textedit.RouteTask(",
+              "within": "selectedTaskSuccess"
             }
           ],
           "go_forbidden_when": [
@@ -253,7 +277,8 @@
               "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/HostStatus.swift",
               "contains": "public func modelReply("
             }
-          ]
+          ],
+          "logical_unit_id": "spoken_selection/write_authorization"
         },
         {
           "id": "ui_followup",
@@ -262,7 +287,8 @@
           "swift": {
             "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
             "contains": "public func selectedTaskFollowUp("
-          }
+          },
+          "logical_unit_id": "spoken_selection/ui_followup"
         },
         {
           "id": "ax_replace",
@@ -271,7 +297,8 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "interaction.replaceIfCurrent("
-          }
+          },
+          "logical_unit_id": "spoken_selection/ax_replace"
         },
         {
           "id": "write_receipt",
@@ -280,7 +307,8 @@
           "swift": {
             "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
             "contains": "public func selectedWriteFollowUp("
-          }
+          },
+          "logical_unit_id": "spoken_selection/write_receipt"
         }
       ]
     },
@@ -295,7 +323,8 @@
           "swift": {
             "path": "macos/Modules/Microphone/Sources/Microphone/MicrophoneRecorder.swift",
             "contains": "public func stop()"
-          }
+          },
+          "logical_unit_id": "recording_deadline/capture_stop"
         },
         {
           "id": "max_clock",
@@ -318,7 +347,8 @@
               "path": "voice-rewrite/cmd/voicebridge/main.go",
               "contains": "input.HoldWatchLimit("
             }
-          ]
+          ],
+          "logical_unit_id": "recording_deadline/max_clock"
         },
         {
           "id": "deadline_stop",
@@ -327,7 +357,8 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "func stopRecording()"
-          }
+          },
+          "logical_unit_id": "recording_deadline/deadline_stop"
         },
         {
           "id": "stale_timeout",
@@ -336,7 +367,8 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "keyboardHoldSequence &+= 1"
-          }
+          },
+          "logical_unit_id": "recording_deadline/stale_timeout"
         },
         {
           "id": "asr",
@@ -353,13 +385,16 @@
             },
             {
               "path": "voice-rewrite/task_worker_windows.go",
-              "contains": "speech.Transcribe("
+              "contains": "speech.Transcribe(",
+              "within": "processDictationHold"
             },
             {
               "path": "voice-rewrite/cmd/voicebridge/main.go",
-              "contains": "speech.Transcribe("
+              "contains": "speech.Transcribe(",
+              "within": "processRequest"
             }
-          ]
+          ],
+          "logical_unit_id": "dictation_hold/asr"
         },
         {
           "id": "indicator",
@@ -368,7 +403,8 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "private func showIndicator("
-          }
+          },
+          "logical_unit_id": "recording_deadline/indicator"
         }
       ]
     },
@@ -383,7 +419,8 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "func keyboardReleased("
-          }
+          },
+          "logical_unit_id": "cancel_failure/release"
         },
         {
           "id": "epoch",
@@ -395,10 +432,11 @@
           },
           "go": [
             {
-              "path": "voice-rewrite/internal/core/session/session.go",
-              "contains": "func "
+              "path": "voice-rewrite/internal/core/session/epoch.go",
+              "contains": "func (g *Epoch) Valid("
             }
-          ]
+          ],
+          "logical_unit_id": "cancel_failure/epoch"
         },
         {
           "id": "cancel",
@@ -407,7 +445,8 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "func cancelCurrent()"
-          }
+          },
+          "logical_unit_id": "cancel_failure/cancel"
         },
         {
           "id": "deadline",
@@ -416,7 +455,8 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "private func armProcessingWatchdog("
-          }
+          },
+          "logical_unit_id": "cancel_failure/deadline"
         },
         {
           "id": "paste_lease",
@@ -425,7 +465,8 @@
           "swift": {
             "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/MacDictationDelivery.swift",
             "contains": "clipboard.beginWhenAvailable("
-          }
+          },
+          "logical_unit_id": "cancel_failure/paste_lease"
         },
         {
           "id": "delivery_receipt",
@@ -434,7 +475,8 @@
           "swift": {
             "path": "macos/Modules/Interaction/Sources/VoiceRewriteInteraction/TaskFollowUp.swift",
             "contains": "public func dictationInsertFollowUp("
-          }
+          },
+          "logical_unit_id": "dictation_hold/write_receipt"
         }
       ]
     },
@@ -449,7 +491,8 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "systemAudio.start("
-          }
+          },
+          "logical_unit_id": "meeting_live/system_capture"
         },
         {
           "id": "session_epoch",
@@ -466,13 +509,16 @@
             },
             {
               "path": "voice-rewrite/meeting_session.go",
-              "contains": "meetingcore.NewSessionRuntime("
+              "contains": "meetingcore.NewSessionRuntime(",
+              "within": "newMeetingCore"
             },
             {
               "path": "voice-rewrite/cmd/voicebridge/meeting.go",
-              "contains": "meetingcore.NewSessionRuntime("
+              "contains": "meetingcore.NewSessionRuntime(",
+              "within": "newBridgeMeeting"
             }
-          ]
+          ],
+          "logical_unit_id": "meeting_live/session_epoch"
         },
         {
           "id": "pipeline",
@@ -489,13 +535,16 @@
             },
             {
               "path": "voice-rewrite/meeting_session.go",
-              "contains": "meetingcore.NewPipeline("
+              "contains": "meetingcore.NewPipeline(",
+              "within": "start"
             },
             {
               "path": "voice-rewrite/cmd/voicebridge/meeting.go",
-              "contains": "meetingcore.NewPipeline("
+              "contains": "meetingcore.NewPipeline(",
+              "within": "newBridgeMeeting"
             }
-          ]
+          ],
+          "logical_unit_id": "meeting_live/pipeline"
         },
         {
           "id": "backpressure",
@@ -504,7 +553,8 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "meetingPendingPackets < 8"
-          }
+          },
+          "logical_unit_id": "meeting_live/backpressure"
         },
         {
           "id": "source_route",
@@ -513,7 +563,8 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "func startMeeting()"
-          }
+          },
+          "logical_unit_id": "meeting_live/source_route"
         },
         {
           "id": "render",
@@ -522,9 +573,11 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "private func applyMeetingSnapshot("
-          }
+          },
+          "logical_unit_id": "meeting_live/render"
         }
       ]
     }
-  ]
+  ],
+  "baseline_lock": "go70-38-v1"
 }
