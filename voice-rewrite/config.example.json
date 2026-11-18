@@ -9,7 +9,7 @@
   "dictation_hotkey": "Mouse4",
   "hotkey_exit": "Ctrl+Alt+F10",
   "record_mode": "hold",
-  "max_record_seconds": 60,
+  "max_record_seconds": 180,
   "max_response_tokens": 1200,
   "audio_device_id": -1,
   "meeting_asr_mode": "llama-prefix",
