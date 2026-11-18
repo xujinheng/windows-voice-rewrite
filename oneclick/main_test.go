@@ -112,8 +112,12 @@ func TestConfigAndPaths(t *testing.T) {
 	}
 	data, _ := os.ReadFile(cfgFile)
 	var persisted config
-	if err := json.Unmarshal(data, &persisted); err != nil { t.Fatal(err) }
-	if persisted.ListenAddress != cfg.ListenAddress || persisted.BackendPort != cfg.BackendPort { t.Fatalf("written default config differs: %+v", persisted) }
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		t.Fatal(err)
+	}
+	if persisted.ListenAddress != cfg.ListenAddress || persisted.BackendPort != cfg.BackendPort {
+		t.Fatalf("written default config differs: %+v", persisted)
+	}
 	if strings.Contains(string(data), "Users\\") {
 		t.Fatal("private path in config")
 	}
