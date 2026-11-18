@@ -95,6 +95,35 @@ jobs:
         env:
           CGO_ENABLED: '0'
         run: go build ./internal/core/...
+  test-swift-modules:
+    name: Native Swift adapter suites (parallel)
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Cache SwiftPM downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/.swiftpm
+          key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('macos/**/Package.swift', 'macos/**/Package.resolved') }}
+          restore-keys: |
+            swiftpm-${{ runner.os }}-${{ runner.arch }}-
+      - name: Test standalone native Swift packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          for module in Microphone Storage Interaction; do
+            package="macos/Modules/$module/Package.swift"
+            if [[ -f "$package" ]]; then
+              echo "Testing native Swift module $module"
+              (cd "macos/Modules/$module" && swift test)
+            fi
+          done
+
   test-core-macos:
     needs: changes
     if: needs.changes.outputs.macos == 'true'
@@ -123,15 +152,6 @@ jobs:
         run: |
           GOOS=darwin GOARCH=arm64 go build ./internal/core/...
           GOOS=darwin GOARCH=amd64 go build ./internal/core/...
-      - name: Test native macOS Swift packages
-        run: |
-          for module in Microphone Storage Interaction; do
-            package="macos/Modules/$module/Package.swift"
-            if [ -f "$package" ]; then
-              echo "Testing native Swift module $module"
-              (cd "macos/Modules/$module" && swift test)
-            fi
-          done
       - name: Enable visual acceptance screenshots
         if: needs.changes.outputs.ui == 'true' && !startsWith(github.ref, 'refs/tags/')
         run: |
@@ -451,7 +471,7 @@ jobs:
           if-no-files-found: error
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test-core, test-core-macos, build-macos-intel, build, build-oneclick]
+    needs: [test-core, test-swift-modules, test-core-macos, build-macos-intel, build, build-oneclick]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -531,7 +551,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    needs: [changes, test-core, test-core-macos, build-macos-intel, build, build-oneclick, windows-acceptance, ui-acceptance, direct2d-acceptance]
+    needs: [changes, test-core, test-swift-modules, test-core-macos, build-macos-intel, build, build-oneclick, windows-acceptance, ui-acceptance, direct2d-acceptance]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -542,6 +562,7 @@ jobs:
           CORE_REQUIRED: ${{ needs.changes.outputs.core }}
           CORE_RESULT: ${{ needs.test-core.result }}
           MAC_REQUIRED: ${{ needs.changes.outputs.macos }}
+          SWIFT_MODULES_RESULT: ${{ needs.test-swift-modules.result }}
           MAC_ARM_RESULT: ${{ needs.test-core-macos.result }}
           MAC_INTEL_RESULT: ${{ needs.build-macos-intel.result }}
           WIN_REQUIRED: ${{ needs.changes.outputs.windows }}
@@ -570,6 +591,7 @@ jobs:
           }
           errors=0
           check 'Go Core' "$CORE_REQUIRED" "$CORE_RESULT" || errors=1
+          check 'macOS Swift modules' "$MAC_REQUIRED" "$SWIFT_MODULES_RESULT" || errors=1
           check 'macOS ARM64' "$MAC_REQUIRED" "$MAC_ARM_RESULT" || errors=1
           check 'macOS Intel' "$MAC_REQUIRED" "$MAC_INTEL_RESULT" || errors=1
           check 'Windows' "$WIN_REQUIRED" "$WIN_RESULT" || errors=1

@@ -1,0 +1,159 @@
+name: Ready-to-test builds
+
+# Do not build download packages for every intermediate PR commit.
+# A bot signals a completed revision by editing the title to add
+# [ready-to-test], or (when available) by adding the build:ready label.
+on:
+  pull_request:
+    types: [edited, labeled]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ready-to-test-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ready:
+    name: Verify explicit build request
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.action == 'labeled' && github.event.label.name == 'build:ready') || (github.event.action == 'edited' && github.event.changes.title && contains(github.event.pull_request.title, '[ready-to-test]')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      revision: ${{ steps.source.outputs.revision }}
+    steps:
+      - name: Record immutable source revision
+        id: source
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid commit SHA"; exit 1; }
+          echo "revision=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          printf '### Ready-to-test packages\n\nSource commit: `%s`\n\n' "$SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Packages are developer builds, not signed/notarized releases.' >> "$GITHUB_STEP_SUMMARY"
+
+  windows:
+    name: Ready Windows x64 portable EXE
+    needs: ready
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.ready.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
+        with:
+          go-version: '1.23'
+          cache-dependency-path: voice-rewrite/go.mod
+      - name: Build runnable EXE and portable ZIP
+        working-directory: voice-rewrite
+        shell: pwsh
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: '0'
+          SOURCE_SHA: ${{ needs.ready.outputs.revision }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          go build -trimpath -ldflags '-H=windowsgui -s -w -X main.buildID=0.29.0-dev' -o VoiceRewrite.exe .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Path 'package/VoiceRewrite' -Force | Out-Null
+          Copy-Item VoiceRewrite.exe 'package/VoiceRewrite/'
+          Copy-Item README.md 'package/VoiceRewrite/'
+          Copy-Item config.example.json 'package/VoiceRewrite/'
+          Copy-Item ../LICENSE 'package/VoiceRewrite/LICENSE'
+          Copy-Item THIRD_PARTY_NOTICES.md 'package/VoiceRewrite/'
+          $short = $env:SOURCE_SHA.Substring(0, 12)
+          $archive = "VoiceRewrite-Ready-windows-x64-$short.zip"
+          Compress-Archive -Path 'package/VoiceRewrite' -DestinationPath $archive -Force
+          Get-FileHash -Algorithm SHA256 VoiceRewrite.exe, $archive |
+            ForEach-Object { "$($_.Hash.ToLowerInvariant()) *$(Split-Path $_.Path -Leaf)" } |
+            Set-Content -Encoding ascii READY-SHA256SUMS.txt
+          "Source commit: $env:SOURCE_SHA" | Set-Content -Encoding ascii READY-REVISION.txt
+      - name: Upload ready-to-test EXE and ZIP
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: VoiceRewrite-Ready-Windows-x64
+          path: |
+            voice-rewrite/VoiceRewrite.exe
+            voice-rewrite/VoiceRewrite-Ready-windows-x64-*.zip
+            voice-rewrite/READY-SHA256SUMS.txt
+            voice-rewrite/READY-REVISION.txt
+          retention-days: 14
+          if-no-files-found: error
+
+  macos:
+    name: Ready macOS ${{ matrix.public_arch }} app and DMG
+    needs: ready
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            public_arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+            public_arch: x64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.ready.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
+        with:
+          go-version: '1.23'
+          cache-dependency-path: voice-rewrite/go.mod
+      - name: Compile native app with bundled matching Go helper
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "$ARCH"
+          xcodebuild -project macos/VoiceRewrite.xcodeproj -scheme VoiceRewrite \
+            -configuration Debug -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/ready-derived" \
+            ARCHS="$ARCH" ONLY_ACTIVE_ARCH=YES build
+          app="$RUNNER_TEMP/ready-derived/Build/Products/Debug/VoiceRewrite.app"
+          for executable in VoiceRewrite voicebridge; do
+            test -x "$app/Contents/MacOS/$executable"
+            test "$(lipo -archs "$app/Contents/MacOS/$executable")" = "$ARCH"
+          done
+          codesign --verify --deep --strict "$app"
+      - name: Package and verify developer ZIP and DMG
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+          PUBLIC_ARCH: ${{ matrix.public_arch }}
+          SOURCE_SHA: ${{ needs.ready.outputs.revision }}
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/ready-derived/Build/Products/Debug/VoiceRewrite.app"
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+          short="${SOURCE_SHA:0:12}"
+          base="VoiceRewrite-$version-macOS-$PUBLIC_ARCH-Ready-$short-Dev"
+          mkdir -p "$RUNNER_TEMP/ready-output"
+          zip="$RUNNER_TEMP/ready-output/$base.zip"
+          dmg="$RUNNER_TEMP/ready-output/$base.dmg"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
+          (cd "$RUNNER_TEMP/ready-output" && shasum -a 256 "$base.zip" > "$base.zip.sha256")
+          bash scripts/package-macos-dmg.sh "$app" "$dmg" "$ARCH"
+          bash scripts/verify-macos-package.sh zip "$zip" "$ARCH" "$version" dev
+          bash scripts/verify-macos-package.sh dmg "$dmg" "$ARCH" "$version" dev
+          printf 'Source commit: %s\nArchitecture: %s\nSignature: ad-hoc development only\n' \
+            "$SOURCE_SHA" "$ARCH" > "$RUNNER_TEMP/ready-output/READY-REVISION.txt"
+      - name: Upload ready-to-test macOS app packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: VoiceRewrite-Ready-macOS-${{ matrix.public_arch }}-Dev
+          path: ${{ runner.temp }}/ready-output/
+          retention-days: 14
+          if-no-files-found: error

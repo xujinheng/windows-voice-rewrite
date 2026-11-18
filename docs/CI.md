@@ -36,3 +36,32 @@ caches are scoped by runner and dependencies. Artifacts have bounded retention.
 Track GitHub Actions job/runner minutes, cancel rate, cache hit rate, and
 per-commit latency metrics; do not mistake synthetic-keyboard benchmarks for
 physical button-down-to-visible latency.
+
+## Fast development and ready-to-test packages
+
+Ordinary PR commits run only the affected tests and compile checks; they do
+**not** generate download bundles. This keeps the merge gate fast.
+
+When an agent has finished a PR and the head commit is ready for device testing,
+edit the PR title to include `[ready-to-test]`. The **Ready-to-test builds**
+workflow fires **only on that title edit**, and uploads:
+- `VoiceRewrite-Ready-Windows-x64`: directly runnable `VoiceRewrite.exe`,
+  portable ZIP and checksums.
+- `VoiceRewrite-Ready-macOS-arm64-Dev` and
+  `VoiceRewrite-Ready-macOS-x64-Dev`: verified application ZIP, drag-install
+  DMG and checksums (ad-hoc development signatures; **not notarized**).
+
+A `build:ready` PR label also triggers a one-off build when added, if the
+repository has that label. Adding subsequent commits does **not** rerun the
+ready-build workflow; remove/re-add the label or remove/re-add the title marker
+to request newer artifacts. An explicit `workflow_dispatch` against a PR
+branch can build its head on demand. Always confirm the workflow's recorded
+source SHA matches the desired PR version; a passing CI Gate is still required
+for release/merge readiness.
+
+Each push to `main` continues producing the complete Windows and macOS
+development packages; version tags continue the curated release path.
+
+Native macOS Swift adapter suites are a separate required **parallel** job.
+This eliminates their previous serial placement before the Xcode app tests,
+without omitting the packages or weakening the final CI Gate.
