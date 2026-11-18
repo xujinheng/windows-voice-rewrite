@@ -118,6 +118,13 @@ public struct MacPhysicalModifierState: Sendable {
     public mutating func reset() { pressed.removeAll() }
 }
 
+/// Bare keyboard modifiers are intentionally faster than side-mouse buttons:
+/// an ordinary keyboard shortcut generates a keyDown and cancels the pending
+/// gesture; a mouse's short back/forward navigation needs a longer threshold.
+public enum MacModifierHoldTiming {
+    public static let activationThreshold: TimeInterval = 0.200
+}
+
 /// A single physical modifier only becomes voice input after a deliberate hold.
 /// All flagsChanged/keyDown events pass through to the focused application.
 /// Once another key or modifier is used, it cannot re-arm until key-up.
@@ -216,7 +223,7 @@ public final class MacModifierHoldDriver {
     private var paused = false
     private var captureKey: (@MainActor (MacModifierKey) -> Void)?
 
-    public init(threshold: TimeInterval = SideHold.threshold,
+    public init(threshold: TimeInterval = MacModifierHoldTiming.activationThreshold,
                 onHold: @escaping @MainActor (MacModifierKey, Int32?, TimeInterval) -> Void,
                 onRelease: @escaping @MainActor (MacModifierKey) -> Void,
                 onCancel: @escaping @MainActor () -> Void,
@@ -354,7 +361,7 @@ public final class MacModifierHoldDriver {
             MacModifierKey.captureCandidate(keyCode: key.keyCode, flags: event.flags) == key
         if let token = state.press(key, unmodified: alone) {
             // Timestamp the incoming Quartz event, not the delayed callback:
-            // the 250ms hold threshold is part of perceived responsiveness.
+            // the 200ms keyboard hold threshold is part of perceived responsiveness.
             let physicalEventReceivedAt = ProcessInfo.processInfo.systemUptime
             let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
             DispatchQueue.main.asyncAfter(deadline: .now() + threshold) { [weak self] in

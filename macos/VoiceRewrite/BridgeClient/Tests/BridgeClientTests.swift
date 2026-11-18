@@ -400,7 +400,7 @@ final class BridgeClientTests: XCTestCase {
             if case .connected = model.connection { return true }
             return false
         }
-        // Drive the real macOS modifier handler through its 250ms hold timer,
+        // Drive the real macOS modifier handler through its 200ms hold timer,
         // not WorkspaceModel.keyboardPressed() after that timer has elapsed.
         // CGEvent dispatch is synthetic; live hardware must be tested separately.
         var activationCount = 0
@@ -432,7 +432,7 @@ final class BridgeClientTests: XCTestCase {
             // Clock starts BEFORE MacModifierHoldDriver schedules the hold
             // activation timer. The scheduler/threshold are genuinely exercised.
             driver.simulateModifierTransitionForCI(key: .rightCommand, pressed: true)
-            try await waitUntil("250ms right Command activation #\(cycle)") {
+            try await waitUntil("200ms right Command activation #\(cycle)") {
                 activationCount == cycle + 1
             }
             activationTimes.append((ProcessInfo.processInfo.systemUptime - onset) * 1000)
@@ -497,7 +497,7 @@ final class BridgeClientTests: XCTestCase {
         let report: [String: Any] = [
             "schema_version": 2,
             "test": "synthetic-right-command-down-to-visible-text",
-            "environment": "macOS CI; synthetic CGEvent through production modifier handler and 250ms timer; fake microphone, local JSONL ASR, in-process NSTextView",
+            "environment": "macOS CI; synthetic CGEvent through production modifier handler and 200ms keyboard timer; fake microphone, local JSONL ASR, in-process NSTextView",
             "coverage": [
                 "real_MacModifierHoldDriver_flagsChanged_state_machine_and_timer",
                 "real_WorkspaceModel_keyboard_state_machine",
@@ -513,6 +513,7 @@ final class BridgeClientTests: XCTestCase {
             ],
             "architecture": architecture,
             "successful_cycles": loopCount,
+            "keyboard_hold_threshold_ms": Int(MacModifierHoldTiming.activationThreshold * 1000),
             "timeouts": 0,
             "synthetic_down_to_hold_activation": stats(activationTimes),
             "synthetic_down_to_indicator_render": stats(indicatorTimes),
@@ -527,7 +528,7 @@ final class BridgeClientTests: XCTestCase {
         print("VOICE_REWRITE_USER_LATENCY " + String(decoding: json, as: UTF8.self))
         // Hard limits only catch pathological regressions in cloud runners.
         // Compare P50/P95 as a trend, never claim these are physical-device SLOs.
-        XCTAssertGreaterThanOrEqual(stats(activationTimes)["p50_ms"]!, SideHold.threshold * 1000)
+        XCTAssertGreaterThanOrEqual(stats(activationTimes)["p50_ms"]!, MacModifierHoldTiming.activationThreshold * 1000)
         XCTAssertLessThan(stats(activationTimes)["p95_ms"]!, 1200)
         XCTAssertLessThan(stats(indicatorTimes)["p95_ms"]!, 1500)
         XCTAssertLessThan(stats(microphoneTimes)["p95_ms"]!, 2500)

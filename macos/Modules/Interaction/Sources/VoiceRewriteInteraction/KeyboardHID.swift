@@ -108,7 +108,7 @@ public final class MacKeyboardHIDMonitor {
     private let onRelease: @MainActor (MacModifierKey, String) -> Void
     private let onCancel: @MainActor () -> Void
 
-    public init(threshold: TimeInterval = SideHold.threshold,
+    public init(threshold: TimeInterval = MacModifierHoldTiming.activationThreshold,
                 onDevices: @escaping @MainActor ([MacKeyboardDevice]) -> Void,
                 onPress: @escaping @MainActor (MacModifierKey, String, Int32?, TimeInterval) -> Void,
                 onRelease: @escaping @MainActor (MacModifierKey, String) -> Void,

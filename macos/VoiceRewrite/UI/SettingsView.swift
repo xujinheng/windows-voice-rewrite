@@ -254,7 +254,7 @@ struct SettingsView: View {
                 Button(captureTarget == "exit_shortcut" ? "等待按键…" : "录入按键") { beginCapture("exit_shortcut") }
                     .accessibilityIdentifier("capture_exit")
                                 }
-                Text("快捷键可直接录入左/右 Control、左/右 Option、左/右 Command 六个单键；单独按住 250ms 开始、松开结束，正常组合键不被拦截。Mouse4 听写、Mouse5 改写保留，亦可配置 Ctrl+Option 组合键。默认右 Command 听写、右 Option 改写，MacBook Pro/Air 内建键盘均可使用。录入时能区分左/右修饰键；外接键盘仍可自定义右 Control。退出快捷键必须使用功能键或组合键。")
+                Text("快捷键可直接录入左/右 Control、左/右 Option、左/右 Command 六个单键；单独按住 200ms 开始、松开结束，正常组合键不被拦截。Mouse4 听写、Mouse5 改写保留，亦可配置 Ctrl+Option 组合键。默认右 Command 听写、右 Option 改写，MacBook Pro/Air 内建键盘均可使用。录入时能区分左/右修饰键；外接键盘仍可自定义右 Control。退出快捷键必须使用功能键或组合键。")
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("input_note_macos")
                                 HStack {
