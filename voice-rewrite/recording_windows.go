@@ -24,6 +24,8 @@ type audioRecorder struct {
 	bufs       [][]byte
 	pins       []runtime.Pinner
 	done       chan struct{}
+	finished   chan struct{} // closed after audio collection and hardware cleanup
+	maxReached atomic.Bool    // physical capture deadline, not a lost release event
 	result     chan audioResult
 	once       sync.Once
 	maxSeconds int
@@ -47,7 +49,7 @@ func startRecorder(maxSec, deviceID int) (*audioRecorder, error) {
 	if e := winmmCheck(rc, "waveInOpen"); e != nil {
 		return nil, e
 	}
-	r := &audioRecorder{handle: h, done: make(chan struct{}), result: make(chan audioResult, 1), maxSeconds: maxSec}
+	r := &audioRecorder{handle: h, done: make(chan struct{}), finished: make(chan struct{}), result: make(chan audioResult, 1), maxSeconds: maxSec}
 	const bufferBytes = 6400 // 200ms at 16 kHz, mono PCM16
 	const nBuffers = 8
 	r.pins = make([]runtime.Pinner, nBuffers)
@@ -92,6 +94,7 @@ func (r *audioRecorder) closeHardware() {
 	runtime.KeepAlive(r.hdrs)
 }
 func (r *audioRecorder) collect() {
+	defer close(r.finished)
 	var pcm bytes.Buffer
 	pending := make([]bool, len(r.hdrs))
 	for i := range pending {
@@ -108,6 +111,7 @@ func (r *audioRecorder) collect() {
 		case <-r.done:
 			stopped = true
 		case <-deadline.C:
+			r.maxReached.Store(true)
 			r.Stop()
 			stopped = true
 		case <-tick.C:
