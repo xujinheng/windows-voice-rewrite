@@ -177,6 +177,9 @@ final class WorkspaceModel: ObservableObject {
     private var activeProbeIDs: [String: String] = [:]
     private var activeRequestID: String?
     private var processingWatchdog: Task<Void, Never>?
+    // Native token is an OS safety fence; Go owns reply authorization/deadlines.
+    private var voiceEpochSessionID: String?
+    private var voiceEpochStage: String?
     private var activeInsert: MacDictationTarget?
     private var activeVoiceSelection: (snapshot: SelectionSnapshot, generation: UInt64)?
     private var activeSelectionGeneration: UInt64?
@@ -210,6 +213,27 @@ final class WorkspaceModel: ObservableObject {
             settingsStatus = settingsLoaded()
         } catch {
             settingsStatus = settingsLoadFailed()
+        }
+        if let nativeRecorder = self.microphone as? MicrophoneRecorder {
+            nativeRecorder.onMaximumDuration = { [weak self] in
+                self?.finishRecordingAtLimit()
+            }
+        }
+    }
+
+    /// A duration cap must finish the user's speech, not discard it or claim
+    /// that a held shortcut lost its release event. All three voice flows use
+    /// the normal stop/ASR pipeline after the native recorder reaches its cap.
+    private func finishRecordingAtLimit() {
+        if meetingVoiceRecording {
+            DiagnosticLog.note("stage=meeting_voice_recording status=duration_limit")
+            meetingSideAction = nil
+            keyboardGate.clear()
+            keyboardHoldSequence &+= 1
+            toggleMeetingVoice()
+        } else if isRecording {
+            DiagnosticLog.note("stage=recording status=duration_limit")
+            stopRecording()
         }
         if let nativeRecorder = self.microphone as? MicrophoneRecorder {
             nativeRecorder.onMaximumDuration = { [weak self] in
@@ -1061,7 +1085,7 @@ final class WorkspaceModel: ObservableObject {
                 meetingVoiceRecording || meetingVoiceStarting ||
                 sideGate.active != nil || sideDictationPreflight != nil) else { return }
         invalidatePending()
-        let generation = resultGeneration.begin()
+        let generation = beginVoiceEpoch()
         sideDictationPreflight = SideDictationPreflight(generation: generation, targetPID: targetPID)
         isStarting = true
         armProcessingWatchdog(token: generation, seconds: 30, stage: "microphone_start")
@@ -1099,6 +1123,7 @@ final class WorkspaceModel: ObservableObject {
         guard let current = sideDictationPreflight, !current.held else { return }
         sideDictationPreflight = nil
         finishProcessingWatchdog()
+        cancelVoiceEpoch()
         _ = resultGeneration.begin()
         microphone.cancel()
         isStarting = false
@@ -1136,6 +1161,7 @@ final class WorkspaceModel: ObservableObject {
             let ready = dictationMicrophoneReady(started: true, tokenValid: true, failure: "")
             self.isRecording = true
             self.isStarting = false
+            self.armProcessingWatchdog(token: preflight.generation, seconds: UInt64(self.settings.maxRecordSeconds), stage: "recording")
             self.showIndicator(phase: .recording, mode: "听写", pending: false)
             if let status = ready.recordingStatus { self.recordingStatus = status }
             self.stopWhenSideMouseReleased(.dictation)
@@ -2273,30 +2299,145 @@ final class WorkspaceModel: ObservableObject {
         return UInt64(min(220, max(65, 45 + 2 * duration)) + 15)
     }
 
-    private func armProcessingWatchdog(token: UInt64, seconds: UInt64, stage: String) {
+    // Each task owns one never-reused UUID plus a monotonic native token. Go
+    // verifies both; the native token remains a fail-closed OS callback fence.
+    private func beginVoiceEpoch() -> UInt64 {
+        let token = resultGeneration.begin()
+        let sessionID = UUID().uuidString
+        voiceEpochSessionID = sessionID
+        bridge?.send(operation: "voice_epoch", fields: [
+            "epoch_event": .string("begin"), "session_id": .string(sessionID),
+            "generation": .number(Double(token))
+        ]) { [weak self] reply in
+            Task { @MainActor [weak self] in
+                guard let self, self.voiceEpochSessionID == sessionID,
+                      self.resultGeneration.accepts(token) else { return }
+                let response = try? reply.get()
+                guard response?.ok == true, response?.result?["allowed"]?.boolValue == true else {
+                    self.cancelCurrent()
+                    self.recordingStatus = "无法启动共享语音任务控制器"
+                    return
+                }
+            }
+        }
+        return token
+    }
+
+    // Native safety cancellation is immediate; Go supplies authoritative
+    // provider cancellation and exact generation ownership asynchronously.
+    private func cancelVoiceEpoch(reason: String = "user") {
+        guard let sessionID = voiceEpochSessionID else { return }
+        let token = resultGeneration.latest
+        voiceEpochSessionID = nil
+        voiceEpochStage = nil
+        bridge?.send(operation: "voice_epoch", fields: [
+            "epoch_event": .string("cancel"), "session_id": .string(sessionID),
+            "generation": .number(Double(token)), "reason": .string(reason)
+        ]) { _ in }
+    }
+
+    private func bindVoiceEpochRequest(token: UInt64, requestID: String) {
+        guard let sessionID = voiceEpochSessionID else { return }
+        bridge?.send(operation: "voice_epoch", fields: [
+            "epoch_event": .string("bind"), "session_id": .string(sessionID),
+            "generation": .number(Double(token)), "request_id": .string(requestID)
+        ]) { _ in }
+    }
+
+    private func voiceEpochAllows(token: UInt64, stage: String) async -> Bool {
+        guard let sessionID = voiceEpochSessionID, let bridge,
+              resultGeneration.accepts(token) else { return false }
+        let allowed = await withCheckedContinuation { continuation in
+            bridge.send(operation: "voice_epoch", fields: [
+                "epoch_event": .string("authorize"), "session_id": .string(sessionID),
+                "generation": .number(Double(token)), "stage": .string(stage)
+            ]) { reply in
+                let response = try? reply.get()
+                continuation.resume(returning: response?.ok == true &&
+                    response?.result?["allowed"]?.boolValue == true)
+            }
+        }
+        return allowed && voiceEpochSessionID == sessionID && resultGeneration.accepts(token)
+    }
+
+    // The timer only wakes the Go controller. A late timer from a previous
+    // stage/session cannot initiate a native write or cancel a newer task.
+    private func requestVoiceEpochTimeout(token: UInt64, sessionID: String, stage: String) {
+        guard voiceEpochSessionID == sessionID, voiceEpochStage == stage,
+              resultGeneration.accepts(token), let bridge else { return }
+        bridge.send(operation: "voice_epoch", fields: [
+            "epoch_event": .string("timeout"), "session_id": .string(sessionID),
+            "generation": .number(Double(token)), "stage": .string(stage)
+        ]) { [weak self] reply in
+            Task { @MainActor [weak self] in
+                guard let self, self.voiceEpochSessionID == sessionID,
+                      self.voiceEpochStage == stage, self.resultGeneration.accepts(token),
+                      (self.isProcessing || self.isStarting || self.isRecording) else { return }
+                let response = try? reply.get()
+                if response?.result?["reason"]?.string == "record_limit",
+                   self.isRecording {
+                    // The Go deadline commands a normal capture stop, preserving
+                    // all PCM for ASR instead of treating missing key-release as error.
+                    self.stopRecording()
+                    return
+                }
+                if response?.result?["reason"]?.string == "timeout",
+                   case .array(let effects)? = response?.result?["effects"], !effects.isEmpty {
+                    DiagnosticLog.note("stage=voice_\(stage) status=timeout owner=go")
+                    self.processingWatchdog = nil
+                    self.keyboardGate.clear()
+                    self.keyboardHoldSequence &+= 1
+                    self.invalidatePending()
+                    self.microphone.cancel()
+                    self.isRecording = false
+                    self.isStarting = false
+                    self.recordingStatus = "语音处理超时，已结束本次任务；请检查 ASR 服务后重试"
+                    self.interactionStatus = self.recordingStatus
+                    self.asrProbeStatus = "ASR：本次请求超时"
+                    self.showIndicator(phase: .error, mode: self.indicatorSnapshot.mode, pending: false)
+                    if stage == "dictation_delivery", let text = self.transcription, !text.isEmpty {
+                        ResultCardPanel.shared.present(title: ResultCopy.dictationWriteUnconfirmed, text: text)
+                    }
+                } else if response?.result?["allowed"]?.boolValue == true {
+                    // Sleep may wake slightly ahead of Go's monotonic deadline.
+                    self.processingWatchdog = Task { @MainActor [weak self] in
+                        try? await Task.sleep(nanoseconds: 100_000_000)
+                        guard !Task.isCancelled else { return }
+                        self?.requestVoiceEpochTimeout(token: token, sessionID: sessionID, stage: stage)
+                    }
+                }
+            }
+        }
+    }
+
+    private func armProcessingWatchdog(token: UInt64, seconds: UInt64, stage: String, audioBytes: Int = 0) {
         processingWatchdog?.cancel()
-        processingWatchdog = Task { @MainActor [weak self] in
-            do { try await Task.sleep(nanoseconds: seconds * 1_000_000_000) }
-            catch { return }
-            guard let self, self.resultGeneration.accepts(token),
-                  (self.isProcessing || self.isStarting) else { return }
-            DiagnosticLog.note("stage=voice_\(stage) status=timeout")
-            self.processingWatchdog = nil
-            self.keyboardGate.clear()
-            self.keyboardHoldSequence &+= 1
-            self.invalidatePending()
-            self.microphone.cancel()
-            self.isRecording = false
-            self.isStarting = false
-            self.recordingStatus = "语音处理超时，已结束本次任务；请检查 ASR 服务后重试"
-            self.interactionStatus = self.recordingStatus
-            self.asrProbeStatus = "ASR：本次请求超时"
-            self.showIndicator(phase: .error, mode: self.indicatorSnapshot.mode, pending: false)
-            if stage == "dictation_delivery", let text = self.transcription, !text.isEmpty {
-                // Never retry a paste with an uncertain outcome. Preserve a
-                // copyable result even when native delivery doesn't return.
-                ResultCardPanel.shared.present(
-                    title: ResultCopy.dictationWriteUnconfirmed, text: text)
+        guard let sessionID = voiceEpochSessionID, let bridge else { return }
+        voiceEpochStage = stage
+        bridge.send(operation: "voice_epoch", fields: [
+            "epoch_event": .string("stage"), "session_id": .string(sessionID),
+            "generation": .number(Double(token)), "stage": .string(stage),
+            "audio_bytes": .number(Double(audioBytes)),
+            "record_seconds": .number(Double(settings.maxRecordSeconds))
+        ]) { [weak self] reply in
+            Task { @MainActor [weak self] in
+                guard let self, self.voiceEpochSessionID == sessionID,
+                      self.voiceEpochStage == stage, self.resultGeneration.accepts(token) else { return }
+                let response = try? reply.get()
+                guard response?.ok == true, response?.result?["allowed"]?.boolValue == true,
+                      let milliseconds = response?.result?["budget_ms"]?.int, milliseconds > 0 else {
+                    self.cancelCurrent()
+                    self.recordingStatus = "共享语音阶段时钟不可用"
+                    return
+                }
+                // Go's response specifies the budget; the Swift seconds argument
+                // remains only for older native callers and is not authoritative.
+                _ = seconds
+                self.processingWatchdog = Task { @MainActor [weak self] in
+                    do { try await Task.sleep(nanoseconds: UInt64(milliseconds) * 1_000_000) }
+                    catch { return }
+                    self?.requestVoiceEpochTimeout(token: token, sessionID: sessionID, stage: stage)
+                }
             }
         }
     }
@@ -2304,13 +2445,24 @@ final class WorkspaceModel: ObservableObject {
     private func finishProcessingWatchdog() {
         processingWatchdog?.cancel()
         processingWatchdog = nil
+        if let stage = voiceEpochStage, let sessionID = voiceEpochSessionID {
+            let token = resultGeneration.latest
+            bridge?.send(operation: "voice_epoch", fields: [
+                "epoch_event": .string("receipt"), "session_id": .string(sessionID),
+                "generation": .number(Double(token)), "stage": .string(stage)
+            ]) { _ in }
+        }
+        voiceEpochStage = nil
     }
 
     private func invalidatePending() {
         dictationJourney = nil
+        let hadGoSession = voiceEpochSessionID != nil
+        cancelVoiceEpoch()
         finishProcessingWatchdog()
         _ = resultGeneration.begin()
-        if let id = activeRequestID { bridge?.cancel(id: id) }
+        // Native fallback if the Go controller was never initialized.
+        if !hadGoSession, let id = activeRequestID { bridge?.cancel(id: id) }
         activeRequestID = nil
         activeInsert = nil
         if let old = activeVoiceSelection {
@@ -2357,7 +2509,7 @@ final class WorkspaceModel: ObservableObject {
             pid = target
         }
         invalidatePending()
-        let token = resultGeneration.begin()
+        let token = beginVoiceEpoch()
         isStarting = true
         armProcessingWatchdog(token: token, seconds: 30, stage: "microphone_start")
         // Like Windows Hold, capture the selection on release rather than
@@ -2378,6 +2530,7 @@ final class WorkspaceModel: ObservableObject {
                 activeVoiceTargetPID = pid
                 isVoiceSelectionRecording = true
                 isRecording = true
+                armProcessingWatchdog(token: token, seconds: UInt64(settings.maxRecordSeconds), stage: "recording")
                 showIndicator(phase: .recording, mode: "改写", pending: false)
                 recordingStatus = rewriteRecording()
             } catch {
@@ -2400,7 +2553,7 @@ final class WorkspaceModel: ObservableObject {
         let onset = pressedAt.flatMap { $0 > 0 && $0 <= now ? $0 : nil } ?? now
         dictationJourney = DictationJourney(triggeredAt: onset)
         DiagnosticLog.note("journey=dictation event=hold_callback elapsed_ms=\(Self.elapsedMilliseconds(since: onset))")
-        let token = resultGeneration.begin()
+        let token = beginVoiceEpoch()
         isStarting = true
         armProcessingWatchdog(token: token, seconds: 30, stage: "microphone_start")
         recordingStatus = dictationRequestingMicrophone()
@@ -2473,6 +2626,7 @@ final class WorkspaceModel: ObservableObject {
                     DiagnosticLog.note("journey=dictation event=recording_ready elapsed_ms=\(Self.elapsedMilliseconds(since: journey.triggeredAt))")
                 }
                 isRecording = true
+                armProcessingWatchdog(token: token, seconds: UInt64(settings.maxRecordSeconds), stage: "recording")
                 showIndicator(phase: .recording, mode: "听写", pending: false)
                 if let status = ready.recordingStatus { recordingStatus = status }
             } catch {
@@ -2525,7 +2679,7 @@ final class WorkspaceModel: ObservableObject {
                 DiagnosticLog.note("stage=microphone_stop status=done elapsed_ms=\(Self.elapsedMilliseconds(since: stopStarted))")
                 armProcessingWatchdog(token: token,
                     seconds: voiceTargetPID == nil ? Self.asrDeadline(for: pcm) : 375,
-                    stage: voiceTargetPID == nil ? "asr" : "spoken_edit")
+                    stage: voiceTargetPID == nil ? "asr" : "spoken_edit", audioBytes: pcm.count)
                 let route = recordingDispatch(tokenValid: resultGeneration.accepts(token), voiceSelection: voiceTargetPID != nil)
                 guard route.send else { return }
                 if route.cancelProbes { cancelProbes() }
@@ -2569,11 +2723,12 @@ final class WorkspaceModel: ObservableObject {
                     ]) { [weak self] reply in
                         Task { @MainActor [weak self] in
                             guard let self else { return }
-                            self.handleSelectedTaskReply(reply, snapshot: snapshot,
+                            await self.handleSelectedTaskReply(reply, snapshot: snapshot,
                                 generation: generation, token: token, spoken: true)
                         }
                     }
                     activeRequestID = id
+                    bindVoiceEpochRequest(token: token, requestID: id)
                     return
                 }
                 let config = try requestConfig(for: .transcribe)
@@ -2585,6 +2740,7 @@ final class WorkspaceModel: ObservableObject {
                 ]) { [weak self] reply in
                     Task { @MainActor [weak self] in
                         guard let self, self.resultGeneration.accepts(token) else { return }
+                        guard await self.voiceEpochAllows(token: token, stage: "asr") else { return }
                         self.activeRequestID = nil
                         self.finishProcessingWatchdog()
                         self.isProcessing = false
@@ -2603,6 +2759,7 @@ final class WorkspaceModel: ObservableObject {
                     }
                 }
                 activeRequestID = id
+                bindVoiceEpochRequest(token: token, requestID: id)
             } catch {
                 let failed = recordingStopFailure(tokenValid: resultGeneration.accepts(token))
                 guard failed.apply else { return }
@@ -2644,7 +2801,7 @@ final class WorkspaceModel: ObservableObject {
             pid = target
         }
         invalidatePending()
-        let token = resultGeneration.begin()
+        let token = beginVoiceEpoch()
         isProcessing = true
         armProcessingWatchdog(token: token, seconds: 20, stage: "selection_capture")
         interactionStatus = rewriteCheckingSelection()
@@ -2682,11 +2839,12 @@ final class WorkspaceModel: ObservableObject {
                 ]) { [weak self] reply in
                     Task { @MainActor [weak self] in
                         guard let self else { return }
-                        self.handleSelectedTaskReply(reply, snapshot: snapshot,
+                        await self.handleSelectedTaskReply(reply, snapshot: snapshot,
                             generation: generation, token: token, spoken: false)
                     }
                 }
                 activeRequestID = id
+                bindVoiceEpochRequest(token: token, requestID: id)
             } catch {
                 let failed = typedSelectionStartFailed(
                     tokenValid: resultGeneration.accepts(token),
@@ -2723,11 +2881,12 @@ final class WorkspaceModel: ObservableObject {
         _ reply: Result<BridgeReply, BridgeFailure>,
         snapshot: SelectionSnapshot, generation: UInt64,
         token: UInt64, spoken: Bool
-    ) {
+    ) async {
         guard resultGeneration.accepts(token) else {
             Task { await interaction.cancelTask(generation: generation) }
             return
         }
+        guard await voiceEpochAllows(token: token, stage: spoken ? "spoken_edit" : "selected_edit") else { return }
         activeRequestID = nil
         finishProcessingWatchdog()
         isProcessing = false
@@ -2900,6 +3059,7 @@ final class WorkspaceModel: ObservableObject {
                 guard let self, self.resultGeneration.accepts(token) else { return }
                 self.isProcessing = true
                 self.armProcessingWatchdog(token: token, seconds: 20, stage: "dictation_delivery")
+                guard await self.voiceEpochAllows(token: token, stage: "dictation_delivery") else { return }
                 do {
                     let outcome = try await self.dictationDelivery.deliver(text, to: insertion, stillValid: {
                         self.resultGeneration.accepts(token)
@@ -2942,6 +3102,7 @@ final class WorkspaceModel: ObservableObject {
                 guard let self, self.resultGeneration.accepts(token) else { return }
                 self.isProcessing = true
                 self.armProcessingWatchdog(token: token, seconds: 20, stage: "selected_write")
+                guard await self.voiceEpochAllows(token: token, stage: "selected_write") else { return }
                 do {
                     try await self.interaction.replaceIfCurrent(replacement.snapshot, with: text, generation: replacement.generation)
                     guard self.resultGeneration.accepts(token) else { return }

@@ -395,8 +395,16 @@
           },
           "go": [
             {
-              "path": "voice-rewrite/internal/core/session/session.go",
-              "contains": "func "
+              "path": "voice-rewrite/internal/core/session/epoch.go",
+              "contains": "func (g *Epoch) Valid("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "app.epoch.Valid("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "s.voiceEpoch.Apply("
             }
           ]
         },
@@ -407,7 +415,21 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "func cancelCurrent()"
-          }
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/session/policy.go",
+              "contains": "func (p *Policy) Apply("
+            },
+            {
+              "path": "voice-rewrite/windows.go",
+              "contains": "app.epoch.Cancel("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "s.voiceEpoch.Apply("
+            }
+          ]
         },
         {
           "id": "deadline",
@@ -416,7 +438,21 @@
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "private func armProcessingWatchdog("
-          }
+          },
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/session/policy.go",
+              "contains": "func StageBudget("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "session.StageBudget("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "s.voiceEpoch.Apply("
+            }
+          ]
         },
         {
           "id": "paste_lease",
