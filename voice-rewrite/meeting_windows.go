@@ -207,7 +207,7 @@ func (s *meetingSession) expressionFailed(app *appState, generation, epoch, seri
 
 func (a *appState) closeMeeting() {
 	if a.meeting != nil {
-		_, _ = a.meeting.runtime.CaptureRoute(meetingcore.CaptureStop, "", 0)
+		_, _ = meetingcore.CaptureRoute(a.meeting.runtime, meetingcore.CaptureStop, "", 0)
 		a.meeting = nil
 	}
 	closeMeetingHUD()
@@ -237,7 +237,7 @@ func (a *appState) beginMeeting(pid uint32, demo bool) {
 	activeMeetingHUD.app = a
 	procSetTimer.Call(activeMeetingHUD.window, 1, 100, 0)
 	if !demo {
-		if _, err := s.runtime.CaptureRoute(meetingcore.CaptureStart, fmt.Sprintf("pid:%d", pid), 0); err != nil {
+		if _, err := meetingcore.CaptureRoute(s.runtime, meetingcore.CaptureStart, fmt.Sprintf("pid:%d", pid), 0); err != nil {
 			a.closeMeeting()
 			a.fail(fmt.Errorf("会议来源不可用：%w", err))
 			return
