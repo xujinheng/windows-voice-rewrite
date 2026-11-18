@@ -47,7 +47,15 @@ def classify(paths):
         ):
             return dict.fromkeys(scope, True)
         if path.startswith("voice-rewrite/"):
-            scope.update(core=True, macos=True, windows=True)
+            if path.startswith("voice-rewrite/cmd/voicebridge/"):
+                scope.update(core=True, macos=True)
+            elif path.endswith(("_windows.go", "_windows_test.go")):
+                scope["windows"] = True
+            elif path.endswith(("_darwin.go", "_darwin_test.go", "_macos.go")):
+                scope["macos"] = True
+            else:
+                # Shared Go, generated contracts and dependencies affect both hosts.
+                scope.update(core=True, macos=True, windows=True)
         elif path.startswith("macos/"):
             scope["macos"] = True
         elif path.startswith("oneclick/"):
