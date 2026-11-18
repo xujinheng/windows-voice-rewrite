@@ -1,0 +1,107 @@
+{"id":"cs-001","reference":"这个 benchmark 需要在本周版本里检查一遍。","english_terms":["benchmark"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-002","reference":"请把 benchmark 的实际结果写进 issue，不要凭空猜测。","english_terms":["benchmark"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-003","reference":"我刚才说的是 benchmark，你帮我确认大小写有没有识别对。","english_terms":["benchmark"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-004","reference":"新的改动会不会影响 benchmark 的性能和兼容性？","english_terms":["benchmark"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-005","reference":"这个 prompt 需要在本周版本里检查一遍。","english_terms":["prompt"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-006","reference":"请把 prompt 的实际结果写进 issue，不要凭空猜测。","english_terms":["prompt"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-007","reference":"我刚才说的是 prompt，你帮我确认大小写有没有识别对。","english_terms":["prompt"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-008","reference":"新的改动会不会影响 prompt 的性能和兼容性？","english_terms":["prompt"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-009","reference":"这个 Go Core 需要在本周版本里检查一遍。","english_terms":["Go Core"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-010","reference":"请把 Go Core 的实际结果写进 issue，不要凭空猜测。","english_terms":["Go Core"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-011","reference":"我刚才说的是 Go Core，你帮我确认大小写有没有识别对。","english_terms":["Go Core"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-012","reference":"新的改动会不会影响 Go Core 的性能和兼容性？","english_terms":["Go Core"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-013","reference":"这个 Swift 需要在本周版本里检查一遍。","english_terms":["Swift"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-014","reference":"请把 Swift 的实际结果写进 issue，不要凭空猜测。","english_terms":["Swift"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-015","reference":"我刚才说的是 Swift，你帮我确认大小写有没有识别对。","english_terms":["Swift"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-016","reference":"新的改动会不会影响 Swift 的性能和兼容性？","english_terms":["Swift"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-017","reference":"这个 macOS 需要在本周版本里检查一遍。","english_terms":["macOS"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-018","reference":"请把 macOS 的实际结果写进 issue，不要凭空猜测。","english_terms":["macOS"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-019","reference":"我刚才说的是 macOS，你帮我确认大小写有没有识别对。","english_terms":["macOS"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-020","reference":"新的改动会不会影响 macOS 的性能和兼容性？","english_terms":["macOS"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-021","reference":"这个 Windows 需要在本周版本里检查一遍。","english_terms":["Windows"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-022","reference":"请把 Windows 的实际结果写进 issue，不要凭空猜测。","english_terms":["Windows"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-023","reference":"我刚才说的是 Windows，你帮我确认大小写有没有识别对。","english_terms":["Windows"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-024","reference":"新的改动会不会影响 Windows 的性能和兼容性？","english_terms":["Windows"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-025","reference":"这个 PR 132 需要在本周版本里检查一遍。","english_terms":["PR 132"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-026","reference":"请把 PR 132 的实际结果写进 issue，不要凭空猜测。","english_terms":["PR 132"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-027","reference":"我刚才说的是 PR 132，你帮我确认大小写有没有识别对。","english_terms":["PR 132"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-028","reference":"新的改动会不会影响 PR 132 的性能和兼容性？","english_terms":["PR 132"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-029","reference":"这个 CI 需要在本周版本里检查一遍。","english_terms":["CI"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-030","reference":"请把 CI 的实际结果写进 issue，不要凭空猜测。","english_terms":["CI"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-031","reference":"我刚才说的是 CI，你帮我确认大小写有没有识别对。","english_terms":["CI"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-032","reference":"新的改动会不会影响 CI 的性能和兼容性？","english_terms":["CI"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-033","reference":"这个 rebase 需要在本周版本里检查一遍。","english_terms":["rebase"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-034","reference":"请把 rebase 的实际结果写进 issue，不要凭空猜测。","english_terms":["rebase"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-035","reference":"我刚才说的是 rebase，你帮我确认大小写有没有识别对。","english_terms":["rebase"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-036","reference":"新的改动会不会影响 rebase 的性能和兼容性？","english_terms":["rebase"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-037","reference":"这个 merge 需要在本周版本里检查一遍。","english_terms":["merge"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-038","reference":"请把 merge 的实际结果写进 issue，不要凭空猜测。","english_terms":["merge"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-039","reference":"我刚才说的是 merge，你帮我确认大小写有没有识别对。","english_terms":["merge"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-040","reference":"新的改动会不会影响 merge 的性能和兼容性？","english_terms":["merge"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-041","reference":"这个 dependency 需要在本周版本里检查一遍。","english_terms":["dependency"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-042","reference":"请把 dependency 的实际结果写进 issue，不要凭空猜测。","english_terms":["dependency"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-043","reference":"我刚才说的是 dependency，你帮我确认大小写有没有识别对。","english_terms":["dependency"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-044","reference":"新的改动会不会影响 dependency 的性能和兼容性？","english_terms":["dependency"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-045","reference":"这个 issue 需要在本周版本里检查一遍。","english_terms":["issue"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-046","reference":"请把 issue 的实际结果写进 issue，不要凭空猜测。","english_terms":["issue"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-047","reference":"我刚才说的是 issue，你帮我确认大小写有没有识别对。","english_terms":["issue"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-048","reference":"新的改动会不会影响 issue 的性能和兼容性？","english_terms":["issue"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-049","reference":"这个 latency 需要在本周版本里检查一遍。","english_terms":["latency"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-050","reference":"请把 latency 的实际结果写进 issue，不要凭空猜测。","english_terms":["latency"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-051","reference":"我刚才说的是 latency，你帮我确认大小写有没有识别对。","english_terms":["latency"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-052","reference":"新的改动会不会影响 latency 的性能和兼容性？","english_terms":["latency"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-053","reference":"这个 regression 需要在本周版本里检查一遍。","english_terms":["regression"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-054","reference":"请把 regression 的实际结果写进 issue，不要凭空猜测。","english_terms":["regression"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-055","reference":"我刚才说的是 regression，你帮我确认大小写有没有识别对。","english_terms":["regression"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-056","reference":"新的改动会不会影响 regression 的性能和兼容性？","english_terms":["regression"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-057","reference":"这个 OpenAI 需要在本周版本里检查一遍。","english_terms":["OpenAI"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-058","reference":"请把 OpenAI 的实际结果写进 issue，不要凭空猜测。","english_terms":["OpenAI"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-059","reference":"我刚才说的是 OpenAI，你帮我确认大小写有没有识别对。","english_terms":["OpenAI"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-060","reference":"新的改动会不会影响 OpenAI 的性能和兼容性？","english_terms":["OpenAI"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-061","reference":"这个 Qwen3-ASR 需要在本周版本里检查一遍。","english_terms":["Qwen3-ASR"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-062","reference":"请把 Qwen3-ASR 的实际结果写进 issue，不要凭空猜测。","english_terms":["Qwen3-ASR"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-063","reference":"我刚才说的是 Qwen3-ASR，你帮我确认大小写有没有识别对。","english_terms":["Qwen3-ASR"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-064","reference":"新的改动会不会影响 Qwen3-ASR 的性能和兼容性？","english_terms":["Qwen3-ASR"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-065","reference":"这个 llama.cpp 需要在本周版本里检查一遍。","english_terms":["llama.cpp"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-066","reference":"请把 llama.cpp 的实际结果写进 issue，不要凭空猜测。","english_terms":["llama.cpp"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-067","reference":"我刚才说的是 llama.cpp，你帮我确认大小写有没有识别对。","english_terms":["llama.cpp"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-068","reference":"新的改动会不会影响 llama.cpp 的性能和兼容性？","english_terms":["llama.cpp"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-069","reference":"这个 VoiceRewrite 需要在本周版本里检查一遍。","english_terms":["VoiceRewrite"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-070","reference":"请把 VoiceRewrite 的实际结果写进 issue，不要凭空猜测。","english_terms":["VoiceRewrite"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-071","reference":"我刚才说的是 VoiceRewrite，你帮我确认大小写有没有识别对。","english_terms":["VoiceRewrite"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-072","reference":"新的改动会不会影响 VoiceRewrite 的性能和兼容性？","english_terms":["VoiceRewrite"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-073","reference":"这个 P50 需要在本周版本里检查一遍。","english_terms":["P50"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-074","reference":"请把 P50 的实际结果写进 issue，不要凭空猜测。","english_terms":["P50"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-075","reference":"我刚才说的是 P50，你帮我确认大小写有没有识别对。","english_terms":["P50"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-076","reference":"新的改动会不会影响 P50 的性能和兼容性？","english_terms":["P50"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-077","reference":"这个 P95 需要在本周版本里检查一遍。","english_terms":["P95"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-078","reference":"请把 P95 的实际结果写进 issue，不要凭空猜测。","english_terms":["P95"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-079","reference":"我刚才说的是 P95，你帮我确认大小写有没有识别对。","english_terms":["P95"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-080","reference":"新的改动会不会影响 P95 的性能和兼容性？","english_terms":["P95"],"category":"zh_en_mixed","audio_path":null}
+{"id":"cs-081","reference":"今天下午我们先检查识别结果。","english_terms":[],"category":"zh_only","audio_path":null}
+{"id":"cs-082","reference":"这项功能先保持默认关闭。","english_terms":[],"category":"zh_only","audio_path":null}
+{"id":"cs-083","reference":"请把之前的几种错误全部记录下来。","english_terms":[],"category":"zh_only","audio_path":null}
+{"id":"cs-084","reference":"录完音以后不要自动替换数字。","english_terms":[],"category":"zh_only","audio_path":null}
+{"id":"cs-085","reference":"我们要把不同平台的行为统一起来。","english_terms":[],"category":"zh_only","audio_path":null}
+{"id":"cs-086","reference":"失败时不能悄悄重新发送请求。","english_terms":[],"category":"zh_only","audio_path":null}
+{"id":"cs-087","reference":"这个句子里面没有英文术语。","english_terms":[],"category":"zh_only","audio_path":null}
+{"id":"cs-088","reference":"下一段说话要快一点才能检验边界。","english_terms":[],"category":"zh_only","audio_path":null}
+{"id":"cs-089","reference":"他说的是一百三十二而不是一百二十三。","english_terms":[],"category":"zh_only","audio_path":null}
+{"id":"cs-090","reference":"不需要额外调用远端收费模型。","english_terms":[],"category":"zh_only","audio_path":null}
+{"id":"cs-091","reference":"Please run the benchmark and record P95 latency.","english_terms":["Please","run","the","benchmark","and","record","P95","latency."],"category":"en_only","audio_path":null}
+{"id":"cs-092","reference":"The CI regression needs a separate issue.","english_terms":["The","regression","needs","separate","issue."],"category":"en_only","audio_path":null}
+{"id":"cs-093","reference":"Go Core and SwiftUI must share the same contract.","english_terms":["Core","and","SwiftUI","must","share","the","same","contract."],"category":"en_only","audio_path":null}
+{"id":"cs-094","reference":"Please rebase the PR after the merge.","english_terms":["Please","rebase","the","after","the","merge."],"category":"en_only","audio_path":null}
+{"id":"cs-095","reference":"Qwen3-ASR is not the same as llama.cpp.","english_terms":["Qwen3-ASR","not","the","same","llama.cpp."],"category":"en_only","audio_path":null}
+{"id":"cs-096","reference":"The word Kubernetes should not appear here.","english_terms":["Kubernetes"],"category":"en_only","audio_path":null}
+{"id":"cs-097","reference":"我们今天只检查麦克风能不能启动。","english_terms":[],"category":"negative","audio_path":null,"forbidden_terms":["Kubernetes","OpenAI","VoiceRewrite","Qwen3-ASR"]}
+{"id":"cs-098","reference":"这段话从头到尾都没有说容器系统。","english_terms":[],"category":"negative","audio_path":null,"forbidden_terms":["Kubernetes","OpenAI","VoiceRewrite","Qwen3-ASR"]}
+{"id":"cs-099","reference":"你不要因为词典里有词就额外补上一句。","english_terms":[],"category":"negative","audio_path":null,"forbidden_terms":["Kubernetes","OpenAI","VoiceRewrite","Qwen3-ASR"]}
+{"id":"cs-100","reference":"这不是任何一个项目的专有名称。","english_terms":[],"category":"negative","audio_path":null,"forbidden_terms":["Kubernetes","OpenAI","VoiceRewrite","Qwen3-ASR"]}
+{"id":"cs-101","reference":"稍等片刻，现在开始下一项检查。","english_terms":[],"category":"negative","audio_path":null,"forbidden_terms":["Kubernetes","OpenAI","VoiceRewrite","Qwen3-ASR"]}
+{"id":"cs-102","reference":"刚才我只说了数字一百三十二。","english_terms":[],"category":"negative","audio_path":null,"forbidden_terms":["Kubernetes","OpenAI","VoiceRewrite","Qwen3-ASR"]}
+{"id":"cs-103","reference":"请保持原文，不要增加没说的词。","english_terms":[],"category":"negative","audio_path":null,"forbidden_terms":["Kubernetes","OpenAI","VoiceRewrite","Qwen3-ASR"]}
+{"id":"cs-104","reference":"如果听不清，就不要猜测英文缩写。","english_terms":[],"category":"negative","audio_path":null,"forbidden_terms":["Kubernetes","OpenAI","VoiceRewrite","Qwen3-ASR"]}
+{"id":"cs-105","reference":"第一部分我们先明确 benchmark 的测试方法。所有数据都必须来自相同的真实音频，不能用人工改过的识别文本代替录音结果。先看 baseline 的 P50 和 P95 latency，然后记录首次请求和实际插入完成的时间。接下来检查 CI 的每项结果。即使某个 PR 成功 merge，也不能说明另一个 issue 的 regression 自动消失。我们要逐个比较 Windows 与 macOS 的行为，确认 Go Core 收到的音频没有丢样本。最后核对 PR 132 与 PR 123 两个编号，不能把它们互换。输出报告时应包含英文术语的召回率、中文字符错误率、每次请求的耗时，以及 GitHub Actions 中失败项目的原始证据。再强调一次，这段录音只用来检验 ASR 在长语音中按顺序传递术语上下文。每一段都要保留原来口述的数字和否定词，也不能因为词表里出现某个项目就凭空添加它。","english_terms":["benchmark","P50","P95","latency","PR 132","PR 123","GitHub Actions","regression","ASR","Windows","macOS","Go Core"],"category":"long_chunk_3","audio_path":null,"target_chunks":3,"speaker_pacing":"record naturally; verify actual 25-second Go ASR chunk boundaries"}
+{"id":"cs-106","reference":"我们先在 macOS 上测试 Swift 和 Go Core 的配置传递是否一致。点击开始录音以后，应用应该只把当前音频发送到选定的 ASR 服务，而不是把选区原文或者会议背景一起上传。随后把同一段录音复制到 Windows 上做等价检查。CPU latency 与网络服务耗时要分开统计，不能只看模型返回的第一个字就宣称用户已经完成输入。最后需要确认每次分段请求都只发送一次。即使后端不接受这个 prompt，也不能暗中做重复收费的重试。","english_terms":["macOS","Swift","Go Core","Windows","CPU","latency","ASR","prompt"],"category":"long_chunk_2","audio_path":null,"target_chunks":2,"speaker_pacing":"record naturally; verify actual 25-second Go ASR chunk boundaries"}
+{"id":"cs-107","reference":"首先区分 Qwen3-ASR 和 LLM 的使用场景。用户说的是语音识别，不是让文字模型重新写一遍内容。即使 vocabulary 里提供了 prompt，也不能保证 llama.cpp 当前版本会读取这个参数。第二步核对 system prompt 只能用于用户主动发起的文本改写。普通语音听写必须忠实保留数字、英文大小写、否定表达和句子顺序，而不是自动生成更好看的报告。最后我们比较有无术语提示的同一段 WAV。没有真实录音数据就必须写 not measured，不可以编造 English recall 提升，也不应更换默认模型。","english_terms":["Qwen3-ASR","prompt","LLM","system prompt","llama.cpp","vocabulary","WAV","English recall"],"category":"long_chunk_2","audio_path":null,"target_chunks":2,"speaker_pacing":"record naturally; verify actual 25-second Go ASR chunk boundaries"}

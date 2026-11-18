@@ -705,6 +705,9 @@ func emitSettings() (string, error) {
 			if err != nil {
 				return "", err
 			}
+			if control.ID == "probe_asr_status" {
+				b.WriteString("                Picker(\"术语提示\", selection: $model.settings.asrHintMode) {\n                    Text(\"关闭（默认）\").tag(\"off\")\n                    Text(\"仅已知支持\").tag(\"auto-supported\")\n                    Text(\"实验：强制词汇提示\").tag(\"vocabulary-only\")\n                }\n                .accessibilityIdentifier(\"asr_hint_mode\")\n                TextField(\"词汇表：每行一个术语，可用 = 添加发音别名\", text: $model.settings.asrVocabulary, axis: .vertical)\n                    .lineLimit(2...4)\n                    .textFieldStyle(.roundedBorder)\n                    .accessibilityIdentifier(\"asr_vocabulary\")\n                Text(\"仅用于识别上下文，不会自动纠正转写。请先做相同音频 A/B；后端可能忽略 prompt。\")\n                    .font(.footnote).foregroundStyle(.secondary)\n")
+			}
 			b.WriteString(line)
 			if control.Kind == contract.Shortcut {
 				captureID := "capture_dictation"

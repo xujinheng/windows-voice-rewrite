@@ -162,6 +162,18 @@ struct SettingsView: View {
                         .accessibilityLabel("API Key")
                         .accessibilityIdentifier("asr_api_key")
                 }
+                Picker("术语提示", selection: $model.settings.asrHintMode) {
+                    Text("关闭（默认）").tag("off")
+                    Text("仅已知支持").tag("auto-supported")
+                    Text("实验：强制词汇提示").tag("vocabulary-only")
+                }
+                .accessibilityIdentifier("asr_hint_mode")
+                TextField("词汇表：每行一个术语，可用 = 添加发音别名", text: $model.settings.asrVocabulary, axis: .vertical)
+                    .lineLimit(2...4)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("asr_vocabulary")
+                Text("仅用于识别上下文，不会自动纠正转写。请先做相同音频 A/B；后端可能忽略 prompt。")
+                    .font(.footnote).foregroundStyle(.secondary)
                 Text(model.asrProbeStatus).font(.footnote).foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .accessibilityIdentifier("probe_asr_status")

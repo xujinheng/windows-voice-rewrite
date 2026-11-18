@@ -6,6 +6,8 @@ public struct MacSettings: Codable, Equatable, Sendable {
     public var asrBaseURL: String
     public var llmBaseURL: String
     public var asrModel: String
+    public var asrHintMode: String
+    public var asrVocabulary: String
     public var textModel: String
     public var meetingASRMode: String
     public var meetingBackground: String
@@ -29,6 +31,8 @@ public struct MacSettings: Codable, Equatable, Sendable {
         case asrBaseURL = "asr_base_url"
         case llmBaseURL = "llm_base_url"
         case asrModel = "asr_model"
+        case asrHintMode = "asr_hint_mode"
+        case asrVocabulary = "asr_vocabulary"
         case textModel = "text_model"
         case meetingASRMode = "meeting_asr_mode"
         case meetingBackground = "meeting_background"
@@ -52,6 +56,8 @@ public struct MacSettings: Codable, Equatable, Sendable {
         asrBaseURL: String = ContractLimits.defaultASRBaseURL,
         llmBaseURL: String = ContractLimits.defaultLLMBaseURL,
         asrModel: String = ContractLimits.defaultASRModel,
+        asrHintMode: String = "off",
+        asrVocabulary: String = "",
         textModel: String = ContractLimits.defaultTextModel,
         meetingASRMode: String = ContractLimits.defaultMeetingASRMode,
         meetingBackground: String = "",
@@ -73,6 +79,8 @@ public struct MacSettings: Codable, Equatable, Sendable {
         self.asrBaseURL = asrBaseURL
         self.llmBaseURL = llmBaseURL
         self.asrModel = asrModel
+        self.asrHintMode = asrHintMode
+        self.asrVocabulary = asrVocabulary
         self.textModel = textModel
         self.meetingASRMode = meetingASRMode
         self.meetingBackground = meetingBackground
@@ -118,6 +126,8 @@ public struct MacSettings: Codable, Equatable, Sendable {
         asrBaseURL = endpoints.asrBaseURL
         llmBaseURL = endpoints.llmBaseURL
         asrModel = endpoints.asrModel
+        guard ["off", "auto-supported", "vocabulary-only"].contains(asrHintMode),
+              asrVocabulary.utf8.count <= 2048 else { throw SettingsError.invalidValues }
         textModel = endpoints.textModel
         guard ContractLimits.meetingASRModes.contains(meetingASRMode) else {
             throw SettingsError.invalidValues
@@ -179,6 +189,8 @@ public struct MacSettings: Codable, Equatable, Sendable {
         if values["microphone_uid"] == nil { values["microphone_uid"] = "" }
         if values["dictation_keyboard_id"] == nil { values["dictation_keyboard_id"] = "" }
         if values["rewrite_keyboard_id"] == nil { values["rewrite_keyboard_id"] = "" }
+        if values["asr_hint_mode"] == nil { values["asr_hint_mode"] = "off" }
+        if values["asr_vocabulary"] == nil { values["asr_vocabulary"] = "" }
         if values["meeting_background"] == nil { values["meeting_background"] = "" }
         if values["meeting_terms"] == nil { values["meeting_terms"] = "" }
         if values["record_mode"] == nil { values["record_mode"] = ContractLimits.defaultRecordMode }

@@ -80,13 +80,14 @@ func EncodeWAV(pcm []byte) ([]byte, error) {
 	return b, nil
 }
 
-// Transcribe sends the exact multipart request expected by Handy-compatible ASR.
+// Transcribe is the shared Go owner for Windows dictation, macOS voicebridge,
+// and selected spoken tasks. Off sends the same fields as the old path.
 func Transcribe(ctx context.Context, cfg coreconfig.Config, pcm []byte) (string, error) {
-	return TranscribeWithPrompt(ctx, cfg, pcm, "")
+	return TranscribeWithPrompt(ctx, cfg, pcm, DictationHint(cfg))
 }
 
-// TranscribeWithPrompt is for Meeting-only vocabulary hints. Ordinary
-// dictation continues to send no Meeting profile to its ASR endpoint.
+// TranscribeWithPrompt accepts caller-owned Meeting hints, never importing
+// private Meeting profile into ordinary dictation. One prompt per chunk.
 func TranscribeWithPrompt(ctx context.Context, cfg coreconfig.Config, pcm []byte, prompt string) (string, error) {
 	chunks := audio.SplitPCMForASR(pcm)
 	results := make([]string, 0, len(chunks))
@@ -109,7 +110,7 @@ func TranscribeWithPrompt(ctx context.Context, cfg coreconfig.Config, pcm []byte
 // transcribeChunk is one HTTP request; the session epoch's cancellation propagates
 // through the request context to stop outstanding network I/O immediately.
 func NewASRRequest(ctx context.Context, cfg coreconfig.Config, pcm []byte) (*http.Request, error) {
-	return newASRRequestWithPrompt(ctx, cfg, pcm, "")
+	return newASRRequestWithPrompt(ctx, cfg, pcm, DictationHint(cfg))
 }
 
 func newASRRequestWithPrompt(ctx context.Context, cfg coreconfig.Config, pcm []byte, prompt string) (*http.Request, error) {

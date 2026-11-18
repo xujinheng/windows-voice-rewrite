@@ -38,6 +38,13 @@ jobs:
           fetch-depth: 2
       - name: Verify CI path classifier
         run: python3 -m unittest discover -s scripts -p 'test_ci_*.py' -v
+      - name: Test Chinese/English paired ASR benchmark (offline only)
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_asr_codeswitch_eval.py' -v
+          python3 scripts/asr_codeswitch_eval.py evaluate \
+            --json-output "$RUNNER_TEMP/asr-codeswitch.json" \
+            --markdown-output "$RUNNER_TEMP/asr-codeswitch.md"
+          cat "$RUNNER_TEMP/asr-codeswitch.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Benchmark portable Go decision ownership against base
         shell: bash
         run: |

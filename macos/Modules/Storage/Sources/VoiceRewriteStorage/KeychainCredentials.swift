@@ -200,6 +200,8 @@ public struct HelperConfigFactory {
             "asr_base_url": settings.asrBaseURL,
             "llm_base_url": settings.llmBaseURL,
             "asr_model": settings.asrModel,
+            "asr_hint_mode": settings.asrHintMode,
+            "asr_vocabulary": settings.asrVocabulary,
             "text_model": settings.textModel,
             "max_record_seconds": settings.maxRecordSeconds,
             "record_mode": settings.recordMode,

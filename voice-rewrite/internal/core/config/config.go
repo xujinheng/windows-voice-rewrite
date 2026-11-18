@@ -11,15 +11,18 @@ import (
 // VoiceRewrite never sends audio or selected text to a provider other than the
 // two HTTP endpoints explicitly configured by the user.
 type Config struct {
-	MeetingASRMode         string `json:"meeting_asr_mode"`
-	MeetingBackground      string `json:"meeting_background"`
-	MeetingTerms           string `json:"meeting_terms"`
-	ASRBaseURL             string `json:"asr_base_url"`
-	LLMBaseURL             string `json:"llm_base_url"`
-	TextModel              string `json:"text_model"`
-	ASRAPIKey              string `json:"asr_api_key"`
-	LLMAPIKey              string `json:"llm_api_key"`
-	ASRModel               string `json:"asr_model"`
+	MeetingASRMode    string `json:"meeting_asr_mode"`
+	MeetingBackground string `json:"meeting_background"`
+	MeetingTerms      string `json:"meeting_terms"`
+	ASRBaseURL        string `json:"asr_base_url"`
+	LLMBaseURL        string `json:"llm_base_url"`
+	TextModel         string `json:"text_model"`
+	ASRAPIKey         string `json:"asr_api_key"`
+	LLMAPIKey         string `json:"llm_api_key"`
+	ASRModel          string `json:"asr_model"`
+	// ASRHintMode is separate from the LLM SystemPrompt and Meeting profile.
+	ASRHintMode            string `json:"asr_hint_mode"`
+	ASRVocabulary          string `json:"asr_vocabulary"`
 	AudioDeviceID          int    `json:"audio_device_id"`
 	HotkeyRecord           string `json:"hotkey_record"`
 	DictationHotkey        string `json:"dictation_hotkey"`
@@ -50,6 +53,10 @@ const (
 	DefaultCopyTimeoutMS    = 750
 	// MeetingASRMultipart and MeetingASRLlamaPrefix are the only persisted
 	// meeting recognizer names. MeetingASRModes is the settings list order.
+	ASRHintOff            = "off"
+	ASRHintAuto           = "auto-supported"
+	ASRHintVocabulary     = "vocabulary-only"
+	MaxASRVocabularyBytes = 2048
 	MeetingASRMultipart   = "multipart"
 	MeetingASRLlamaPrefix = "llama-prefix"
 )
@@ -107,6 +114,7 @@ func Defaults() Config {
 		LLMBaseURL:             "http://127.0.0.1:1234/v1",
 		TextModel:              "auto",
 		ASRModel:               "whisper-1",
+		ASRHintMode:            ASRHintOff,
 		AudioDeviceID:          -1,
 		HotkeyRecord:           "Mouse5",
 		DictationHotkey:        "Mouse4",
@@ -153,6 +161,15 @@ func Normalize(cfg Config) (Config, error) {
 	defaults := Defaults()
 	if !KnownMeetingASRMode(cfg.MeetingASRMode) {
 		return cfg, fmt.Errorf("meeting_asr_mode 必须是 %s 或 %s", MeetingASRLlamaPrefix, MeetingASRMultipart)
+	}
+	if cfg.ASRHintMode == "" {
+		cfg.ASRHintMode = ASRHintOff // older settings files preserve prior request behavior
+	}
+	if cfg.ASRHintMode != ASRHintOff && cfg.ASRHintMode != ASRHintAuto && cfg.ASRHintMode != ASRHintVocabulary {
+		return cfg, fmt.Errorf("invalid asr_hint_mode %q", cfg.ASRHintMode)
+	}
+	if len(cfg.ASRVocabulary) > MaxASRVocabularyBytes {
+		return cfg, errors.New("asr_vocabulary 内容过长")
 	}
 	if cfg.ASRModel == "" {
 		cfg.ASRModel = defaults.ASRModel

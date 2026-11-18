@@ -22,6 +22,8 @@ final class SettingsStoreTests: XCTestCase {
         settings.meetingASRMode = ContractLimits.meetingASRMultipart
         settings.meetingBackground = "项目背景与目标"
         settings.meetingTerms = "ASR = 语音识别"
+        settings.asrHintMode = "vocabulary-only"
+        settings.asrVocabulary = "macOS = mac O S\nP95"
         settings.recordMode = "toggle"
         settings.exitShortcut = "Ctrl+Alt+F12"
         settings.systemPrompt = "答复简洁"
@@ -38,6 +40,7 @@ final class SettingsStoreTests: XCTestCase {
             "asr_base_url", "llm_base_url", "asr_model", "text_model", "max_record_seconds",
             "dictation_shortcut", "rewrite_shortcut", "dictation_keyboard_id", "rewrite_keyboard_id", "microphone_uid",
             "meeting_asr_mode", "meeting_background", "meeting_terms",
+            "asr_hint_mode", "asr_vocabulary",
             "record_mode", "hotkey_exit", "system_prompt", "max_response_tokens",
             "max_selected_characters", "selection_copy_attempts", "selection_copy_timeout_ms",
         ])
@@ -52,6 +55,8 @@ final class SettingsStoreTests: XCTestCase {
         json.removeValue(forKey: "meeting_asr_mode")
         json.removeValue(forKey: "meeting_background")
         json.removeValue(forKey: "meeting_terms")
+        json.removeValue(forKey: "asr_hint_mode")
+        json.removeValue(forKey: "asr_vocabulary")
         for key in ["record_mode", "hotkey_exit", "system_prompt", "max_response_tokens",
                     "max_selected_characters", "selection_copy_attempts", "selection_copy_timeout_ms"] {
             json.removeValue(forKey: key)
@@ -65,6 +70,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(migrated.meetingASRMode, ContractLimits.defaultMeetingASRMode)
         XCTAssertEqual(migrated.meetingBackground, "")
         XCTAssertEqual(migrated.meetingTerms, "")
+        XCTAssertEqual(migrated.asrHintMode, "off")
+        XCTAssertEqual(migrated.asrVocabulary, "")
         XCTAssertEqual(migrated.recordMode, "hold")
         XCTAssertEqual(migrated.exitShortcut, ContractLimits.defaultExitShortcut)
         XCTAssertEqual(migrated.maxSelectedRunes, ContractLimits.defaultMaxSelectedRunes)
