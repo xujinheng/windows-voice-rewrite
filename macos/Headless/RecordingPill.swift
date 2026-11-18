@@ -212,7 +212,9 @@ private final class PillSurface: NSView {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = centered ? .center : .left
         let text = message as NSString
-        text.draw(in: NSRect(x: x, y: 16, width: width, height: 21), withAttributes: [
+        // AppKit's unflipped text box sits slightly high relative to the pill's icons.
+        // Move the single shared text lane down 2 pt for the clock and all phases.
+        text.draw(in: NSRect(x: x, y: 14, width: width, height: 21), withAttributes: [
             .font: NSFont.systemFont(ofSize: size, weight: centered ? .semibold : .medium),
             .foregroundColor: color,
             .paragraphStyle: paragraph
