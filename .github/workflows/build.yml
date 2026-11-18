@@ -30,7 +30,7 @@ jobs:
       ui: ${{ steps.scope.outputs.ui }}
       direct2d: ${{ steps.scope.outputs.direct2d }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Verify CI path classifier
         run: python3 -m unittest discover -s scripts -p 'test_ci_changes.py' -v
       - name: Compute affected platforms
@@ -56,8 +56,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
@@ -88,13 +88,13 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
       - name: Cache SwiftPM downloads
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ~/Library/Caches/org.swift.swiftpm
@@ -161,7 +161,7 @@ jobs:
           bash scripts/test-macos-package-verifier.sh "$app" arm64 "$version"
       - name: Upload Apple Silicon macOS developer app
         if: github.event_name != 'pull_request' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-macOS-arm64-Dev
           path: |
@@ -184,14 +184,14 @@ jobs:
     runs-on: macos-15-intel
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
       - name: Cache SwiftPM downloads
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ~/Library/Caches/org.swift.swiftpm
@@ -235,7 +235,7 @@ jobs:
           bash scripts/test-macos-package-verifier.sh "$app" x86_64 "$version"
       - name: Upload Intel macOS developer app
         if: github.event_name != 'pull_request' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-macOS-x64-Dev
           path: |
@@ -255,8 +255,8 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
@@ -301,7 +301,7 @@ jobs:
           "$hash *VoiceRewrite-windows-x64.zip" | Set-Content -LiteralPath 'SHA256SUMS.txt' -Encoding ascii
       - name: Upload portable package and checksum
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-portable-windows-x64
           path: |
@@ -310,7 +310,7 @@ jobs:
           if-no-files-found: error
       - name: Upload standalone EXE
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-windows-x64
           path: voice-rewrite/VoiceRewrite.exe
@@ -343,17 +343,17 @@ jobs:
       # short-lived OIDC credentials. This is NOT Authenticode publisher signing.
       - name: Attest portable archive provenance
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: voice-rewrite/VoiceRewrite-windows-x64.zip
       - name: Attest installer provenance
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: installer/output/VoiceRewrite-Setup-*-x64.exe
       - name: Upload installer and checksum
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-installer-windows-x64
           path: installer/output/*
@@ -368,8 +368,8 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
           cache-dependency-path: oneclick/go.mod
@@ -386,7 +386,7 @@ jobs:
         run: go build -trimpath -ldflags '-s -w' -o Qwen3-ASR-OneClick-Windows-x64.exe .
       - name: Attest OneClick provenance
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: oneclick/Qwen3-ASR-OneClick-Windows-x64.exe
       - name: Stage OneClick executable and license
@@ -398,7 +398,7 @@ jobs:
           Copy-Item -LiteralPath 'LICENSE' -Destination 'oneclick/package/'
       - name: Upload Qwen3-ASR OneClick executable
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: Qwen3-ASR-OneClick-Windows-x64
           path: oneclick/package/*
@@ -414,7 +414,7 @@ jobs:
       # Read curated notes from main (not from the tag's historical build
       # snapshot). A release without dedicated notes must fail, never fall back
       # to GitHub's automatic PR/commit history.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
           path: release-metadata
@@ -431,13 +431,13 @@ jobs:
             echo "Release notes contain auto-generated or internal development history" >&2
             exit 1
           fi
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: VoiceRewrite-*
           path: release
           merge-multiple: true
       - name: Publish unsigned release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           prerelease: ${{ github.ref_name != 'v0.1.0' }}
           name: VoiceRewrite ${{ github.ref_name }}

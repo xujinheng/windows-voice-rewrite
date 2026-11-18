@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
@@ -41,12 +41,12 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 50
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
-      - uses: actions/cache@v4
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ~/Library/Caches/org.swift.swiftpm
@@ -75,8 +75,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
@@ -108,7 +108,7 @@ jobs:
           ./scripts/test-meeting-ui.ps1
       - name: Preserve native diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: nightly-windows-meeting
           path: meeting-e2e/
