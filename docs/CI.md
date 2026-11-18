@@ -9,14 +9,17 @@ protection. Do **not** make path-filtered visual workflows required checks.
 | PR change | Selected platform checks |
 | --- | --- |
 | Docs/README only | classifier and CI Gate |
-| Shared `voice-rewrite/` Go | Linux race, Windows, macOS ARM and Intel |
+| Portable/shared `voice-rewrite/` Go | Linux race, Windows, macOS ARM and Intel |
+| Native `*_windows.go` only | Windows tests and GUI compile |
 | `macos/` only | macOS ARM and Intel |
+| `cmd/voicebridge/` only | Linux race and macOS ARM/Intel |
 | `oneclick/` only | Windows OneClick |
 | `installer/` only | Windows tests and GUI compile |
 | Workflow/CI classifier | full validation matrix |
 
-Specialized UI and Direct2D acceptance still run for matching changes, without
-requiring unrelated PRs to pay for them. Both main pushes and version tags run
+Specialized cross-platform UI and Direct2D acceptance are invoked as conditional
+reusable jobs by the same PR workflow and are part of **CI Gate** when relevant.
+Unrelated PRs do not launch those jobs. Both main pushes and version tags run
 all platforms, ignoring PR change filters. A release tag validates the full
 matrix, creates the curated Windows Release, and then calls the reusable signed
 macOS distribution workflow. If signing credentials are absent, the macOS
