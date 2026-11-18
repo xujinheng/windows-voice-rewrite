@@ -52,10 +52,20 @@ func (g *Epoch) validLocked(id uint64) bool {
 	return true
 }
 
-func (g *Epoch) Valid(id uint64) bool {
+// ValidGeneration is the shared epoch ownership decision used by both
+// Windows workers and the macOS Go bridge. It checks the real deadline and
+// cancels expired contexts atomically, never a second copy of native policy.
+func ValidGeneration(g *Epoch, id uint64) bool {
+	if g == nil {
+		return false
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.validLocked(id)
+}
+
+func (g *Epoch) Valid(id uint64) bool {
+	return ValidGeneration(g, id)
 }
 
 // StartStage starts a *stage-local* monotonic deadline, not a deadline
@@ -102,7 +112,13 @@ func (g *Epoch) FinishStage(id uint64, stage Stage) bool {
 
 // Cancel is idempotent. It revokes only the exact current generation, without
 // allocating a fresh task; Start can immediately create the next one.
-func (g *Epoch) Cancel(id uint64, reason Reason) bool {
+// CancelGeneration owns the actual cancellation and provider context
+// revocation on both native hosts. It is deliberately idempotent: a late
+// cancellation cannot touch a replacement task.
+func CancelGeneration(g *Epoch, id uint64, reason Reason) bool {
+	if g == nil {
+		return false
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if !g.validLocked(id) {
@@ -110,6 +126,10 @@ func (g *Epoch) Cancel(id uint64, reason Reason) bool {
 	}
 	g.cancelLocked(reason)
 	return true
+}
+
+func (g *Epoch) Cancel(id uint64, reason Reason) bool {
+	return CancelGeneration(g, id, reason)
 }
 
 func (g *Epoch) cancelLocked(reason Reason) {

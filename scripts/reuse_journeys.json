@@ -433,15 +433,17 @@
           "go": [
             {
               "path": "voice-rewrite/internal/core/session/epoch.go",
-              "contains": "func (g *Epoch) Valid("
+              "contains": "func ValidGeneration("
             },
             {
               "path": "voice-rewrite/task_worker_windows.go",
-              "contains": "app.epoch.Valid("
+              "contains": "session.ValidGeneration(",
+              "within": "processDictationHold"
             },
             {
               "path": "voice-rewrite/cmd/voicebridge/main.go",
-              "contains": "s.voiceEpoch.Apply("
+              "contains": "sessioncore.ValidGeneration(",
+              "within": "voiceEpochRequest"
             }
           ],
           "logical_unit_id": "cancel_failure/epoch"
@@ -457,16 +459,18 @@
           "logical_unit_id": "cancel_failure/cancel",
           "go": [
             {
-              "path": "voice-rewrite/internal/core/session/policy.go",
-              "contains": "func (p *Policy) Apply("
+              "path": "voice-rewrite/internal/core/session/epoch.go",
+              "contains": "func CancelGeneration("
             },
             {
               "path": "voice-rewrite/windows.go",
-              "contains": "app.epoch.Cancel("
+              "contains": "session.CancelGeneration(",
+              "within": "runApp"
             },
             {
               "path": "voice-rewrite/cmd/voicebridge/main.go",
-              "contains": "s.voiceEpoch.Apply("
+              "contains": "sessioncore.CancelGeneration(",
+              "within": "voiceEpochRequest"
             }
           ]
         },
@@ -486,11 +490,13 @@
             },
             {
               "path": "voice-rewrite/task_worker_windows.go",
-              "contains": "session.StageBudget("
+              "contains": "session.StageBudget(",
+              "within": "processDictationHold"
             },
             {
               "path": "voice-rewrite/cmd/voicebridge/main.go",
-              "contains": "s.voiceEpoch.Apply("
+              "contains": "sessioncore.StageBudget(",
+              "within": "voiceEpochRequest"
             }
           ]
         },

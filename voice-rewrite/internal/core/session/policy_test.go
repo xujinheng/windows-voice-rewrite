@@ -193,3 +193,48 @@ func TestPolicyManySequentialTasksKeepNewGenerationAvailable(t *testing.T) {
 		}
 	}
 }
+
+func TestSharedHostEpochAndPreCanceledBridgeEffects(t *testing.T) {
+	var p Policy
+	begin := Event{Type: EventBegin, SessionID: "bridge-lease", Generation: 7}
+	if !p.Apply(begin).Allowed {
+		t.Fatal("cannot create bridge lease")
+	}
+	epoch, token := p.CurrentEpoch("bridge-lease", 7)
+	if !ValidGeneration(epoch, token) || !p.Apply(Event{
+		Type: EventStage, SessionID: "bridge-lease", Generation: 7, Stage: StageASR,
+	}).Allowed {
+		t.Fatal("epoch lease was not valid before ASR")
+	}
+	if !p.Apply(Event{Type: EventBind, SessionID: "bridge-lease",
+		Generation: 7, RequestID: "provider-7"}).Allowed {
+		t.Fatal("provider lease failed")
+	}
+	if !CancelGeneration(epoch, token, ReasonUser) {
+		t.Fatal("Go shared host cancel did not revoke provider context")
+	}
+	if ValidGeneration(epoch, token) || CancelGeneration(epoch, token, ReasonUser) {
+		t.Fatal("pre-canceled lease must fail closed and remain idempotent")
+	}
+	got := p.Apply(Event{Type: EventCancel, SessionID: "bridge-lease", Generation: 7,
+		Reason: ReasonUser})
+	if !got.Allowed || len(got.Effects) != 4 ||
+		got.Effects[0].Type != "cancel_request" ||
+		got.Effects[0].RequestID != "provider-7" {
+		t.Fatalf("pre-canceled bridge epoch must still emit effects once: %+v", got)
+	}
+	if other, _ := p.CurrentEpoch("bridge-lease", 7); other != nil {
+		t.Fatal("canceled session must not yield an active epoch")
+	}
+	if second := p.Apply(Event{Type: EventCancel,
+		SessionID: "bridge-lease", Generation: 7, Reason: ReasonUser}); second.Allowed {
+		t.Fatal("duplicate cancel unexpectedly accepted")
+	}
+	if !p.Apply(Event{Type: EventBegin, SessionID: "next",
+		Generation: 8}).Allowed {
+		t.Fatal("newer task must start after pre-cancel")
+	}
+	if ValidGeneration(epoch, token) || ValidGeneration(nil, token) {
+		t.Fatal("stale or nil lease unexpectedly authorized")
+	}
+}

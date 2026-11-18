@@ -106,7 +106,7 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 		}
 	}()
 	r := <-rec.result
-	if !app.epoch.Valid(generation) {
+	if !session.ValidGeneration(&app.epoch, generation) {
 		return
 	}
 	if err := ux.DictationCaptureProblem(r.err, audio.BelowMinCapture(r.pcm)); err != nil {
@@ -122,7 +122,7 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	defer cancel()
 	start := time.Now()
 	text, err := speech.Transcribe(ctx, app.cfg, r.pcm)
-	if !app.epoch.Valid(generation) {
+	if !session.ValidGeneration(&app.epoch, generation) {
 		return
 	}
 	app.logger.Printf("stage=asr flow=dictation ms=%d", time.Since(start).Milliseconds())
@@ -154,7 +154,7 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	if !app.epoch.StartStage(generation, session.StageNativeWrite, session.StageBudget(session.StageNativeWrite, 0, 0)) {
 		return
 	}
-	err = insertDictationText(app.Window, expectedWindow, text, func() bool { return app.epoch.Valid(generation) })
+	err = insertDictationText(app.Window, expectedWindow, text, func() bool { return session.ValidGeneration(&app.epoch, generation) })
 	if !app.epoch.FinishStage(generation, session.StageNativeWrite) {
 		return
 	}
@@ -176,7 +176,7 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 // runs off the UI and low-level mouse-hook threads, and enforces a small time budget.
 func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintptr, anchor trayPoint, generation uint64) {
 	started := time.Now()
-	if !app.epoch.Valid(generation) {
+	if !session.ValidGeneration(&app.epoch, generation) {
 		rec.Stop()
 		go func() { <-rec.result }()
 		return
@@ -211,7 +211,7 @@ func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintp
 	}
 	app.logger.Printf("selection captured; chars=%d", utf8.RuneCountInString(sel.Text))
 	app.postHandyPhase(indicator.Processing, generation)
-	if !app.epoch.Valid(generation) {
+	if !session.ValidGeneration(&app.epoch, generation) {
 		return
 	}
 	// We already own the busy flag and error recovery: avoid a second outer worker.
@@ -231,12 +231,12 @@ func processRecorded(app *appState, rec *audioRecorder, sel selectedText, genera
 }
 
 func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText, generation uint64) {
-	if !app.epoch.Valid(generation) {
+	if !session.ValidGeneration(&app.epoch, generation) {
 		return
 	}
 	app.logger.Print("worker: waiting for recording buffer")
 	r := <-rec.result
-	if !app.epoch.Valid(generation) {
+	if !session.ValidGeneration(&app.epoch, generation) {
 		return
 	}
 	if err := ux.RewriteCaptureProblem(r.err, audio.BelowMinCapture(r.pcm)); err != nil {
@@ -251,7 +251,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	defer cancel()
 	started := time.Now()
 	answer, instruction, e := textedit.ResolveSpokenTask(ctx, app.cfg, sel.Text, r.pcm, func(text string) {
-		if !app.epoch.Valid(generation) {
+		if !session.ValidGeneration(&app.epoch, generation) {
 			return
 		}
 		app.logger.Printf("stage=asr ms=%d", time.Since(started).Milliseconds())
@@ -259,7 +259,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		app.postHandyPhase(indicator.Rewriting, generation)
 		app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(text))
 	})
-	if !app.epoch.Valid(generation) {
+	if !session.ValidGeneration(&app.epoch, generation) {
 		return
 	}
 	if !app.epoch.FinishStage(generation, session.StageSpokenEdit) {
@@ -283,7 +283,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		if !app.epoch.StartStage(generation, session.StageNativeWrite, session.StageBudget(session.StageNativeWrite, 0, 0)) {
 			return
 		}
-		e = replaceSelectionWithGuard(app.Window, sel, answer.Result, app.cfg, action == textedit.TryReplace, func() bool { return app.epoch.Valid(generation) })
+		e = replaceSelectionWithGuard(app.Window, sel, answer.Result, app.cfg, action == textedit.TryReplace, func() bool { return session.ValidGeneration(&app.epoch, generation) })
 		if !app.epoch.FinishStage(generation, session.StageNativeWrite) {
 			return
 		}

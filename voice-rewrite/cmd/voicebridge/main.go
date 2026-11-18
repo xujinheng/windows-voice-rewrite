@@ -327,7 +327,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 // The same session.Policy code is consumed by the Windows worker. Each reply
 // echoes exact generation ownership and the Go-issued effects.
 func (s *bridgeServer) voiceEpochRequest(req request) response {
-	decision := s.voiceEpoch.Apply(sessioncore.Event{
+	event := sessioncore.Event{
 		Type:          sessioncore.EventType(req.EpochEvent),
 		SessionID:     req.SessionID,
 		Generation:    req.Generation,
@@ -336,7 +336,41 @@ func (s *bridgeServer) voiceEpochRequest(req request) response {
 		Reason:        sessioncore.Reason(req.Reason),
 		AudioBytes:    req.AudioBytes,
 		RecordSeconds: req.RecordSeconds,
-	})
+	}
+	denied := func() response {
+		return success(req.ID, map[string]any{
+			"allowed": false, "session_id": event.SessionID,
+			"generation": event.Generation, "stage": event.Stage,
+			"budget_ms": int64(0), "effects": []sessioncore.Effect{},
+		})
+	}
+	switch event.Type {
+	case sessioncore.EventAuthorize, sessioncore.EventReceipt, sessioncore.EventBind:
+		// The bridge checks the SAME Go epoch function as Windows, before
+		// invoking OS-sensitive native write or accepting an asynchronous reply.
+		epoch, generation := s.voiceEpoch.CurrentEpoch(event.SessionID, event.Generation)
+		if !sessioncore.ValidGeneration(epoch, generation) {
+			return denied()
+		}
+	case sessioncore.EventCancel:
+		// Revoke provider context immediately in the common Go cancellation
+		// function used by Windows. The matching Apply event emits one batch
+		// of effects even though the context is already revoked.
+		epoch, generation := s.voiceEpoch.CurrentEpoch(event.SessionID, event.Generation)
+		if event.Reason == "" {
+			event.Reason = sessioncore.ReasonUser
+		}
+		if !sessioncore.CancelGeneration(epoch, generation, event.Reason) {
+			return denied()
+		}
+	case sessioncore.EventStage:
+		// Both hosts use the same stage-local Go budget, not a native
+		// timer measured from the original physical key press.
+		if sessioncore.StageBudget(event.Stage, event.AudioBytes, event.RecordSeconds) <= 0 {
+			return denied()
+		}
+	}
+	decision := s.voiceEpoch.Apply(event)
 	effects := make([]map[string]any, 0, len(decision.Effects))
 	for _, effect := range decision.Effects {
 		effects = append(effects, map[string]any{

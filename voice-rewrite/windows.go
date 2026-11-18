@@ -672,7 +672,7 @@ func runApp() {
 			case indicator.CancelDismiss:
 				closeHandyStatus() // close a completed status, not the answer card
 			case indicator.CancelWork:
-				app.epoch.Cancel(uint64(msg.WParam), session.ReasonUser) // cancel only this generation
+				session.CancelGeneration(&app.epoch, uint64(msg.WParam), session.ReasonUser) // cancel only this generation
 				if active != nil {
 					stopHoldWatch()
 					rec := active

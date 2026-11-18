@@ -101,6 +101,19 @@ type Policy struct {
 	effectID       uint64
 }
 
+// CurrentEpoch returns the real Go-owned lease, never an inferred native
+// generation. The caller must run ValidGeneration or CancelGeneration on this
+// lease; a concurrent replacement revokes the returned token.
+func (p *Policy) CurrentEpoch(sessionID string, generation uint64) (*Epoch, uint64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	t := p.current
+	if t == nil || t.finished || t.sessionID != sessionID || t.clientGeneration != generation {
+		return nil, 0
+	}
+	return &p.epoch, t.epoch
+}
+
 func StageBudget(stage Stage, audioBytes, recordSeconds int) time.Duration {
 	switch stage {
 	case StageMicrophoneStart:
@@ -213,6 +226,21 @@ func (p *Policy) Apply(e Event) Decision {
 		return result
 	}
 	if !p.epoch.Valid(t.epoch) {
+		// The bridge invokes the *same* exported Go cancellation function as
+		// Windows before requesting the effects. Its context is revoked
+		// immediately; the matching event still emits exactly one effects batch.
+		if e.Type == EventCancel {
+			reason := e.Reason
+			if reason == "" {
+				reason = ReasonUser
+			}
+			if p.epoch.Reason() == reason {
+				result.Reason = reason
+				result.Effects = p.finish(t, reason)
+				result.Allowed = true
+				return result
+			}
+		}
 		if p.epoch.Reason() == ReasonTimeout {
 			result.Reason = ReasonTimeout
 			result.Effects = p.finish(t, ReasonTimeout)
