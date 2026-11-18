@@ -499,7 +499,7 @@ jobs:
 
   windows-acceptance:
     name: Windows UI capture (parallel)
-    if: !startsWith(github.ref, 'refs/tags/') && needs.changes.outputs.ui == 'true'
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && needs.changes.outputs.ui == 'true' }}
     needs: changes
     permissions:
       contents: read
