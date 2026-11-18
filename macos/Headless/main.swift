@@ -8,7 +8,7 @@ import Foundation
 // All transcription, prompt/intent and routing decisions live in voicebridge (Go).
 private enum Action { case dictation, rewrite }
 private enum HostError: Error {
-    case config(String), microphone(String), selection, conversion, bridge(String), targetChanged
+    case config(String), microphone(String), conversion, bridge(String)
 }
 
 private struct HostConfig {
@@ -311,24 +311,22 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         case 61: (name, family) = ("RightOption", .maskAlternate)
         default: return
         }
-        guard name == config.dictation || name == config.rewrite else { return }
-        if pressed.contains(code) {
-            pressed.remove(code)
-            release(code)
-        } else if flags.contains(family) {
-            pressed.insert(code)
-            arm(code: code, action: name == config.dictation ? .dictation : .rewrite,
-                delay: 0.20)
-        }
+        // Right-side flagsChanged events can fire while another modifier is held.
+        // A tracked press is a release; a new press requires the matching flag.
+        updatePress(code: code, name: name,
+                    down: !pressed.contains(code) && flags.contains(family), delay: 0.20)
     }
     private func handleButton(code: Int64, down: Bool) {
-        let name = code == 103 ? "Mouse4" : "Mouse5"
+        updatePress(code: code, name: code == 103 ? "Mouse4" : "Mouse5",
+                    down: down, delay: 0.25)
+    }
+    private func updatePress(code: Int64, name: String, down: Bool, delay: TimeInterval) {
+        guard name == config.dictation || name == config.rewrite else { return }
         if down {
-            pressed.insert(code)
+            guard pressed.insert(code).inserted else { return }
             arm(code: code, action: name == config.dictation ? .dictation : .rewrite,
-                delay: 0.25)
-        } else {
-            pressed.remove(code)
+                delay: delay)
+        } else if pressed.remove(code) != nil {
             release(code)
         }
     }
@@ -467,13 +465,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func cancelFromPill() {
         generation &+= 1
         if microphone.running { _ = try? microphone.stop() }
-        timer?.invalidate()
-        timer = nil
-        activeKey = nil
-        activeAction = nil
-        started = nil
-        selected = nil
-        pending = false
+        clearSession()
         pill.dismiss()
         show("Cancelled")
     }
@@ -482,14 +474,18 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         if pill.isVisible {
             pill.result(message == "Preview only" ? .fallback : .error)
         }
+        clearSession()
+        show(message)
+    }
+
+    private func clearSession() {
         timer?.invalidate()
         timer = nil
         activeKey = nil
         activeAction = nil
-        pending = false
         started = nil
         selected = nil
-        show(message)
+        pending = false
     }
 }
 
