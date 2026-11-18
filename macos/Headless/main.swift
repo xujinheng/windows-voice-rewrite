@@ -129,7 +129,7 @@ private final class Microphone {
             }
             if let error { throw error }
             if let p = output.int16ChannelData?[0], output.frameLength > 0 {
-                data.append(UnsafeRawBufferPointer(start: p, count: Int(output.frameLength) * 2))
+                data.append(contentsOf: UnsafeRawBufferPointer(start: p, count: Int(output.frameLength) * 2))
             }
             if status == .endOfStream { break }
             if status == .error || (status == .inputRanDry && output.frameLength == 0) {
@@ -285,7 +285,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                 userInfo: Unmanaged.passUnretained(self).toOpaque())
         guard let tap else { show("Input denied"); return }
         source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        if let source { CFRunLoopAddSource(CFRunLoopGetMain(), source, kCFRunLoopCommonModes) }
+        if let source { CFRunLoopAddSource(CFRunLoopGetMain(), source, CFRunLoopMode.commonModes) }
         CGEvent.tapEnable(tap: tap, enable: true)
     }
 
@@ -454,7 +454,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 }
 
-let app = NSApplication.shared
-let delegate = HeadlessApp()
-app.delegate = delegate
-app.run()
+MainActor.assumeIsolated {
+    let app = NSApplication.shared
+    let delegate = HeadlessApp()
+    app.delegate = delegate
+    app.run()
+}
