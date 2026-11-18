@@ -434,6 +434,14 @@
             {
               "path": "voice-rewrite/internal/core/session/epoch.go",
               "contains": "func (g *Epoch) Valid("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "app.epoch.Valid("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "s.voiceEpoch.Apply("
             }
           ],
           "logical_unit_id": "cancel_failure/epoch"
@@ -446,7 +454,21 @@
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "func cancelCurrent()"
           },
-          "logical_unit_id": "cancel_failure/cancel"
+          "logical_unit_id": "cancel_failure/cancel",
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/session/policy.go",
+              "contains": "func (p *Policy) Apply("
+            },
+            {
+              "path": "voice-rewrite/windows.go",
+              "contains": "app.epoch.Cancel("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "s.voiceEpoch.Apply("
+            }
+          ]
         },
         {
           "id": "deadline",
@@ -456,7 +478,21 @@
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "private func armProcessingWatchdog("
           },
-          "logical_unit_id": "cancel_failure/deadline"
+          "logical_unit_id": "cancel_failure/deadline",
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/session/policy.go",
+              "contains": "func StageBudget("
+            },
+            {
+              "path": "voice-rewrite/task_worker_windows.go",
+              "contains": "session.StageBudget("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "s.voiceEpoch.Apply("
+            }
+          ]
         },
         {
           "id": "paste_lease",

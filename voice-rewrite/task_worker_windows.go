@@ -15,6 +15,7 @@ import (
 	"voicerewrite/internal/core/clipboard"
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
+	"voicerewrite/internal/core/session"
 	"voicerewrite/internal/core/speech"
 	"voicerewrite/internal/core/textedit"
 	"voicerewrite/internal/core/ux"
@@ -113,7 +114,11 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 		app.postHandyPhase(indicator.Error, generation)
 		return
 	}
-	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), 220*time.Second)
+	budget := session.StageBudget(session.StageASR, len(r.pcm), 0)
+	if !app.epoch.StartStage(generation, session.StageASR, budget) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), budget)
 	defer cancel()
 	start := time.Now()
 	text, err := speech.Transcribe(ctx, app.cfg, r.pcm)
@@ -126,7 +131,7 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 		app.postHandyPhase(indicator.Error, generation)
 		return
 	}
-	if !app.epoch.Valid(generation) {
+	if !app.epoch.FinishStage(generation, session.StageASR) {
 		return
 	}
 	// Core owns the transcript routing on both hosts. The native editor
@@ -146,7 +151,13 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 		return
 	}
 	start = time.Now()
+	if !app.epoch.StartStage(generation, session.StageNativeWrite, session.StageBudget(session.StageNativeWrite, 0, 0)) {
+		return
+	}
 	err = insertDictationText(app.Window, expectedWindow, text, func() bool { return app.epoch.Valid(generation) })
+	if !app.epoch.FinishStage(generation, session.StageNativeWrite) {
+		return
+	}
 	follow := ux.DictationInserted(err)
 	if follow.ShowCard {
 		app.fail(err)
@@ -233,7 +244,10 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		return
 	}
 	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/audio.PCMBytesPerSecond)
-	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), 240*time.Second)
+	if !app.epoch.StartStage(generation, session.StageSpokenEdit, session.StageBudget(session.StageSpokenEdit, len(r.pcm), 0)) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), session.StageBudget(session.StageSpokenEdit, len(r.pcm), 0))
 	defer cancel()
 	started := time.Now()
 	answer, instruction, e := textedit.ResolveSpokenTask(ctx, app.cfg, sel.Text, r.pcm, func(text string) {
@@ -246,6 +260,9 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(text))
 	})
 	if !app.epoch.Valid(generation) {
+		return
+	}
+	if !app.epoch.FinishStage(generation, session.StageSpokenEdit) {
 		return
 	}
 	app.logger.Printf("stage=spoken_selection ms=%d intent=%s", time.Since(started).Milliseconds(), answer.Intent)
@@ -263,7 +280,13 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		app.postHandyPhase(ux.RewriteApplying().Phase, generation)
 		startedPaste := time.Now()
 		// All unknown controls receive the same pre/post paste checks as a browser.
+		if !app.epoch.StartStage(generation, session.StageNativeWrite, session.StageBudget(session.StageNativeWrite, 0, 0)) {
+			return
+		}
 		e = replaceSelectionWithGuard(app.Window, sel, answer.Result, app.cfg, action == textedit.TryReplace, func() bool { return app.epoch.Valid(generation) })
+		if !app.epoch.FinishStage(generation, session.StageNativeWrite) {
+			return
+		}
 		app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
 	}
 	follow := ux.RewritePasted(allowApply, e)

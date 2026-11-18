@@ -167,6 +167,60 @@ final class BridgeClientTests: XCTestCase {
         XCTAssertTrue(gate.accepts(newest))
     }
 
+    /// The real bundled Go bridge must deny all callbacks after a native
+    /// cancellation, including late write receipts and stale timeouts. This
+    /// complements ResultGeneration's immediate native OS safety fence.
+    func testBundledEpochCancelRejectsLateWriteAndAllowsNextTask() throws {
+        let client = BridgeClient(executableURL: try bundledHelper())
+        try client.start()
+        defer { client.stop() }
+
+        func event(_ type: String, task: String, generation: Int, stage: String? = nil) throws -> BridgeReply {
+            let finished = expectation(description: "epoch \(type) \(task)")
+            var reply: BridgeReply?
+            var error: BridgeFailure?
+            var fields: [String: JSONValue] = [
+                "epoch_event": .string(type),
+                "session_id": .string(task),
+                "generation": .number(Double(generation)),
+            ]
+            if let stage { fields["stage"] = .string(stage) }
+            client.send(operation: "voice_epoch", fields: fields) { result in
+                switch result {
+                case .success(let value): reply = value
+                case .failure(let failure): error = failure
+                }
+                finished.fulfill()
+            }
+            wait(for: [finished], timeout: 4)
+            XCTAssertNil(error)
+            return try XCTUnwrap(reply)
+        }
+
+        let first = try event("begin", task: "mac-native-old", generation: 1)
+        XCTAssertTrue(first.result?["allowed"]?.boolValue == true)
+        let stage = try event("stage", task: "mac-native-old", generation: 1, stage: "native_write")
+        XCTAssertTrue(stage.result?["allowed"]?.boolValue == true)
+        XCTAssertEqual(stage.result?["budget_ms"]?.int, 20_000)
+        let canceled = try event("cancel", task: "mac-native-old", generation: 1)
+        XCTAssertTrue(canceled.result?["allowed"]?.boolValue == true)
+        if case .array(let effects)? = canceled.result?["effects"] {
+            XCTAssertFalse(effects.isEmpty)
+        } else {
+            XCTFail("missing Go cancel effects")
+        }
+        XCTAssertFalse(try event("authorize", task: "mac-native-old", generation: 1, stage: "native_write")
+            .result?["allowed"]?.boolValue == true)
+        XCTAssertFalse(try event("receipt", task: "mac-native-old", generation: 1, stage: "native_write")
+            .result?["allowed"]?.boolValue == true)
+        XCTAssertFalse(try event("timeout", task: "mac-native-old", generation: 1, stage: "native_write")
+            .result?["allowed"]?.boolValue == true)
+        XCTAssertTrue(try event("begin", task: "mac-native-new", generation: 2)
+            .result?["allowed"]?.boolValue == true)
+        XCTAssertTrue(try event("authorize", task: "mac-native-new", generation: 2)
+            .result?["allowed"]?.boolValue == true)
+    }
+
     func testRealBundledGoHelloAndErrorCorrelatedByID() throws {
         let client = BridgeClient(executableURL: try bundledHelper())
         try client.start()
@@ -423,6 +477,10 @@ final class BridgeClientTests: XCTestCase {
           case "$line" in
             *'"op":"hello"'*)
               printf '{"v":1,"id":"%s","ok":true,"result":{"name":"VoiceRewrite","protocol":1}}\\n' "$id" ;;
+            *'"op":"voice_epoch"'*)
+              # The synthetic latency fixture only emulates the control reply;
+              # actual epoch policy runs in the bundled Go bridge tests below.
+              printf '{"v":1,"id":"%s","ok":true,"result":{"allowed":true,"budget_ms":30000,"effects":[]}}\\n' "$id" ;;
             *'"op":"transcribe"'*)
               case "$line" in
                 *'"can_insert":true'*) route="insert" ;;
