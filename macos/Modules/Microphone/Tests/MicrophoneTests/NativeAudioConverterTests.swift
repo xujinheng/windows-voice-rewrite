@@ -57,6 +57,29 @@ final class NativeAudioConverterTests: XCTestCase {
                             frameSizes: Array(repeating: 441, count: 100))
     }
 
+    func testNativeStartOwnershipSurvivesLateCancelledAttempt() {
+        var gate = NativePreparationGate()
+        let waitingForPermission = UUID()
+        let preparing = UUID()
+        let next = UUID()
+
+        XCTAssertTrue(gate.begin(preparing))
+        // The cancelled old request resumes after the new request has
+        // already reserved native CoreAudio startup.
+        gate.finish(waitingForPermission)
+        XCTAssertEqual(gate.owner, preparing)
+        XCTAssertFalse(gate.begin(next), "A late result cannot admit a parallel native startup")
+
+        // Once preparation has finished (or queued stale-engine cleanup),
+        // the next attempt can safely queue behind that cleanup.
+        gate.finish(preparing)
+        XCTAssertTrue(gate.begin(next))
+        gate.finish(preparing)
+        XCTAssertEqual(gate.owner, next, "An old completion cannot clear the new owner")
+        gate.finish(next)
+        XCTAssertFalse(gate.isBusy)
+    }
+
     func testDisconnectedExplicitMicrophoneIsNotSilentlyReplaced() {
         let devices = [
             MicrophoneInputDevice(id: "mic-a", name: "Desk microphone"),
@@ -66,6 +89,23 @@ final class NativeAudioConverterTests: XCTestCase {
         XCTAssertFalse(MicrophoneRecorder.selectionUnavailable("mic-a", in: devices))
         XCTAssertTrue(MicrophoneRecorder.selectionUnavailable("unplugged-mic", in: devices))
         XCTAssertTrue(MicrophoneRecorder.selectionUnavailable("mic-a", in: []))
+    }
+
+    func testMicrophoneHeartbeatReportsAbsentCallbacksNotAcousticSilence() throws {
+        XCTAssertFalse(CapturePipeline.isStalled(lastBufferAt: 100, now: 107.9))
+        XCTAssertTrue(CapturePipeline.isStalled(lastBufferAt: 100, now: 108))
+        XCTAssertFalse(CapturePipeline.isStalled(lastBufferAt: 110, now: 100))
+        let fmt = format(48_000, channels: 1)
+        let processor = try CapturePipeline(id: UUID(), inputFormat: fmt) { _, _ in }
+        let silence = makeBuffer(format: fmt, frames: 1024, value: 0)
+        XCTAssertNil(processor.firstCapturedAt)
+        processor.markStarted()
+        processor.enqueue(silence)
+        XCTAssertNotNil(processor.firstCapturedAt,
+                        "First audio callback must be measurable independently of engine start")
+        XCTAssertFalse(processor.hasStalled(),
+                       "Silent samples still prove that the CoreAudio callback is alive")
+        processor.cancel()
     }
 
     func testStereoMixDownProducesAudio() throws {

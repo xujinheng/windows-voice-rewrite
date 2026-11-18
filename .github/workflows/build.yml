@@ -227,8 +227,8 @@ jobs:
       - name: Enable visual acceptance screenshots
         if: needs.changes.outputs.ui == 'true' && !startsWith(github.ref, 'refs/tags/')
         run: |
-          mkdir -p acceptance-output
-          touch acceptance-output/.enabled
+          mkdir -p acceptance-output performance-output
+          touch acceptance-output/.enabled performance-output/.enabled
       - name: Build and test native macOS application
         id: arm-xctest
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
@@ -299,6 +299,14 @@ jobs:
           path: acceptance-output/
           retention-days: 14
           if-no-files-found: error
+      - name: Upload arm64 user-journey latency (native XCTest, no extra build)
+        if: always() && needs.changes.outputs.ui == 'true' && !startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: user-latency-arm64
+          path: performance-output/macos-arm64/journey.json
+          retention-days: 7
+          if-no-files-found: warn
       - name: Preserve the single Apple Silicon macOS app for main
         if: github.ref == 'refs/heads/main' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         shell: bash
@@ -403,8 +411,8 @@ jobs:
       - name: Enable visual acceptance screenshots
         if: needs.changes.outputs.ui == 'true' && !startsWith(github.ref, 'refs/tags/')
         run: |
-          mkdir -p acceptance-output
-          touch acceptance-output/.enabled
+          mkdir -p acceptance-output performance-output
+          touch acceptance-output/.enabled performance-output/.enabled
       - name: Build and test Intel macOS native app
         id: intel-xctest
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
@@ -469,6 +477,14 @@ jobs:
           path: acceptance-output/
           retention-days: 14
           if-no-files-found: error
+      - name: Upload x64 user-journey latency (native XCTest, no extra build)
+        if: always() && needs.changes.outputs.ui == 'true' && !startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: user-latency-x64
+          path: performance-output/macos-x64/journey.json
+          retention-days: 7
+          if-no-files-found: warn
       - name: Preserve the single Intel macOS app for main
         if: github.ref == 'refs/heads/main' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         shell: bash

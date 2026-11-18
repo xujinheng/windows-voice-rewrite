@@ -6,8 +6,7 @@ import Foundation
 /// The converter stays alive across input chunks so its resampling state is preserved.
 final class NativeAudioConverter {
     private let converter: AVAudioConverter
-    private let destination: AVAudioFormat
-    private let outputCapacity: AVAudioFrameCount
+    private let outputBuffer: AVAudioPCMBuffer
 
     init(inputFormat: AVAudioFormat) throws {
         guard inputFormat.commonFormat == .pcmFormatFloat32,
@@ -23,11 +22,17 @@ final class NativeAudioConverter {
               let created = AVAudioConverter(from: inputFormat, to: format) else {
             throw MicrophoneError.converterUnavailable
         }
-        destination = format
         converter = created
         // Capture input chunks are limited to <= 4096 frames by the engine tap.
-        outputCapacity = AVAudioFrameCount(max(1_024,
+        let outputCapacity = AVAudioFrameCount(max(1_024,
             Int(ceil(Double(4_096) * 16_000 / inputFormat.sampleRate)) + 256))
+        // The conversion worker is serial. A single reusable destination
+        // avoids allocating an AVAudioPCMBuffer on every microphone callback.
+        guard let output = AVAudioPCMBuffer(pcmFormat: format,
+                                           frameCapacity: outputCapacity) else {
+            throw MicrophoneError.converterUnavailable
+        }
+        outputBuffer = output
     }
 
     func consume(_ input: AVAudioPCMBuffer, into pcm: inout PCM16Buffer) throws {
@@ -56,10 +61,9 @@ final class NativeAudioConverter {
     ) throws {
         // Bounded loop; a converter which cannot make forward progress must fail.
         for _ in 0..<32 {
-            guard let converted = AVAudioPCMBuffer(pcmFormat: destination,
-                                                    frameCapacity: outputCapacity) else {
-                throw MicrophoneError.converterUnavailable
-            }
+            let converted = outputBuffer
+            // AVAudioConverter writes a new chunk, never the previous output.
+            converted.frameLength = 0
             var conversionError: NSError?
             let result = converter.convert(to: converted,
                                            error: &conversionError,

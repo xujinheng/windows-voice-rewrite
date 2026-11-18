@@ -28,6 +28,17 @@ final class RecordingIndicatorController {
     private var onAutoDismiss: () -> Void = {}
     private var smoothed = 0.0
 
+    #if DEBUG
+    // Test evidence must belong to the *new* pending recording presentation,
+    // rather than any status-bar panel left visible by the previous cycle.
+    private(set) var pendingRecordingPresentationCount: UInt64 = 0
+    var panelForCI: NSPanel? { panel }
+    #endif
+
+    /// Allocate the non-activating AppKit/SwiftUI panel once at launch.
+    /// A cold NSHostingView layout must not delay the first Hold indicator.
+    func prepare() { ensurePanel() }
+
     func present(
         _ snapshot: IndicatorSnapshot,
         levelSource: @escaping () -> Double,
@@ -43,6 +54,11 @@ final class RecordingIndicatorController {
         renderFrame()
         startTimer()
         panel?.orderFrontRegardless()
+        #if DEBUG
+        if snapshot.phase == .recording && snapshot.pending {
+            pendingRecordingPresentationCount &+= 1
+        }
+        #endif
     }
 
     func dismiss() {
@@ -85,7 +101,9 @@ final class RecordingIndicatorController {
     private func startTimer() {
         guard timer == nil else { return }
         let timer = Timer(timeInterval: 0.07, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
+            // This timer is installed on RunLoop.main. Avoid enqueueing a new
+            // actor task every 70ms when the main queue is under load.
+            MainActor.assumeIsolated { self?.tick() }
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
@@ -95,8 +113,10 @@ final class RecordingIndicatorController {
         guard frame.snapshot.visible else { return }
         frame.tick &+= 1
         frame.now = Date()
-        smoothed = IndicatorMath.smoothedLevel(previous: smoothed, incoming: levelSource())
-        frame.level = smoothed
+        if frame.snapshot.phase == .recording {
+            smoothed = IndicatorMath.smoothedLevel(previous: smoothed, incoming: levelSource())
+            frame.level = smoothed
+        }
         let alpha = IndicatorMath.statusOpacity(
             started: frame.snapshot.started,
             changed: frame.snapshot.changed,
@@ -108,7 +128,10 @@ final class RecordingIndicatorController {
             onAutoDismiss()
             return
         }
-        renderFrame()
+        // On every present() the panel is positioned immediately. Monitor
+        // geometry rarely changes at waveform speed; avoid NSScreen.screens
+        // and mouse-geometry queries 14 times per second.
+        if frame.tick % 14 == 0 { renderFrame() }
     }
 
     private func renderFrame() {
@@ -125,8 +148,14 @@ final class RecordingIndicatorController {
         let rawX = Int32((visible.midX - width / 2).rounded())
         let rawY = Int32((visible.minY + 5).rounded())
         let (x, y) = area.clamp(x: rawX, y: rawY, width: Int32(width), height: Int32(IndicatorMath.height))
-        panel.setFrame(NSRect(x: CGFloat(x), y: CGFloat(y), width: width, height: CGFloat(IndicatorMath.height)), display: true)
-        panel.contentView?.frame = NSRect(x: 0, y: 0, width: width, height: CGFloat(IndicatorMath.height))
+        let next = NSRect(x: CGFloat(x), y: CGFloat(y),
+                          width: width, height: CGFloat(IndicatorMath.height))
+        // Repeated setFrame(display: true) forces AppKit layout/repaint on every
+        // wave-meter tick. Only move/resize when the target geometry changes.
+        if panel.frame != next {
+            panel.setFrame(next, display: true)
+            panel.contentView?.frame = NSRect(origin: .zero, size: next.size)
+        }
     }
 }
 

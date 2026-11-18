@@ -56,9 +56,14 @@ struct PCM16Buffer {
 
     private enum State { case active, finished, cancelled }
 
-    init(reserveFrames: Int = maximumFrames) {
-        // Short system-audio packets must not reserve a full minute of memory
-        // for every callback; microphone recording still reserves its limit.
+    // A five-second initial reserve avoids repeatedly allocating the full
+    // 180-second upper bound (~5.5 MiB) on every brief Hold dictation.
+    // Data grows only when a real recording exceeds this initial budget.
+    static let initialReserveFrames = sampleRate * 5
+
+    init(reserveFrames: Int = initialReserveFrames) {
+        // Meeting 200ms packets explicitly request much less than this.
+        // The hard 180-second cap continues to apply in append().
         bytes.reserveCapacity(min(Self.maximumFrames, max(0, reserveFrames)) * 2)
     }
 

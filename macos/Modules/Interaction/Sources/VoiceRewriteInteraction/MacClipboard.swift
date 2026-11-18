@@ -46,11 +46,31 @@ public final class MacClipboardBoard: ClipboardReadReceiptBoard, @unchecked Send
         let count = board.changeCount
         var bytes = 0
         var snapshots: [[String: Data]] = []
-        for item in board.pasteboardItems ?? [] {
+        // A nil item list may indicate a pasteboard-server error, not an empty
+        // clipboard. Never overwrite unreadable original data as "empty".
+        let items: [NSPasteboardItem]
+        if let available = board.pasteboardItems {
+            items = available
+        } else if board.types?.isEmpty == true {
+            items = []
+        } else {
+            throw ClipboardFailure.snapshotUnavailable
+        }
+        // Rich binary/file and promised formats may demand a large or delayed
+        // response from another process. Fail closed to the existing Unicode
+        // delivery path *before* requesting those formats on the UI thread.
+        guard items.count <= 16 else { throw ClipboardFailure.snapshotUnavailable }
+        for item in items {
+            let itemTypes = item.types
+            guard itemTypes.count <= 16 else { throw ClipboardFailure.snapshotUnavailable }
             var types: [String: Data] = [:]
-            for type in item.types {
-                // A promised/virtual type cannot be guaranteed restorable; fail closed.
-                guard !type.rawValue.localizedCaseInsensitiveContains("promise"),
+            for type in itemTypes {
+                let name = type.rawValue.lowercased()
+                let potentiallyRemoteBinary = [
+                    "promise", "file-url", "public.tiff", "public.png", "public.jpeg",
+                    "public.heic", "public.pdf", "public.data", "com.apple.pict",
+                ].contains { name.contains($0) }
+                guard !potentiallyRemoteBinary,
                       let data = item.data(forType: type) else {
                     throw ClipboardFailure.snapshotUnavailable
                 }

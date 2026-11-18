@@ -155,6 +155,8 @@ final class MacModifierHoldTests: XCTestCase {
         XCTAssertNil(MacModifierKey(keyCode: 0))
         XCTAssertNil(MacModifierKey(canonical: "Command"))
         XCTAssertEqual(SideHold.threshold, 0.250, accuracy: 0.0001)
+        XCTAssertEqual(MacModifierHoldTiming.activationThreshold, 0.200, accuracy: 0.0001)
+        XCTAssertLessThan(MacModifierHoldTiming.activationThreshold, SideHold.threshold)
     }
 
     func testEachModifierHasOwnShortAndHeldTransitions() {

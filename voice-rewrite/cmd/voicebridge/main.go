@@ -83,6 +83,26 @@ func defaultOptions() bridgeOptions {
 	return bridgeOptions{MaxInFlight: 4, TranscribeTimeout: 220 * time.Second, SelectedTimeout: 150 * time.Second, SpokenSelectedTimeout: 360 * time.Second}
 }
 
+// Short dictations should not remain in "processing" for the entire 220s
+// multi-chunk maximum when a local or remote ASR service has stalled.
+// Allow more time for longer audio; never extend an explicit test/host limit.
+func transcribeBudget(base64Bytes int) time.Duration {
+	if base64Bytes < 0 {
+		base64Bytes = 0
+	}
+	// Base64 expands three PCM bytes to four characters, rounded upward.
+	pcmBytes := base64Bytes / 4 * 3
+	seconds := (pcmBytes + audio.PCMBytesPerSecond - 1) / audio.PCMBytesPerSecond
+	budget := time.Duration(45+2*seconds) * time.Second
+	if budget < 65*time.Second {
+		return 65 * time.Second
+	}
+	if budget > 220*time.Second {
+		return 220 * time.Second
+	}
+	return budget
+}
+
 type bridgeTask struct {
 	cancel   context.CancelFunc
 	canceled bool
@@ -248,6 +268,11 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		return
 	}
 	timeout := s.options.TranscribeTimeout
+	if req.Op == "transcribe" {
+		if budget := transcribeBudget(len(req.PCMBase64)); budget < timeout {
+			timeout = budget
+		}
+	}
 	if req.Op == "check_update" {
 		timeout = 8 * time.Second
 	} else if req.Op == "list_asr_models" || req.Op == "list_llm_models" {

@@ -19,6 +19,23 @@ public struct MacDictationTarget: @unchecked Sendable {
     }
 }
 
+#if DEBUG
+extension MacDictationTarget {
+    /// Explicit test-only target: compiled out of production Release builds.
+    /// No authorization bypass exists in MacDictationDelivery itself.
+    public static func performanceFixture(processID: Int32) -> MacDictationTarget {
+        MacDictationTarget(processID: processID, focusedElement: nil, windowID: nil)
+    }
+}
+#endif
+
+@MainActor
+public protocol DictationDelivering: AnyObject {
+    func captureAsync(processID: Int32) async throws -> MacDictationTarget
+    func deliver(_ text: String, to target: MacDictationTarget,
+                 stillValid: () -> Bool) async throws -> DeliveryState
+}
+
 public enum DictationTargetPolicy {
     public static func maySend(capturedPID: Int32, foregroundPID: Int32?, secureInput: Bool) -> Bool {
         capturedPID > 0 && foregroundPID == capturedPID && !secureInput
@@ -41,22 +58,26 @@ public enum DictationTargetPolicy {
 /// The only normal dictation writer. Selected-text edits retain the separate
 /// strict AccessibilityClient and InteractionSession authorization.
 @MainActor
-public final class MacDictationDelivery {
+public final class MacDictationDelivery: DictationDelivering {
     private let clipboard = MacClipboardTransactions.shared
 
     public init() {}
 
-    private func focusedElement(in pid: pid_t) -> AXUIElement? {
+    private nonisolated func focusedElement(in pid: pid_t) -> AXUIElement? {
         guard AXIsProcessTrusted() else { return nil }
         let application = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(application, 0.25)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(application, kAXFocusedUIElementAttribute as CFString, &value) == .success,
               let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        return value as! AXUIElement
+        let focused = value as! AXUIElement
+        // The other app is a separate process and can stop answering AX.
+        // The application timeout does not necessarily propagate to elements.
+        AXUIElementSetMessagingTimeout(focused, 0.25)
+        return focused
     }
 
-    private func foregroundWindowID(for pid: pid_t) -> CGWindowID? {
+    private nonisolated func foregroundWindowID(for pid: pid_t) -> CGWindowID? {
         guard let windows = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
             return nil
@@ -70,7 +91,7 @@ public final class MacDictationDelivery {
         return nil
     }
 
-    private func secureField(_ focused: AXUIElement) -> Bool {
+    private nonisolated func secureField(_ focused: AXUIElement) -> Bool {
         for key in [kAXRoleAttribute, kAXSubroleAttribute] {
             var value: CFTypeRef?
             if AXUIElementCopyAttributeValue(focused, key as CFString, &value) == .success,
@@ -88,10 +109,30 @@ public final class MacDictationDelivery {
     }
 
     public func capture(processID: Int32) throws -> MacDictationTarget {
+        try captureTarget(processID: processID,
+            foregroundPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            secureInput: IsSecureEventInputEnabled())
+    }
+
+    /// Capture remote AX metadata on a worker. The foreground identity and
+    /// secure-input flag are sampled on the main actor *before* the hop; an
+    /// unrelated app gaining focus in between is rejected on delivery.
+    public func captureAsync(processID: Int32) async throws -> MacDictationTarget {
+        let foreground = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let secure = IsSecureEventInputEnabled()
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            try captureTarget(processID: processID,
+                foregroundPID: foreground, secureInput: secure)
+        }.value
+    }
+
+    private nonisolated func captureTarget(
+        processID: Int32, foregroundPID: Int32?, secureInput: Bool
+    ) throws -> MacDictationTarget {
         guard DictationTargetPolicy.maySend(
             capturedPID: processID,
-            foregroundPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
-            secureInput: IsSecureEventInputEnabled()) else {
+            foregroundPID: foregroundPID,
+            secureInput: secureInput) else {
             throw InteractionFailure.applicationChanged
         }
         let focused = focusedElement(in: processID)
@@ -100,13 +141,30 @@ public final class MacDictationDelivery {
                                    windowID: foregroundWindowID(for: processID))
     }
 
-    private func revalidate(_ target: MacDictationTarget) throws {
+    /// Perform the strict focus/window/secure-input checks around a remote AX
+    /// query without blocking the UI event loop. A focus switch during the AX
+    /// await is rejected again after returning to the main actor.
+    private func revalidate(_ target: MacDictationTarget) async throws {
+        let foreground = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let secureInput = IsSecureEventInputEnabled()
+        guard DictationTargetPolicy.maySend(
+            capturedPID: target.processID,
+            foregroundPID: foreground,
+            secureInput: secureInput) else {
+            throw InteractionFailure.applicationChanged
+        }
+        try await Task.detached(priority: .userInitiated) { [self] in
+            try revalidateRemote(target)
+        }.value
         guard DictationTargetPolicy.maySend(
             capturedPID: target.processID,
             foregroundPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
             secureInput: IsSecureEventInputEnabled()) else {
             throw InteractionFailure.applicationChanged
         }
+    }
+
+    private nonisolated func revalidateRemote(_ target: MacDictationTarget) throws {
         if !DictationTargetPolicy.sameWindow(
             captured: target.windowID, current: foregroundWindowID(for: target.processID)) {
             throw InteractionFailure.focusChanged
@@ -119,10 +177,9 @@ public final class MacDictationDelivery {
         }
     }
 
-
     /// Best-effort readback evidence only. AX support must never become a
     /// prerequisite for ordinary dictation into Chrome, Electron or TextEdit.
-    private func expectedTextAfterPaste(_ text: String, target: MacDictationTarget) -> String? {
+    private nonisolated func expectedTextAfterPaste(_ text: String, target: MacDictationTarget) -> String? {
         guard let element = target.focusedElement else { return nil }
         AXUIElementSetMessagingTimeout(element, 0.25)
         var rawValue: CFTypeRef?
@@ -151,12 +208,15 @@ public final class MacDictationDelivery {
         return expected
     }
 
-    private func matchesReadback(_ expected: String, target: MacDictationTarget) -> Bool {
+    private nonisolated func matchesReadback(
+        _ expected: String, target: MacDictationTarget,
+        foregroundPID: Int32?, secureInput: Bool
+    ) -> Bool {
         guard let original = target.focusedElement,
               DictationTargetPolicy.maySend(
                 capturedPID: target.processID,
-                foregroundPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
-                secureInput: IsSecureEventInputEnabled()),
+                foregroundPID: foregroundPID,
+                secureInput: secureInput),
               let current = focusedElement(in: target.processID),
               CFEqual(original, current), !secureField(current),
               DictationTargetPolicy.sameWindow(
@@ -169,6 +229,15 @@ public final class MacDictationDelivery {
         return TextWriteVerification.confirms(actual: actual, expected: expected)
     }
 
+    /// Optional AX text/readback is not a paste permission gate. Move remote
+    /// app attribute queries off the UI actor; a frozen editor must not also
+    /// freeze the VoiceRewrite indicator or block the user from cancelling.
+    private func expectedReadbackAsync(_ text: String, target: MacDictationTarget) async -> String? {
+        await Task.detached(priority: .utility) { [self] in
+            expectedTextAfterPaste(text, target: target)
+        }.value
+    }
+
     /// A posted event is never itself a success receipt. Check an exact AXValue
     /// when exposed by the same focused control, without making it a paste gate.
     private func outcomeAfterPosting(expected: String?, target: MacDictationTarget,
@@ -176,7 +245,13 @@ public final class MacDictationDelivery {
         guard let expected else { return .sentUnverified }
         for attempt in 0..<3 {
             guard stillValid(), !Task<Never, Never>.isCancelled else { return .sentUnverified }
-            if matchesReadback(expected, target: target) { return .confirmed }
+            let foreground = NSWorkspace.shared.frontmostApplication?.processIdentifier
+            let secure = IsSecureEventInputEnabled()
+            let confirmed = await Task.detached(priority: .utility) { [self] in
+                matchesReadback(expected, target: target,
+                    foregroundPID: foreground, secureInput: secure)
+            }.value
+            if confirmed { return .confirmed }
             if attempt < 2 {
                 do { try await Task.sleep(nanoseconds: 150_000_000) }
                 catch { return .sentUnverified }
@@ -208,7 +283,7 @@ public final class MacDictationDelivery {
     /// clipboard cannot be faithfully snapshotted or another lease is active.
     /// Never retry after a possibly delivered paste.
     private func typeUnicode(_ text: String, to target: MacDictationTarget,
-                             stillValid: () -> Bool) throws {
+                             stillValid: () -> Bool) async throws {
         try requireKeyboardEventPermission()
         guard let source = CGEventSource(stateID: .hidSystemState) else {
             throw InteractionFailure.unsupportedNativeWrite
@@ -219,7 +294,10 @@ public final class MacDictationDelivery {
         do {
         while offset < units.count {
             guard stillValid() else { throw InteractionFailure.cancelled }
-            try revalidate(target)
+            try await revalidate(target)
+            guard stillValid(), !Task<Never, Never>.isCancelled else {
+                throw InteractionFailure.cancelled
+            }
             var end = min(offset + 16, units.count)
             if end < units.count && end > offset &&
                 (0xD800...0xDBFF).contains(units[end - 1]) &&
@@ -238,6 +316,9 @@ public final class MacDictationDelivery {
             postedAny = true
             up.post(tap: .cgSessionEventTap)
             offset = end
+            // Other windows and the cancel button must remain responsive
+            // while a long Unicode fallback is being posted in many chunks.
+            await Task.yield()
         }
         } catch {
             // A cancellation or focus change after a chunk was posted can
@@ -264,18 +345,19 @@ public final class MacDictationDelivery {
         guard !text.isEmpty else { throw InteractionFailure.invalidSelection }
         try await waitForModifierRelease(stillValid: stillValid)
         guard stillValid() else { throw InteractionFailure.cancelled }
-        try revalidate(target)
+        try await revalidate(target)
+        guard stillValid() else { throw InteractionFailure.cancelled }
         let lease: UUID
         do {
             lease = try await clipboard.beginWhenAvailable(text, stillValid: stillValid)
         } catch ClipboardFailure.snapshotUnavailable {
-            let expected = expectedTextAfterPaste(text, target: target)
-            try typeUnicode(text, to: target, stillValid: stillValid)
+            let expected = await expectedReadbackAsync(text, target: target)
+            try await typeUnicode(text, to: target, stillValid: stillValid)
             return await outcomeAfterPosting(expected: expected, target: target, stillValid: stillValid)
         }
-        let expected = expectedTextAfterPaste(text, target: target)
+        let expected = await expectedReadbackAsync(text, target: target)
         do {
-            try revalidate(target)
+            try await revalidate(target)
             guard clipboard.isOwned(lease) else { throw ClipboardFailure.ownershipLost }
             guard stillValid() else { throw InteractionFailure.cancelled }
             // Start before posting: a fast editor may read the promised text

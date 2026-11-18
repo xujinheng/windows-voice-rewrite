@@ -118,6 +118,13 @@ public struct MacPhysicalModifierState: Sendable {
     public mutating func reset() { pressed.removeAll() }
 }
 
+/// Bare keyboard modifiers are intentionally faster than side-mouse buttons:
+/// an ordinary keyboard shortcut generates a keyDown and cancels the pending
+/// gesture; a mouse's short back/forward navigation needs a longer threshold.
+public enum MacModifierHoldTiming {
+    public static let activationThreshold: TimeInterval = 0.200
+}
+
 /// A single physical modifier only becomes voice input after a deliberate hold.
 /// All flagsChanged/keyDown events pass through to the focused application.
 /// Once another key or modifier is used, it cannot re-arm until key-up.
@@ -202,7 +209,7 @@ private let macModifierTapCallback: CGEventTapCallBack = { _, type, event, userD
 @MainActor
 public final class MacModifierHoldDriver {
     private let threshold: TimeInterval
-    private let onHold: @MainActor (MacModifierKey, Int32?) -> Void
+    private let onHold: @MainActor (MacModifierKey, Int32?, TimeInterval) -> Void
     private let onRelease: @MainActor (MacModifierKey) -> Void
     private let onCancel: @MainActor () -> Void
     private let onFault: @MainActor (MacModifierHoldFailure) -> Void
@@ -216,8 +223,8 @@ public final class MacModifierHoldDriver {
     private var paused = false
     private var captureKey: (@MainActor (MacModifierKey) -> Void)?
 
-    public init(threshold: TimeInterval = SideHold.threshold,
-                onHold: @escaping @MainActor (MacModifierKey, Int32?) -> Void,
+    public init(threshold: TimeInterval = MacModifierHoldTiming.activationThreshold,
+                onHold: @escaping @MainActor (MacModifierKey, Int32?, TimeInterval) -> Void,
                 onRelease: @escaping @MainActor (MacModifierKey) -> Void,
                 onCancel: @escaping @MainActor () -> Void,
                 onFault: @escaping @MainActor (MacModifierHoldFailure) -> Void = { _ in }) {
@@ -353,15 +360,31 @@ public final class MacModifierHoldDriver {
         let alone = physicalState.pressed.count == 1 &&
             MacModifierKey.captureCandidate(keyCode: key.keyCode, flags: event.flags) == key
         if let token = state.press(key, unmodified: alone) {
+            // Timestamp the incoming Quartz event, not the delayed callback:
+            // the 200ms keyboard hold threshold is part of perceived responsiveness.
+            let physicalEventReceivedAt = ProcessInfo.processInfo.systemUptime
             let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier
             DispatchQueue.main.asyncAfter(deadline: .now() + threshold) { [weak self] in
                 guard let self, !self.suspended, !self.paused,
                       self.state.activate(key, token: token) else { return }
-                self.onHold(key, pid)
+                self.onHold(key, pid, physicalEventReceivedAt)
             }
         }
         return Unmanaged.passUnretained(event)
     }
+
+    #if DEBUG
+    /// Exercising the actual flagsChanged handler and delayed hold timer in CI
+    /// without installing a permission-requiring OS event tap. This does NOT
+    /// measure hardware scan or Quartz event delivery latency.
+    public func simulateModifierTransitionForCI(key: MacModifierKey, pressed: Bool) {
+        guard let event = CGEvent(keyboardEventSource: nil,
+                                  virtualKey: CGKeyCode(key.keyCode), keyDown: pressed) else { return }
+        event.flags = pressed ? key.groupFlag : []
+        event.setIntegerValueField(.keyboardEventKeycode, value: key.keyCode)
+        _ = handle(type: .flagsChanged, event: event)
+    }
+    #endif
 
     deinit { MainActor.assumeIsolated { shutdown() } }
 }

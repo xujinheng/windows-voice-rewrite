@@ -19,6 +19,15 @@ final class PCM16BufferTests: XCTestCase {
         XCTAssertEqual(data.count, 7 * MemoryLayout<Int16>.size)
     }
 
+    func testShortRecordingUsesBoundedInitialReserveAndCanStillGrow() throws {
+        XCTAssertEqual(PCM16Buffer.initialReserveFrames, PCM16Buffer.sampleRate * 5)
+        XCTAssertLessThan(PCM16Buffer.initialReserveFrames, PCM16Buffer.maximumFrames)
+        var recording = PCM16Buffer()
+        let sixSeconds = Array(repeating: Float(0), count: PCM16Buffer.sampleRate * 6)
+        try recording.append(sixSeconds)
+        XCTAssertEqual(try recording.finish().count, 6 * PCM16Buffer.sampleRate * 2)
+    }
+
     func testSilenceAndBufferBoundaries() throws {
         var pcm = PCM16Buffer()
         try pcm.append([Float]())

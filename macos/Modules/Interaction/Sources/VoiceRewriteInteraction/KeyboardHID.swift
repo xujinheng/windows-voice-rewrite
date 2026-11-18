@@ -104,13 +104,13 @@ public final class MacKeyboardHIDMonitor {
     private var learn: (@MainActor (MacModifierKey) -> Void)?
     private let threshold: TimeInterval
     private let onDevices: @MainActor ([MacKeyboardDevice]) -> Void
-    private let onPress: @MainActor (MacModifierKey, String, Int32?) -> Void
+    private let onPress: @MainActor (MacModifierKey, String, Int32?, TimeInterval) -> Void
     private let onRelease: @MainActor (MacModifierKey, String) -> Void
     private let onCancel: @MainActor () -> Void
 
-    public init(threshold: TimeInterval = SideHold.threshold,
+    public init(threshold: TimeInterval = MacModifierHoldTiming.activationThreshold,
                 onDevices: @escaping @MainActor ([MacKeyboardDevice]) -> Void,
-                onPress: @escaping @MainActor (MacModifierKey, String, Int32?) -> Void,
+                onPress: @escaping @MainActor (MacModifierKey, String, Int32?, TimeInterval) -> Void,
                 onRelease: @escaping @MainActor (MacModifierKey, String) -> Void,
                 onCancel: @escaping @MainActor () -> Void) {
         self.threshold = threshold
@@ -274,12 +274,14 @@ public final class MacKeyboardHIDMonitor {
                rewrite == MacKeyboardHIDBinding(deviceID: descriptor.id, key: key)),
               let token = state.press(key, unmodified: true) else { return }
         heldDevice = descriptor.id
+        // Start the clock on HID input, before the modifier hold timer.
+        let physicalEventReceivedAt = ProcessInfo.processInfo.systemUptime
         let target = NSWorkspace.shared.frontmostApplication?.processIdentifier
         DispatchQueue.main.asyncAfter(deadline: .now() + threshold) { [weak self] in
             guard let self, !self.paused, !self.suspended,
                   self.heldDevice == descriptor.id, self.pressed.count == 1,
                   self.state.activate(key, token: token) else { return }
-            self.onPress(key, descriptor.id, target)
+            self.onPress(key, descriptor.id, target, physicalEventReceivedAt)
         }
     }
 

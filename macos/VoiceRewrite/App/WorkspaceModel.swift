@@ -111,7 +111,7 @@ final class WorkspaceModel: ObservableObject {
     private var historyStore = SessionHistory()
     private var updateCheck = ResultGeneration()
 
-    private let microphone = MicrophoneRecorder()
+    private let microphone: any VoiceRecordingDevice
     private let systemAudio = SystemAudioCapture()
     private var meetingGeneration = ResultGeneration()
     private var meetingCaptureGeneration = ResultGeneration()
@@ -124,14 +124,29 @@ final class WorkspaceModel: ObservableObject {
     private var showStartupDemoOnConnect = false
     private var meetingPendingPackets = 0
     private var meetingSnapshotPending = false
+    private var meetingSnapshotRequestID: String?
+    private var meetingStartWatchdog: Task<Void, Never>?
+    private var meetingSnapshotStartedAt: TimeInterval = 0
     private var meetingRequestID: String?
     private var meetingCaptureSourceID = ""
     private var meetingVoiceASRID: String?
+    private var meetingVoiceWatchdog: Task<Void, Never>?
     private var meetingVoiceIntent: MeetingVoiceIntent = .compose
     private var meetingSideAction: SideMouseAction?
     private var meetingSideReleasedDuringStart = false
     private let recordingIndicator = RecordingIndicatorController()
     private var indicatorSnapshot = IndicatorSnapshot()
+
+    /// Production user-visible journey timings, independent of CoreAudio/ASR
+    /// implementations. Monotonic timestamps also cover real user hardware,
+    /// which a hosted CI runner cannot faithfully emulate.
+    private struct DictationJourney {
+        let triggeredAt: TimeInterval
+        var releasedAt: TimeInterval?
+        var indicatorLogged = false
+    }
+    private var dictationJourney: DictationJourney?
+
     private var sideGate = SideVoiceGate()
     private var keyboardGate = KeyboardHoldGate()
     private var keyboardHoldSequence: UInt64 = 0
@@ -147,9 +162,12 @@ final class WorkspaceModel: ObservableObject {
     private var sideDictationPreflight: SideDictationPreflight?
     private let credentials = KeychainCredentials()
     private let interaction = InteractionSession.macOS()
-    private let dictationDelivery = MacDictationDelivery()
+    private let dictationDelivery: any DictationDelivering
+    private let helperExecutableURL: URL?
     private var store: SettingsStore?
     private var bridge: BridgeClient?
+    private var helperStartupWatchdog: Task<Void, Never>?
+    static let helperStartupTimeoutSeconds: UInt64 = 15
     private var helloGeneration = ResultGeneration()
     private var resultGeneration = ResultGeneration()
     private var probeGeneration = ResultGeneration()
@@ -158,8 +176,10 @@ final class WorkspaceModel: ObservableObject {
     private var activeModelQueryIDs: [String: String] = [:]
     private var activeProbeIDs: [String: String] = [:]
     private var activeRequestID: String?
+    private var processingWatchdog: Task<Void, Never>?
     private var activeInsert: MacDictationTarget?
     private var activeVoiceSelection: (snapshot: SelectionSnapshot, generation: UInt64)?
+    private var activeSelectionGeneration: UInt64?
     private var activeVoiceTargetPID: Int32?
     private var hotKeyDriver: CarbonHotKeyDriver?
     private var rightModifierDriver: MacModifierHoldDriver?
@@ -173,7 +193,16 @@ final class WorkspaceModel: ObservableObject {
     private var activeShortcutPlan: MacShortcutPlan?
     private var shortcutGeneration = ResultGeneration()
 
-    init() {
+    init(
+        microphone: (any VoiceRecordingDevice)? = nil,
+        dictationDelivery: (any DictationDelivering)? = nil,
+        helperExecutableURL: URL? = nil
+    ) {
+        // Default arguments are evaluated outside actor isolation in Swift 5;
+        // instantiate AppKit-bound dependencies inside this @MainActor init.
+        self.microphone = microphone ?? MicrophoneRecorder()
+        self.dictationDelivery = dictationDelivery ?? MacDictationDelivery()
+        self.helperExecutableURL = helperExecutableURL
         do {
             let s = try SettingsStore()
             settings = try s.load()
@@ -184,8 +213,21 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    private var microphoneDiscoveryGeneration: UInt64 = 0
+
     func refreshMicrophoneDevices() {
-        microphoneDevices = MicrophoneRecorder.availableDevices()
+        // Enumerating CoreAudio HAL devices is synchronous and can stall for
+        // seconds when a USB/Bluetooth interface is reconnecting. Keep the
+        // settings window and keyboard event tap responsive during discovery.
+        microphoneDiscoveryGeneration &+= 1
+        let generation = microphoneDiscoveryGeneration
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let devices = MicrophoneRecorder.availableDevices()
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.microphoneDiscoveryGeneration == generation else { return }
+                self.microphoneDevices = devices
+            }
+        }
     }
 
     func refreshKeyboardDevices() {
@@ -237,10 +279,10 @@ final class WorkspaceModel: ObservableObject {
         if let keyboardHID { return keyboardHID }
         let hid = MacKeyboardHIDMonitor(
             onDevices: { [weak self] in self?.keyboardDevices = $0 },
-            onPress: { [weak self] key, deviceID, pid in
+            onPress: { [weak self] key, deviceID, pid, pressedAt in
                 guard let self, let bound = self.activeShortcutPlan else { return }
                 if key == bound.modifierDictation && deviceID == self.activeDictationKeyboardID {
-                    self.keyboardPressed(.dictation, targetPID: pid)
+                    self.keyboardPressed(.dictation, targetPID: pid, pressedAt: pressedAt)
                 } else if key == bound.modifierRewrite && deviceID == self.activeRewriteKeyboardID {
                     self.keyboardPressed(.rewrite, targetPID: pid)
                 }
@@ -272,6 +314,7 @@ final class WorkspaceModel: ObservableObject {
         showStartupDemoOnConnect = demo
         refreshMicrophonePermission()
         refreshMicrophoneDevices()
+        recordingIndicator.prepare()
         DiagnosticLog.note("应用已启动")
         if case .disconnected = connection { connect() }
         if hotKeys == nil { registerHotKeys() }
@@ -279,6 +322,8 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func connect() {
+        helperStartupWatchdog?.cancel()
+        helperStartupWatchdog = nil
         if meetingActive || meetingStarting || meetingSessionID != nil { stopMeeting() }
         let token = helloGeneration.begin()
         _ = updateCheck.begin()
@@ -294,7 +339,7 @@ final class WorkspaceModel: ObservableObject {
         bridge = nil
         connection = .connecting
         serviceStatus = helperStarting()
-        guard let executable = Bundle.main.executableURL?.deletingLastPathComponent()
+        guard let executable = helperExecutableURL ?? Bundle.main.executableURL?.deletingLastPathComponent()
             .appendingPathComponent("voicebridge") else {
             applyHelperConnection(.bundleMissing)
             return
@@ -306,23 +351,60 @@ final class WorkspaceModel: ObservableObject {
             }
         }
         bridge = client
-        do { try client.start() }
-        catch {
-            applyHelperConnection(.startFailed)
-            return
+        // Handy's audio-worker postmortem highlights that a successful launch
+        // is not proof the pipeline can reply. Bound both cold spawn and hello;
+        // stale sessions never regain ownership after the deadline.
+        helperStartupWatchdog = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(
+                    nanoseconds: Self.helperStartupTimeoutSeconds * 1_000_000_000)
+            } catch { return }
+            guard let self, self.helloGeneration.accepts(token),
+                  self.bridge === client else { return }
+            guard case .connecting = self.connection else { return }
+            DiagnosticLog.note("stage=helper_hello status=timeout")
+            _ = self.helloGeneration.begin()
+            self.bridge = nil
+            client.stop()
+            self.applyHelperConnection(.handshakeFailed)
         }
-        client.send(operation: "hello") { [weak self] response in
-            Task { @MainActor [weak self] in
-                guard let self, self.helloGeneration.accepts(token) else { return }
-                switch response {
-                case .success(let reply):
-                    guard helperHelloAccepted(ok: reply.ok, name: reply.result?["name"]?.string, version: reply.result?["protocol"]?.int) else {
-                        self.applyHelperConnection(.protocolRejected)
-                        return
+        // Process.run() can synchronously block AppKit for hundreds of
+        // milliseconds on a cold launch. Spawn off-main; fence stale connects.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let started: Bool
+            do {
+                try client.start()
+                started = true
+            } catch {
+                started = false
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.helloGeneration.accepts(token),
+                      self.bridge === client else {
+                    client.stop()
+                    return
+                }
+                guard started else {
+                    self.applyHelperConnection(.startFailed)
+                    return
+                }
+                client.send(operation: "hello") { [weak self] response in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.helloGeneration.accepts(token) else { return }
+                        switch response {
+                        case .success(let reply):
+                            guard helperHelloAccepted(
+                                ok: reply.ok, name: reply.result?["name"]?.string,
+                                version: reply.result?["protocol"]?.int
+                            ) else {
+                                self.applyHelperConnection(.protocolRejected)
+                                return
+                            }
+                            self.applyHelperConnection(.connected)
+                        case .failure:
+                            self.applyHelperConnection(.handshakeFailed)
+                        }
                     }
-                    self.applyHelperConnection(.connected)
-                case .failure:
-                    self.applyHelperConnection(.handshakeFailed)
                 }
             }
         }
@@ -476,10 +558,10 @@ final class WorkspaceModel: ObservableObject {
     /// active when permissions are missing.
     private func makeModifierHoldDriver() throws -> MacModifierHoldDriver {
         let driver = rightModifierDriver ?? MacModifierHoldDriver(
-            onHold: { [weak self] key, pid in
+            onHold: { [weak self] key, pid, pressedAt in
                 guard let self, let bound = self.activeShortcutPlan else { return }
                 if key == bound.modifierDictation && self.activeDictationKeyboardID.isEmpty {
-                    self.keyboardPressed(.dictation, targetPID: pid)
+                    self.keyboardPressed(.dictation, targetPID: pid, pressedAt: pressedAt)
                 } else if key == bound.modifierRewrite && self.activeRewriteKeyboardID.isEmpty {
                     self.keyboardPressed(.rewrite, targetPID: pid)
                 }
@@ -679,7 +761,9 @@ final class WorkspaceModel: ObservableObject {
         settings.recordMode = enabled ? "hold" : "toggle"
     }
 
-    private func keyboardPressed(_ action: SideMouseAction, targetPID: Int32?) {
+    // Internal so the CI user-journey test enters through the *same* keyboard
+    // state machine as the actual native right-modifier/keyboard callbacks.
+    func keyboardPressed(_ action: SideMouseAction, targetPID: Int32?, pressedAt: TimeInterval? = nil) {
         if !keyboardHoldEnabled {
             if meetingActive {
                 toggleMeetingVoice(intent: action == .dictation ? .express : .compose)
@@ -699,7 +783,7 @@ final class WorkspaceModel: ObservableObject {
         if meetingActive {
             toggleMeetingVoice(intent: action == .dictation ? .express : .compose)
         } else if action == .dictation {
-            startRecording(targetPID: targetPID)
+            startRecording(targetPID: targetPID, pressedAt: pressedAt)
         } else {
             triggerSelectionRewrite(from: targetPID)
         }
@@ -724,7 +808,7 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func keyboardReleased(_ action: SideMouseAction) {
+    func keyboardReleased(_ action: SideMouseAction) {
         guard keyboardHoldEnabled else { return }
         let starting = meetingActive ? meetingVoiceStarting : isStarting
         let recording = meetingActive ? meetingVoiceRecording : isRecording
@@ -866,6 +950,7 @@ final class WorkspaceModel: ObservableObject {
 
     private func cancelMeetingSideHold() {
         guard meetingSideAction != nil else { return }
+        clearMeetingVoiceWatchdog()
         meetingSideAction = nil
         meetingSideReleasedDuringStart = false
         _ = meetingVoiceGeneration.begin()
@@ -958,6 +1043,7 @@ final class WorkspaceModel: ObservableObject {
         let generation = resultGeneration.begin()
         sideDictationPreflight = SideDictationPreflight(generation: generation, targetPID: targetPID)
         isStarting = true
+        armProcessingWatchdog(token: generation, seconds: 30, stage: "microphone_start")
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -968,11 +1054,13 @@ final class WorkspaceModel: ObservableObject {
                       self.resultGeneration.accepts(generation) else { return }
                 current.ready = true
                 self.sideDictationPreflight = current
+                self.finishProcessingWatchdog()
                 if current.held { self.promoteSideDictation(current) }
             } catch {
                 guard let current = self.sideDictationPreflight,
                       current.generation == generation else { return }
                 self.sideDictationPreflight = nil
+                self.finishProcessingWatchdog()
                 self.isStarting = false
                 if current.held {
                     let failed = dictationMicrophoneReady(started: false, tokenValid: true,
@@ -989,6 +1077,7 @@ final class WorkspaceModel: ObservableObject {
     private func cancelUnconfirmedSideDictation() {
         guard let current = sideDictationPreflight, !current.held else { return }
         sideDictationPreflight = nil
+        finishProcessingWatchdog()
         _ = resultGeneration.begin()
         microphone.cancel()
         isStarting = false
@@ -999,27 +1088,37 @@ final class WorkspaceModel: ObservableObject {
               preflight.ready, preflight.held,
               resultGeneration.accepts(preflight.generation) else { return }
         sideDictationPreflight = nil
-        var snapshot: MacDictationTarget?
-        var failure: String?
-        if let pid = preflight.targetPID, pid > 0 {
-            do {
-                snapshot = try dictationDelivery.capture(processID: pid)
-            } catch {
-                DiagnosticLog.note("stage=dictation_capture status=failed code=\(insertionDiagnosticCode(error))")
-                failure = captureStatus(error, password: ResultCopy.passwordDictation)
+        // The speculative microphone is ready, but another application's
+        // AX service may be blocked. Capture its target off-main, retaining the
+        // "starting" state so an early side-button release is honored.
+        armProcessingWatchdog(token: preflight.generation, seconds: 20, stage: "dictation_capture")
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            var snapshot: MacDictationTarget?
+            var failure: String?
+            if let pid = preflight.targetPID, pid > 0 {
+                do {
+                    snapshot = try await self.dictationDelivery.captureAsync(processID: pid)
+                } catch {
+                    guard self.resultGeneration.accepts(preflight.generation) else { return }
+                    DiagnosticLog.note("stage=dictation_capture status=failed code=\(insertionDiagnosticCode(error))")
+                    failure = captureStatus(error, password: ResultCopy.passwordDictation)
+                }
             }
+            guard self.resultGeneration.accepts(preflight.generation) else { return }
+            self.finishProcessingWatchdog()
+            let arm = dictationArm(hasTarget: (preflight.targetPID ?? 0) > 0,
+                                  tokenValid: true, captured: snapshot != nil,
+                                  captureFailure: failure)
+            if let status = arm.interactionStatus { self.interactionStatus = status }
+            if arm.keepInsert { self.activeInsert = snapshot }
+            let ready = dictationMicrophoneReady(started: true, tokenValid: true, failure: "")
+            self.isRecording = true
+            self.isStarting = false
+            self.showIndicator(phase: .recording, mode: "听写", pending: false)
+            if let status = ready.recordingStatus { self.recordingStatus = status }
+            self.stopWhenSideMouseReleased(.dictation)
         }
-        let arm = dictationArm(hasTarget: (preflight.targetPID ?? 0) > 0,
-                              tokenValid: true, captured: snapshot != nil,
-                              captureFailure: failure)
-        if let status = arm.interactionStatus { interactionStatus = status }
-        if arm.keepInsert { activeInsert = snapshot }
-        let ready = dictationMicrophoneReady(started: true, tokenValid: true, failure: "")
-        isRecording = true
-        isStarting = false
-        showIndicator(phase: .recording, mode: "听写", pending: false)
-        if let status = ready.recordingStatus { recordingStatus = status }
-        stopWhenSideMouseReleased(.dictation)
     }
 
     func refreshMeetingSources() {
@@ -1129,6 +1228,23 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    private func clearMeetingStartWatchdog() {
+        meetingStartWatchdog?.cancel()
+        meetingStartWatchdog = nil
+    }
+
+    private func armMeetingStartWatchdog(token: UInt64, seconds: UInt64 = 60) {
+        clearMeetingStartWatchdog()
+        meetingStartWatchdog = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: seconds * 1_000_000_000) }
+            catch { return }
+            guard let self, self.meetingGeneration.accepts(token),
+                  self.meetingStarting else { return }
+            DiagnosticLog.note("stage=meeting_start status=timeout")
+            self.stopMeeting(reason: "会议启动超时，已取消本次采集；请检查 Helper 和系统音频权限")
+        }
+    }
+
     /// Preview data comes entirely from the bundled Go Core fixture. This does
     /// not request audio permissions, start ScreenCaptureKit, or call a provider.
     func startMeetingDemo() {
@@ -1139,11 +1255,13 @@ final class WorkspaceModel: ObservableObject {
         }
         let token = meetingGeneration.begin()
         meetingStarting = true
+        armMeetingStartWatchdog(token: token, seconds: 15)
         bridge.send(operation: "meeting_demo") { [weak self] result in
             Task { @MainActor [weak self] in
                 guard let self, self.meetingGeneration.accepts(token),
                       !self.meetingActive && self.meetingStarting else { return }
                 self.meetingStarting = false
+                self.clearMeetingStartWatchdog()
                 guard case .success(let reply) = result, reply.ok,
                       reply.result?["demo"]?.boolValue == true else {
                     self.meetingStatus = "无法读取本地离线演示数据"
@@ -1212,6 +1330,7 @@ final class WorkspaceModel: ObservableObject {
         meetingAudioEpoch = 0
         meetingPendingPackets = 0
         meetingStarting = true
+        armMeetingStartWatchdog(token: token)
         meetingStatus = "正在准备会议识别…"
         meetingCaptions = []
         meetingHistoryTrimmed = 0
@@ -1235,6 +1354,7 @@ final class WorkspaceModel: ObservableObject {
                 guard result?.ok == true, let id = result?.result?["session_id"]?.string else {
                     guard self.meetingGeneration.accepts(token) else { return }
                     self.meetingStarting = false
+                    self.clearMeetingStartWatchdog()
                     self.meetingStatus = "无法启动会议处理，请检查本地 Helper"
                     return
                 }
@@ -1263,6 +1383,7 @@ final class WorkspaceModel: ObservableObject {
                     guard self.meetingGeneration.accepts(token),
                           self.meetingCaptureGeneration.accepts(capture) else { return }
                     self.meetingStarting = false
+                    self.clearMeetingStartWatchdog()
                     self.meetingActive = true
                     self.meetingStatus = "正在监听所选应用音频"
                     self.pollMeeting(id: id, token: token)
@@ -1287,10 +1408,9 @@ final class WorkspaceModel: ObservableObject {
         }
         meetingPendingPackets += 1
         let sentEpoch = meetingAudioEpoch
-        bridge.send(operation: "meeting_feed", fields: [
+        bridge.sendPCM(operation: "meeting_feed", pcm: bytes, fields: [
             "session_id": .string(id),
             "audio_epoch": .number(Double(meetingAudioEpoch)),
-            "pcm_base64": .string(bytes.base64EncodedString()),
         ]) { [weak self] reply in
             Task { @MainActor [weak self] in
                 guard let self, self.meetingSessionID == id,
@@ -1306,23 +1426,40 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    static func meetingSnapshotExpired(startedAt: TimeInterval, now: TimeInterval) -> Bool {
+        startedAt > 0 && now - startedAt >= 12
+    }
+
     private func pollMeeting(id: String, token: UInt64) {
         Task { @MainActor [weak self] in
             while let self, self.meetingSessionID == id,
                   self.meetingGeneration.accepts(token), self.meetingActive {
                 guard !self.meetingSnapshotPending else {
+                    if Self.meetingSnapshotExpired(
+                        startedAt: self.meetingSnapshotStartedAt,
+                        now: ProcessInfo.processInfo.systemUptime) {
+                        self.stopMeeting(reason: "会议状态请求超时，已结束采集；请检查 Helper")
+                        break
+                    }
                     try? await Task.sleep(nanoseconds: 450_000_000)
                     continue
                 }
+                guard let bridge = self.bridge else {
+                    self.stopMeeting(reason: "会议 Helper 已断开")
+                    break
+                }
                 self.meetingSnapshotPending = true
+                self.meetingSnapshotStartedAt = ProcessInfo.processInfo.systemUptime
                 let revision = self.meetingPresentationRevision
-                self.bridge?.send(operation: "meeting_snapshot", fields: [
+                self.meetingSnapshotRequestID = bridge.send(operation: "meeting_snapshot", fields: [
                     "session_id": .string(id),
                 ]) { [weak self] reply in
                     Task { @MainActor [weak self] in
                         guard let self, self.meetingSessionID == id,
                               self.meetingGeneration.accepts(token) else { return }
                         self.meetingSnapshotPending = false
+                        self.meetingSnapshotRequestID = nil
+                        self.meetingSnapshotStartedAt = 0
                         guard revision == self.meetingPresentationRevision,
                               !self.meetingCancelPending else { return }
                         guard case .success(let response) = reply, response.ok else {
@@ -1331,7 +1468,7 @@ final class WorkspaceModel: ObservableObject {
                         }
                         self.applyMeetingSnapshot(response.result ?? [:])
                         if case .array(let values)? = response.result?["captions"] {
-                            self.meetingCaptions = values.compactMap { value in
+                            let incoming: [MeetingCaptionRow] = values.compactMap { value in
                                 guard case .object(let item) = value,
                                       let id = item["id"]?.int,
                                       let source = item["source"]?.string,
@@ -1339,6 +1476,10 @@ final class WorkspaceModel: ObservableObject {
                                 return MeetingCaptionRow(id: id, source: source,
                                     chinese: chinese, final: item["final"]?.boolValue == true)
                             }
+                            // 450ms snapshots often contain unchanged history.
+                            // Avoid invalidating all six SwiftUI reading panes
+                            // and their potentially long text layouts on no-op polls.
+                            if self.meetingCaptions != incoming { self.meetingCaptions = incoming }
                         }
                     }
                 }
@@ -1351,7 +1492,7 @@ final class WorkspaceModel: ObservableObject {
         if let epoch = values["epoch"]?.int, epoch > 0 { meetingAudioEpoch = epoch }
         if let version = values["profile_version"]?.int { meetingProfileVersion = version }
         if let paused = values["capture_paused"]?.boolValue, !meetingCaptureSwitching {
-            meetingCapturePaused = paused
+            if meetingCapturePaused != paused { meetingCapturePaused = paused }
         }
         if let status = values["status"]?.string {
             // The existing Meeting status line surfaces shared Go Core metrics
@@ -1369,31 +1510,34 @@ final class WorkspaceModel: ObservableObject {
                     details.append("翻译 \(ms)ms")
                 }
             }
-            meetingStatus = details.isEmpty ? status : status + " · " + details.joined(separator: " · ")
+            let next = details.isEmpty ? status : status + " · " + details.joined(separator: " · ")
+            if meetingStatus != next { meetingStatus = next }
         }
         if let trimmed = values["history_trimmed"]?.int { meetingHistoryTrimmed = trimmed }
-        if let status = values["reply_status"]?.string { meetingReplyStatus = status }
-        if let status = values["expression_status"]?.string { meetingExpressionStatus = status }
-        if let value = values["expression"]?.string { meetingExpression = value }
-        if let value = values["expression_chinese"]?.string { meetingExpressionChinese = value }
-        if let source = values["expression_source"]?.string { meetingExpressionSource = source }
-        if let source = values["reply_source"]?.string { meetingReplySource = source }
-        if let tip = values["reply_tip"]?.string { meetingReplyTip = tip }
-        meetingReplyPending = values["reply_pending"]?.boolValue == true
+        if let status = values["reply_status"]?.string, meetingReplyStatus != status { meetingReplyStatus = status }
+        if let status = values["expression_status"]?.string, meetingExpressionStatus != status { meetingExpressionStatus = status }
+        if let value = values["expression"]?.string, meetingExpression != value { meetingExpression = value }
+        if let value = values["expression_chinese"]?.string, meetingExpressionChinese != value { meetingExpressionChinese = value }
+        if let source = values["expression_source"]?.string, meetingExpressionSource != source { meetingExpressionSource = source }
+        if let source = values["reply_source"]?.string, meetingReplySource != source { meetingReplySource = source }
+        if let tip = values["reply_tip"]?.string, meetingReplyTip != tip { meetingReplyTip = tip }
+        let pending = values["reply_pending"]?.boolValue == true
+        if meetingReplyPending != pending { meetingReplyPending = pending }
         if let captionsOnly = values["captions_only"]?.boolValue {
-            meetingCaptionsOnly = captionsOnly
+            if meetingCaptionsOnly != captionsOnly { meetingCaptionsOnly = captionsOnly }
         }
         if let expanded = values["expression_expanded"]?.boolValue {
-            meetingExpressionExpanded = expanded
+            if meetingExpressionExpanded != expanded { meetingExpressionExpanded = expanded }
         }
         if case .array(let items)? = values["replies"] {
-            meetingReplies = items.enumerated().compactMap { index, value in
+            let incoming: [MeetingReplyRow] = items.enumerated().compactMap { index, value in
                 guard case .object(let row) = value,
                       let english = row["english"]?.string,
                       let chinese = row["chinese"]?.string else { return nil }
                 return MeetingReplyRow(id: index, english: english,
                     chinese: chinese, complete: row["complete"]?.boolValue == true)
             }
+            if meetingReplies != incoming { meetingReplies = incoming }
             // The core selects the first finished option, not necessarily ONE.
             // Preserve an explicit selection while it remains copyable.
             let selectedReady = meetingReplies.contains {
@@ -1529,6 +1673,36 @@ final class WorkspaceModel: ObservableObject {
         meetingAction("meeting_compose", fields: ["instruction": .string(input)])
     }
 
+    private func clearMeetingVoiceWatchdog() {
+        meetingVoiceWatchdog?.cancel()
+        meetingVoiceWatchdog = nil
+    }
+
+    private func armMeetingVoiceWatchdog(meetingToken: UInt64, voiceToken: UInt64,
+                                         seconds: UInt64, stage: String) {
+        clearMeetingVoiceWatchdog()
+        meetingVoiceWatchdog = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: seconds * 1_000_000_000) }
+            catch { return }
+            guard let self, self.meetingGeneration.accepts(meetingToken),
+                  self.meetingVoiceGeneration.accepts(voiceToken),
+                  self.meetingBusy || self.meetingVoiceStarting else { return }
+            DiagnosticLog.note("stage=meeting_voice_\(stage) status=timeout")
+            self.meetingVoiceWatchdog = nil
+            _ = self.meetingVoiceGeneration.begin()
+            if let id = self.meetingVoiceASRID { self.bridge?.cancel(id: id) }
+            self.meetingVoiceASRID = nil
+            self.microphone.cancel()
+            self.meetingVoiceStarting = false
+            self.meetingVoiceRecording = false
+            self.meetingBusy = false
+            self.meetingSideAction = nil
+            self.meetingSideReleasedDuringStart = false
+            self.keyboardGate.clear()
+            self.meetingExpressionStatus = "会议语音\(stage == "asr" ? "识别" : "采集")超时，已取消，请重试"
+        }
+    }
+
     func toggleMeetingVoice() {
         toggleMeetingVoice(intent: .compose)
     }
@@ -1543,6 +1717,8 @@ final class WorkspaceModel: ObservableObject {
             let voiceToken = meetingVoiceGeneration.latest
             let id = meetingSessionID
             let operation = meetingVoiceIntent.operation
+            armMeetingVoiceWatchdog(meetingToken: token, voiceToken: voiceToken,
+                                    seconds: 20, stage: "microphone_stop")
             meetingExpressionStatus = "正在识别你的语音…"
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -1551,15 +1727,18 @@ final class WorkspaceModel: ObservableObject {
                     guard self.meetingGeneration.accepts(token),
                           self.meetingVoiceGeneration.accepts(voiceToken),
                           self.meetingSessionID == id, let bridge = self.bridge else { return }
+                    self.clearMeetingVoiceWatchdog()
                     let config = try self.requestConfig(for: .transcribe)
-                    self.meetingVoiceASRID = bridge.send(operation: "transcribe", fields: [
+                    self.armMeetingVoiceWatchdog(meetingToken: token, voiceToken: voiceToken,
+                                                 seconds: Self.asrDeadline(for: pcm), stage: "asr")
+                    self.meetingVoiceASRID = bridge.sendPCM(operation: "transcribe", pcm: pcm, fields: [
                         "config": config,
-                        "pcm_base64": .string(pcm.base64EncodedString()),
                     ]) { [weak self] result in
                         Task { @MainActor [weak self] in
                             guard let self, self.meetingGeneration.accepts(token),
                                   self.meetingVoiceGeneration.accepts(voiceToken),
                                   self.meetingSessionID == id else { return }
+                            self.clearMeetingVoiceWatchdog()
                             self.meetingVoiceASRID = nil
                             self.meetingBusy = false
                             guard case .success(let response) = result, response.ok,
@@ -1576,6 +1755,7 @@ final class WorkspaceModel: ObservableObject {
                     guard self.meetingGeneration.accepts(token),
                           self.meetingVoiceGeneration.accepts(voiceToken),
                           self.meetingSessionID == id else { return }
+                    self.clearMeetingVoiceWatchdog()
                     self.meetingBusy = false
                     self.meetingExpressionStatus = (error as? MicrophoneError)?.localizedDescription
                         ?? "麦克风录音失败，请检查输入设备与权限"
@@ -1590,6 +1770,8 @@ final class WorkspaceModel: ObservableObject {
         meetingExpressionStatus = "正在启动麦克风…"
         let token = meetingGeneration.latest
         let voiceToken = meetingVoiceGeneration.begin()
+        armMeetingVoiceWatchdog(meetingToken: token, voiceToken: voiceToken,
+                                seconds: 30, stage: "microphone_start")
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -1601,6 +1783,7 @@ final class WorkspaceModel: ObservableObject {
                     // completion must not cancel a newer recording.
                     return
                 }
+                self.clearMeetingVoiceWatchdog()
                 self.meetingVoiceRecording = true
                 self.meetingExpressionStatus = intent == .express
                     ? "正在录制需要忠实翻译的中文；松开侧键结束"
@@ -1619,6 +1802,7 @@ final class WorkspaceModel: ObservableObject {
                 }
             }
             if self.meetingVoiceGeneration.accepts(voiceToken) {
+                self.clearMeetingVoiceWatchdog()
                 if !self.meetingVoiceRecording {
                     self.meetingSideAction = nil
                     self.meetingSideReleasedDuringStart = false
@@ -1635,6 +1819,7 @@ final class WorkspaceModel: ObservableObject {
               let id = meetingSessionID, let bridge else { return }
         let token = meetingGeneration.latest
         let actionToken = meetingActionGeneration.begin()
+        clearMeetingVoiceWatchdog()
         _ = meetingVoiceGeneration.begin()
         meetingPresentationRevision &+= 1
         if meetingVoiceRecording || meetingVoiceStarting {
@@ -1773,6 +1958,8 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func stopMeeting(reason: String = "会议采集已停止") {
+        clearMeetingStartWatchdog()
+        clearMeetingVoiceWatchdog()
         let wasDemo = meetingDemoActive
         meetingDemoActive = false
         meetingProfileUpdating = false
@@ -1806,6 +1993,9 @@ final class WorkspaceModel: ObservableObject {
         meetingRequestID = nil
         meetingBusy = false
         meetingCancelPending = false
+        if let snapshotID = meetingSnapshotRequestID { bridge?.cancel(id: snapshotID) }
+        meetingSnapshotRequestID = nil
+        meetingSnapshotStartedAt = 0
         meetingSnapshotPending = false
         meetingStarting = false
         meetingActive = false
@@ -2051,7 +2241,53 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    /// Shared upper bound for the native stop, AX and Helper stages. The Go
+    /// service timeout cannot protect a stalled local microphone/AX await.
+    static func elapsedMilliseconds(since start: TimeInterval) -> Int {
+        max(0, Int(((ProcessInfo.processInfo.systemUptime - start) * 1000).rounded()))
+    }
+
+    static func asrDeadline(for pcm: Data) -> UInt64 {
+        let duration = (pcm.count + 31_999) / 32_000
+        return UInt64(min(220, max(65, 45 + 2 * duration)) + 15)
+    }
+
+    private func armProcessingWatchdog(token: UInt64, seconds: UInt64, stage: String) {
+        processingWatchdog?.cancel()
+        processingWatchdog = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: seconds * 1_000_000_000) }
+            catch { return }
+            guard let self, self.resultGeneration.accepts(token),
+                  (self.isProcessing || self.isStarting) else { return }
+            DiagnosticLog.note("stage=voice_\(stage) status=timeout")
+            self.processingWatchdog = nil
+            self.keyboardGate.clear()
+            self.keyboardHoldSequence &+= 1
+            self.invalidatePending()
+            self.microphone.cancel()
+            self.isRecording = false
+            self.isStarting = false
+            self.recordingStatus = "语音处理超时，已结束本次任务；请检查 ASR 服务后重试"
+            self.interactionStatus = self.recordingStatus
+            self.asrProbeStatus = "ASR：本次请求超时"
+            self.showIndicator(phase: .error, mode: self.indicatorSnapshot.mode, pending: false)
+            if stage == "dictation_delivery", let text = self.transcription, !text.isEmpty {
+                // Never retry a paste with an uncertain outcome. Preserve a
+                // copyable result even when native delivery doesn't return.
+                ResultCardPanel.shared.present(
+                    title: ResultCopy.dictationWriteUnconfirmed, text: text)
+            }
+        }
+    }
+
+    private func finishProcessingWatchdog() {
+        processingWatchdog?.cancel()
+        processingWatchdog = nil
+    }
+
     private func invalidatePending() {
+        dictationJourney = nil
+        finishProcessingWatchdog()
         _ = resultGeneration.begin()
         if let id = activeRequestID { bridge?.cancel(id: id) }
         activeRequestID = nil
@@ -2059,6 +2295,10 @@ final class WorkspaceModel: ObservableObject {
         if let old = activeVoiceSelection {
             Task { await interaction.cancelTask(generation: old.generation) }
         }
+        if let generation = activeSelectionGeneration {
+            Task { await interaction.cancelTask(generation: generation) }
+        }
+        activeSelectionGeneration = nil
         activeVoiceSelection = nil
         activeVoiceTargetPID = nil
         isVoiceSelectionRecording = false
@@ -2098,6 +2338,7 @@ final class WorkspaceModel: ObservableObject {
         invalidatePending()
         let token = resultGeneration.begin()
         isStarting = true
+        armProcessingWatchdog(token: token, seconds: 30, stage: "microphone_start")
         // Like Windows Hold, capture the selection on release rather than
         // delaying the microphone startup with an AX request on key-down.
         showIndicator(phase: .selection, mode: "改写", pending: false)
@@ -2112,6 +2353,7 @@ final class WorkspaceModel: ObservableObject {
                     isStarting = false
                     return
                 }
+                finishProcessingWatchdog()
                 activeVoiceTargetPID = pid
                 isVoiceSelectionRecording = true
                 isRecording = true
@@ -2120,6 +2362,7 @@ final class WorkspaceModel: ObservableObject {
             } catch {
                 guard resultGeneration.accepts(token) else { return }
                 microphone.cancel()
+                finishProcessingWatchdog()
                 interactionStatus = rewriteCaptureStatus(error, password: ResultCopy.passwordSelection)
                 showIndicator(phase: .error, mode: "改写", pending: false)
             }
@@ -2129,51 +2372,91 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
-    private func startRecording(targetPID: Int32?) {
+    private func startRecording(targetPID: Int32?, pressedAt: TimeInterval? = nil) {
         guard !meetingVoiceRecording && !meetingVoiceStarting else { return }
         invalidatePending()
+        let now = ProcessInfo.processInfo.systemUptime
+        let onset = pressedAt.flatMap { $0 > 0 && $0 <= now ? $0 : nil } ?? now
+        dictationJourney = DictationJourney(triggeredAt: onset)
+        DiagnosticLog.note("journey=dictation event=hold_callback elapsed_ms=\(Self.elapsedMilliseconds(since: onset))")
         let token = resultGeneration.begin()
         isStarting = true
+        armProcessingWatchdog(token: token, seconds: 30, stage: "microphone_start")
         recordingStatus = dictationRequestingMicrophone()
+        // A pending pill must not wait for AX focus probes or AVAudioEngine start.
+        // It becomes an active recording indicator only after the engine starts.
+        showIndicator(phase: .recording, mode: "听写", pending: true)
         Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.refreshMicrophonePermission() }
+            let startupStarted = ProcessInfo.processInfo.systemUptime
+            // The focused application's AX service may be slow even though
+            // dictation must still record when AX capture fails. Start native
+            // audio independently and overlap it with the optional AX query.
+            // The existing generation fence cancels either stale operation.
+            let deviceUID = settings.microphoneUID
+            let maximumSeconds = settings.maxRecordSeconds
+            let microphoneStartup = Task { @MainActor [weak self] () throws -> Void in
+                try Task.checkCancellation()
+                guard let self else { throw CancellationError() }
+                try await self.microphone.start(deviceUID: deviceUID,
+                                                maximumSeconds: maximumSeconds)
+            }
             var captured = false
             var failure: String?
             var snapshot: MacDictationTarget?
             if let pid = targetPID, pid > 0 {
                 do {
-                    snapshot = try dictationDelivery.capture(processID: pid)
+                    snapshot = try await dictationDelivery.captureAsync(processID: pid)
                     captured = true
                 } catch {
+                    guard resultGeneration.accepts(token) else {
+                        microphoneStartup.cancel()
+                        microphone.cancel()
+                        return
+                    }
                     DiagnosticLog.note("stage=dictation_capture status=failed code=\(insertionDiagnosticCode(error))")
                     failure = captureStatus(error, password: ResultCopy.passwordDictation)
                 }
             }
+            guard resultGeneration.accepts(token) else {
+                microphoneStartup.cancel()
+                microphone.cancel()
+                return
+            }
+            DiagnosticLog.note("stage=dictation_target status=done elapsed_ms=\(Self.elapsedMilliseconds(since: startupStarted))")
             let arm = dictationArm(hasTarget: (targetPID ?? 0) > 0, tokenValid: resultGeneration.accepts(token), captured: captured, captureFailure: failure)
             if let status = arm.interactionStatus { interactionStatus = status }
             if arm.keepInsert, let snapshot {
                 activeInsert = snapshot
             }
             guard arm.startMicrophone else {
+                microphoneStartup.cancel()
+                microphone.cancel()
                 guard resultGeneration.accepts(token) else { return }
+                finishProcessingWatchdog()
                 isStarting = false
                 finishKeyboardStart(.dictation)
                 return
             }
             do {
-                try await microphone.start(deviceUID: settings.microphoneUID,
-                                               maximumSeconds: settings.maxRecordSeconds)
+                try await microphoneStartup.value
                 let ready = dictationMicrophoneReady(started: true, tokenValid: resultGeneration.accepts(token), failure: "")
                 if ready.cancelMicrophone {
                     microphone.cancel()
                     return
+                }
+                finishProcessingWatchdog()
+                DiagnosticLog.note("stage=microphone_start status=done elapsed_ms=\(Self.elapsedMilliseconds(since: startupStarted))")
+                if let journey = dictationJourney {
+                    DiagnosticLog.note("journey=dictation event=recording_ready elapsed_ms=\(Self.elapsedMilliseconds(since: journey.triggeredAt))")
                 }
                 isRecording = true
                 showIndicator(phase: .recording, mode: "听写", pending: false)
                 if let status = ready.recordingStatus { recordingStatus = status }
             } catch {
                 guard resultGeneration.accepts(token) else { return }
+                finishProcessingWatchdog()
                 let ready = dictationMicrophoneReady(started: false, tokenValid: true, failure: error.localizedDescription)
                 if let status = ready.recordingStatus { recordingStatus = status }
                 if ready.showError {
@@ -2189,6 +2472,9 @@ final class WorkspaceModel: ObservableObject {
 
     func stopRecording() {
         guard isRecording else { return }
+        if dictationJourney != nil {
+            dictationJourney?.releasedAt = ProcessInfo.processInfo.systemUptime
+        }
         sideGate.clear()
         keyboardGate.clear()
         keyboardHoldSequence &+= 1
@@ -2196,6 +2482,7 @@ final class WorkspaceModel: ObservableObject {
         isProcessing = true
         showIndicator(phase: .processing, mode: indicatorSnapshot.mode, pending: false)
         recordingStatus = dictationProcessing()
+        armProcessingWatchdog(token: resultGeneration.latest, seconds: 20, stage: "capture_stop")
         let token = resultGeneration.latest
         let insertion = activeInsert
         let voiceTargetPID = activeVoiceTargetPID
@@ -2205,8 +2492,19 @@ final class WorkspaceModel: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             var selectionGeneration: UInt64?
+            let stopStarted = ProcessInfo.processInfo.systemUptime
             do {
                 let pcm = try await microphone.stop()
+                guard resultGeneration.accepts(token) else { return }
+                if let firstAudioAt = (microphone as? MicrophoneRecorder)?.lastFirstCapturedAt,
+                   let triggeredAt = dictationJourney?.triggeredAt, firstAudioAt >= triggeredAt {
+                    let firstAudioMilliseconds = Int(((firstAudioAt - triggeredAt) * 1_000).rounded())
+                    DiagnosticLog.note("journey=dictation event=first_audio_sample elapsed_ms=\(firstAudioMilliseconds)")
+                }
+                DiagnosticLog.note("stage=microphone_stop status=done elapsed_ms=\(Self.elapsedMilliseconds(since: stopStarted))")
+                armProcessingWatchdog(token: token,
+                    seconds: voiceTargetPID == nil ? Self.asrDeadline(for: pcm) : 375,
+                    stage: voiceTargetPID == nil ? "asr" : "spoken_edit")
                 let route = recordingDispatch(tokenValid: resultGeneration.accepts(token), voiceSelection: voiceTargetPID != nil)
                 guard route.send else { return }
                 if route.cancelProbes { cancelProbes() }
@@ -2223,8 +2521,10 @@ final class WorkspaceModel: ObservableObject {
                         throw InteractionFailure.applicationChanged
                     }
                     interactionStatus = rewriteCapturingSelection()
+                    armProcessingWatchdog(token: token, seconds: 20, stage: "selection_capture")
                     let generation = try await interaction.beginTask(targetProcessID: voiceTargetPID)
                     selectionGeneration = generation
+                    activeSelectionGeneration = generation
                     let snapshot = try await interaction.captureSelection(
                         generation: generation, intent: .replaceSelection)
                     guard resultGeneration.accepts(token) else {
@@ -2239,11 +2539,11 @@ final class WorkspaceModel: ObservableObject {
                         return
                     }
                     activeVoiceSelection = (snapshot, generation)
+                    armProcessingWatchdog(token: token, seconds: 375, stage: "spoken_edit")
                     let config = try requestConfig(for: .spokenSelectedTask)
                     guard let bridge else { throw BridgeFailure.notRunning }
-                    let id = bridge.send(operation: "selected_voice_task", fields: [
+                    let id = bridge.sendPCM(operation: "selected_voice_task", pcm: pcm, fields: [
                         "config": config,
-                        "pcm_base64": .string(pcm.base64EncodedString()),
                         "selected_text": .string(snapshot.originalSelectedText),
                     ]) { [weak self] reply in
                         Task { @MainActor [weak self] in
@@ -2257,14 +2557,16 @@ final class WorkspaceModel: ObservableObject {
                 }
                 let config = try requestConfig(for: .transcribe)
                 guard let bridge else { throw BridgeFailure.notRunning }
-                let id = bridge.send(operation: "transcribe", fields: [
+                let requestStarted = ProcessInfo.processInfo.systemUptime
+                let id = bridge.sendPCM(operation: "transcribe", pcm: pcm, fields: [
                     "config": config,
-                    "pcm_base64": .string(pcm.base64EncodedString()),
                 ]) { [weak self] reply in
                     Task { @MainActor [weak self] in
                         guard let self, self.resultGeneration.accepts(token) else { return }
                         self.activeRequestID = nil
+                        self.finishProcessingWatchdog()
                         self.isProcessing = false
+                        DiagnosticLog.note("stage=asr_reply status=finished elapsed_ms=\(Self.elapsedMilliseconds(since: requestStarted))")
                         let response = try? reply.get()
                         let follow = dictationTranscriptFollowUp(
                             ok: response?.ok ?? false,
@@ -2282,7 +2584,10 @@ final class WorkspaceModel: ObservableObject {
             } catch {
                 let failed = recordingStopFailure(tokenValid: resultGeneration.accepts(token))
                 guard failed.apply else { return }
-                if failed.stopProcessing { isProcessing = false }
+                if failed.stopProcessing {
+                    finishProcessingWatchdog()
+                    isProcessing = false
+                }
                 applyTask(recordingStopFollowUp(detail: error.localizedDescription,
                     voiceSelection: voiceTargetPID != nil, mode: indicatorSnapshot.mode),
                     generation: selectionGeneration)
@@ -2319,6 +2624,7 @@ final class WorkspaceModel: ObservableObject {
         invalidatePending()
         let token = resultGeneration.begin()
         isProcessing = true
+        armProcessingWatchdog(token: token, seconds: 20, stage: "selection_capture")
         interactionStatus = rewriteCheckingSelection()
         showIndicator(phase: .selection, mode: "改写", pending: false)
         let instruction = taskInstruction
@@ -2326,6 +2632,11 @@ final class WorkspaceModel: ObservableObject {
             guard let self else { return }
             do {
                 let generation = try await interaction.beginTask(targetProcessID: pid)
+                guard resultGeneration.accepts(token) else {
+                    await interaction.cancelTask(generation: generation)
+                    return
+                }
+                activeSelectionGeneration = generation
                 let snapshot = try await interaction.captureSelection(
                     generation: generation, intent: .replaceSelection)
                 let step = typedSelectionAfterCapture(
@@ -2340,6 +2651,7 @@ final class WorkspaceModel: ObservableObject {
                 llmProbeStatus = probeRewritingSelection()
                 showIndicator(phase: .rewriting, mode: "改写", pending: false)
                 let config = try requestConfig(for: .selectedTask)
+                armProcessingWatchdog(token: token, seconds: 165, stage: "selected_edit")
                 guard let bridge else { throw BridgeFailure.notRunning }
                 let id = bridge.send(operation: "selected_task", fields: [
                     "config": config,
@@ -2364,12 +2676,14 @@ final class WorkspaceModel: ObservableObject {
 
     private func cancelSelectionCue(_ cue: SelectionCue, generation: UInt64?) async {
         if cue.cancelTask, let generation {
+            if activeSelectionGeneration == generation { activeSelectionGeneration = nil }
             await interaction.cancelTask(generation: generation)
         }
     }
 
     private func presentSelectionCue(_ cue: SelectionCue) {
         if cue.stopProcessing {
+            finishProcessingWatchdog()
             isProcessing = false
         }
         if let status = cue.interactionStatus {
@@ -2393,6 +2707,7 @@ final class WorkspaceModel: ObservableObject {
             return
         }
         activeRequestID = nil
+        finishProcessingWatchdog()
         isProcessing = false
         let response = try? reply.get()
         let result = response?.result
@@ -2426,6 +2741,8 @@ final class WorkspaceModel: ObservableObject {
     }
 
     private func applyHelperConnection(_ event: HelperConnection) {
+        helperStartupWatchdog?.cancel()
+        helperStartupWatchdog = nil
         let effect = helperConnectionEffect(event, helperName: ContractLimits.helperName, helperVersion: ContractLimits.protocolVersion)
         if let label = effect.connectedLabel {
             connection = .connected(label)
@@ -2443,7 +2760,21 @@ final class WorkspaceModel: ObservableObject {
             llmProbeStatus = probe
         }
         if effect.invalidatePending {
+            let abandonedVoice = isProcessing || isStarting || isRecording
+            let abandonedMode = indicatorSnapshot.mode
             invalidatePending()
+            if abandonedVoice {
+                // A disconnected Helper cannot complete the old operation.
+                // Never leave its nonterminal "processing" pill on screen after
+                // invalidating the generation and cancelling its watchdog.
+                keyboardGate.clear()
+                keyboardHoldSequence &+= 1
+                microphone.cancel()
+                isRecording = false
+                isStarting = false
+                recordingStatus = "语音处理已中断：后台服务断开"
+                showIndicator(phase: .error, mode: abandonedMode, pending: false)
+            }
             invalidateDiscoveredModels(.transcribe)
             invalidateDiscoveredModels(.selectedTask)
         }
@@ -2546,12 +2877,20 @@ final class WorkspaceModel: ObservableObject {
         if let text = follow.insertText, let insertion, let token {
             Task { @MainActor [weak self] in
                 guard let self, self.resultGeneration.accepts(token) else { return }
+                self.isProcessing = true
+                self.armProcessingWatchdog(token: token, seconds: 20, stage: "dictation_delivery")
                 do {
                     let outcome = try await self.dictationDelivery.deliver(text, to: insertion, stillValid: {
                         self.resultGeneration.accepts(token)
                     })
                     guard self.resultGeneration.accepts(token) else { return }
+                    self.finishProcessingWatchdog()
+                    self.isProcessing = false
                     DiagnosticLog.note("stage=dictation_delivery status=\(outcome)")
+                    if let journey = self.dictationJourney, let released = journey.releasedAt {
+                        DiagnosticLog.note("journey=dictation event=delivery_returned elapsed_ms=\(Self.elapsedMilliseconds(since: released)) total_since_key_down_ms=\(Self.elapsedMilliseconds(since: journey.triggeredAt)) outcome=\(outcome)")
+                    }
+                    self.dictationJourney = nil
                     self.applyTask(dictationInsertFollowUp(
                         outcome: outcome,
                         status: insertionStatus(InteractionFailure.writeNotConfirmed, rewrite: false,
@@ -2560,7 +2899,13 @@ final class WorkspaceModel: ObservableObject {
                         manualTitle: ResultCopy.dictationWriteUnconfirmed, text: text))
                 } catch {
                     guard self.resultGeneration.accepts(token) else { return }
+                    self.finishProcessingWatchdog()
+                    self.isProcessing = false
                     DiagnosticLog.note("stage=dictation_delivery status=failed code=\(insertionDiagnosticCode(error))")
+                    if let journey = self.dictationJourney, let released = journey.releasedAt {
+                        DiagnosticLog.note("journey=dictation event=delivery_failed elapsed_ms=\(Self.elapsedMilliseconds(since: released)) total_since_key_down_ms=\(Self.elapsedMilliseconds(since: journey.triggeredAt))")
+                    }
+                    self.dictationJourney = nil
                     self.applyTask(dictationInsertFollowUp(
                         outcome: (error as? InteractionFailure) == .writeNotConfirmed ? .uncertain : .blocked,
                         status: insertionStatus(error, rewrite: false, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation),
@@ -2574,12 +2919,18 @@ final class WorkspaceModel: ObservableObject {
             let title = follow.cardTitle ?? ""
             Task { @MainActor [weak self] in
                 guard let self, self.resultGeneration.accepts(token) else { return }
+                self.isProcessing = true
+                self.armProcessingWatchdog(token: token, seconds: 20, stage: "selected_write")
                 do {
                     try await self.interaction.replaceIfCurrent(replacement.snapshot, with: text, generation: replacement.generation)
                     guard self.resultGeneration.accepts(token) else { return }
+                    self.finishProcessingWatchdog()
+                    self.isProcessing = false
                     self.applyTask(selectedWriteFollowUp(succeeded: true, status: "", cardTitle: title, text: text))
                 } catch {
                     guard self.resultGeneration.accepts(token) else { return }
+                    self.finishProcessingWatchdog()
+                    self.isProcessing = false
                     self.applyTask(selectedWriteFollowUp(
                         succeeded: false,
                         status: insertionStatus(error, rewrite: true, passwordRewrite: ResultCopy.passwordRewrite, passwordDictation: ResultCopy.passwordDictation),
@@ -2609,6 +2960,7 @@ final class WorkspaceModel: ObservableObject {
     }
 
     func cancelCurrent() {
+        dictationJourney = nil
         dismissIndicator()
         keyboardGate.clear()
         keyboardHoldSequence &+= 1
@@ -2642,6 +2994,13 @@ final class WorkspaceModel: ObservableObject {
             dismissIndicator()
         }
     }
+
+    #if DEBUG
+    func pendingRecordingIndicatorForCI() -> (count: UInt64, panel: NSPanel?) {
+        (recordingIndicator.pendingRecordingPresentationCount,
+         recordingIndicator.panelForCI)
+    }
+    #endif
 
     private func showIndicator(phase: IndicatorPhase, mode: String, pending: Bool) {
         let now = Date()
@@ -2677,6 +3036,14 @@ final class WorkspaceModel: ObservableObject {
             self?.indicatorSnapshot.pending = false
             self?.menuIndicatorPhase = nil
         })
+        // This is AppKit orderFront completion (not a physical photodiode
+        // measurement). The CI additionally calls displayIfNeeded on this view.
+        if phase == .recording, pending, var journey = dictationJourney,
+           !journey.indicatorLogged {
+            journey.indicatorLogged = true
+            dictationJourney = journey
+            DiagnosticLog.note("journey=dictation event=indicator_ordered elapsed_ms=\(Self.elapsedMilliseconds(since: journey.triggeredAt))")
+        }
     }
 
     private func dismissIndicator() {

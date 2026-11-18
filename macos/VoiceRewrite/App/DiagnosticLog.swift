@@ -6,6 +6,8 @@ import VoiceRewriteStorage
 enum DiagnosticLog {
     static let maxBytes = Int64(ContractLimits.logMaxBytes)
     static let backups = ContractLimits.logBackups
+    private static let writer = DispatchQueue(
+        label: "com.xujinheng.VoiceRewrite.diagnostics", qos: .utility)
 
     static var fileURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -24,18 +26,23 @@ enum DiagnosticLog {
     }
 
     static func note(_ message: String) {
-        let line = message.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        let line = message.replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !line.isEmpty else { return }
-        prepare()
-        let url = fileURL
-        let stamp = ISO8601DateFormatter().string(from: Date())
-        let text = "\(stamp) \(line)\n"
-        if let handle = try? FileHandle(forWritingTo: url) {
-            defer { try? handle.close() }
-            _ = try? handle.seekToEnd()
-            try? handle.write(contentsOf: Data(text.utf8))
-        } else {
-            try? Data(text.utf8).write(to: url, options: [.atomic])
+        // Disk metadata, rotation and writes must not block the event tap,
+        // CoreAudio lifecycle or the recording indicator's main run loop.
+        writer.async {
+            prepare()
+            let url = fileURL
+            let stamp = ISO8601DateFormatter().string(from: Date())
+            let text = "\(stamp) \(line)\n"
+            if let handle = try? FileHandle(forWritingTo: url) {
+                defer { try? handle.close() }
+                _ = try? handle.seekToEnd()
+                try? handle.write(contentsOf: Data(text.utf8))
+            } else {
+                try? Data(text.utf8).write(to: url, options: [.atomic])
+            }
         }
     }
 
