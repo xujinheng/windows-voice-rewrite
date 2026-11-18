@@ -46,9 +46,8 @@
           "kind": "portable_decision",
           "swift": {
             "path": "macos/Modules/Microphone/Sources/Microphone/MicrophoneRecorder.swift",
-            "contains": "let duration = min(max(1, maximumSeconds), PCM16Buffer.maximumSeconds)"
-          },
-          "logical_unit_id": "dictation_hold/duration"
+            "contains": "maximumSeconds: Int = 180"
+          }
         },
         {
           "id": "capture",
@@ -552,9 +551,36 @@
           "kind": "portable_decision",
           "swift": {
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
-            "contains": "meetingPendingPackets < 8"
+            "contains": "private func feedMeeting("
           },
-          "logical_unit_id": "meeting_live/backpressure"
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/meeting/capture_route.go",
+              "contains": "func DecideQueue("
+            },
+            {
+              "path": "voice-rewrite/internal/core/meeting/pipeline.go",
+              "contains": "DecideQueue("
+            },
+            {
+              "path": "voice-rewrite/meeting_session.go",
+              "contains": "meetingcore.NewPipeline("
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/meeting.go",
+              "contains": "m.runtime.AdmitPCM("
+            }
+          ],
+          "go_forbidden_when": [
+            {
+              "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+              "contains": "meetingPendingPackets < 8"
+            },
+            {
+              "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
+              "contains": "stopMeeting(reason: \"会议音频处理过载"
+            }
+          ]
         },
         {
           "id": "source_route",
@@ -564,7 +590,24 @@
             "path": "macos/VoiceRewrite/App/WorkspaceModel.swift",
             "contains": "func startMeeting()"
           },
-          "logical_unit_id": "meeting_live/source_route"
+          "go": [
+            {
+              "path": "voice-rewrite/internal/core/meeting/capture_route.go",
+              "contains": "func (s *SessionRuntime) CaptureRoute("
+            },
+            {
+              "path": "voice-rewrite/meeting_windows.go",
+              "contains": "s.runtime.CaptureRoute(meetingcore.CaptureStart,"
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/main.go",
+              "contains": "m.runtime.CaptureRoute(meetingcore.CaptureStart,"
+            },
+            {
+              "path": "voice-rewrite/cmd/voicebridge/meeting.go",
+              "contains": "m.runtime.CaptureRoute(event,"
+            }
+          ]
         },
         {
           "id": "render",

@@ -55,6 +55,8 @@ type request struct {
 	TargetID        string          `json:"target_id"`
 	SessionID       string          `json:"session_id"`
 	AudioEpoch      uint64          `json:"audio_epoch"`
+	SourceID        string          `json:"source_id"`
+	DroppedPackets  uint32          `json:"dropped_packets"`
 	ReplyIndex      int             `json:"reply_index"`
 	ViewButton      int             `json:"button_id"`
 	FocusExpression bool            `json:"focus_expression"`
@@ -239,7 +241,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 	if req.Op != "transcribe" && req.Op != "selected_task" && req.Op != "selected_voice_task" && req.Op != "probe_asr" && req.Op != "probe_llm" && req.Op != "list_asr_models" && req.Op != "list_llm_models" && req.Op != "check_update" && req.Op != "meeting_replies" && req.Op != "meeting_refine" && req.Op != "meeting_compose" && req.Op != "meeting_express" {
 		s.mu.Unlock()
 		switch req.Op {
-		case "meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop", "meeting_pause", "meeting_resume", "meeting_accept", "meeting_cancel", "meeting_view", "meeting_configure", "meeting_demo":
+		case "meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop", "meeting_pause", "meeting_resume", "meeting_switch", "meeting_source_lost", "meeting_accept", "meeting_cancel", "meeting_view", "meeting_configure", "meeting_demo":
 			s.send(s.meetingRequest(req))
 		case "hello":
 			s.send(success(req.ID, map[string]any{"name": jsonl.HelloName, "protocol": jsonl.Version}))
@@ -324,9 +326,21 @@ func (s *bridgeServer) meetingRequest(req request) response {
 		if err != nil {
 			return failure(req.ID, "meeting_failed", "无法启动会议处理")
 		}
+		source := req.SourceID
+		if source == "" {
+			source = "system"
+		} // Existing audio adapters without a process filter.
+		if len(source) > 256 {
+			m.stop()
+			return failure(req.ID, "invalid_source", "会议来源标识无效")
+		}
+		epoch, routeErr := m.runtime.CaptureRoute(meetingcore.CaptureStart, source, 0)
+		if routeErr != nil {
+			m.stop()
+			return failure(req.ID, "invalid_source", "会议音频来源不可用")
+		}
 		s.meeting = m
-		_, epoch, _ := m.runtime.Snapshot()
-		return success(req.ID, map[string]any{"session_id": m.id, "audio_epoch": epoch})
+		return success(req.ID, map[string]any{"session_id": m.id, "audio_epoch": epoch, "feed_window": meetingcore.PacketWindow})
 	case "meeting_feed":
 		if req.SessionID == "" || len(req.PCMBase64) == 0 ||
 			len(req.PCMBase64) > base64.StdEncoding.EncodedLen(32_000) {
@@ -342,6 +356,9 @@ func (s *bridgeServer) meetingRequest(req request) response {
 		if m == nil || m.id != req.SessionID {
 			return failure(req.ID, "stale_meeting", "会议已停止或更换")
 		}
+		if req.DroppedPackets > 0 {
+			m.noteTransportDrops(req.DroppedPackets, req.AudioEpoch)
+		}
 		if err := m.feed(pcm, req.AudioEpoch); err != nil {
 			switch {
 			case errors.Is(err, errMeetingPaused):
@@ -355,7 +372,7 @@ func (s *bridgeServer) meetingRequest(req request) response {
 			}
 		}
 		return success(req.ID, map[string]any{"accepted": true})
-	case "meeting_snapshot", "meeting_stop", "meeting_pause", "meeting_resume", "meeting_accept", "meeting_cancel", "meeting_view", "meeting_configure":
+	case "meeting_snapshot", "meeting_stop", "meeting_pause", "meeting_resume", "meeting_switch", "meeting_source_lost", "meeting_accept", "meeting_cancel", "meeting_view", "meeting_configure":
 		s.mu.Lock()
 		m := s.meeting
 		if m == nil || req.SessionID == "" || req.SessionID != m.id {
@@ -383,6 +400,16 @@ func (s *bridgeServer) meetingRequest(req request) response {
 			}
 			if err := m.reconfigure(cfg); err != nil {
 				return failure(req.ID, "invalid_profile", "会议资料或识别模式无效；请检查内容长度和模式")
+			}
+		}
+		if req.Op == "meeting_switch" {
+			if err := m.switchSource(req.SourceID, req.AudioEpoch); err != nil {
+				return failure(req.ID, "invalid_source", "会议来源切换失败：来源或音频代际无效")
+			}
+		}
+		if req.Op == "meeting_source_lost" {
+			if err := m.sourceLost(req.AudioEpoch); err != nil {
+				return failure(req.ID, "stale_meeting", "会议来源已失效或更换")
 			}
 		}
 		if req.Op == "meeting_pause" || req.Op == "meeting_resume" {

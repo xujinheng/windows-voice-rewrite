@@ -198,12 +198,21 @@ private struct MeetingView: View {
                         .accessibilityIdentifier("meeting_refresh_sources")
                 }
                 HStack(spacing: 12) {
-                    Picker("音频来源", selection: $model.meetingSourceID) {
+                    Picker("音频来源", selection: Binding(
+                        get: { model.meetingSourceID },
+                        set: { chosen in
+                            if model.meetingActive {
+                                model.switchMeetingSource(to: chosen)
+                            } else {
+                                model.meetingSourceID = chosen
+                            }
+                        }
+                    )) {
                         ForEach(model.meetingSources) { source in
                             Text(source.name).tag(source.id)
                         }
                     }
-                    .disabled(model.meetingStarting || model.meetingActive)
+                    .disabled(model.meetingStarting || model.meetingCaptureSwitching || model.meetingCapturePaused)
                     .accessibilityIdentifier("meeting_audio_source")
                     Picker("会议识别模式", selection: $model.settings.meetingASRMode) {
                         Text(ContractLimits.meetingASRMultipartTitle)

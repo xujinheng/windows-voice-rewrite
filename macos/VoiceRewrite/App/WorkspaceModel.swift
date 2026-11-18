@@ -123,6 +123,10 @@ final class WorkspaceModel: ObservableObject {
     private var meetingSessionID: String?
     private var showStartupDemoOnConnect = false
     private var meetingPendingPackets = 0
+    // Transport credits are negotiated by Go Meeting; the host only counts
+    // asynchronous JSONL requests, never decides the audio queue policy.
+    private var meetingFeedWindow = 0
+    private var meetingDeferredDrops = 0
     private var meetingSnapshotPending = false
     private var meetingSnapshotRequestID: String?
     private var meetingStartWatchdog: Task<Void, Never>?
@@ -1236,6 +1240,7 @@ final class WorkspaceModel: ObservableObject {
                     // Rebase native backpressure to the new Go runtime epoch;
                     // otherwise old pending feeds can falsely stop fresh capture.
                     self.meetingPendingPackets = 0
+                    self.meetingDeferredDrops = 0
                     self.applyMeetingSnapshot(reply.result ?? [:])
                     let message = "已应用到当前会议 · 版本 \(self.meetingProfileVersion)；旧识别任务已取消"
                     self.settingsStatus = message
@@ -1368,7 +1373,9 @@ final class WorkspaceModel: ObservableObject {
         meetingExpressionStatus = ""
         meetingCopyStatus = ""
         meetingSelectedIndex = 0
-        bridge.send(operation: "meeting_start", fields: ["config": config]) { [weak self] reply in
+        bridge.send(operation: "meeting_start", fields: [
+            "config": config, "source_id": .string(meetingCaptureSourceID),
+        ]) { [weak self] reply in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let result = try? reply.get()
@@ -1388,8 +1395,14 @@ final class WorkspaceModel: ObservableObject {
                     self.stopMeeting(reason: "会议处理未返回音频代际，请更新 Helper")
                     return
                 }
+                guard let window = result?.result?["feed_window"]?.int, window > 0 else {
+                    bridge.send(operation: "meeting_stop", fields: ["session_id": .string(id)]) { _ in }
+                    self.stopMeeting(reason: "会议处理未提供 Go 音频传输窗口")
+                    return
+                }
                 self.meetingSessionID = id
                 self.meetingAudioEpoch = epoch
+                self.meetingFeedWindow = window
                 let capture = self.meetingCaptureGeneration.begin()
                 do {
                     try await self.systemAudio.start(sourceID: self.meetingCaptureSourceID,
@@ -1423,26 +1436,31 @@ final class WorkspaceModel: ObservableObject {
         guard meetingSessionID == id, meetingCaptureGeneration.accepts(capture),
               meetingAudioEpoch > 0, meetingActive, !meetingCapturePaused,
               !meetingCaptureSwitching, !meetingProfileUpdating, let bridge else { return }
-        guard meetingPendingPackets < 8 else {
-            stopMeeting(reason: "会议音频处理过载，采集已停止；请检查电脑负载")
+        // Go advertises a fixed in-flight transport window; over-budget native
+        // callbacks are dropped and accounted for in the following feed.
+        // Never stop a healthy meeting just because ASR briefly falls behind.
+        guard meetingFeedWindow > 0, meetingPendingPackets < meetingFeedWindow else {
+            meetingDeferredDrops = min(100_000, meetingDeferredDrops + 1)
             return
         }
         meetingPendingPackets += 1
+        let drops = meetingDeferredDrops
+        meetingDeferredDrops = 0
         let sentEpoch = meetingAudioEpoch
         bridge.sendPCM(operation: "meeting_feed", pcm: bytes, fields: [
             "session_id": .string(id),
-            "audio_epoch": .number(Double(meetingAudioEpoch)),
+            "audio_epoch": .number(Double(sentEpoch)),
+            "dropped_packets": .number(Double(drops)),
         ]) { [weak self] reply in
             Task { @MainActor [weak self] in
                 guard let self, self.meetingSessionID == id,
                       self.meetingCaptureGeneration.accepts(capture),
                       self.meetingAudioEpoch == sentEpoch else { return }
                 self.meetingPendingPackets = max(0, self.meetingPendingPackets - 1)
-                guard case .success(let response) = reply, response.ok else {
-                    if self.meetingCapturePaused || self.meetingCaptureSwitching || self.meetingProfileUpdating { return }
-                    self.stopMeeting(reason: "会议音频传输中断，已停止采集")
-                    return
-                }
+                if case .success(let response) = reply,
+                   response.ok || response.error?.code == "meeting_busy" { return }
+                if self.meetingCapturePaused || self.meetingCaptureSwitching || self.meetingProfileUpdating { return }
+                self.stopMeeting(reason: "会议音频传输中断，已停止采集")
             }
         }
     }
@@ -1511,6 +1529,7 @@ final class WorkspaceModel: ObservableObject {
 
     private func applyMeetingSnapshot(_ values: [String: JSONValue]) {
         if let epoch = values["epoch"]?.int, epoch > 0 { meetingAudioEpoch = epoch }
+        if let window = values["feed_window"]?.int, window > 0 { meetingFeedWindow = window }
         if let version = values["profile_version"]?.int { meetingProfileVersion = version }
         if let paused = values["capture_paused"]?.boolValue, !meetingCaptureSwitching {
             if meetingCapturePaused != paused { meetingCapturePaused = paused }
@@ -1892,6 +1911,80 @@ final class WorkspaceModel: ObservableObject {
         meetingCopyStatus = copied ? ResultCopy.copySucceeded : ResultCopy.copyFailed
     }
 
+    /// Source switching is an OS teardown/start operation fenced by the
+    /// existing Go Meeting session epoch. The source/task decision happens
+    /// in meeting_switch, not in a second Swift session controller.
+    func switchMeetingSource(to sourceID: String) {
+        guard meetingActive, !meetingStarting, !meetingCapturePaused,
+              !meetingCaptureSwitching, !meetingProfileUpdating,
+              !meetingVoiceRecording, !meetingVoiceStarting,
+              let session = meetingSessionID, let bridge else { return }
+        guard sourceID != meetingCaptureSourceID else { return }
+        guard meetingSources.contains(where: { $0.id == sourceID }) else {
+            meetingStatus = "所选音频来源已不可用；请刷新后重新选择"
+            return
+        }
+        let token = meetingGeneration.latest
+        let oldEpoch = meetingAudioEpoch
+        meetingCaptureSwitching = true
+        meetingPresentationRevision &+= 1
+        _ = meetingCaptureGeneration.begin()
+        meetingAudioEpoch = 0
+        meetingPendingPackets = 0
+        meetingDeferredDrops = 0
+        systemAudio.cancel()
+        meetingStatus = "正在切换会议音频来源…"
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.systemAudio.waitForStop()
+            guard self.meetingSessionID == session,
+                  self.meetingGeneration.accepts(token), self.meetingActive else { return }
+            bridge.send(operation: "meeting_switch", fields: [
+                "session_id": .string(session),
+                "source_id": .string(sourceID),
+                "audio_epoch": .number(Double(oldEpoch)),
+            ]) { [weak self] result in
+                Task { @MainActor [weak self] in
+                    guard let self, self.meetingSessionID == session,
+                          self.meetingGeneration.accepts(token), self.meetingActive else { return }
+                    guard case .success(let reply) = result, reply.ok,
+                          let epoch = reply.result?["epoch"]?.int, epoch > oldEpoch else {
+                        self.stopMeeting(reason: "会议音频来源切换失败，已停止采集")
+                        return
+                    }
+                    self.meetingAudioEpoch = epoch
+                    let capture = self.meetingCaptureGeneration.begin()
+                    do {
+                        try await self.systemAudio.start(sourceID: sourceID,
+                            onPCM: { [weak self] bytes in
+                                self?.feedMeeting(bytes, sessionID: session, capture: capture)
+                            },
+                            onFailure: { [weak self] detail in
+                                guard let self, self.meetingSessionID == session,
+                                      self.meetingCaptureGeneration.accepts(capture) else { return }
+                                self.stopMeeting(reason: detail)
+                            })
+                        guard self.meetingSessionID == session,
+                              self.meetingGeneration.accepts(token),
+                              self.meetingCaptureGeneration.accepts(capture),
+                              self.meetingActive else { return }
+                        self.meetingCaptureSourceID = sourceID
+                        self.meetingSourceID = sourceID
+                        self.meetingCaptureSwitching = false
+                        self.applyMeetingSnapshot(reply.result ?? [:])
+                        self.meetingStatus = "正在监听所选应用音频"
+                    } catch {
+                        guard self.meetingSessionID == session,
+                              self.meetingGeneration.accepts(token) else { return }
+                        let detail = (error as? SystemAudioError)?.localizedDescription
+                            ?? "切换音频来源失败；请检查录制权限并重新选择"
+                        self.stopMeeting(reason: detail)
+                    }
+                }
+            }
+        }
+    }
+
     /// Pause is a native capture boundary as well as a Go Core epoch boundary.
     /// The Go Core rejects late PCM while paused; the host stops ScreenCaptureKit.
     func toggleMeetingCapturePause() {
@@ -1947,6 +2040,7 @@ final class WorkspaceModel: ObservableObject {
                     }
                     self.meetingAudioEpoch = epoch
                     self.meetingPendingPackets = 0
+                    self.meetingDeferredDrops = 0
                     let capture = self.meetingCaptureGeneration.begin()
                     do {
                         try await self.systemAudio.start(sourceID: self.meetingCaptureSourceID,
@@ -1994,6 +2088,8 @@ final class WorkspaceModel: ObservableObject {
         systemAudio.cancel()
         _ = meetingCaptureGeneration.begin()
         meetingAudioEpoch = 0
+        meetingFeedWindow = 0
+        meetingDeferredDrops = 0
         meetingCapturePaused = false
         meetingCaptureSwitching = false
         meetingCaptureSourceID = ""
