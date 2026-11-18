@@ -96,13 +96,17 @@ jobs:
           CGO_ENABLED: '0'
         run: go build ./internal/core/...
   test-swift-modules:
-    name: Native Swift adapter suites (parallel)
+    name: Native Swift adapter, macOS Go core and bridge suites (parallel)
     needs: changes
     if: needs.changes.outputs.macos == 'true'
     runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
+        with:
+          go-version: '1.23'
+          cache-dependency-path: voice-rewrite/go.mod
       - name: Cache SwiftPM downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -123,6 +127,21 @@ jobs:
               (cd "macos/Modules/$module" && swift test)
             fi
           done
+      - name: Execute portable core tests on real macOS
+        working-directory: voice-rewrite
+        run: go test -count=1 ./internal/core/...
+      - name: Verify portable core compiles for Apple Silicon and Intel
+        working-directory: voice-rewrite
+        run: |
+          GOOS=darwin GOARCH=arm64 go build ./internal/core/...
+          GOOS=darwin GOARCH=amd64 go build ./internal/core/...
+      - name: Verify Swift-to-Go local process handshake on macOS
+        working-directory: voice-rewrite
+        run: |
+          go build -o "$RUNNER_TEMP/voicebridge" ./cmd/voicebridge
+          swift ../scripts/macos-bridge-probe.swift "$RUNNER_TEMP/voicebridge"
+          GOOS=darwin GOARCH=amd64 go build ./cmd/voicebridge
+          GOOS=darwin GOARCH=arm64 go build ./cmd/voicebridge
 
   test-core-macos:
     needs: changes
@@ -144,14 +163,6 @@ jobs:
           key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('macos/**/Package.swift', 'macos/**/Package.resolved') }}
           restore-keys: |
             swiftpm-${{ runner.os }}-${{ runner.arch }}-
-      - name: Execute portable core tests on real macOS
-        working-directory: voice-rewrite
-        run: go test -count=1 ./internal/core/...
-      - name: Verify portable core compiles for Apple Silicon and Intel
-        working-directory: voice-rewrite
-        run: |
-          GOOS=darwin GOARCH=arm64 go build ./internal/core/...
-          GOOS=darwin GOARCH=amd64 go build ./internal/core/...
       - name: Enable visual acceptance screenshots
         if: needs.changes.outputs.ui == 'true' && !startsWith(github.ref, 'refs/tags/')
         run: |
@@ -238,13 +249,6 @@ jobs:
             ${{ runner.temp }}/VoiceRewrite-*-macOS-arm64-Dev.dmg.sha256
           retention-days: 7
           if-no-files-found: error
-      - name: Verify Swift-to-Go local process handshake on macOS
-        working-directory: voice-rewrite
-        run: |
-          go build -o "$RUNNER_TEMP/voicebridge" ./cmd/voicebridge
-          swift ../scripts/macos-bridge-probe.swift "$RUNNER_TEMP/voicebridge"
-          GOOS=darwin GOARCH=amd64 go build ./cmd/voicebridge
-          GOOS=darwin GOARCH=arm64 go build ./cmd/voicebridge
   build-macos-intel:
     needs: changes
     if: needs.changes.outputs.macos == 'true'
@@ -252,10 +256,18 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # setup-go does not normally find Go 1.23 in the fresh Intel toolcache.
+      # Cache the *complete* official installed version (including marker)
+      # to avoid the observed 64s Go download on repeated PR runs.
+      - name: Cache official Intel Go 1.23.12 toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ${{ runner.tool_cache }}/go/1.23.12
+          key: official-go-macos-intel-1.23.12-v1
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         if: hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         with:
-          go-version: '1.23'
+          go-version: '1.23.12'
           cache-dependency-path: voice-rewrite/go.mod
       - name: Cache SwiftPM downloads
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
