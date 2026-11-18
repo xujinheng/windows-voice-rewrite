@@ -252,17 +252,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - "$RUNNER_TEMP/voicerewrite-arm-xcode.log" <<'PY'
-          import re
-          import sys
-          from pathlib import Path
-
-          log = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
-          counts = [int(x) for x in re.findall(r"Executed (\d+) tests?, with 0 failures", log)]
-          print(f"ARM XCTest passing suite counts: {counts[-8:]}")
-          if "** TEST SUCCEEDED **" not in log or max(counts, default=0) < 69:
-              raise SystemExit("ARM full XCTest suite missing or below 69 passing tests")
-          PY
+          python3 scripts/ci_xctest_coverage.py "$RUNNER_TEMP/voicerewrite-arm-xcode.log" "ARM" 69
       - name: Report ARM incremental cache and Xcode timing
         if: always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
         shell: bash
@@ -439,17 +429,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - "$RUNNER_TEMP/voicerewrite-intel-xcode.log" <<'PY'
-          import re
-          import sys
-          from pathlib import Path
-
-          log = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")
-          counts = [int(x) for x in re.findall(r"Executed (\d+) tests?, with 0 failures", log)]
-          print(f"Intel XCTest passing suite counts: {counts[-8:]}")
-          if "** TEST SUCCEEDED **" not in log or max(counts, default=0) < 69:
-              raise SystemExit("Intel full XCTest suite missing or below 69 passing tests")
-          PY
+          python3 scripts/ci_xctest_coverage.py "$RUNNER_TEMP/voicerewrite-intel-xcode.log" "Intel" 69
       - name: Report Intel incremental cache and Xcode timing
         if: always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
         shell: bash

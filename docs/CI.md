@@ -90,7 +90,7 @@ restoration, `scripts/ci_xcode_mtimes.py` assigns content-derived nanosecond
 timestamps to tracked regular files. Changed sources therefore get different
 timestamps and must rebuild; unchanged Swift objects can be reused. The full native ARM and Intel XCTest schemes are executed on every selected
 PR and `main` push, each with a minimum 69-passing-tests log assertion, architecture-specific
-app/helper checks and unchanged visual evidence uploads. `xcresult` and XCTest pass/fail outputs
+app/helper checks and unchanged visual evidence uploads. Coverage assertions count actual passing tests even when XCTest reports optional skipped tests, while rejecting fewer than 69 passes or any unsuccessful XCTest run. `xcresult` and XCTest pass/fail outputs
 are not in the saved cache. These caches are enabled on pull requests **and main pushes**, with the same
 content-based invalidation and full XCTest execution. GitHub keeps branch cache
 scopes separate: the first main build can be cold, while later main builds can
