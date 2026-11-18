@@ -235,27 +235,6 @@ final class WorkspaceModel: ObservableObject {
             DiagnosticLog.note("stage=recording status=duration_limit")
             stopRecording()
         }
-        if let nativeRecorder = self.microphone as? MicrophoneRecorder {
-            nativeRecorder.onMaximumDuration = { [weak self] in
-                self?.finishRecordingAtLimit()
-            }
-        }
-    }
-
-    /// A duration cap must finish the user's speech, not discard it or claim
-    /// that a held shortcut lost its release event. All three voice flows use
-    /// the normal stop/ASR pipeline after the native recorder reaches its cap.
-    private func finishRecordingAtLimit() {
-        if meetingVoiceRecording {
-            DiagnosticLog.note("stage=meeting_voice_recording status=duration_limit")
-            meetingSideAction = nil
-            keyboardGate.clear()
-            keyboardHoldSequence &+= 1
-            toggleMeetingVoice()
-        } else if isRecording {
-            DiagnosticLog.note("stage=recording status=duration_limit")
-            stopRecording()
-        }
     }
 
     private var microphoneDiscoveryGeneration: UInt64 = 0
