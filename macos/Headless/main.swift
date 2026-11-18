@@ -11,28 +11,42 @@ private enum HostError: Error {
     case config(String), microphone(String), conversion, bridge(String)
 }
 
+// Presentation values come from the Windows-owned Go indicator package.
+// Swift only decodes the one-time profile and draws native AppKit pixels.
+struct PillSpec: Decodable {
+    let recordingWidth, workingWidth, height, cancelWidth, cancelInset: Int
+    let clockX, clockWidth, iconY, waveStartX, waveStep, waveBarWidth, waveBars: Int
+    let textX, textRightGap, spinnerDots, spinnerX, spinnerRadius, spinnerDotSize: Int
+    let terminalMS: Int
+    let levelGain: Double
+    let pillColor, clockColor, labelColor, dictationAccent, rewriteAccent: [Int]
+    let errorAccent, sentMark, fallbackMark, closeColor, closeHover, attentionGlyph: [Int]
+    let processingDictation, processingRewrite, sentLabel, errorLabel, fallbackLabel: String
+}
+
+private struct HostProfile: Decodable {
+    let dictation, rewrite: String
+    let maximumSeconds, modifierDelayMS, mouseDelayMS: Int
+    let pill: PillSpec
+}
+
 private struct HostConfig {
     let raw: [String: Any]
-    let dictation: String
-    let rewrite: String
-    let maximumSeconds: Int
+    let profile: HostProfile
+    var dictation: String { profile.dictation }
+    var rewrite: String { profile.rewrite }
+    var maximumSeconds: Int { profile.maximumSeconds }
 
     static func load(_ url: URL) throws -> HostConfig {
         let data = try Data(contentsOf: url)
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw HostError.config("config.json must be a JSON object")
         }
-        let dictation = json["dictation_hotkey"] as? String ?? "RightCommand"
-        let rewrite = json["hotkey_record"] as? String ?? "RightOption"
-        let allowed = ["RightCommand", "RightOption", "Mouse4", "Mouse5"]
-        guard allowed.contains(dictation), allowed.contains(rewrite), dictation != rewrite else {
-            throw HostError.config("Use distinct RightCommand, RightOption, Mouse4 or Mouse5 shortcuts")
+        guard let profile = try GoCore.request(config: json, operation: "host_profile",
+                                               audio: Data(), selection: nil).profile else {
+            throw HostError.config("missing Go host profile")
         }
-        let limit = json["max_record_seconds"] as? Int ?? 180
-        guard (1...180).contains(limit) else {
-            throw HostError.config("max_record_seconds must be 1...180")
-        }
-        return HostConfig(raw: json, dictation: dictation, rewrite: rewrite, maximumSeconds: limit)
+        return HostConfig(raw: json, profile: profile)
     }
 }
 
@@ -160,6 +174,7 @@ private struct BridgeReply: Decodable {
     struct Output: Decodable {
         let text: String?
         let route: String?
+        let profile: HostProfile?
     }
     struct Failure: Decodable { let code: String; let message: String }
 }
@@ -254,6 +269,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     @objc private func reload() {
         do {
             config = try HostConfig.load(configURL)
+            pill.configure(config.profile.pill)
             show("VR")
         } catch {
             show("Config error")
@@ -314,11 +330,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         // Right-side flagsChanged events can fire while another modifier is held.
         // A tracked press is a release; a new press requires the matching flag.
         updatePress(code: code, name: name,
-                    down: !pressed.contains(code) && flags.contains(family), delay: 0.20)
+                    down: !pressed.contains(code) && flags.contains(family),
+                    delay: Double(config.profile.modifierDelayMS) / 1000)
     }
     private func handleButton(code: Int64, down: Bool) {
         updatePress(code: code, name: code == 103 ? "Mouse4" : "Mouse5",
-                    down: down, delay: 0.25)
+                    down: down, delay: Double(config.profile.mouseDelayMS) / 1000)
     }
     private func updatePress(code: Int64, name: String, down: Bool, delay: TimeInterval) {
         guard name == config.dictation || name == config.rewrite else { return }
