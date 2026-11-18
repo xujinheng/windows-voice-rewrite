@@ -58,6 +58,8 @@ public struct TaskFollowUp: Equatable, Sendable {
     public var cancelTask: Bool
     public var insertText: String?
     public var replaceText: String?
+    /// Go authorizes a reviewable typed edit; native host checks the original selection.
+    public var manualReview: Bool
 
     public init(
         recordingStatus: String? = nil,
@@ -73,7 +75,8 @@ public struct TaskFollowUp: Equatable, Sendable {
         cardText: String? = nil,
         cancelTask: Bool = false,
         insertText: String? = nil,
-        replaceText: String? = nil
+        replaceText: String? = nil,
+        manualReview: Bool = false
     ) {
         self.recordingStatus = recordingStatus
         self.interactionStatus = interactionStatus
@@ -89,73 +92,7 @@ public struct TaskFollowUp: Equatable, Sendable {
         self.cancelTask = cancelTask
         self.insertText = insertText
         self.replaceText = replaceText
-    }
-}
-
-public func dictationTranscriptFollowUp(
-    ok: Bool,
-    text: String?,
-    route: String?,
-    transport: String?,
-    failureStatus: String,
-    emptyStatus: String,
-    historyTitle: String,
-    notInsertedTitle: String
-) -> TaskFollowUp {
-    if let transport {
-        return TaskFollowUp(
-            recordingStatus: dictationRecognizeFailed(transport),
-            asrProbe: probeTranscribeFailed(),
-            phase: .error,
-            mode: "听写")
-    }
-    // Go Core already chose the route. Swift validates the transport envelope
-    // and paints/executes the returned action; it does not reroute by target.
-    guard ok else {
-        return TaskFollowUp(recordingStatus: failureStatus, asrProbe: probeTranscribeFailed(), phase: .error, mode: "听写")
-    }
-    if route == "empty" {
-        return TaskFollowUp(recordingStatus: emptyStatus, asrProbe: probeTranscribeFailed(), phase: .error, mode: "听写")
-    }
-    guard let recognized = text, !recognized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-          route == "insert" || route == "preview" else {
-        return TaskFollowUp(recordingStatus: failureStatus, asrProbe: probeTranscribeFailed(), phase: .error, mode: "听写")
-    }
-    if route == "insert" {
-        return TaskFollowUp(
-            recordingStatus: dictationRecognized(),
-            asrProbe: probeTranscribeSucceeded(),
-            phase: .applying,
-            mode: "听写",
-            transcription: recognized,
-            history: [TaskHistory(title: historyTitle, value: recognized)],
-            insertText: recognized)
-    }
-    return TaskFollowUp(
-        recordingStatus: dictationRecognized(),
-        asrProbe: probeTranscribeSucceeded(),
-        phase: .fallback,
-        mode: "听写",
-        transcription: recognized,
-        history: [TaskHistory(title: historyTitle, value: recognized)],
-        cardTitle: notInsertedTitle,
-        cardText: recognized)
-}
-
-/// Native delivery evidence, not mere CGEvent.post completion, determines
-/// whether the pill may claim success. A sent-but-unverified paste is single
-/// shot: the transcript stays in history and no automatic or manual retry is
-/// initiated. A blocked or uncertain attempt preserves the copyable result.
-public func dictationInsertFollowUp(outcome: DeliveryState, status: String,
-                                    manualTitle: String, text: String) -> TaskFollowUp {
-    switch outcome {
-    case .confirmed:
-        return TaskFollowUp(interactionStatus: dictationInserted(), phase: .success, mode: "听写")
-    case .sentUnverified:
-        return TaskFollowUp(interactionStatus: dictationInserted(), phase: .answer, mode: "听写")
-    case .blocked, .uncertain:
-        return TaskFollowUp(interactionStatus: status, phase: .fallback, mode: "听写",
-                            cardTitle: manualTitle, cardText: text)
+        self.manualReview = manualReview
     }
 }
 
@@ -167,103 +104,4 @@ public func recordingStopFollowUp(detail: String, voiceSelection: Bool, mode: St
         phase: .error,
         mode: mode,
         cancelTask: voiceSelection)
-}
-
-public func selectedTaskFollowUp(
-    ok: Bool,
-    text: String?,
-    spoken: Bool,
-    instruction: String?,
-    route: String?,
-    transport: String?,
-    failureStatus: String,
-    historyTitle: String,
-    cardTitle: String,
-    spokenHistoryTitle: String
-) -> TaskFollowUp {
-    if let transport {
-        return TaskFollowUp(
-            recordingStatus: spoken ? rewriteVoiceFailed() : nil,
-            interactionStatus: rewriteTaskFailed(transport),
-            llmProbe: probeTaskCanceled(),
-            phase: .error,
-            mode: "改写",
-            cancelTask: true)
-    }
-    guard ok, let body = text, !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-          route == "preview" || route == "replace" else {
-        return TaskFollowUp(
-            recordingStatus: spoken ? rewriteVoiceIncomplete() : nil,
-            interactionStatus: failureStatus,
-            asrProbe: spoken ? probeVoiceTaskFailed() : nil,
-            llmProbe: probeTaskFailed(),
-            phase: .error,
-            mode: "改写",
-            cancelTask: true)
-    }
-    guard !spoken || (instruction != nil && !(instruction?.isEmpty ?? true)) else {
-        return TaskFollowUp(
-            interactionStatus: rewriteInstructionMissing(),
-            phase: .error,
-            mode: "改写",
-            cancelTask: true)
-    }
-    return finishedSelection(body, spoken: spoken, instruction: instruction,
-        intentHistory: historyTitle, cardTitle: cardTitle,
-        spokenHistoryTitle: spokenHistoryTitle, write: route == "replace")
-}
-
-public func selectedWriteFollowUp(succeeded: Bool, status: String, cardTitle: String, text: String) -> TaskFollowUp {
-    if succeeded {
-        return TaskFollowUp(interactionStatus: rewriteReplaced(), phase: .success, mode: "改写")
-    }
-    return TaskFollowUp(interactionStatus: status, phase: .fallback, mode: "改写", cardTitle: cardTitle, cardText: text)
-}
-
-private func finishedSelection(
-    _ body: String,
-    spoken: Bool,
-    instruction: String?,
-    intentHistory: String,
-    cardTitle: String,
-    spokenHistoryTitle: String,
-    write: Bool
-) -> TaskFollowUp {
-    var history: [TaskHistory] = []
-    var transcription: String?
-    var recording: String?
-    var asr: String?
-    if spoken, let instruction {
-        transcription = instruction
-        recording = rewriteVoiceHandled()
-        asr = probeVoiceInstructionReady()
-        history.append(TaskHistory(title: spokenHistoryTitle, value: instruction))
-    }
-    history.append(TaskHistory(title: intentHistory, value: body))
-    if write {
-        return TaskFollowUp(
-            recordingStatus: recording,
-            asrProbe: asr,
-            llmProbe: probeTaskSucceeded(),
-            phase: .applying,
-            mode: "改写",
-            transcription: transcription,
-            processedText: body,
-            history: history,
-            cardTitle: cardTitle,
-            replaceText: body)
-    }
-    return TaskFollowUp(
-        recordingStatus: recording,
-        interactionStatus: rewritePreviewOnly(),
-        asrProbe: asr,
-        llmProbe: probeTaskSucceeded(),
-        phase: .answer,
-        mode: "改写",
-        transcription: transcription,
-        processedText: body,
-        history: history,
-        cardTitle: cardTitle,
-        cardText: body,
-        cancelTask: true)
 }
