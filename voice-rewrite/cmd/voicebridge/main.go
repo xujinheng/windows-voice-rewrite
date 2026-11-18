@@ -334,7 +334,7 @@ func (s *bridgeServer) meetingRequest(req request) response {
 			m.stop()
 			return failure(req.ID, "invalid_source", "会议来源标识无效")
 		}
-		epoch, routeErr := m.runtime.CaptureRoute(meetingcore.CaptureStart, source, 0)
+		epoch, routeErr := meetingcore.CaptureRoute(m.runtime, meetingcore.CaptureStart, source, 0)
 		if routeErr != nil {
 			m.stop()
 			return failure(req.ID, "invalid_source", "会议音频来源不可用")
