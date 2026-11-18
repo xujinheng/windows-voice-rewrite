@@ -105,7 +105,7 @@ func WaveHeight(i int, level float64, tick uint32) int {
 		h = WaveMinHeight
 	}
 	if h > WaveMinHeight+WaveHeightRange {
-		h = WaveMinHeight+WaveHeightRange
+		h = WaveMinHeight + WaveHeightRange
 	}
 	return h
 }
@@ -207,12 +207,12 @@ func HostSpec() map[string]any {
 		"textX": WorkingTextX, "textRightGap": WorkingTextRightGap,
 		"spinnerDots": SpinnerDots, "spinnerX": SpinnerCenterX,
 		"spinnerRadius": SpinnerRadius, "spinnerDotSize": SpinnerDotSize,
-		"terminalMS": int(TerminalDuration / time.Millisecond),
-		"levelGain":  MicrophoneLevelGain,
-		"waveShape": []float64{WaveMinHeight, WaveHeightRange, WaveLevelExponent, WaveEnvelopeBase, WaveEnvelopeRange, WaveBarPhase, WaveTickPhase},
+		"terminalMS":   int(TerminalDuration / time.Millisecond),
+		"levelGain":    MicrophoneLevelGain,
+		"waveShape":    []float64{WaveMinHeight, WaveHeightRange, WaveLevelExponent, WaveEnvelopeBase, WaveEnvelopeRange, WaveBarPhase, WaveTickPhase},
 		"levelWeights": []float64{LevelPastWeight, LevelCurrentWeight},
 		"spinnerShape": []float64{SpinnerTickPhase, SpinnerBarPhase, SpinnerBaseAlpha, SpinnerAlphaStep},
-		"pillColor":  rgb(Pill), "clockColor": rgb(ClockText),
+		"pillColor":    rgb(Pill), "clockColor": rgb(ClockText),
 		"labelColor": rgb(LabelText), "dictationAccent": rgb(DictationAccent),
 		"rewriteAccent": rgb(RewriteAccent), "errorAccent": rgb(ErrorAccent),
 		"sentMark": rgb(SuccessMark), "fallbackMark": rgb(FallbackMark),

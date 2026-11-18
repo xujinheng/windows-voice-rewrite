@@ -241,6 +241,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var config: HostConfig!
     private var configURL: URL!
     private var pressed = Set<Int64>()
+    private var consumedMouse = Set<Int64>()
     private var activeKey: Int64?
     private var activeAction: Action?
     private var generation: UInt64 = 0
@@ -359,11 +360,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             arm(code: code, action: name == config.profile.dictation ? .dictation : .rewrite,
                 delay: delay)
         } else if pressed.remove(code) != nil {
-            let wasRecording = activeKey == code && microphone.running
             release(code)
-            if let cursor, !wasRecording {
-                replayClick(button: code - 100, cursor: cursor)
-            }
+            let consumed = consumedMouse.remove(code) != nil
+            if let cursor, !consumed { replayClick(button: code - 100, cursor: cursor) }
         }
     }
     private func arm(code: Int64, action: Action, delay: TimeInterval) {
@@ -390,6 +389,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func begin(_ action: Action) {
+        if let key = activeKey, key >= 103 { consumedMouse.insert(key) }
         targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
         guard targetPID > 0 else { reset("No target"); return }
         targetWindow = focusedWindow()
