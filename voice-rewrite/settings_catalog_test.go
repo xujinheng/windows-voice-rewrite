@@ -11,17 +11,17 @@ import (
 )
 
 func TestWindowsRecordingDurationValidation(t *testing.T) {
-    for _, good := range []string{"1", "60", "120", "180", " 180 "} {
-        v, err := uxRecordingSeconds(good)
-        if err != nil || v < 1 || v > 180 {
-            t.Fatalf("valid duration %q: %d %v", good, v, err)
-        }
-    }
-    for _, bad := range []string{"", "0", "181", "-1", "abc", "60.5"} {
-        if _, err := uxRecordingSeconds(bad); err == nil {
-            t.Fatalf("accepted invalid duration %q", bad)
-        }
-    }
+	for _, good := range []string{"1", "60", "120", "180", " 180 "} {
+	    v, err := uxRecordingSeconds(good)
+	    if err != nil || v < 1 || v > 180 {
+	        t.Fatalf("valid duration %q: %d %v", good, v, err)
+	    }
+	}
+	for _, bad := range []string{"", "0", "181", "-1", "abc", "60.5"} {
+	    if _, err := uxRecordingSeconds(bad); err == nil {
+	        t.Fatalf("accepted invalid duration %q", bad)
+	    }
+	}
 }
 
 func TestSettingsBuilderCoversCatalog(t *testing.T) {
