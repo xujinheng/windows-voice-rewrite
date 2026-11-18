@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -47,6 +48,38 @@ func TestBridgeRejectsUnsupportedAndMalformedRequests(t *testing.T) {
 	for i, want := range []string{"unsupported_op", "protocol_version", "\"ok\":true", "invalid_json"} {
 		if !strings.Contains(lines[i], want) {
 			t.Fatalf("response %d should contain %q: %s", i, want, lines[i])
+		}
+	}
+}
+
+func TestRetiredMeetingBridgeOperationsAreExplicitlyUnsupported(t *testing.T) {
+	// The headless macOS app has no Meeting client. Windows Meeting keeps its
+	// own Go Core pipeline; these old bridge requests must not create sessions.
+	ops := []string{
+		"meeting_start", "meeting_feed", "meeting_snapshot", "meeting_stop",
+		"meeting_pause", "meeting_resume", "meeting_accept", "meeting_cancel",
+		"meeting_view", "meeting_configure", "meeting_demo",
+		"meeting_replies", "meeting_refine", "meeting_compose", "meeting_express",
+	}
+	var input strings.Builder
+	for i, op := range ops {
+		line, err := json.Marshal(map[string]any{"v": 1, "id": fmt.Sprintf("retired-%d", i), "op": op})
+		if err != nil { t.Fatal(err) }
+		input.Write(line)
+		input.WriteByte('\n')
+	}
+	var output bytes.Buffer
+	if err := serve(strings.NewReader(input.String()), &output); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	if len(lines) != len(ops) { t.Fatalf("got %d replies for %d requests", len(lines), len(ops)) }
+	for i, line := range lines {
+		var reply response
+		if err := json.Unmarshal([]byte(line), &reply); err != nil { t.Fatal(err) }
+		if reply.OK || reply.Error == nil || reply.Error.Code != "unsupported_op" ||
+			reply.ID != fmt.Sprintf("retired-%d", i) {
+			t.Fatalf("%s unexpectedly enabled: %s", ops[i], line)
 		}
 	}
 }

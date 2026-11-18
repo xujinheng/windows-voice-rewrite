@@ -29,6 +29,21 @@ class HeadlessWorkflowTests(unittest.TestCase):
         ready = (WORKFLOWS / "ready-build.yml").read_text()
         self.assertIn("github.event.changes.title", ready)
 
+    def test_headless_does_not_link_the_retired_meeting_host(self):
+        bridge = ROOT / "voice-rewrite/cmd/voicebridge"
+        self.assertFalse((bridge / "meeting.go").exists())
+        self.assertFalse((bridge / "meeting_demo.go").exists())
+        self.assertFalse(list(bridge.glob("meeting*_test.go")))
+        source = (bridge / "main.go").read_text()
+        for operation in ("meeting_start", "meeting_feed", "meeting_replies", "meeting_compose"):
+            self.assertNotIn(operation, source)
+        windows = (ROOT / "voice-rewrite/meeting_session.go").read_text()
+        self.assertIn("meetingcore.NewSessionRuntime()", windows)
+        worker = (ROOT / "voice-rewrite/task_worker_windows.go").read_text()
+        for function in ("speech.Transcribe(", "textedit.ResolveSpokenTask("):
+            self.assertIn(function, source)
+            self.assertIn(function, worker)
+
     def test_source_budget_and_user_path(self):
         sources = [ROOT / "macos/Headless/main.swift",
                    ROOT / "macos/Headless/RecordingPill.swift"]
@@ -37,7 +52,7 @@ class HeadlessWorkflowTests(unittest.TestCase):
             self.assertNotIn("import SwiftUI", path.read_text())
         nonblank = sum(sum(bool(line.strip()) for line in path.read_text().splitlines())
                        for path in sources)
-        self.assertLessEqual(nonblank, 1000)
+        self.assertLessEqual(nonblank, 850)
         script = (ROOT / "scripts/build-macos-headless.sh").read_text()
         for path in sources:
             self.assertIn(path.relative_to(ROOT).as_posix(), script)

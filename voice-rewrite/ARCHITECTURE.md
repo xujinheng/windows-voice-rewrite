@@ -18,11 +18,11 @@ non-activating status panel).
    configured JSON fields. No synchronized per-audio-frame IPC.
 4. Go Core owns the provider request, instruction parsing, response and route.
 5. macOS displays the original 232×50 waveform/clock pill on capture and a
-252×50 processing/result pill without activating the foreground editor. Its
-cancel action stops native capture or invalidates a pending result generation.
-macOS checks foreground target/selected-text freshness, sends at most one
-   native paste, and conditionally restores its pasteboard lease. A sent event
-   is not a confirmed editor write. No automatic retry on uncertainty.
+   252×50 processing/result pill without activating the foreground editor.
+   Its cancel action stops native capture or invalidates a pending result
+   generation. macOS checks foreground target/selected-text freshness, sends
+   at most one native paste, and conditionally restores its pasteboard lease.
+   A sent event is not a confirmed editor write; no automatic retry.
 
 There is **no macOS copy of the ASR/LLM decision logic** and no second Swift
 session coordinator. Native capture lifetime and input permissions necessarily
@@ -36,15 +36,22 @@ remain in the macOS adapter; the Go bridge owns its request timeout.
 `internal/core/textedit`: selected-text instruction/model integration.
 `internal/core/ux`: result classification and routing.
 `cmd/voicebridge`: JSONL boundary used by macOS.
-Windows uses the Go Core directly from its Win32 main package.
+Windows uses the Go Core directly from its Win32 main package, including the
+full Windows-only Meeting experience via `internal/core/meeting`. The macOS
+`voicebridge` deliberately has no Meeting session coordinator or Meeting
+protocol; unknown/retired Meeting requests return `unsupported_op`.
 
 ## Source ownership and tests
 
 `scripts/check_headless_scope.py` counts only production Go source included
 by `go list -deps ./cmd/voicebridge` and the two compiled Swift host files; standard library,
 Go tooling, test source, Windows-only host and inactive files do not count.
-A >=90% linked-source Go ratio is a **source metric**, not an assertion that
-90% of dynamic instructions, features or decision points run in Go.
+The audit reports actual linked Go and Swift LOC without counting obsolete
+Meeting modules. Its hard gates instead protect the two host paths' shared
+Go transcription/selected-task calls, a <=850 nonblank-line native adapter
+budget, and absence of macOS Meeting dependencies. A high Go LOC ratio that
+can only be reached by retaining dead modules is not accepted as evidence
+of meaningful reuse. This still is **not** dynamic runtime coverage.
 
 CI compiles both Apple Silicon and Intel .app bundles and continues to run Go
 race tests and Windows host checks. Physical microphone, editor integration,

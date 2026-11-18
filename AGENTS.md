@@ -16,8 +16,10 @@ This file describes the **current product**, not its history. Read `voice-rewrit
 - **One Go Core, two deliberately different hosts.** Windows keeps its full Win32 feature set. macOS is a minimal headless NSStatusItem dictation/rewrite host; it intentionally has no settings GUI, Meeting, history or result cards.
 - **Change once, improve both.** Go Core or generated contracts own portable audio/ASR/LLM, text routing, task/delivery rules, configuration, UI copy, layout and state transitions. A typical business/UI change needs one shared edit.
 - **Split only at OS boundaries.** Windows owns Win32/UIA/WASAPI, hooks, DPAPI and rendering; macOS owns the single Swift AppKit/AVAudioEngine/AX/Quartz/pasteboard adapter and reads a JSON config; no second business model or Keychain settings screen. Native adapters execute OS calls, not portable algorithms.
-- **Prevent drift and regressions.** Keep the one macOS Swift native adapter thin; do not introduce parallel rules or synchronous per-frame IPC. Test both adapters and Go Core; protect working Windows behavior.
-- **Prove linked source ownership, not inflated repository percentages.** Run `python3 scripts/check_headless_scope.py` after Go setup. Count only Go files linked into the headless Go bridge plus the one production Swift host. Preserve real Windows Go tests and macOS Swift compilation checks. This static metric is not dynamic runtime ownership; verify actual ASR and paste paths on real devices.
+- **Prevent drift and regressions.** Keep both macOS native Swift adapter files thin; do not introduce parallel rules or synchronous per-frame IPC. Test both adapters and Go Core; protect working Windows behavior.
+- **Prove linked source ownership, not inflated repository percentages.** Run `python3 scripts/check_headless_scope.py` after Go setup. Count only Go files linked into the headless Go bridge plus both native Swift
+  boundary files. Never keep unreferenced Meeting Go packages merely to maintain
+  a Go percentage; check the actual shared task entrypoints and native LOC cap. Preserve real Windows Go tests and macOS Swift compilation checks. This static metric is not dynamic runtime ownership; verify actual ASR and paste paths on real devices.
 
 ## Final-state only
 
@@ -39,7 +41,9 @@ This file describes the **current product**, not its history. Read `voice-rewrit
 
 - Document current usage, builds and limits, never a diary, versioned `README-V*.md` / `ARCHITECTURE-V*.md`, migrations, rejected approaches or interim-process commentary.
 - Inspect current code, implement the end state, delete old paths and test. Prefer one PR per coherent task; avoid parallel implementations and procedural reports.
-- Run Go unit/race, contract generation and Windows/macOS Apple Silicon and Intel Swift/Xcode CI as relevant. Test clipboard races, rapid dictation, focus/permission changes, cancellation, browser editors and Unicode.
+- Run Go unit/race and Windows native UI/Meeting regressions plus macOS Apple
+  Silicon/Intel direct Swift compilation as relevant; do not resurrect the
+  deleted Xcode project or generated Swift contracts. Test clipboard races, rapid dictation, focus/permission changes, cancellation, browser editors and Unicode.
 - CI cannot prove physical mic, mouse side buttons, permissions or insertion into third-party editors. Track device acceptance separately; never call a build user-ready or claim confirmed insertion without evidence.
 - Close completed/superseded issues and consolidate unfinished scope without claiming delivery. Report PR, merge SHA, CI and blockers concisely in the conversation, not source documents.
 

@@ -18,8 +18,12 @@ On macOS 13+ the script must produce a signed .app with a native Swift menu-bar
 host and a native Go voicebridge. CI builds both arm64 and x86_64 architectures, including the non-activating
 AppKit floating pill. Static CI checks require both Swift adapter files to be
 compiled and counted toward the source ratio.
-A linked-source Go percentage >=90 is a static source metric, not evidence of
-user-facing correctness.
+The report measures only Go packages actually linked by voicebridge. The old
+macOS Meeting bridge is forbidden as a dependency and must not count toward
+the numerator. CI additionally enforces <=850 native Swift nonblank LOC, the
+same Go speech/selected-task entrypoints on Windows and macOS, and preservation
+of Windows Meeting Core. A raw Go/Swift percentage is **reported**, not
+artificially maintained with dead code; it is not functional coverage.
 
 ### Physical-device acceptance (not CI-verified)
 - Permit Microphone, Accessibility and Input Monitoring access
