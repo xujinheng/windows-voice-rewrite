@@ -41,17 +41,17 @@ const (
 var errFrameTooLarge = errors.New("frame exceeds limit")
 
 type request struct {
-	Version         int             `json:"v"`
-	ID              string          `json:"id"`
-	Op              string          `json:"op"`
-	Config          json.RawMessage `json:"config"`
-	PCMBase64       string          `json:"pcm_base64"`
-	SelectedText    string          `json:"selected_text"`
-	CanInsert       bool            `json:"can_insert"`
-	Instruction     string          `json:"instruction"`
-	CurrentVersion  string          `json:"current_version"`
-	Shortcut        string          `json:"shortcut"`
-	TargetID        string          `json:"target_id"`
+	Version        int             `json:"v"`
+	ID             string          `json:"id"`
+	Op             string          `json:"op"`
+	Config         json.RawMessage `json:"config"`
+	PCMBase64      string          `json:"pcm_base64"`
+	SelectedText   string          `json:"selected_text"`
+	CanInsert      bool            `json:"can_insert"`
+	Instruction    string          `json:"instruction"`
+	CurrentVersion string          `json:"current_version"`
+	Shortcut       string          `json:"shortcut"`
+	TargetID       string          `json:"target_id"`
 }
 
 type bridgeError struct {

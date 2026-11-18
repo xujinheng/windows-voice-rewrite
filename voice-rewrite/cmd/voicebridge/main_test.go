@@ -64,7 +64,9 @@ func TestRetiredMeetingBridgeOperationsAreExplicitlyUnsupported(t *testing.T) {
 	var input strings.Builder
 	for i, op := range ops {
 		line, err := json.Marshal(map[string]any{"v": 1, "id": fmt.Sprintf("retired-%d", i), "op": op})
-		if err != nil { t.Fatal(err) }
+		if err != nil {
+			t.Fatal(err)
+		}
 		input.Write(line)
 		input.WriteByte('\n')
 	}
@@ -73,10 +75,14 @@ func TestRetiredMeetingBridgeOperationsAreExplicitlyUnsupported(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
-	if len(lines) != len(ops) { t.Fatalf("got %d replies for %d requests", len(lines), len(ops)) }
+	if len(lines) != len(ops) {
+		t.Fatalf("got %d replies for %d requests", len(lines), len(ops))
+	}
 	for i, line := range lines {
 		var reply response
-		if err := json.Unmarshal([]byte(line), &reply); err != nil { t.Fatal(err) }
+		if err := json.Unmarshal([]byte(line), &reply); err != nil {
+			t.Fatal(err)
+		}
 		if reply.OK || reply.Error == nil || reply.Error.Code != "unsupported_op" ||
 			reply.ID != fmt.Sprintf("retired-%d", i) {
 			t.Fatalf("%s unexpectedly enabled: %s", ops[i], line)
