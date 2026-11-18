@@ -44,7 +44,7 @@
           "kind": "portable_decision",
           "swift": {
             "path": "macos/Modules/Microphone/Sources/Microphone/MicrophoneRecorder.swift",
-            "contains": "maximumSeconds: Int = 60"
+            "contains": "maximumSeconds: Int = 180"
           }
         },
         {
