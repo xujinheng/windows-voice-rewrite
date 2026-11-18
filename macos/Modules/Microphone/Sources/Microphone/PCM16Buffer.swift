@@ -52,10 +52,6 @@ struct PCM16Buffer {
 
     private(set) var frameCount = 0
     private var bytes = Data()
-    // Reused per recording, not allocated and copied anew for every callback.
-    // The scratch buffer is sized on first use so small Meeting packets never
-    // reserve an unnecessary 8 KiB buffer.
-    private var chunkBytes = [UInt8]()
     private var state: State = .active
 
     private enum State { case active, finished, cancelled }
@@ -76,30 +72,18 @@ struct PCM16Buffer {
         guard samples.count <= Self.maximumFrames - frameCount else {
             throw MicrophoneError.durationExceeded
         }
-        guard !samples.isEmpty else { return }
-        let byteCount = samples.count * 2
-        if chunkBytes.count < byteCount {
-            chunkBytes = [UInt8](repeating: 0, count: byteCount)
+        var encoded = [UInt8]()
+        encoded.reserveCapacity(samples.count * 2)
+        for sample in samples {
+            guard sample.isFinite else { throw MicrophoneError.invalidAudioSample }
+            // Saturate before converting; -1 maps to -32768 and +1 to +32767.
+            let clipped = max(-1.0, min(1.0, sample))
+            let magnitude = Int((clipped * 32_768.0).rounded())
+            let word = UInt16(bitPattern: Int16(clamping: magnitude))
+            encoded.append(UInt8(truncatingIfNeeded: word))
+            encoded.append(UInt8(truncatingIfNeeded: word >> 8))
         }
-        // One scratch allocation per recording-size change, rather than one
-        // array allocation per 4096-frame callback. Unlike growing Data.count
-        // per chunk this does not repeatedly zero-fill the destination buffer.
-        // Failed chunks never modify the captured bytes.
-        try chunkBytes.withUnsafeMutableBufferPointer { destination in
-            for index in 0..<samples.count {
-                let sample = samples[index]
-                guard sample.isFinite else { throw MicrophoneError.invalidAudioSample }
-                let clipped = max(-1.0, min(1.0, sample))
-                let magnitude = Int((clipped * 32_768.0).rounded())
-                let word = UInt16(bitPattern: Int16(clamping: magnitude))
-                destination[2 * index] = UInt8(truncatingIfNeeded: word)
-                destination[2 * index + 1] = UInt8(truncatingIfNeeded: word >> 8)
-            }
-        }
-        chunkBytes.withUnsafeBufferPointer { buffer in
-            bytes.append(contentsOf: UnsafeBufferPointer(start: buffer.baseAddress,
-                                                         count: byteCount))
-        }
+        bytes.append(contentsOf: encoded)
         frameCount += samples.count
     }
 
@@ -117,7 +101,6 @@ struct PCM16Buffer {
     mutating func cancel() {
         state = .cancelled
         bytes.removeAll(keepingCapacity: false)
-        chunkBytes.removeAll(keepingCapacity: false)
         frameCount = 0
     }
 }
