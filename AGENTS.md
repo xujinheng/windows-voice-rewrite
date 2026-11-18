@@ -17,6 +17,7 @@ This file describes the **current product**, not its history. Read `voice-rewrit
 - **Change once, improve both.** Go Core or generated contracts own portable audio/ASR/LLM, text routing, task/delivery rules, configuration, UI copy, layout and state transitions. A typical business/UI change needs one shared edit.
 - **Split only at OS boundaries.** Windows owns Win32/UIA/WASAPI, hooks, DPAPI and rendering; macOS owns SwiftUI/AppKit, AVAudioEngine, AX/Quartz, pasteboard and Keychain. Native adapters execute OS calls, not portable algorithms.
 - **Prevent drift and regressions.** Generate Swift contracts from authoritative Go sources; do not maintain parallel rules or use synchronous per-frame IPC. Test both adapters and Go Core; protect working Windows behavior.
+- **Prove reuse on each PR.** Keep `scripts/reuse_journeys.json` aligned with the actual Windows/macOS call paths. The existing CI changes job runs `scripts/bench_reuse.py` on every PR and compares source-evidenced Go vs Swift *portable business decision ownership* against its base. Do not remove stages, inflate native-only categories, or add empty Go wrappers to game the score; delete superseded Swift decisions and verify both hosts use Go. The score is an audited static journey map, never a claim about dynamic instruction coverage, runtime execution share, or real-device acceptance. Report source LOC only as a separate non-runtime inventory.
 
 ## Final-state only
 
