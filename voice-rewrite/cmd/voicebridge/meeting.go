@@ -370,7 +370,7 @@ func (m *bridgeMeeting) switchSource(source string, epoch uint64) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	_, err := m.runtime.CaptureRoute(meetingcore.CaptureSwitch, source, epoch)
+	_, err := meetingcore.CaptureRoute(m.runtime, meetingcore.CaptureSwitch, source, epoch)
 	if err != nil {
 		return err
 	}
@@ -389,7 +389,7 @@ func (m *bridgeMeeting) sourceLost(epoch uint64) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	_, err := m.runtime.CaptureRoute(meetingcore.CaptureLost, "", epoch)
+	_, err := meetingcore.CaptureRoute(m.runtime, meetingcore.CaptureLost, "", epoch)
 	if err != nil {
 		return err
 	}
@@ -423,7 +423,7 @@ func (m *bridgeMeeting) setPaused(paused bool) error {
 		event = meetingcore.CapturePause
 	}
 	_, _, wasPaused := m.runtime.Snapshot()
-	_, err := m.runtime.CaptureRoute(event, "", 0)
+	_, err := meetingcore.CaptureRoute(m.runtime, event, "", 0)
 	if err != nil {
 		return err
 	}
@@ -455,7 +455,7 @@ func (m *bridgeMeeting) setPaused(paused bool) error {
 
 func (m *bridgeMeeting) stop() {
 	m.mu.Lock()
-	_, _ = m.runtime.CaptureRoute(meetingcore.CaptureStop, "", 0)
+	_, _ = meetingcore.CaptureRoute(m.runtime, meetingcore.CaptureStop, "", 0)
 	m.discardPacketsLocked()
 	m.level = 0
 	m.mu.Unlock()
