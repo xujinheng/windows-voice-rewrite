@@ -23,13 +23,20 @@ $cases = @(
   @{state='settings.speech';kind='settings';theme='light';fixture='default-settings-v1';page=0},
   @{state='settings.writing';kind='settings';theme='light';fixture='default-settings-v1';page=1},
   @{state='settings.input';kind='settings';theme='light';fixture='default-settings-v1';page=2},
+  @{state='settings.speech';kind='settings';theme='dark';fixture='default-settings-v1';page=0},
+  @{state='settings.writing';kind='settings';theme='dark';fixture='default-settings-v1';page=1},
+  @{state='settings.input';kind='settings';theme='dark';fixture='default-settings-v1';page=2},
   @{state='pill.preview';kind='recording';theme='dark';fixture='synthetic-dictation-v1';phase='preview'},
   @{state='pill.recording';kind='recording';theme='dark';fixture='synthetic-dictation-v1';phase='recording'},
   @{state='pill.processing';kind='recording';theme='dark';fixture='synthetic-dictation-v1';phase='processing'},
   @{state='pill.failure';kind='recording';theme='dark';fixture='synthetic-dictation-v1';phase='failure'},
   @{state='pill.success-event-sent';kind='recording';theme='dark';fixture='synthetic-dictation-v1';phase='success-event-sent'},
   @{state='result.copy';kind='answer';theme='light';fixture='result-v1'},
-  @{state='result.copy';kind='answer';theme='dark';fixture='result-v1'}
+  @{state='result.copy';kind='answer';theme='dark';fixture='result-v1'},
+  @{state='result.apply';kind='answer';theme='light';fixture='result-apply-v1';apply='1'},
+  @{state='result.apply';kind='answer';theme='dark';fixture='result-apply-v1';apply='1'},
+  @{state='result.long';kind='answer';theme='light';fixture='long-result-v1';long='1'},
+  @{state='result.long';kind='answer';theme='dark';fixture='long-result-v1';long='1'}
 )
 $captures = @()
 foreach ($case in $cases) {
@@ -37,7 +44,8 @@ foreach ($case in $cases) {
   $env:VOICEREWRITE_VISUAL_THEME = $case.theme
   $env:VOICEREWRITE_VISUAL_SCALE = '1'
   $env:VOICEREWRITE_VISUAL_STATE = if ($case.ContainsKey('phase')) { $case.phase } else { 'recording' }
-  $env:VOICEREWRITE_VISUAL_APPLY = '0'
+  $env:VOICEREWRITE_VISUAL_APPLY = if ($case.ContainsKey('apply')) { $case.apply } else { '0' }
+  $env:VOICEREWRITE_VISUAL_LONG = if ($case.ContainsKey('long')) { $case.long } else { '0' }
   $class = switch ($case.kind) { settings {'VoiceRewrite.Settings'} answer {'VoiceRewrite.ResultCard'} recording {'VoiceRewrite.RecordingIndicator'} }
   $title = switch ($case.kind) { settings {'VoiceRewrite · 连接设置'} answer {'VoiceRewrite'} recording {'VoiceRewrite status'} }
   $proc = Start-Process -FilePath $exe -PassThru

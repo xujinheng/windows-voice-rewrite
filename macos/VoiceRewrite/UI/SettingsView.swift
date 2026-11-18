@@ -13,6 +13,7 @@ enum SettingsWindowMetrics {
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var model: WorkspaceModel
     var onClose: (() -> Void)? = nil
     @State private var selectedPage = "speech"
@@ -31,99 +32,121 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("VoiceRewrite").font(.title3.bold())
-                    Text("设置分类").font(.caption).foregroundStyle(.secondary)
+                    Text("VoiceRewrite").font(.system(size: 18, weight: .bold)).padding(.bottom, 24)
+                    Text("设置分类").font(.caption).foregroundStyle(.secondary).padding(.bottom, 12)
                     Button("语音识别") { selectPage("speech") }
                         .buttonStyle(.plain)
                         .font(.system(size: 13, weight: selectedPage == "speech" ? .semibold : .regular))
+                        .foregroundStyle(selectedPage == "speech" ? Color(red: 0.43, green: 0.32, blue: 0.82) : Color.primary)
                         .padding(.vertical, 9)
                         .padding(.horizontal, 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(selectedPage == "speech" ? Color.accentColor.opacity(0.12) : Color.clear)
+                        .background(Color.clear)
+                        .overlay(alignment: .leading) { Rectangle().fill(Color(red: 0.43, green: 0.32, blue: 0.82)).frame(width: 3).offset(x: -13).opacity(selectedPage == "speech" ? 1 : 0) }
                         .clipShape(RoundedRectangle(cornerRadius: 9))
                         .accessibilityIdentifier("nav_speech")
                     Button("AI 写作") { selectPage("writing") }
                         .buttonStyle(.plain)
                         .font(.system(size: 13, weight: selectedPage == "writing" ? .semibold : .regular))
+                        .foregroundStyle(selectedPage == "writing" ? Color(red: 0.43, green: 0.32, blue: 0.82) : Color.primary)
                         .padding(.vertical, 9)
                         .padding(.horizontal, 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(selectedPage == "writing" ? Color.accentColor.opacity(0.12) : Color.clear)
+                        .background(Color.clear)
+                        .overlay(alignment: .leading) { Rectangle().fill(Color(red: 0.43, green: 0.32, blue: 0.82)).frame(width: 3).offset(x: -13).opacity(selectedPage == "writing" ? 1 : 0) }
                         .clipShape(RoundedRectangle(cornerRadius: 9))
                         .accessibilityIdentifier("nav_writing")
                     Button("快捷键与设备") { selectPage("input") }
                         .buttonStyle(.plain)
                         .font(.system(size: 13, weight: selectedPage == "input" ? .semibold : .regular))
+                        .foregroundStyle(selectedPage == "input" ? Color(red: 0.43, green: 0.32, blue: 0.82) : Color.primary)
                         .padding(.vertical, 9)
                         .padding(.horizontal, 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(selectedPage == "input" ? Color.accentColor.opacity(0.12) : Color.clear)
+                        .background(Color.clear)
+                        .overlay(alignment: .leading) { Rectangle().fill(Color(red: 0.43, green: 0.32, blue: 0.82)).frame(width: 3).offset(x: -13).opacity(selectedPage == "input" ? 1 : 0) }
                         .clipShape(RoundedRectangle(cornerRadius: 9))
                         .accessibilityIdentifier("nav_input")
                     Spacer(minLength: 0)
                 }
-                .frame(width: 160, alignment: .leading)
-                .padding(16)
+                .frame(width: 162, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.top, 32)
+                .padding(.bottom, 16)
                 .frame(maxHeight: .infinity)
-                .background(Color(nsColor: .controlBackgroundColor))
+                .background(colorScheme == .dark ? Color(red: 24.0 / 255, green: 27.0 / 255, blue: 35.0 / 255) : Color(red: 240.0 / 255, green: 241.0 / 255, blue: 246.0 / 255))
                 Divider()
                 VStack(alignment: .leading, spacing: 0) {
                     Group {
                         if selectedPage == "speech" {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("语音识别").font(.title2.bold())
+                                Text("语音识别").font(.system(size: 25, weight: .bold))
                                 Text("连接语音识别服务，将录音转换为文字。").font(.subheadline).foregroundStyle(.secondary)
                             }
                         } 
                         else if selectedPage == "writing" {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("AI 写作").font(.title2.bold())
+                                Text("AI 写作").font(.system(size: 25, weight: .bold))
                                 Text("配置用于改写、翻译与问答的文本模型。").font(.subheadline).foregroundStyle(.secondary)
                             }
                         } 
                         else if selectedPage == "input" {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("快捷键与设备").font(.title2.bold())
+                                Text("快捷键与设备").font(.system(size: 25, weight: .bold))
                                 Text("设置语音快捷键、录音模式和麦克风。").font(.subheadline).foregroundStyle(.secondary)
                             }
                         } 
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 22)
-                    .padding(.bottom, 14)
+                    .padding(.horizontal, 28)
+                    .padding(.top, 68)
+                    .padding(.bottom, 30)
                     Divider()
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
                             if selectedPage == "speech" {
-                                Text("连接配置").font(.headline)
+                                HStack {
+                                    Text("连接配置").font(.headline)
+                                    Spacer()
+                                    Button("测试连接") { model.checkASRService() }
+                                        .disabled(model.isCheckingServices)
+                                        .accessibilityIdentifier("probe_asr")
+                                }
                 HStack(spacing: 12) {
                     Text("API 地址")
                         .font(.system(size: 13))
                         .frame(width: 112, alignment: .leading)
                     TextField("API 地址", text: $model.settings.asrBaseURL)
                         .textFieldStyle(.roundedBorder)
+                        .frame(height: 32)
                         .accessibilityIdentifier("asr_base_url")
                 }
                 HStack(spacing: 12) {
                     Text("模型 ID")
                         .font(.system(size: 13))
                         .frame(width: 112, alignment: .leading)
-                    TextField("模型 ID", text: $model.settings.asrModel)
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityIdentifier("asr_model")
-                }
-                HStack {
-                    Button("发现模型") { model.discoverModels(for: .transcribe) }
-                        .disabled(model.isDiscoveringASRModels)
-                        .accessibilityIdentifier("discover_asr_models")
-                    Menu("选择发现的模型") {
-                        ForEach(model.asrAvailableModels, id: \.self) { id in
-                            Button(id) { model.settings.asrModel = id }
+                    HStack(spacing: 6) {
+                        TextField("模型 ID", text: $model.settings.asrModel)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(height: 32)
+                            .accessibilityIdentifier("asr_model")
+                        Button("发现模型") { model.discoverModels(for: .transcribe) }
+                            .controlSize(.small)
+                            .disabled(model.isDiscoveringASRModels)
+                            .accessibilityIdentifier("discover_asr_models")
+                        Menu {
+                            ForEach(model.asrAvailableModels, id: \.self) { id in
+                                Button(id) { model.settings.asrModel = id }
+                            }
+                        } label: {
+                            Image(systemName: "chevron.down").frame(width: 20)
                         }
+                        .menuStyle(.borderlessButton)
+                        .frame(width: 28)
+                        .disabled(model.asrAvailableModels.isEmpty)
+                        .accessibilityLabel("选择发现的模型")
+                        .accessibilityIdentifier("select_asr_model")
                     }
-                    .disabled(model.asrAvailableModels.isEmpty)
-                    .accessibilityIdentifier("select_asr_model")
                 }
                 if !model.asrModelDiscoveryStatus.isEmpty {
                     Text(model.asrModelDiscoveryStatus).font(.footnote).foregroundStyle(.secondary)
@@ -135,45 +158,57 @@ struct SettingsView: View {
                         .frame(width: 112, alignment: .leading)
                     SecureField("ASR API Key（本地服务可留空；留空保留旧值）", text: $model.asrKeyInput)
                         .textFieldStyle(.roundedBorder)
+                        .frame(height: 32)
                         .accessibilityLabel("API Key")
                         .accessibilityIdentifier("asr_api_key")
                 }
-                Button("测试连接") { model.checkASRService() }
-                    .disabled(model.isCheckingServices)
-                    .accessibilityIdentifier("probe_asr")
                 Text(model.asrProbeStatus).font(.footnote).foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .accessibilityIdentifier("probe_asr_status")
                             } 
                             else if selectedPage == "writing" {
-                                Text("模型配置").font(.headline)
+                                HStack {
+                                    Text("模型配置").font(.headline)
+                                    Spacer()
+                                    Button("测试连接") { model.checkLLMService() }
+                                        .disabled(model.isCheckingServices)
+                                        .accessibilityIdentifier("probe_llm")
+                                }
                 HStack(spacing: 12) {
                     Text("API 地址")
                         .font(.system(size: 13))
                         .frame(width: 112, alignment: .leading)
                     TextField("API 地址", text: $model.settings.llmBaseURL)
                         .textFieldStyle(.roundedBorder)
+                        .frame(height: 32)
                         .accessibilityIdentifier("llm_base_url")
                 }
                 HStack(spacing: 12) {
                     Text("模型 ID")
                         .font(.system(size: 13))
                         .frame(width: 112, alignment: .leading)
-                    TextField("模型 ID", text: $model.settings.textModel)
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityIdentifier("text_model")
-                }
-                HStack {
-                    Button("发现模型") { model.discoverModels(for: .selectedTask) }
-                        .disabled(model.isDiscoveringLLMModels)
-                        .accessibilityIdentifier("discover_llm_models")
-                    Menu("选择发现的模型") {
-                        ForEach(model.llmAvailableModels, id: \.self) { id in
-                            Button(id) { model.settings.textModel = id }
+                    HStack(spacing: 6) {
+                        TextField("模型 ID", text: $model.settings.textModel)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(height: 32)
+                            .accessibilityIdentifier("text_model")
+                        Button("发现模型") { model.discoverModels(for: .selectedTask) }
+                            .controlSize(.small)
+                            .disabled(model.isDiscoveringLLMModels)
+                            .accessibilityIdentifier("discover_llm_models")
+                        Menu {
+                            ForEach(model.llmAvailableModels, id: \.self) { id in
+                                Button(id) { model.settings.textModel = id }
+                            }
+                        } label: {
+                            Image(systemName: "chevron.down").frame(width: 20)
                         }
+                        .menuStyle(.borderlessButton)
+                        .frame(width: 28)
+                        .disabled(model.llmAvailableModels.isEmpty)
+                        .accessibilityLabel("选择发现的模型")
+                        .accessibilityIdentifier("select_llm_model")
                     }
-                    .disabled(model.llmAvailableModels.isEmpty)
-                    .accessibilityIdentifier("select_llm_model")
                 }
                 if !model.llmModelDiscoveryStatus.isEmpty {
                     Text(model.llmModelDiscoveryStatus).font(.footnote).foregroundStyle(.secondary)
@@ -185,12 +220,10 @@ struct SettingsView: View {
                         .frame(width: 112, alignment: .leading)
                     SecureField("LLM API Key（本地服务可留空；留空保留旧值）", text: $model.llmKeyInput)
                         .textFieldStyle(.roundedBorder)
+                        .frame(height: 32)
                         .accessibilityLabel("API Key")
                         .accessibilityIdentifier("llm_api_key")
                 }
-                Button("测试连接") { model.checkLLMService() }
-                    .disabled(model.isCheckingServices)
-                    .accessibilityIdentifier("probe_llm")
                 Text(model.llmProbeStatus).font(.footnote).foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .accessibilityIdentifier("probe_llm_status")
@@ -198,26 +231,24 @@ struct SettingsView: View {
                             else if selectedPage == "input" {
                                 Text("输入偏好").font(.headline)
                                 HStack(spacing: 12) {
-                HStack(spacing: 12) {
-                    Text("语音指令")
-                        .font(.system(size: 13))
-                        .frame(width: 112, alignment: .leading)
-                    TextField("语音指令", text: $model.settings.rewriteShortcut)
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityIdentifier("rewrite_shortcut")
-                }
+                Text("语音指令")
+                    .font(.system(size: 13))
+                    .frame(width: 112, alignment: .leading)
+                TextField("语音指令", text: $model.settings.rewriteShortcut)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(height: 32)
+                    .accessibilityIdentifier("rewrite_shortcut")
                 Button(captureTarget == "rewrite_shortcut" ? "等待按键…" : "录入按键") { beginCapture("rewrite_shortcut") }
                     .accessibilityIdentifier("capture_rewrite")
                                 }
                                 HStack(spacing: 12) {
-                HStack(spacing: 12) {
-                    Text("听写快捷键")
-                        .font(.system(size: 13))
-                        .frame(width: 112, alignment: .leading)
-                    TextField("听写快捷键", text: $model.settings.dictationShortcut)
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityIdentifier("dictation_shortcut")
-                }
+                Text("听写快捷键")
+                    .font(.system(size: 13))
+                    .frame(width: 112, alignment: .leading)
+                TextField("听写快捷键", text: $model.settings.dictationShortcut)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(height: 32)
+                    .accessibilityIdentifier("dictation_shortcut")
                 Button(captureTarget == "dictation_shortcut" ? "等待按键…" : "录入按键") { beginCapture("dictation_shortcut") }
                     .accessibilityIdentifier("capture_dictation")
                                 }
@@ -243,14 +274,13 @@ struct SettingsView: View {
                 }
                 .accessibilityIdentifier("record_mode")
                                 HStack(spacing: 12) {
-                HStack(spacing: 12) {
-                    Text("全局退出快捷键（不是语音操作）")
-                        .font(.system(size: 13))
-                        .frame(width: 112, alignment: .leading)
-                    TextField("全局退出快捷键（不是语音操作）", text: $model.settings.exitShortcut)
-                        .textFieldStyle(.roundedBorder)
-                        .accessibilityIdentifier("exit_shortcut")
-                }
+                Text("全局退出快捷键（不是语音操作）")
+                    .font(.system(size: 13))
+                    .frame(width: 112, alignment: .leading)
+                TextField("全局退出快捷键（不是语音操作）", text: $model.settings.exitShortcut)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(height: 32)
+                    .accessibilityIdentifier("exit_shortcut")
                 Button(captureTarget == "exit_shortcut" ? "等待按键…" : "录入按键") { beginCapture("exit_shortcut") }
                     .accessibilityIdentifier("capture_exit")
                                 }
@@ -329,15 +359,25 @@ struct SettingsView: View {
                             } 
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(24)
+                        .padding(.leading, 28)
+                        .padding(.trailing, 66)
+                        .padding(.top, 20)
+                        .padding(.bottom, 24)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             Divider()
             HStack(spacing: 12) {
-                Button("保存设置") { model.saveSettings() }
-                    .buttonStyle(.borderedProminent)
+                Button(action: { model.saveSettings() }) {
+                    Text("保存设置")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 124, height: 34)
+                        .background(RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(red: 0.43, green: 0.32, blue: 0.82)))
+                }
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier("save")
                 Button("高级配置") {
                     selectPage("input")
@@ -348,22 +388,27 @@ struct SettingsView: View {
                 Button("关闭") { if let onClose { onClose() } else { dismiss() } }
                     .accessibilityIdentifier("close")
             }
-            .padding(.horizontal, 20)
+            .padding(.leading, 220)
+            .padding(.trailing, 84)
             .padding(.top, 12)
             Text(model.settingsStatus)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 20)
-            Text("API Key 为可选项；需要认证时先保存再检测。连接检测共用 Windows 的 Go Core 规则：ASR 发送生成的静音 WAV，LLM 查询 /models，不发送用户录音或文本。密钥仅保存在 Keychain。")
+                .padding(.leading, 220)
+                .padding(.trailing, 84)
+            Text("API Key 仅保存在 Keychain；连接检测不发送真实录音或文字。")
                 .font(.footnote).foregroundStyle(.secondary)
+                .lineLimit(1)
                 .accessibilityIdentifier("save_note")
-                .padding(.horizontal, 20)
+                .padding(.leading, 220)
+                .padding(.trailing, 84)
                 .padding(.bottom, 12)
         }
         .frame(minWidth: 480, minHeight: 420)
         .background(Color(nsColor: .windowBackgroundColor))
+        .tint(Color(red: 0.43, green: 0.32, blue: 0.82))
         .onChange(of: model.settings.asrBaseURL) { _, _ in
             model.markConnectionProbeStale(.transcribe)
             model.invalidateDiscoveredModels(.transcribe)

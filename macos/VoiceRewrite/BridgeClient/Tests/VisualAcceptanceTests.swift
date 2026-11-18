@@ -85,10 +85,12 @@ final class VisualAcceptanceTests: XCTestCase {
 
         let model = WorkspaceModel() // no launch(), mic, permissions or helper connection
         for page in ["speech", "writing", "input"] {
-            try store("settings.\(page)", fixture: "default-settings-v1", theme: "light",
-                      width: SettingsWindowMetrics.width, height: SettingsWindowMetrics.height,
-                      content: SettingsView(model: model, initialPage: page)
-                          .environment(\.colorScheme, .light))
+            for theme in ["light", "dark"] {
+                try store("settings.\(page)", fixture: "default-settings-v1", theme: theme,
+                          width: SettingsWindowMetrics.width, height: SettingsWindowMetrics.height,
+                          content: SettingsView(model: model, initialPage: page)
+                              .environment(\.colorScheme, theme == "dark" ? .dark : .light))
+            }
         }
 
         let started = Date(timeIntervalSince1970: 100)
@@ -115,14 +117,36 @@ final class VisualAcceptanceTests: XCTestCase {
 
         let text = "这是 VoiceRewrite 的真实结果卡片。\n\n使用本地模型可以完成：\n• 改写与润色\n• 翻译与总结\n• 对选中文本提问\n\n所有内容均为视觉验收用的固定示例文字。"
         for theme in ["light", "dark"] {
-            let card = ResultCardActionSession(text: text)
-            let height = CGFloat(ResultCardMetrics.height(unicodeScalars: text.unicodeScalars.count))
-            try store("result.copy", fixture: "result-v1", theme: theme,
+            for editable in [false, true] {
+                // An inert authorized action exercises the real Apply/Copy
+                // layout, but never pastes into a real editor in CI.
+                let applyAction: ResultCardApplyAction? = editable
+                    ? ResultCardApplyAction(isBusy: { false }, perform: {}, cancel: {})
+                    : nil
+                let card = ResultCardActionSession(text: text, applyAction: applyAction)
+                let height = CGFloat(ResultCardMetrics.height(unicodeScalars: text.unicodeScalars.count))
+                try store(editable ? "result.apply" : "result.copy",
+                          fixture: editable ? "result-apply-v1" : "result-v1", theme: theme,
+                          width: ResultCardMetrics.width, height: height,
+                          content: ResultCardView(title: editable ? "AI 改写结果" : "AI 回答",
+                              session: card, width: ResultCardMetrics.width, height: height,
+                              onCopy: {}, onApply: {}, onClose: {})
+                              .environment(\.colorScheme, theme == "dark" ? .dark : .light))
+            }
+        }
+
+        // The Windows answer preview repeats the same UTF-8 sentence 80 times.
+        // A long scroll verifies both hosts retain bounded card geometry.
+        let longText = String(repeating: "这一段用于验证长文本滚动、换行、阅读区域和底部操作按钮。\n", count: 80)
+        for theme in ["light", "dark"] {
+            let card = ResultCardActionSession(text: longText)
+            let height = CGFloat(ResultCardMetrics.height(unicodeScalars: longText.unicodeScalars.count))
+            try store("result.long", fixture: "long-result-v1", theme: theme,
                       width: ResultCardMetrics.width, height: height,
                       content: ResultCardView(title: "AI 回答", session: card,
                           width: ResultCardMetrics.width, height: height,
                           onCopy: {}, onApply: {}, onClose: {})
-                      .environment(\.colorScheme, theme == "dark" ? .dark : .light))
+                          .environment(\.colorScheme, theme == "dark" ? .dark : .light))
         }
 
         // The empty state is not a substitute for Windows's populated demo.
@@ -180,6 +204,6 @@ final class VisualAcceptanceTests: XCTestCase {
         let manifest = Manifest(platform: platform, captures: captures)
         try JSONEncoder().encode(manifest).write(
             to: directory.appendingPathComponent("manifest.json"), options: .atomic)
-        XCTAssertEqual(captures.count, 15)
+        XCTAssertEqual(captures.count, 22)
     }
 }

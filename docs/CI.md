@@ -63,8 +63,11 @@ Ordinary PR label events do not launch empty build runs. Alternatively, use
 Always confirm the workflow's recorded source SHA matches the desired PR
 version; a passing CI Gate is still required for release/merge readiness.
 
-Each push to `main` publishes one Windows EXE and one app-bundle ZIP per macOS
-architecture. **Only version tags** produce the full Windows installer, Windows
+Each push to `main` publishes one Windows EXE and one VoiceRewrite app-bundle ZIP per macOS
+architecture. The same existing ARM64/Intel native jobs also compile the separate
+Mac OneClick launcher and upload one architecture-checked, ad-hoc signed **Dev** app ZIP
+for each; `[ready-to-test]` PRs can fetch these launchers as well. This is not
+Developer ID signing or Apple notarization. **Only version tags** produce the full Windows installer, Windows
 portable archive and macOS developer ZIP/DMG release assets. The separately
 signed/notarized release pipeline is unchanged.
 

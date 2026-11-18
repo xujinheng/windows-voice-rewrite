@@ -93,7 +93,14 @@ jobs:
         run: python3 scripts/check-portable-core.py
       - name: Check generated host contracts
         working-directory: voice-rewrite
-        run: go run ./cmd/contractgen -check
+        run: |
+          if ! go run ./cmd/contractgen -check; then
+            # Keep the check strict, but show the precise generated delta on
+            # failure so UI edits cannot hide behind an opaque mismatch.
+            go run ./cmd/contractgen
+            (cd .. && git diff -- macos/VoiceRewrite/UI/SettingsView.swift)
+            exit 1
+          fi
       - name: Compile core on Linux without CGO
         working-directory: voice-rewrite
         env:
@@ -323,6 +330,31 @@ jobs:
           path: ${{ runner.temp }}/VoiceRewrite-macOS-arm64-Dev.app.zip
           retention-days: 7
           if-no-files-found: error
+      - name: Compile native macOS OneClick launcher (Apple Silicon)
+        # A pure Mac UI PR should not rebuild a separate model service launcher.
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || needs.changes.outputs.oneclick == 'true' || contains(github.event.pull_request.title, '[ready-to-test]')
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash macos/OneClickLauncher/build.sh arm64 "$RUNNER_TEMP/oneclick-arm64"
+          app="$RUNNER_TEMP/oneclick-arm64/VoiceRewrite-OneClick.app"
+          test -x "$app/Contents/MacOS/VoiceRewrite-OneClick"
+          test -x "$app/Contents/MacOS/qwen3asr-oneclick"
+          codesign --verify --deep --strict "$app"
+          if [[ "$GITHUB_REF" == "refs/heads/main" ||
+                "$PR_TITLE" == *"[ready-to-test]"* ]]; then
+            /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/VoiceRewrite-OneClick-macOS-arm64-Dev.app.zip"
+          fi
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+      - name: Upload testable native OneClick (Apple Silicon)
+        if: github.ref == 'refs/heads/main' || contains(github.event.pull_request.title, '[ready-to-test]')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: VoiceRewrite-OneClick-macOS-arm64-Dev-App
+          path: ${{ runner.temp }}/VoiceRewrite-OneClick-macOS-arm64-Dev.app.zip
+          retention-days: 7
+          if-no-files-found: error
       - name: Package Apple Silicon macOS developer app for release
         if: startsWith(github.ref, 'refs/tags/v') && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         run: |
@@ -491,6 +523,31 @@ jobs:
         with:
           name: VoiceRewrite-macOS-x64-Dev-App
           path: ${{ runner.temp }}/VoiceRewrite-macOS-x64-Dev.app.zip
+          retention-days: 7
+          if-no-files-found: error
+      - name: Compile native macOS OneClick launcher (Intel)
+        # A pure Mac UI PR should not rebuild a separate model service launcher.
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || needs.changes.outputs.oneclick == 'true' || contains(github.event.pull_request.title, '[ready-to-test]')
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash macos/OneClickLauncher/build.sh x86_64 "$RUNNER_TEMP/oneclick-x64"
+          app="$RUNNER_TEMP/oneclick-x64/VoiceRewrite-OneClick.app"
+          test -x "$app/Contents/MacOS/VoiceRewrite-OneClick"
+          test -x "$app/Contents/MacOS/qwen3asr-oneclick"
+          codesign --verify --deep --strict "$app"
+          if [[ "$GITHUB_REF" == "refs/heads/main" ||
+                "$PR_TITLE" == *"[ready-to-test]"* ]]; then
+            /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/VoiceRewrite-OneClick-macOS-x64-Dev.app.zip"
+          fi
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+      - name: Upload testable native OneClick (Intel)
+        if: github.ref == 'refs/heads/main' || contains(github.event.pull_request.title, '[ready-to-test]')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: VoiceRewrite-OneClick-macOS-x64-Dev-App
+          path: ${{ runner.temp }}/VoiceRewrite-OneClick-macOS-x64-Dev.app.zip
           retention-days: 7
           if-no-files-found: error
       - name: Package Intel macOS developer app for release

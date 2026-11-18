@@ -653,17 +653,17 @@ func emitSettings() (string, error) {
 	b.WriteString(sourceNote("voice-rewrite/internal/contract and voice-rewrite/internal/core/settingsform"))
 	b.WriteString("import SwiftUI\nimport AppKit\nimport VoiceRewriteStorage\nimport VoiceRewriteInteraction\nimport Microphone\n\n")
 	b.WriteString(fmt.Sprintf("enum SettingsWindowMetrics {\n    static let width: CGFloat = %d\n    static let height: CGFloat = %d\n    static let minimumSize = NSSize(width: %d, height: %d)\n}\n\n", settingsform.WindowWidth, settingsform.WindowHeight, settingsform.MinWidth, settingsform.MinHeight))
-	b.WriteString("struct SettingsView: View {\n    @Environment(\\.dismiss) private var dismiss\n    @ObservedObject var model: WorkspaceModel\n    var onClose: (() -> Void)? = nil\n    @State private var selectedPage = \"speech\"\n    @State private var showAdvanced = false\n    @State private var captureTarget: String?\n    @State private var captureStatus = \"\"\n    @State private var captureMonitor: Any?\n\n    init(model: WorkspaceModel, onClose: (() -> Void)? = nil, initialPage: String = \"speech\") {\n        self.model = model\n        self.onClose = onClose\n        self._selectedPage = State(initialValue: [\"speech\", \"writing\", \"input\"].contains(initialPage) ? initialPage : \"speech\")\n    }\n\n    var body: some View {\n        VStack(spacing: 0) {\n            HStack(spacing: 0) {\n                VStack(alignment: .leading, spacing: 12) {\n                    Text(\"VoiceRewrite\").font(.title3.bold())\n                    Text(\"设置分类\").font(.caption).foregroundStyle(.secondary)\n")
+	b.WriteString("struct SettingsView: View {\n    @Environment(\\.dismiss) private var dismiss\n    @Environment(\\.colorScheme) private var colorScheme\n    @ObservedObject var model: WorkspaceModel\n    var onClose: (() -> Void)? = nil\n    @State private var selectedPage = \"speech\"\n    @State private var showAdvanced = false\n    @State private var captureTarget: String?\n    @State private var captureStatus = \"\"\n    @State private var captureMonitor: Any?\n\n    init(model: WorkspaceModel, onClose: (() -> Void)? = nil, initialPage: String = \"speech\") {\n        self.model = model\n        self.onClose = onClose\n        self._selectedPage = State(initialValue: [\"speech\", \"writing\", \"input\"].contains(initialPage) ? initialPage : \"speech\")\n    }\n\n    var body: some View {\n        VStack(spacing: 0) {\n            HStack(spacing: 0) {\n                VStack(alignment: .leading, spacing: 12) {\n                    Text(\"VoiceRewrite\").font(.system(size: 18, weight: .bold)).padding(.bottom, 24)\n                    Text(\"设置分类\").font(.caption).foregroundStyle(.secondary).padding(.bottom, 12)\n")
 	for _, page := range contract.Pages() {
 		b.WriteString("                    Button(" + strconv.Quote(page.Title) + ") { selectPage(" + strconv.Quote(page.ID) + ") }\n")
 		b.WriteString("                        .buttonStyle(.plain)\n")
-		b.WriteString("                        .font(.system(size: 13, weight: selectedPage == " + strconv.Quote(page.ID) + " ? .semibold : .regular))\n")
+		b.WriteString("                        .font(.system(size: 13, weight: selectedPage == " + strconv.Quote(page.ID) + " ? .semibold : .regular))\n                        .foregroundStyle(selectedPage == " + strconv.Quote(page.ID) + " ? Color(red: 0.43, green: 0.32, blue: 0.82) : Color.primary)\n")
 		b.WriteString("                        .padding(.vertical, 9)\n                        .padding(.horizontal, 12)\n                        .frame(maxWidth: .infinity, alignment: .leading)\n")
-		b.WriteString("                        .background(selectedPage == " + strconv.Quote(page.ID) + " ? Color.accentColor.opacity(0.12) : Color.clear)\n")
+		b.WriteString("                        .background(Color.clear)\n                        .overlay(alignment: .leading) { Rectangle().fill(Color(red: 0.43, green: 0.32, blue: 0.82)).frame(width: 3).offset(x: -13).opacity(selectedPage == " + strconv.Quote(page.ID) + " ? 1 : 0) }\n")
 		b.WriteString("                        .clipShape(RoundedRectangle(cornerRadius: 9))\n")
 		b.WriteString("                        .accessibilityIdentifier(" + strconv.Quote("nav_"+page.ID) + ")\n")
 	}
-	b.WriteString("                    Spacer(minLength: 0)\n                }\n                .frame(width: 160, alignment: .leading)\n                .padding(16)\n                .frame(maxHeight: .infinity)\n                .background(Color(nsColor: .controlBackgroundColor))\n                Divider()\n                VStack(alignment: .leading, spacing: 0) {\n                    Group {\n")
+	b.WriteString("                    Spacer(minLength: 0)\n                }\n                .frame(width: 162, alignment: .leading)\n                .padding(.horizontal, 16)\n                .padding(.top, 32)\n                .padding(.bottom, 16)\n                .frame(maxHeight: .infinity)\n                .background(colorScheme == .dark ? Color(red: 24.0 / 255, green: 27.0 / 255, blue: 35.0 / 255) : Color(red: 240.0 / 255, green: 241.0 / 255, blue: 246.0 / 255))\n                Divider()\n                VStack(alignment: .leading, spacing: 0) {\n                    Group {\n")
 	for i, page := range contract.Pages() {
 		if i == 0 {
 			b.WriteString("                        if selectedPage == ")
@@ -672,12 +672,12 @@ func emitSettings() (string, error) {
 		}
 		b.WriteString(strconv.Quote(page.ID) + " {\n")
 		b.WriteString("                            VStack(alignment: .leading, spacing: 4) {\n")
-		b.WriteString("                                Text(" + strconv.Quote(page.Title) + ").font(.title2.bold())\n")
+		b.WriteString("                                Text(" + strconv.Quote(page.Title) + ").font(.system(size: 25, weight: .bold))\n")
 		b.WriteString("                                Text(" + strconv.Quote(page.Subtitle) + ").font(.subheadline).foregroundStyle(.secondary)\n")
 		b.WriteString("                            }\n")
 		b.WriteString("                        } \n")
 	}
-	b.WriteString("                    }\n                    .frame(maxWidth: .infinity, alignment: .leading)\n                    .padding(.horizontal, 24)\n                    .padding(.top, 22)\n                    .padding(.bottom, 14)\n                    Divider()\n                    ScrollView {\n                        VStack(alignment: .leading, spacing: 14) {\n")
+	b.WriteString("                    }\n                    .frame(maxWidth: .infinity, alignment: .leading)\n                    .padding(.horizontal, 28)\n                    .padding(.top, 68)\n                    .padding(.bottom, 30)\n                    Divider()\n                    ScrollView {\n                        VStack(alignment: .leading, spacing: 14) {\n")
 	for i, page := range contract.Pages() {
 		if i == 0 {
 			b.WriteString("                            if selectedPage == ")
@@ -685,9 +685,17 @@ func emitSettings() (string, error) {
 			b.WriteString("                            else if selectedPage == ")
 		}
 		b.WriteString(strconv.Quote(page.ID) + " {\n")
-		b.WriteString("                                Text(" + strconv.Quote(page.Section) + ").font(.headline)\n")
+		if page.ID == "speech" || page.ID == "writing" {
+			action, ident := "model.checkASRService()", "probe_asr"
+			if page.ID == "writing" {
+				action, ident = "model.checkLLMService()", "probe_llm"
+			}
+			b.WriteString("                                HStack {\n                                    Text(" + strconv.Quote(page.Section) + ").font(.headline)\n                                    Spacer()\n                                    Button(\"测试连接\") { " + action + " }\n                                        .disabled(model.isCheckingServices)\n                                        .accessibilityIdentifier(" + strconv.Quote(ident) + ")\n                                }\n")
+		} else {
+			b.WriteString("                                Text(" + strconv.Quote(page.Section) + ").font(.headline)\n")
+		}
 		for _, control := range contract.PageControls(page.ID, contract.MacOS) {
-			if strings.HasPrefix(control.ID, "capture_") || control.ID == "discover_asr_models" || control.ID == "discover_llm_models" || control.ID == "max_record_seconds" || control.ID == "record_note" || control.ID == "meeting_asr_mode" || control.ID == "system_prompt" || control.ID == "max_response_tokens" || control.ID == "max_selected_characters" || control.ID == "selection_copy_attempts" || control.ID == "selection_copy_timeout_ms" {
+			if strings.HasPrefix(control.ID, "capture_") || control.ID == "probe_asr" || control.ID == "probe_llm" || control.ID == "discover_asr_models" || control.ID == "discover_llm_models" || control.ID == "max_record_seconds" || control.ID == "record_note" || control.ID == "meeting_asr_mode" || control.ID == "system_prompt" || control.ID == "max_response_tokens" || control.ID == "max_selected_characters" || control.ID == "selection_copy_attempts" || control.ID == "selection_copy_timeout_ms" {
 				continue
 			}
 			if control.Kind == contract.Shortcut {
@@ -735,7 +743,7 @@ func emitSettings() (string, error) {
 		}
 		b.WriteString("                            } \n")
 	}
-	b.WriteString("                        }\n                        .frame(maxWidth: .infinity, alignment: .leading)\n                        .padding(24)\n                    }\n                }\n                .frame(maxWidth: .infinity, maxHeight: .infinity)\n            }\n            Divider()\n            HStack(spacing: 12) {\n                Button(\"保存设置\") { model.saveSettings() }\n                    .buttonStyle(.borderedProminent)\n                    .accessibilityIdentifier(\"save\")\n                Button(\"高级配置\") {\n                    selectPage(\"input\")\n                    showAdvanced.toggle()\n                }\n                .accessibilityIdentifier(\"advanced\")\n                Spacer()\n                Button(\"关闭\") { if let onClose { onClose() } else { dismiss() } }\n                    .accessibilityIdentifier(\"close\")\n            }\n            .padding(.horizontal, 20)\n            .padding(.top, 12)\n            Text(model.settingsStatus)\n                .font(.footnote)\n                .foregroundStyle(.secondary)\n                .textSelection(.enabled)\n                .frame(maxWidth: .infinity, alignment: .leading)\n                .padding(.horizontal, 20)\n")
+	b.WriteString("                        }\n                        .frame(maxWidth: .infinity, alignment: .leading)\n                        .padding(.leading, 28)\n                        .padding(.trailing, 66)\n                        .padding(.top, 20)\n                        .padding(.bottom, 24)\n                    }\n                }\n                .frame(maxWidth: .infinity, maxHeight: .infinity)\n            }\n            Divider()\n            HStack(spacing: 12) {\n                Button(action: { model.saveSettings() }) {\n                    Text(\"保存设置\")\n                        .font(.system(size: 14, weight: .semibold))\n                        .foregroundStyle(.white)\n                        .frame(width: 124, height: 34)\n                        .background(RoundedRectangle(cornerRadius: 8)\n                            .fill(Color(red: 0.43, green: 0.32, blue: 0.82)))\n                }\n                    .buttonStyle(.plain)\n                    .accessibilityIdentifier(\"save\")\n                Button(\"高级配置\") {\n                    selectPage(\"input\")\n                    showAdvanced.toggle()\n                }\n                .accessibilityIdentifier(\"advanced\")\n                Spacer()\n                Button(\"关闭\") { if let onClose { onClose() } else { dismiss() } }\n                    .accessibilityIdentifier(\"close\")\n            }\n            .padding(.leading, 220)\n            .padding(.trailing, 84)\n            .padding(.top, 12)\n            Text(model.settingsStatus)\n                .font(.footnote)\n                .foregroundStyle(.secondary)\n                .textSelection(.enabled)\n                .frame(maxWidth: .infinity, alignment: .leading)\n                .padding(.leading, 220)\n                .padding(.trailing, 84)\n")
 	save, ok := contract.Find("save")
 	if !ok {
 		return "", fmt.Errorf("missing save")
@@ -751,8 +759,8 @@ func emitSettings() (string, error) {
 	if save.Label != "保存设置" || advanced.Label != "高级配置" || closeButton.Label != "关闭" {
 		return "", fmt.Errorf("footer labels out of sync")
 	}
-	b.WriteString("            Text(\"API Key 为可选项；需要认证时先保存再检测。连接检测共用 Windows 的 Go Core 规则：ASR 发送生成的静音 WAV，LLM 查询 /models，不发送用户录音或文本。密钥仅保存在 Keychain。\")\n                .font(.footnote).foregroundStyle(.secondary)\n                .accessibilityIdentifier(\"save_note\")\n")
-	b.WriteString("                .padding(.horizontal, 20)\n                .padding(.bottom, 12)\n        }\n        .frame(minWidth: 480, minHeight: 420)\n        .background(Color(nsColor: .windowBackgroundColor))\n")
+	b.WriteString("            Text(\"API Key 仅保存在 Keychain；连接检测不发送真实录音或文字。\")\n                .font(.footnote).foregroundStyle(.secondary)\n                .lineLimit(1)\n                .accessibilityIdentifier(\"save_note\")\n")
+	b.WriteString("                .padding(.leading, 220)\n                .padding(.trailing, 84)\n                .padding(.bottom, 12)\n        }\n        .frame(minWidth: 480, minHeight: 420)\n        .background(Color(nsColor: .windowBackgroundColor))\n        .tint(Color(red: 0.43, green: 0.32, blue: 0.82))\n")
 	for _, control := range contract.Controls() {
 		if control.StaleProbe == "" || !control.VisibleOn(contract.MacOS) {
 			continue
@@ -782,12 +790,17 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 		if err != nil {
 			return "", err
 		}
-		line := "                HStack(spacing: 12) {\n                    Text(" + strconv.Quote(control.Label) + ")\n                        .font(.system(size: 13))\n                        .frame(width: 112, alignment: .leading)\n                    TextField(" + strconv.Quote(control.Label) + ", text: $" + binding + ")\n                        .textFieldStyle(.roundedBorder)\n                        " + id + "\n                }\n"
+		line := "                HStack(spacing: 12) {\n                    Text(" + strconv.Quote(control.Label) + ")\n                        .font(.system(size: 13))\n                        .frame(width: 112, alignment: .leading)\n                    TextField(" + strconv.Quote(control.Label) + ", text: $" + binding + ")\n                        .textFieldStyle(.roundedBorder)\n                        .frame(height: 32)\n                        " + id + "\n                }\n"
+		if control.Kind == contract.Shortcut {
+			// The outer input-page HStack already owns the capture button.
+			// Avoid a nested layout that squeezes the editor on small windows.
+			line = "                Text(" + strconv.Quote(control.Label) + ")\n                    .font(.system(size: 13))\n                    .frame(width: 112, alignment: .leading)\n                TextField(" + strconv.Quote(control.Label) + ", text: $" + binding + ")\n                    .textFieldStyle(.roundedBorder)\n                    .frame(height: 32)\n                    " + id + "\n"
+		}
 		if control.ID == "system_prompt" {
 			line = "                Text(\"System Prompt\").font(.subheadline)\n                TextEditor(text: $model.settings.systemPrompt)\n                    .frame(minHeight: 96)\n                    " + id + "\n"
 		}
 		if control.ID == "asr_model" || control.ID == "text_model" {
-			line += renderModelDiscovery(control.ID)
+			line = renderModelDiscovery(control.ID)
 		}
 		return line, nil
 	case contract.Choice:
@@ -825,7 +838,7 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 		if err != nil {
 			return "", err
 		}
-		return "                HStack(spacing: 12) {\n                    Text(" + strconv.Quote(control.Label) + ")\n                        .font(.system(size: 13))\n                        .frame(width: 112, alignment: .leading)\n                    SecureField(" + strconv.Quote(control.Hint) + ", text: $" + binding + ")\n                        .textFieldStyle(.roundedBorder)\n                        .accessibilityLabel(" + strconv.Quote(control.Label) + ")\n                        " + id + "\n                }\n", nil
+		return "                HStack(spacing: 12) {\n                    Text(" + strconv.Quote(control.Label) + ")\n                        .font(.system(size: 13))\n                        .frame(width: 112, alignment: .leading)\n                    SecureField(" + strconv.Quote(control.Hint) + ", text: $" + binding + ")\n                        .textFieldStyle(.roundedBorder)\n                        .frame(height: 32)\n                        .accessibilityLabel(" + strconv.Quote(control.Label) + ")\n                        " + id + "\n                }\n", nil
 	case contract.Stepper:
 		if control.ID != "max_record_seconds" && control.ID != "max_response_tokens" && control.ID != "max_selected_characters" {
 			return "", fmt.Errorf("stepper %s has no renderer", control.ID)
@@ -874,31 +887,47 @@ func renderControl(control contract.Control, bindings, actions, status map[strin
 
 // These choices are generated beside the canonical settings controls rather
 // than maintained as a separate Swift form or duplicate UI state machine.
+// Put model discovery in the model row, matching the native Windows form.
 func renderModelDiscovery(id string) string {
-	operation, models, busy, status, setting, prefix := "", "", "", "", "", ""
+	operation, models, busy, status, setting, fieldID, prefix := "", "", "", "", "", "", ""
 	switch id {
 	case "asr_model":
-		operation, models, busy, status, setting, prefix = "transcribe", "asrAvailableModels", "isDiscoveringASRModels", "asrModelDiscoveryStatus", "asrModel", "asr"
+		operation, models, busy, status, setting, fieldID, prefix = "transcribe", "asrAvailableModels", "isDiscoveringASRModels", "asrModelDiscoveryStatus", "asrModel", "asr_model", "asr"
 	case "text_model":
-		operation, models, busy, status, setting, prefix = "selectedTask", "llmAvailableModels", "isDiscoveringLLMModels", "llmModelDiscoveryStatus", "textModel", "llm"
+		operation, models, busy, status, setting, fieldID, prefix = "selectedTask", "llmAvailableModels", "isDiscoveringLLMModels", "llmModelDiscoveryStatus", "textModel", "text_model", "llm"
 	}
-	return fmt.Sprintf(`                HStack {
-                    Button("发现模型") { model.discoverModels(for: .%s) }
-                        .disabled(model.%s)
-                        .accessibilityIdentifier("discover_%s_models")
-                    Menu("选择发现的模型") {
-                        ForEach(model.%s, id: \.self) { id in
-                            Button(id) { model.settings.%s = id }
+	return fmt.Sprintf(`                HStack(spacing: 12) {
+                    Text("模型 ID")
+                        .font(.system(size: 13))
+                        .frame(width: 112, alignment: .leading)
+                    HStack(spacing: 6) {
+                        TextField("模型 ID", text: $model.settings.%s)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(height: 32)
+                            .accessibilityIdentifier("%s")
+                        Button("发现模型") { model.discoverModels(for: .%s) }
+                            .controlSize(.small)
+                            .disabled(model.%s)
+                            .accessibilityIdentifier("discover_%s_models")
+                        Menu {
+                            ForEach(model.%s, id: \.self) { id in
+                                Button(id) { model.settings.%s = id }
+                            }
+                        } label: {
+                            Image(systemName: "chevron.down").frame(width: 20)
                         }
+                        .menuStyle(.borderlessButton)
+                        .frame(width: 28)
+                        .disabled(model.%s.isEmpty)
+                        .accessibilityLabel("选择发现的模型")
+                        .accessibilityIdentifier("select_%s_model")
                     }
-                    .disabled(model.%s.isEmpty)
-                    .accessibilityIdentifier("select_%s_model")
                 }
                 if !model.%s.isEmpty {
                     Text(model.%s).font(.footnote).foregroundStyle(.secondary)
                         .accessibilityIdentifier("%s_models_status")
                 }
-`, operation, busy, prefix, models, setting, models, prefix, status, status, prefix)
+`, setting, fieldID, operation, busy, prefix, models, setting, models, prefix, status, status, prefix)
 }
 
 func requiredBinding(control contract.Control, bindings map[string]string) (string, error) {
