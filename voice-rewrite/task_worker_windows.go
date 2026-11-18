@@ -115,7 +115,9 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 		return
 	}
 	budget := session.StageBudget(session.StageASR, len(r.pcm), 0)
-	if !app.epoch.StartStage(generation, session.StageASR, budget) { return }
+	if !app.epoch.StartStage(generation, session.StageASR, budget) {
+		return
+	}
 	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), budget)
 	defer cancel()
 	start := time.Now()
@@ -129,7 +131,9 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 		app.postHandyPhase(indicator.Error, generation)
 		return
 	}
-	if !app.epoch.FinishStage(generation, session.StageASR) { return }
+	if !app.epoch.FinishStage(generation, session.StageASR) {
+		return
+	}
 	// Core owns the transcript routing on both hosts. The native editor
 	// continues to revalidate the target immediately before the write.
 	switch ux.RouteDictationTranscript(text, isSameForegroundWindow(expectedWindow)) {
@@ -147,9 +151,13 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 		return
 	}
 	start = time.Now()
-	if !app.epoch.StartStage(generation, session.StageNativeWrite, session.StageBudget(session.StageNativeWrite, 0, 0)) { return }
+	if !app.epoch.StartStage(generation, session.StageNativeWrite, session.StageBudget(session.StageNativeWrite, 0, 0)) {
+		return
+	}
 	err = insertDictationText(app.Window, expectedWindow, text, func() bool { return app.epoch.Valid(generation) })
-	if !app.epoch.FinishStage(generation, session.StageNativeWrite) { return }
+	if !app.epoch.FinishStage(generation, session.StageNativeWrite) {
+		return
+	}
 	follow := ux.DictationInserted(err)
 	if follow.ShowCard {
 		app.fail(err)
@@ -236,7 +244,9 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		return
 	}
 	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/audio.PCMBytesPerSecond)
-	if !app.epoch.StartStage(generation, session.StageSpokenEdit, session.StageBudget(session.StageSpokenEdit, len(r.pcm), 0)) { return }
+	if !app.epoch.StartStage(generation, session.StageSpokenEdit, session.StageBudget(session.StageSpokenEdit, len(r.pcm), 0)) {
+		return
+	}
 	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), 240*time.Second)
 	defer cancel()
 	started := time.Now()
@@ -252,7 +262,9 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	if !app.epoch.Valid(generation) {
 		return
 	}
-	if !app.epoch.FinishStage(generation, session.StageSpokenEdit) { return }
+	if !app.epoch.FinishStage(generation, session.StageSpokenEdit) {
+		return
+	}
 	app.logger.Printf("stage=spoken_selection ms=%d intent=%s", time.Since(started).Milliseconds(), answer.Intent)
 	if e != nil {
 		app.fail(e)
@@ -268,9 +280,13 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		app.postHandyPhase(ux.RewriteApplying().Phase, generation)
 		startedPaste := time.Now()
 		// All unknown controls receive the same pre/post paste checks as a browser.
-		if !app.epoch.StartStage(generation, session.StageNativeWrite, session.StageBudget(session.StageNativeWrite, 0, 0)) { return }
+		if !app.epoch.StartStage(generation, session.StageNativeWrite, session.StageBudget(session.StageNativeWrite, 0, 0)) {
+			return
+		}
 		e = replaceSelectionWithGuard(app.Window, sel, answer.Result, app.cfg, action == textedit.TryReplace, func() bool { return app.epoch.Valid(generation) })
-		if !app.epoch.FinishStage(generation, session.StageNativeWrite) { return }
+		if !app.epoch.FinishStage(generation, session.StageNativeWrite) {
+			return
+		}
 		app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
 	}
 	follow := ux.RewritePasted(allowApply, e)
