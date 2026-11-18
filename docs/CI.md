@@ -44,12 +44,16 @@ Ordinary PR commits run only the affected tests and compile checks; they do
 
 When an agent has finished a PR and the head commit is ready for device testing,
 edit the PR title to include `[ready-to-test]`. The **Ready-to-test builds**
-workflow fires **only on that title edit**, and uploads:
-- `VoiceRewrite-Ready-Windows-x64`: directly runnable `VoiceRewrite.exe`,
-  portable ZIP and checksums.
-- `VoiceRewrite-Ready-macOS-arm64-Dev` and
-  `VoiceRewrite-Ready-macOS-x64-Dev`: verified application ZIP, drag-install
-  DMG and checksums (ad-hoc development signatures; **not notarized**).
+workflow fires on that title edit and uploads one runnable payload per platform:
+- `VoiceRewrite-Ready-Windows-x64`: only `VoiceRewrite.exe`.
+- `VoiceRewrite-Ready-macOS-arm64-Dev`: one ZIP containing `VoiceRewrite.app`.
+- `VoiceRewrite-Ready-macOS-x64-Dev`: one ZIP containing `VoiceRewrite.app`.
+
+A macOS `.app` is a directory bundle. The smallest practical GitHub-download
+artifact is a `ditto` ZIP preserving its executability, resources and ad-hoc
+signature. These development apps are **not Apple-notarized**; the user may
+need to explicitly allow opening the app. There are no DMGs, additional
+portable Windows ZIPs, installers or duplicate checksum files in this workflow.
 
 A `build:ready` PR label also triggers a one-off build when added, if the
 repository has that label. Adding subsequent commits does **not** rerun the
@@ -59,8 +63,10 @@ branch can build its head on demand. Always confirm the workflow's recorded
 source SHA matches the desired PR version; a passing CI Gate is still required
 for release/merge readiness.
 
-Each push to `main` continues producing the complete Windows and macOS
-development packages; version tags continue the curated release path.
+Each push to `main` publishes one Windows EXE and one app-bundle ZIP per macOS
+architecture. **Only version tags** produce the full Windows installer, Windows
+portable archive and macOS developer ZIP/DMG release assets. The separately
+signed/notarized release pipeline is unchanged.
 
 Native macOS Swift adapter suites are a separate required **parallel** job.
 This eliminates their previous serial placement before the Xcode app tests,

@@ -50,7 +50,7 @@ jobs:
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
-      - name: Build runnable EXE and portable ZIP
+      - name: Build runnable EXE
         working-directory: voice-rewrite
         shell: pwsh
         env:
@@ -62,33 +62,18 @@ jobs:
           $ErrorActionPreference = 'Stop'
           go build -trimpath -ldflags '-H=windowsgui -s -w -X main.buildID=0.29.0-dev' -o VoiceRewrite.exe .
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          New-Item -ItemType Directory -Path 'package/VoiceRewrite' -Force | Out-Null
-          Copy-Item VoiceRewrite.exe 'package/VoiceRewrite/'
-          Copy-Item README.md 'package/VoiceRewrite/'
-          Copy-Item config.example.json 'package/VoiceRewrite/'
-          Copy-Item ../LICENSE 'package/VoiceRewrite/LICENSE'
-          Copy-Item THIRD_PARTY_NOTICES.md 'package/VoiceRewrite/'
-          $short = $env:SOURCE_SHA.Substring(0, 12)
-          $archive = "VoiceRewrite-Ready-windows-x64-$short.zip"
-          Compress-Archive -Path 'package/VoiceRewrite' -DestinationPath $archive -Force
-          Get-FileHash -Algorithm SHA256 VoiceRewrite.exe, $archive |
-            ForEach-Object { "$($_.Hash.ToLowerInvariant()) *$(Split-Path $_.Path -Leaf)" } |
-            Set-Content -Encoding ascii READY-SHA256SUMS.txt
-          "Source commit: $env:SOURCE_SHA" | Set-Content -Encoding ascii READY-REVISION.txt
-      - name: Upload ready-to-test EXE and ZIP
+          $hash = (Get-FileHash -Algorithm SHA256 VoiceRewrite.exe).Hash.ToLowerInvariant()
+          "EXE source commit: $env:SOURCE_SHA, SHA256: $hash" >> $env:GITHUB_STEP_SUMMARY
+      - name: Upload runnable Windows EXE only
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-Ready-Windows-x64
-          path: |
-            voice-rewrite/VoiceRewrite.exe
-            voice-rewrite/VoiceRewrite-Ready-windows-x64-*.zip
-            voice-rewrite/READY-SHA256SUMS.txt
-            voice-rewrite/READY-REVISION.txt
+          path: voice-rewrite/VoiceRewrite.exe
           retention-days: 14
           if-no-files-found: error
 
   macos:
-    name: Ready macOS ${{ matrix.public_arch }} app and DMG
+    name: Ready macOS ${{ matrix.public_arch }} runnable app
     needs: ready
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
@@ -128,7 +113,7 @@ jobs:
             test "$(lipo -archs "$app/Contents/MacOS/$executable")" = "$ARCH"
           done
           codesign --verify --deep --strict "$app"
-      - name: Package and verify developer ZIP and DMG
+      - name: Preserve and verify one runnable macOS app archive
         shell: bash
         env:
           ARCH: ${{ matrix.arch }}
@@ -142,18 +127,15 @@ jobs:
           base="VoiceRewrite-$version-macOS-$PUBLIC_ARCH-Ready-$short-Dev"
           mkdir -p "$RUNNER_TEMP/ready-output"
           zip="$RUNNER_TEMP/ready-output/$base.zip"
-          dmg="$RUNNER_TEMP/ready-output/$base.dmg"
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$zip"
           (cd "$RUNNER_TEMP/ready-output" && shasum -a 256 "$base.zip" > "$base.zip.sha256")
-          bash scripts/package-macos-dmg.sh "$app" "$dmg" "$ARCH"
           bash scripts/verify-macos-package.sh zip "$zip" "$ARCH" "$version" dev
-          bash scripts/verify-macos-package.sh dmg "$dmg" "$ARCH" "$version" dev
-          printf 'Source commit: %s\nArchitecture: %s\nSignature: ad-hoc development only\n' \
-            "$SOURCE_SHA" "$ARCH" > "$RUNNER_TEMP/ready-output/READY-REVISION.txt"
-      - name: Upload ready-to-test macOS app packages
+          printf 'Ready macOS %s app for %s, ad-hoc signed, not notarized.\n' "$PUBLIC_ARCH" "$SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          rm "$zip.sha256"
+      - name: Upload one runnable macOS app archive
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-Ready-macOS-${{ matrix.public_arch }}-Dev
-          path: ${{ runner.temp }}/ready-output/
+          path: ${{ runner.temp }}/ready-output/*.zip
           retention-days: 14
           if-no-files-found: error

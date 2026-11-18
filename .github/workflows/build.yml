@@ -193,8 +193,26 @@ jobs:
           path: acceptance-output/
           retention-days: 14
           if-no-files-found: error
-      - name: Package Apple Silicon macOS developer app
-        if: github.event_name != 'pull_request' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+      - name: Preserve the single Apple Silicon macOS app for main
+        if: github.ref == 'refs/heads/main' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/voicerewrite-derived/Build/Products/Debug/VoiceRewrite.app"
+          test -x "$app/Contents/MacOS/VoiceRewrite"
+          test -x "$app/Contents/MacOS/voicebridge"
+          codesign --verify --deep --strict "$app"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/VoiceRewrite-macOS-arm64-Dev.app.zip"
+      - name: Upload main Apple Silicon runnable app
+        if: github.ref == 'refs/heads/main' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: VoiceRewrite-macOS-arm64-Dev-App
+          path: ${{ runner.temp }}/VoiceRewrite-macOS-arm64-Dev.app.zip
+          retention-days: 7
+          if-no-files-found: error
+      - name: Package Apple Silicon macOS developer app for release
+        if: startsWith(github.ref, 'refs/tags/v') && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         run: |
           set -euo pipefail
           app="$RUNNER_TEMP/voicerewrite-derived/Build/Products/Debug/VoiceRewrite.app"
@@ -208,8 +226,8 @@ jobs:
           bash scripts/verify-macos-package.sh zip "$zip" arm64 "$version" dev
           bash scripts/verify-macos-package.sh dmg "$dmg" arm64 "$version" dev
           bash scripts/test-macos-package-verifier.sh "$app" arm64 "$version"
-      - name: Upload Apple Silicon macOS developer app
-        if: github.event_name != 'pull_request' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+      - name: Upload Apple Silicon macOS release ZIP and DMG
+        if: startsWith(github.ref, 'refs/tags/v') && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-macOS-arm64-Dev
@@ -284,8 +302,26 @@ jobs:
           path: acceptance-output/
           retention-days: 14
           if-no-files-found: error
-      - name: Package Intel macOS developer app
-        if: github.event_name != 'pull_request' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+      - name: Preserve the single Intel macOS app for main
+        if: github.ref == 'refs/heads/main' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/voicerewrite-intel-derived/Build/Products/Debug/VoiceRewrite.app"
+          test -x "$app/Contents/MacOS/VoiceRewrite"
+          test -x "$app/Contents/MacOS/voicebridge"
+          codesign --verify --deep --strict "$app"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/VoiceRewrite-macOS-x64-Dev.app.zip"
+      - name: Upload main Intel runnable app
+        if: github.ref == 'refs/heads/main' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: VoiceRewrite-macOS-x64-Dev-App
+          path: ${{ runner.temp }}/VoiceRewrite-macOS-x64-Dev.app.zip
+          retention-days: 7
+          if-no-files-found: error
+      - name: Package Intel macOS developer app for release
+        if: startsWith(github.ref, 'refs/tags/v') && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         run: |
           set -euo pipefail
           app="$RUNNER_TEMP/voicerewrite-intel-derived/Build/Products/Debug/VoiceRewrite.app"
@@ -299,8 +335,8 @@ jobs:
           bash scripts/verify-macos-package.sh zip "$zip" x86_64 "$version" dev
           bash scripts/verify-macos-package.sh dmg "$dmg" x86_64 "$version" dev
           bash scripts/test-macos-package-verifier.sh "$app" x86_64 "$version"
-      - name: Upload Intel macOS developer app
-        if: github.event_name != 'pull_request' && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
+      - name: Upload Intel macOS release ZIP and DMG
+        if: startsWith(github.ref, 'refs/tags/v') && hashFiles('macos/VoiceRewrite.xcodeproj/project.pbxproj') != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-macOS-x64-Dev
@@ -351,8 +387,8 @@ jobs:
         run: |
           $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.29.0-dev' }
           go build -trimpath -ldflags "-H=windowsgui -s -w -X main.buildID=$version" -o VoiceRewrite.exe .
-      - name: Package portable Windows build
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+      - name: Package portable Windows release
+        if: startsWith(github.ref, 'refs/tags/v')
         working-directory: voice-rewrite
         shell: pwsh
         run: |
@@ -365,8 +401,8 @@ jobs:
           Compress-Archive -Path 'package/VoiceRewrite' -DestinationPath 'VoiceRewrite-windows-x64.zip' -Force
           $hash = (Get-FileHash -LiteralPath 'VoiceRewrite-windows-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash *VoiceRewrite-windows-x64.zip" | Set-Content -LiteralPath 'SHA256SUMS.txt' -Encoding ascii
-      - name: Upload portable package and checksum
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+      - name: Upload portable release package and checksum
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-portable-windows-x64
@@ -382,7 +418,7 @@ jobs:
           path: voice-rewrite/VoiceRewrite.exe
           if-no-files-found: error
       - name: Ensure Inno Setup compiler
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
@@ -393,7 +429,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
       - name: Build per-user installer
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
           $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.29.0' }
@@ -418,7 +454,7 @@ jobs:
         with:
           subject-path: installer/output/VoiceRewrite-Setup-*-x64.exe
       - name: Upload installer and checksum
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-installer-windows-x64
