@@ -122,7 +122,9 @@ func TestCancelFocusTimeoutAndLateResults(t *testing.T) {
 			stop := effect(t, next(t, e, event(Release, 8, 4)), StopNativeCapture)
 			asr := effect(t, next(t, e, receipt(event(AudioStopped, 8, 5), stop, true)), SendASR)
 			end := event(ending, 8, 6)
-			if ending == Timeout { end.TimeoutOrigin = "asr_deadline" }
+			if ending == Timeout {
+				end.TimeoutOrigin = "asr_deadline"
+			}
 			done := next(t, e, end)
 			if done.Phase != Canceled {
 				t.Fatalf("cancel did not win: %+v", done)
@@ -170,7 +172,9 @@ func TestRewriteModelRouteAndPreview(t *testing.T) {
 				effect(t, got, AttemptNativeWrite)
 			} else {
 				effect(t, got, ShowPreview)
-				if got.Phase != Preview { t.Fatal(got) }
+				if got.Phase != Preview {
+					t.Fatal(got)
+				}
 			}
 		})
 	}
@@ -198,10 +202,14 @@ func TestOutOfOrderDuplicateAndBadEnvelopes(t *testing.T) {
 	start := next(t, e, event(Press, 3, 3))
 	effect(t, start, StartNativeCapture)
 	duplicated, err := e.Apply(event(Press, 3, 3))
-	if err != nil || !duplicated.Duplicate { t.Fatalf("repeat press %+v %v", duplicated, err) }
+	if err != nil || !duplicated.Duplicate {
+		t.Fatalf("repeat press %+v %v", duplicated, err)
+	}
 	foreign := event(RecordArm, 3, 9)
 	foreign.Mode = Dictation
-	if got, err := e.Apply(foreign); err != nil || got.Accepted { t.Fatalf("reused generation %+v %v", got, err) }
+	if got, err := e.Apply(foreign); err != nil || got.Accepted {
+		t.Fatalf("reused generation %+v %v", got, err)
+	}
 }
 
 func TestConcurrentReplaysNeverDuplicateCapture(t *testing.T) {
@@ -217,7 +225,9 @@ func TestConcurrentReplaysNeverDuplicateCapture(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			out, err := e.Apply(event(Press, 4, 2))
-			if err != nil { t.Error(err) }
+			if err != nil {
+				t.Error(err)
+			}
 			outputs <- out
 		}()
 	}
@@ -226,18 +236,28 @@ func TestConcurrentReplaysNeverDuplicateCapture(t *testing.T) {
 	captures := 0
 	for result := range outputs {
 		for _, a := range result.Effects {
-			if a.Type == StartNativeCapture { captures++ }
+			if a.Type == StartNativeCapture {
+				captures++
+			}
 		}
 	}
-	if captures != 1 { t.Fatalf("expected one native capture, got %d", captures) }
+	if captures != 1 {
+		t.Fatalf("expected one native capture, got %d", captures)
+	}
 }
 
 func TestEventJSONV1(t *testing.T) {
 	e := event(RecordArm, 1, 1)
 	e.Mode = Dictation
 	data, err := json.Marshal(e)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	var decoded Event
-	if err := json.Unmarshal(data, &decoded); err != nil { t.Fatal(err) }
-	if decoded != e { t.Fatalf("event JSON not stable: %+v", decoded) }
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded != e {
+		t.Fatalf("event JSON not stable: %+v", decoded)
+	}
 }
