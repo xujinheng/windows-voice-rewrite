@@ -212,3 +212,58 @@ struct ResultGeneration {
     }
     func accepts(_ value: UInt64) -> Bool { value == latest }
 }
+
+ 
+/// Typed JSONL v1 task effects from Go Core. Swift only validates identity and
+/// executes the OS boundary; it must not recalculate portable task policy.
+struct VoiceFlowEffectV1: Decodable, Equatable {
+    enum Kind: String, Decodable {
+        case startNativeCapture = "start_native_capture"
+        case stopNativeCapture = "stop_native_capture"
+        case sendASR = "send_asr"
+        case sendModel = "send_model"
+        case attemptNativeWrite = "attempt_native_write"
+        case showPreview = "show_preview"
+        case setPhase = "set_phase"
+        case appendHistory = "append_history"
+        case clearTask = "clear_task"
+    }
+
+    let type: Kind
+    let session_id: String
+    let generation: UInt64
+    let command_id: String
+    let request_id: String
+    let phase: String?
+    let text: String?
+    let timeout_origin: String?
+}
+
+struct VoiceFlowTransitionV1: Decodable, Equatable {
+    let accepted: Bool
+    let duplicate: Bool
+    let reason: String?
+    let session_id: String
+    let generation: UInt64
+    let phase: String
+    let effects: [VoiceFlowEffectV1]
+
+    static func decode(_ reply: BridgeReply) throws -> VoiceFlowTransitionV1 {
+        try reply.validate()
+        guard reply.ok, let result = reply.result,
+              let data = try? JSONEncoder().encode(result),
+              let value = try? JSONDecoder().decode(Self.self, from: data),
+              !value.session_id.isEmpty, value.generation > 0,
+              value.effects.allSatisfy({
+                  $0.session_id == value.session_id &&
+                  $0.generation > 0 && !$0.command_id.isEmpty &&
+                  !$0.request_id.isEmpty &&
+                  // A newer arm may cancel the prior epoch; never accept a
+                  // future-generation effect under an earlier transition.
+                  $0.generation <= value.generation
+              }) else {
+            throw BridgeFailure.invalidReply
+        }
+        return value
+    }
+}

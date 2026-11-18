@@ -1,0 +1,377 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/xujinheng/windows-voice-rewrite/blob/main/voice-rewrite/internal/core/voiceflow/schema.v1.json",
+  "title": "VoiceRewrite voice_event/effect JSONL v1",
+  "description": "Stable per-task control protocol. Transport id is separate from effect command/request identity; OS adapters execute effects and send receipts.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/response"
+    }
+  ],
+  "$defs": {
+    "event": {
+      "type": "object",
+      "required": [
+        "v",
+        "type",
+        "session_id",
+        "generation",
+        "command_id"
+      ],
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "record_arm",
+            "press",
+            "release",
+            "record_ready",
+            "record_limit",
+            "audio_stopped",
+            "asr_result",
+            "model_result",
+            "write_receipt",
+            "cancel",
+            "timeout",
+            "focus_changed"
+          ]
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "command_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "receipt_id": {
+          "type": "string"
+        },
+        "timeout_origin": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "dictation",
+            "rewrite"
+          ]
+        },
+        "can_insert": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "authorized": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "record_arm"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "mode"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "record_ready",
+                  "audio_stopped",
+                  "asr_result",
+                  "model_result",
+                  "write_receipt"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "request_id",
+              "receipt_id",
+              "success"
+            ],
+            "properties": {
+              "request_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "receipt_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "timeout"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "timeout_origin"
+            ],
+            "properties": {
+              "timeout_origin": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "action": {
+      "type": "object",
+      "required": [
+        "type",
+        "session_id",
+        "generation",
+        "command_id",
+        "request_id"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "start_native_capture",
+            "stop_native_capture",
+            "send_asr",
+            "send_model",
+            "attempt_native_write",
+            "show_preview",
+            "set_phase",
+            "append_history",
+            "clear_task"
+          ]
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "command_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "armed",
+            "starting",
+            "recording",
+            "stopping",
+            "recognizing",
+            "modeling",
+            "writing",
+            "preview",
+            "success",
+            "failed",
+            "canceled"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "timeout_origin": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "transition": {
+      "type": "object",
+      "required": [
+        "accepted",
+        "duplicate",
+        "session_id",
+        "generation",
+        "phase",
+        "effects"
+      ],
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        },
+        "duplicate": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "phase": {
+          "type": "string"
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/action"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "request": {
+      "type": "object",
+      "required": [
+        "v",
+        "id",
+        "op",
+        "event"
+      ],
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "op": {
+          "const": "voice_event"
+        },
+        "event": {
+          "$ref": "#/$defs/event"
+        }
+      },
+      "additionalProperties": false
+    },
+    "response": {
+      "type": "object",
+      "required": [
+        "v",
+        "id",
+        "ok"
+      ],
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "id": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "result": {
+          "$ref": "#/$defs/transition"
+        },
+        "error": {
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_voice_event",
+                "voice_event_version"
+              ]
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "ok": {
+              "const": true
+            }
+          },
+          "required": [
+            "result"
+          ],
+          "not": {
+            "required": [
+              "error"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "ok": {
+              "const": false
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "not": {
+            "required": [
+              "result"
+            ]
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
+}

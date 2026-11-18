@@ -7,6 +7,43 @@ import VoiceRewriteInteraction
 @testable import VoiceRewrite
 
 final class BridgeClientTests: XCTestCase {
+    func testVoiceFlowV1EffectDecodingRejectsUnknownOrForeignNativeCommands() throws {
+        let request = try BridgeRequest(id: "task-event", operation: "voice_event", fields: [
+            "event": .object([
+                "v": .number(1), "type": .string("record_arm"),
+                "session_id": .string("session-1"), "generation": .number(3),
+                "command_id": .string("arm-3"), "mode": .string("dictation"),
+                "can_insert": .boolean(true),
+            ]),
+        ]).line()
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(request.dropLast()))
+                                    as? [String: Any])
+        XCTAssertEqual(payload["op"] as? String, "voice_event")
+        XCTAssertEqual((payload["event"] as? [String: Any])?["session_id"] as? String, "session-1")
+
+        func decoded(_ actionType: String, effectSession: String = "session-1",
+                     effectGeneration: Int = 3) throws -> VoiceFlowTransitionV1 {
+            let sample = """
+            {"v":1,"id":"task-event","ok":true,"result":{
+                "accepted":true,"duplicate":false,"session_id":"session-1",
+                "generation":3,"phase":"starting","effects":[{
+                    "type":"\(actionType)","session_id":"\(effectSession)",
+                    "generation":\(effectGeneration),"command_id":"session-1/3/1",
+                    "request_id":"session-1/3/1"}]}}
+            """
+            let reply = try JSONDecoder().decode(BridgeReply.self, from: Data(sample.utf8))
+            return try VoiceFlowTransitionV1.decode(reply)
+        }
+
+        let valid = try decoded("start_native_capture")
+        XCTAssertEqual(valid.effects.count, 1)
+        XCTAssertEqual(valid.effects.first?.type, .startNativeCapture)
+        XCTAssertEqual(valid.effects.first?.generation, 3)
+        XCTAssertThrowsError(try decoded("unexpected_native_write"))
+        XCTAssertThrowsError(try decoded("attempt_native_write", effectSession: "other-session"))
+        XCTAssertThrowsError(try decoded("attempt_native_write", effectGeneration: 4))
+    }
+
     private func bundledHelper() throws -> URL {
         guard let hostExecutable = Bundle.main.executableURL else {
             XCTFail("Test host executable not found")
