@@ -141,6 +141,8 @@ struct SettingsView: View {
                         } label: {
                             Image(systemName: "chevron.down").frame(width: 20)
                         }
+                        .menuStyle(.borderlessButton)
+                        .frame(width: 28)
                         .disabled(model.asrAvailableModels.isEmpty)
                         .accessibilityLabel("选择发现的模型")
                         .accessibilityIdentifier("select_asr_model")
@@ -201,6 +203,8 @@ struct SettingsView: View {
                         } label: {
                             Image(systemName: "chevron.down").frame(width: 20)
                         }
+                        .menuStyle(.borderlessButton)
+                        .frame(width: 28)
                         .disabled(model.llmAvailableModels.isEmpty)
                         .accessibilityLabel("选择发现的模型")
                         .accessibilityIdentifier("select_llm_model")
@@ -384,22 +388,22 @@ struct SettingsView: View {
                 Button("关闭") { if let onClose { onClose() } else { dismiss() } }
                     .accessibilityIdentifier("close")
             }
-            .padding(.leading, 198)
-            .padding(.trailing, 20)
+            .padding(.leading, 220)
+            .padding(.trailing, 84)
             .padding(.top, 12)
             Text(model.settingsStatus)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 198)
-                .padding(.trailing, 20)
+                .padding(.leading, 220)
+                .padding(.trailing, 84)
             Text("API Key 仅保存在 Keychain；连接检测不发送真实录音或文字。")
                 .font(.footnote).foregroundStyle(.secondary)
                 .lineLimit(1)
                 .accessibilityIdentifier("save_note")
-                .padding(.leading, 198)
-                .padding(.trailing, 20)
+                .padding(.leading, 220)
+                .padding(.trailing, 84)
                 .padding(.bottom, 12)
         }
         .frame(minWidth: 480, minHeight: 420)
