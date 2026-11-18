@@ -2,19 +2,28 @@
 
 Shared Go launcher/proxy for `llama-server` on Windows and macOS with audio transcription, streamed chat continuation and tokenization APIs. Windows provides the command-line OneClick executable; macOS also offers a standalone native SwiftUI launcher built from the same Go module. See [macOS OneClick launcher](../macos/OneClickLauncher/README.md) for local GGUF selection, Metal/CPU controls, start/stop/restart and connection steps.
 
-## Configure on Windows
+## Windows: double-click to install and start
 
-1. Download `llama.cpp` for Windows from [official releases](https://github.com/ggml-org/llama.cpp/releases). Use a build supporting Qwen3-ASR audio input, assistant prefilling, streaming chat completions, and the tokenization APIs below. The launcher does not bundle or pin llama.cpp.
-2. Obtain a compatible Qwen3-ASR GGUF and matching `mmproj` GGUF.
-3. Place `Qwen3-ASR-OneClick.exe` beside `llama-server.exe` or set `llama_server_path` in `config.json`.
-4. Copy `config.example.json` to `config.json`, then set the model paths.
-5. Run the launcher.
+1. Download `Qwen3-ASR-OneClick-Windows-x64.exe` from the project's release/build.
+2. Place the EXE in a writable folder (for example, `D:\\ASR`) and double-click it.
+3. The launcher creates `Qwen3-ASR/` **beside the EXE**, downloads the Q8_0 GGUF and matching audio projector from **ModelScope (魔搭)**, then installs a pinned llama.cpp Windows release via mainland-friendly download mirrors. Both are verified against upstream SHA-256 digests.
+4. It detects an NVIDIA CUDA GPU and tries the CUDA 12.4 backend; otherwise it installs the CPU backend. If the CUDA device check fails, it falls back to CPU.
+5. When the console prints `READY!`, leave it open. The ASR API is `http://127.0.0.1:8081/v1` by default; set this in VoiceRewrite's ASR endpoint if using the default configuration.
 
-Default proxy endpoint: `http://127.0.0.1:8081/v1`. Default backend: `http://127.0.0.1:8080`.
+No Python, pip, Git, or manual model management is required. First setup needs internet and several gigabytes of free disk space. ModelScope hosts the weights and projector; the llama.cpp mirrors relay **official GitHub release archives**, so no direct access to GitHub or Hugging Face is required. Mirror availability varies by network.
 
-For VoiceRewrite's default ASR endpoint (`http://127.0.0.1:8080/v1`), start from [config.voicerewrite.example.json](config.voicerewrite.example.json), which uses port 8082 for the backend.
+### Idempotency and file layout
 
-The launcher can attach to an existing server. GPU acceleration is configurable; CPU fallback requires `allow_cpu: true` (or zero GPU layers). Windows checks CUDA devices, while macOS checks Metal devices when a GPU launch is requested. The default launch arguments use 99 GPU layers, an 8192-token context, and one inference slot (`-np 1`). GPU memory must accommodate the ASR model, audio encoder, context, and any other resident models. Keep the unauthenticated API bound to loopback.
+- `Qwen3-ASR/models/`: model files, each re-checked against SHA-256 and downloaded only if missing or corrupt.
+- `Qwen3-ASR/runtime/cuda/` or `Qwen3-ASR/runtime/cpu/`: pinned llama.cpp build with its DLL dependencies.
+- `Qwen3-ASR/downloads/`: resumable `.part` files and temporary verified archives; ZIP files are removed after successful installation.
+- `config.json`: created alongside the EXE on first launch. Existing explicit paths and externally managed llama-server setups remain supported.
+
+Repeating the launch **does not download intact files again**. Interrupted downloads resume where supported. Simultaneous launches are serialized with a Windows mutex. If the service is already running, a second double-click reports its URL rather than starting a conflicting server. All network listeners default to `127.0.0.1`; closing the console stops the managed child process.
+
+### Advanced manual configuration
+
+If you already have `llama-server.exe` and matching GGUF files, place them alongside the EXE or edit `config.json` to point at your existing files. Custom paths are not auto-downloaded or overwritten. The pre-existing `config.voicerewrite.example.json` is provided if you want the proxy to listen on port 8080 instead. Model loading and GPU support still need hardware validation on a Windows machine.
 
 ## API contract
 
