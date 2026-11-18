@@ -116,17 +116,55 @@ jobs:
           key: swiftpm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('macos/**/Package.swift', 'macos/**/Package.resolved') }}
           restore-keys: |
             swiftpm-${{ runner.os }}-${{ runner.arch }}-
-      - name: Test standalone native Swift packages
+      - name: Test independent native Swift packages concurrently
         shell: bash
         run: |
           set -euo pipefail
+          logs="$(mktemp -d)"
+          trap 'rm -rf "$logs"' EXIT
+          # Each package has an independent .build directory and no external
+          # Package.swift dependencies. Limit per-package compiler parallelism
+          # so three processes do not overwhelm the 3-core hosted ARM runner.
           for module in Microphone Storage Interaction; do
-            package="macos/Modules/$module/Package.swift"
-            if [[ -f "$package" ]]; then
-              echo "Testing native Swift module $module"
-              (cd "macos/Modules/$module" && swift test)
-            fi
+            test -f "macos/Modules/$module/Package.swift"
+            (
+              cd "macos/Modules/$module"
+              swift test --jobs 1
+            ) > "$logs/$module.log" 2>&1 &
+            printf '%s\n' "$!" > "$logs/$module.pid"
           done
+          errors=0
+          for module in Microphone Storage Interaction; do
+            if ! wait "$(cat "$logs/$module.pid")"; then
+              echo "::error::Swift module $module failed"
+              errors=1
+            fi
+            echo "===== $module Swift package test output ====="
+            cat "$logs/$module.log"
+          done
+          if [[ "$errors" != 0 ]]; then exit "$errors"; fi
+          # Maintain all three suites: 17 + 12 + 95 = 124 native package
+          # tests in the verified baseline, in addition to 69 Xcode XCTest.
+          python3 - "$logs" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          logdir = Path(sys.argv[1])
+          for module, minimum in [("Microphone", 17), ("Storage", 12),
+                                  ("Interaction", 95)]:
+              log = (logdir / f"{module}.log").read_text(
+                  encoding="utf-8", errors="replace"
+              )
+              counts = [int(n) for n in re.findall(
+                  r"Executed (\d+) tests?, with 0 failures", log
+              )]
+              if "Test Suite 'All tests' passed" not in log or max(counts, default=0) < minimum:
+                  raise SystemExit(
+                      f"{module}: expected at least {minimum} passing native tests"
+                  )
+              print(f"{module}: {max(counts)} native Swift tests passed")
+          PY
       - name: Execute portable core tests on real macOS
         working-directory: voice-rewrite
         run: go test -count=1 ./internal/core/...

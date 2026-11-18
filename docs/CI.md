@@ -70,7 +70,10 @@ signed/notarized release pipeline is unchanged.
 
 Native macOS Swift adapter suites, real-macOS Go Core tests, two Darwin
 cross-build checks, and the Swift-to-Go handshake share a separate required
-**parallel** job. Both Xcode app test jobs run concurrently with that job, so
+**parallel** job. The independent Microphone, Storage and Interaction Swift
+packages execute concurrently on that runner with one compiler job apiece,
+retain separate failure logs and require at least 17, 12 and 95 passing tests
+respectively (124 in total). Both Xcode app test jobs run concurrently with that job, so
 the ARM Xcode runner no longer waits for the independent adapter and bridge
 suites. All jobs still participate in the final CI Gate.
 
