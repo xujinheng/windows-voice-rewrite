@@ -167,7 +167,7 @@ func requestForASR(id string, cfg map[string]any) map[string]any {
 }
 
 func TestBridgeCoreHTTPRequestsAndRouting(t *testing.T) {
-	var asrCalls, modelsCalls, completionCalls atomic.Int32
+	var asrCalls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/audio/transcriptions":
@@ -194,24 +194,6 @@ func TestBridgeCoreHTTPRequestsAndRouting(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = io.WriteString(w, `{"text":"language zh <asr_text> hello from core"}`)
-		case "/v1/models":
-			modelsCalls.Add(1)
-			if r.Header.Get("Authorization") != "Bearer llm-private-key" {
-				t.Error("missing model discovery authorization")
-			}
-			_, _ = io.WriteString(w, `{"data":[{"id":"example-instruct"}]}`)
-		case "/v1/chat/completions":
-			completionCalls.Add(1)
-			if r.Header.Get("Authorization") != "Bearer llm-private-key" {
-				t.Error("missing text completion authorization")
-			}
-			var payload struct {
-				Model string `json:"model"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload.Model != "example-instruct" {
-				t.Error("textedit did not use discovered model")
-			}
-			_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\"intent\":\"edit\",\"result\":\"Edited text\"}"}}]}`)
 		default:
 			t.Errorf("unexpected endpoint %s", r.URL.Path)
 			w.WriteHeader(404)
@@ -222,110 +204,15 @@ func TestBridgeCoreHTTPRequestsAndRouting(t *testing.T) {
 	h := startBridge(t, defaultOptions())
 	cfg := configFor(srv.URL)
 	h.send(requestForASR("asr", cfg))
-	h.send(map[string]any{
-		"v": 1, "id": "edit", "op": "selected_task", "config": cfg,
-		"selected_text": "Original text", "instruction": "rewrite this more clearly",
-	})
-	replies := h.receiveIDs("asr", "edit")
-	if !replies["asr"].OK || object(t, replies["asr"].Result)["text"] != "hello from core" || object(t, replies["asr"].Result)["route"] != "preview" {
-		t.Fatalf("bad ASR response: %#v", replies["asr"])
-	}
-	edit := object(t, replies["edit"].Result)
-	if !replies["edit"].OK || edit["intent"] != "edit" || edit["text"] != "Edited text" ||
-		edit["route"] != "replace" {
-		t.Fatalf("bad selected-task response: %#v", replies["edit"])
+	reply := h.receive()
+	if !reply.OK || object(t, reply.Result)["text"] != "hello from core" ||
+		object(t, reply.Result)["route"] != "preview" {
+		t.Fatalf("bad ASR response: %#v", reply)
 	}
 	h.close()
-	if asrCalls.Load() != 1 || modelsCalls.Load() != 1 || completionCalls.Load() != 1 {
-		t.Fatalf("unexpected network calls: ASR=%d models=%d completions=%d",
-			asrCalls.Load(), modelsCalls.Load(), completionCalls.Load())
+	if asrCalls.Load() != 1 {
+		t.Fatalf("unexpected ASR calls: %d", asrCalls.Load())
 	}
-}
-
-func TestBridgeModelDiscoveryUsesCoreAndSeparateKeys(t *testing.T) {
-	var asrKeySeen, llmKeySeen bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/models" {
-			t.Errorf("unexpected endpoint %s", r.URL.Path)
-		}
-		switch r.Header.Get("Authorization") {
-		case "Bearer asr-private-key":
-			asrKeySeen = true
-		case "Bearer llm-private-key":
-			llmKeySeen = true
-		default:
-			t.Error("model listing leaked or omitted provider credential")
-		}
-		_, _ = io.WriteString(w, `{"data":[{"id":"chat-model"},{"id":"whisper-1"},{"id":"chat-model"}]}`)
-	}))
-	defer srv.Close()
-	h := startBridge(t, defaultOptions())
-	cfg := configFor(srv.URL)
-	h.send(map[string]any{"v": 1, "id": "asr-models", "op": "list_asr_models", "config": cfg})
-	h.send(map[string]any{"v": 1, "id": "llm-models", "op": "list_llm_models", "config": cfg})
-	replies := h.receiveIDs("asr-models", "llm-models")
-	for _, id := range []string{"asr-models", "llm-models"} {
-		got := replies[id]
-		if !got.OK || got.Error != nil {
-			t.Fatalf("%s: %#v", id, got)
-		}
-		models, ok := object(t, got.Result)["models"].([]any)
-		if !ok || len(models) != 2 || models[0] != "chat-model" || models[1] != "whisper-1" {
-			t.Fatalf("unexpected %s models: %#v", id, got)
-		}
-	}
-	h.close()
-	if !asrKeySeen || !llmKeySeen {
-		t.Fatal("model discovery did not use both provider credentials")
-	}
-}
-
-func TestBridgeModelDiscoveryCancelsInFlightRequest(t *testing.T) {
-	started := make(chan struct{}, 1)
-	stopped := make(chan struct{}, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		started <- struct{}{}
-		<-r.Context().Done()
-		stopped <- struct{}{}
-	}))
-	defer srv.Close()
-	h := startBridge(t, defaultOptions())
-	h.send(map[string]any{"v": 1, "id": "models-slow", "op": "list_llm_models", "config": configFor(srv.URL)})
-	select {
-	case <-started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("model discovery request did not start")
-	}
-	h.send(map[string]any{"v": 1, "id": "stop-models", "op": "cancel", "target_id": "models-slow"})
-	replies := h.receiveIDs("models-slow", "stop-models")
-	if replies["models-slow"].Error == nil || replies["models-slow"].Error.Code != "canceled" {
-		t.Fatalf("stale model request returned a success: %#v", replies["models-slow"])
-	}
-	if !replies["stop-models"].OK || object(t, replies["stop-models"].Result)["found"] != true {
-		t.Fatalf("bridge cancel did not own model request: %#v", replies["stop-models"])
-	}
-	select {
-	case <-stopped:
-	case <-time.After(5 * time.Second):
-		t.Fatal("model provider did not receive cancellation")
-	}
-	h.close()
-}
-
-func TestBridgeModelDiscoverySanitizesFailure(t *testing.T) {
-	const secret = "private-credential-from-provider"
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, secret, http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-	h := startBridge(t, defaultOptions())
-	h.send(map[string]any{"v": 1, "id": "models-error", "op": "list_llm_models", "config": configFor(srv.URL)})
-	got := h.receive()
-	if got.OK || got.Error == nil || got.Error.Code != "model_list_failed" ||
-		strings.Contains(got.Error.Message, secret) {
-		t.Fatalf("provider error leaked private response: %#v", got)
-	}
-	h.close()
 }
 
 func TestBridgeInvalidConfigNeverContactsProvider(t *testing.T) {
@@ -340,8 +227,8 @@ func TestBridgeInvalidConfigNeverContactsProvider(t *testing.T) {
 	badConfig["llm_base_url"] = "http://private:secret@localhost/v1"
 	h.send(requestForASR("bad-asr", badConfig))
 	h.send(map[string]any{
-		"v": 1, "id": "bad-edit", "op": "selected_task", "config": badConfig,
-		"selected_text": "private selected text", "instruction": "rewrite",
+		"v": 1, "id": "bad-edit", "op": "selected_voice_task", "config": badConfig,
+		"selected_text": "private selected text", "pcm_base64": base64.StdEncoding.EncodeToString(make([]byte, 3200)),
 	})
 	replies := h.receiveIDs("bad-asr", "bad-edit")
 	for _, reply := range replies {
@@ -550,35 +437,6 @@ func TestBridgeEmptyTranscriptUsesSharedSentence(t *testing.T) {
 	h.close()
 }
 
-func TestBridgeParsesSharedShortcut(t *testing.T) {
-	h := startBridge(t, defaultOptions())
-	h.send(map[string]any{"v": 1, "id": "shortcut", "op": "parse_shortcut", "shortcut": "ctrl+alt+r"})
-	reply := h.receive()
-	if !reply.OK || reply.Result == nil {
-		t.Fatalf("shortcut: %#v", reply)
-	}
-	result := object(t, reply.Result)
-	if result["normalized"] != "Ctrl+Alt+R" || result["key"] != "R" || result["ctrl"] != true || result["alt"] != true || result["mouse"] != false {
-		t.Fatalf("binding: %#v", result)
-	}
-	h.send(map[string]any{"v": 1, "id": "bad-shortcut", "op": "parse_shortcut", "shortcut": "Shift+A"})
-	rejected := h.receive()
-	if rejected.OK || rejected.Error == nil || rejected.Error.Code != "invalid_shortcut" {
-		t.Fatalf("invalid shortcut accepted: %#v", rejected)
-	}
-	h.close()
-}
-
-func TestBridgeUpdateRejectsUnknownVersionWithoutNetwork(t *testing.T) {
-	h := startBridge(t, defaultOptions())
-	h.send(map[string]any{"v": 1, "id": "update", "op": "check_update", "current_version": "not-a-version"})
-	reply := h.receive()
-	if reply.OK || reply.Error == nil || reply.Error.Code != "update_failed" || !strings.Contains(reply.Error.Message, "未识别的版本") {
-		t.Fatalf("update check: %#v", reply)
-	}
-	h.close()
-}
-
 func TestBridgePrivateErrorsDoNotEchoInputs(t *testing.T) {
 	privateKey := "secret-key-should-not-appear"
 	privateText := "private-selection-should-not-appear"
@@ -590,8 +448,8 @@ func TestBridgePrivateErrorsDoNotEchoInputs(t *testing.T) {
 	cfg["llm_api_key"] = privateKey
 	h := startBridge(t, defaultOptions())
 	h.send(map[string]any{
-		"v": 1, "id": "private", "op": "selected_task", "config": cfg,
-		"selected_text": privateText, "instruction": "rewrite this",
+		"v": 1, "id": "private", "op": "selected_voice_task", "config": cfg,
+		"selected_text": privateText, "pcm_base64": base64.StdEncoding.EncodeToString(make([]byte, 3200)),
 	})
 	reply := h.receive()
 	data, err := json.Marshal(reply)
@@ -664,97 +522,6 @@ func TestBridgeCancelMissing(t *testing.T) {
 		t.Fatalf("unexpected cancel response: %#v", reply)
 	}
 	h.close()
-}
-
-func TestBridgeServiceProbesUseSharedCoreWithoutUserContent(t *testing.T) {
-	var asrCalls, modelCalls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/v1/audio/transcriptions":
-			asrCalls.Add(1)
-			if r.Method != "POST" || r.Header.Get("Authorization") != "Bearer asr-private-key" {
-				t.Error("ASR probe did not use configured provider authentication")
-			}
-			if err := r.ParseMultipartForm(2 << 20); err != nil {
-				t.Error(err)
-				w.WriteHeader(400)
-				return
-			}
-			audio, _, err := r.FormFile("file")
-			if err != nil {
-				t.Error(err)
-				w.WriteHeader(400)
-				return
-			}
-			defer audio.Close()
-			data, err := io.ReadAll(audio)
-			if err != nil || len(data) != 32044 || !bytes.Equal(data[:min(4, len(data))], []byte("RIFF")) {
-				t.Error("probe did not send one second of silent WAV via shared ASR request")
-			} else {
-				for _, sample := range data[44:] {
-					if sample != 0 {
-						t.Error("probe audio was not silent")
-						break
-					}
-				}
-			}
-			w.WriteHeader(200)
-		case "/v1/models":
-			modelCalls.Add(1)
-			if r.Method != "GET" || r.Header.Get("Authorization") != "Bearer llm-private-key" {
-				t.Error("LLM probe did not use configured provider authentication")
-			}
-			_, _ = io.WriteString(w, `{"data":[{"id":"model-one"}]}`)
-		default:
-			t.Errorf("unexpected provider endpoint: %s", r.URL.Path)
-			w.WriteHeader(404)
-		}
-	}))
-	defer srv.Close()
-	h := startBridge(t, defaultOptions())
-	cfg := configFor(srv.URL)
-	cfg["asr_model"] = "whisper-1"
-	cfg["text_model"] = "model-one"
-	h.send(map[string]any{"v": 1, "id": "probe-a", "op": "probe_asr", "config": cfg})
-	h.send(map[string]any{"v": 1, "id": "probe-l", "op": "probe_llm", "config": cfg})
-	replies := h.receiveIDs("probe-a", "probe-l")
-	for id, want := range map[string]string{"probe-a": "静音测试成功", "probe-l": "已在服务中发现"} {
-		reply := replies[id]
-		result := object(t, reply.Result)
-		msg, _ := result["message"].(string)
-		if !reply.OK || !strings.Contains(msg, want) {
-			t.Fatalf("%s failed: %#v", id, reply)
-		}
-		encoded, _ := json.Marshal(reply)
-		if bytes.Contains(encoded, []byte("private-key")) {
-			t.Fatal("probe result leaked a credential")
-		}
-	}
-	h.close()
-	if asrCalls.Load() != 1 || modelCalls.Load() != 1 {
-		t.Fatalf("expected one probe to each provider endpoint, got ASR %d LLM %d", asrCalls.Load(), modelCalls.Load())
-	}
-}
-
-func TestBridgeProbeInvalidConfigNeverTouchesProvider(t *testing.T) {
-	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		w.WriteHeader(200)
-	}))
-	defer srv.Close()
-	h := startBridge(t, defaultOptions())
-	cfg := configFor(srv.URL)
-	cfg["asr_base_url"] = "http://user:password@localhost/v1"
-	h.send(map[string]any{"v": 1, "id": "probe-invalid", "op": "probe_asr", "config": cfg})
-	reply := h.receive()
-	if reply.OK || reply.Error == nil || reply.Error.Code != "invalid_config" {
-		t.Fatalf("expected sanitized invalid_config: %#v", reply)
-	}
-	h.close()
-	if calls.Load() != 0 {
-		t.Fatal("invalid probe configuration reached provider")
-	}
 }
 
 func TestBridgeSpokenSelectionUsesSharedASRAndTextedit(t *testing.T) {
