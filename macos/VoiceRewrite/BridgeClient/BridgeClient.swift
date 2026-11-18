@@ -122,7 +122,12 @@ final class BridgeClient {
             return (stdin, epoch)
         }
         guard let (stdin, session) = destination else { return id }
-        writer.async { [weak self] in
+        // Typed key/side input transitions are on the perceived press/ready/
+        // release critical path. Give ONLY these tiny JSONL events foreground
+        // QoS, without reordering the single serial writer or raising the
+        // priority of heavy PCM/meeting payload encoding.
+        let priority: DispatchQoS = operation == "input_event" ? .userInitiated : .unspecified
+        writer.async(qos: priority) { [weak self] in
             guard let self else { return }
             // A stopped, canceled or reconnected request must not spend CPU
             // converting megabytes of PCM into Base64 and JSON just to be
