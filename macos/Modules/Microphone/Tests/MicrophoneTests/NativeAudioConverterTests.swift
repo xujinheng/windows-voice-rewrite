@@ -57,6 +57,19 @@ final class NativeAudioConverterTests: XCTestCase {
                             frameSizes: Array(repeating: 441, count: 100))
     }
 
+    func testDurationLimitClipsOutgoingPCMWithoutDroppingSpeech() {
+        let seconds = 60
+        let expectedBytes = seconds * 16_000 * 2
+        let pcm = Data(repeating: 0x5a, count: expectedBytes + 3200)
+        let bounded = MicrophoneRecorder.boundedRecordedPCM(pcm, maximumSeconds: seconds)
+        XCTAssertEqual(bounded.count, expectedBytes)
+        XCTAssertEqual(bounded.first, 0x5a)
+        XCTAssertEqual(bounded.last, 0x5a)
+        XCTAssertEqual(
+            MicrophoneRecorder.boundedRecordedPCM(Data(repeating: 0, count: 3200),
+                                                  maximumSeconds: seconds).count, 3200)
+    }
+
     func testNativeStartOwnershipSurvivesLateCancelledAttempt() {
         var gate = NativePreparationGate()
         let waitingForPermission = UUID()
