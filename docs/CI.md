@@ -166,3 +166,20 @@ Changes to `ci_xcode_mtimes.py` and `ci_xctest_coverage.py` trigger both
 macOS ARM/Intel native XCTest jobs, even when no application source changed.
 Fast Python regression tests check both path-routing and checkout token
 policy on every PR. Ordinary documentation edits remain lightweight.
+
+## Release-only provenance permissions
+
+Windows compilation and OneClick jobs now use only `contents: read` for
+ordinary PRs and main builds. The release-tag-only
+`attest-windows-release` job is the **sole** Windows provenance job granted
+`id-token: write` and `attestations: write`. It downloads the three
+release build outputs from the **same workflow run**, checks the portable
+and installer SHA-256 manifests, and attests the exact portable archive,
+installer and OneClick executable. The curated GitHub Release cannot be
+published until these attestations succeed. Native source compilation,
+release packages and PR CI Gate tests are unchanged.
+
+This extra standard Ubuntu runner is used **only for version tags**, not PRs
+or main pushes. No new permanent artifacts are uploaded by the provenance
+job. The tagged release route is guarded by static CI policy tests; a
+successful PR does not replace a separate release-tag smoke test.
