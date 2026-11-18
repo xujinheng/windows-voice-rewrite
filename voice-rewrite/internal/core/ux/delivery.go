@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"voicerewrite/internal/core/delivery"
 	"voicerewrite/internal/core/indicator"
 )
 
@@ -92,13 +91,12 @@ func DictationUnfocused() Delivery {
 
 // DictationInserted is the pill and card after a dictation paste attempt.
 func DictationInserted(err error) Delivery {
-	outcome := delivery.Sent(delivery.Dictation)
+	// A non-nil error leaves delivery uncertain (the paste event may have fired).
+	// Preserve the manual result instead of retrying or claiming success.
 	if err != nil {
-		outcome = delivery.Failure(delivery.Dictation, true)
-	}
-	if outcome.ShowManualResult() {
 		return Delivery{ShowCard: true, Title: DictationCopyManually, Phase: indicator.Fallback, SetPhase: true}
 	}
+	// A nil error means the OS accepted SendInput, not that the editor wrote text.
 	return Delivery{Phase: indicator.Success, SetPhase: true, TraySuccess: true}
 }
 

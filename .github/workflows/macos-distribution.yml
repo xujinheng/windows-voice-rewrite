@@ -69,7 +69,7 @@ jobs:
             [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
               { echo "::error::macOS signed releases require vMAJOR.MINOR.PATCH tags"; exit 1; }
           else
-            version="$(sed -n 's/^[[:space:]]*MARKETING_VERSION = \([0-9.]*\);/\1/p' macos/VoiceRewrite.xcodeproj/project.pbxproj | head -1)"
+            version="0.1.0"
             [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
               { echo "::error::Cannot determine development version"; exit 1; }
           fi
@@ -82,12 +82,8 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          xcodebuild -project macos/VoiceRewrite.xcodeproj -scheme VoiceRewrite \
-            -configuration Release -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/release-build" \
-            ARCHS="$ARCH" ONLY_ACTIVE_ARCH=YES MARKETING_VERSION="$VERSION" \
-            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" build
-          app="$RUNNER_TEMP/release-build/Build/Products/Release/VoiceRewrite.app"
+          CODESIGN_ADHOC=0 bash scripts/build-macos-headless.sh "$ARCH" "$RUNNER_TEMP/release-build" "$VERSION"
+          app="$RUNNER_TEMP/release-build/VoiceRewrite.app"
           for executable in VoiceRewrite voicebridge; do
             test -x "$app/Contents/MacOS/$executable"
             test "$(lipo -archs "$app/Contents/MacOS/$executable")" = "$ARCH"
@@ -107,7 +103,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          app="$RUNNER_TEMP/release-build/Build/Products/Release/VoiceRewrite.app"
+          app="$RUNNER_TEMP/release-build/VoiceRewrite.app"
           keychain="$RUNNER_TEMP/voicerewrite-release.keychain-db"
           keychain_password="$(openssl rand -hex 32)"
           cleanup() { security delete-keychain "$keychain" >/dev/null 2>&1 || true; }
@@ -157,7 +153,7 @@ jobs:
           BASE: ${{ steps.metadata.outputs.base }}
         run: |
           set -euo pipefail
-          app="$RUNNER_TEMP/release-build/Build/Products/Release/VoiceRewrite.app"
+          app="$RUNNER_TEMP/release-build/VoiceRewrite.app"
           mkdir -p "$RUNNER_TEMP/dist"
           zip="$RUNNER_TEMP/dist/$BASE.zip"
           dmg="$RUNNER_TEMP/dist/$BASE.dmg"

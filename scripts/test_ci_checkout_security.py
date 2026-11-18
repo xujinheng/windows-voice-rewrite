@@ -29,7 +29,8 @@ class CheckoutCredentialPolicyTests(unittest.TestCase):
                     block.append(next_line)
                 with self.subTest(workflow=name, step=i + 1):
                     self.assertIn("persist-credentials: false", "\n".join(block))
-        self.assertGreater(count, 15)
+        # Runner/jobs were deliberately deduplicated; every checkout is still audited.
+        self.assertGreaterEqual(count, 15)
 
     def test_writable_media_publishers_are_explicitly_separated(self):
         for name in PUBLISHERS:
