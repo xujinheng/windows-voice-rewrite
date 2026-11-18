@@ -24,7 +24,16 @@ public struct MicrophoneInputDevice: Identifiable, Equatable, Sendable {
 /// suitable for base64 encoding as `transcribe.pcm_base64` by the host integration.
 /// All lifecycle calls must occur on the main actor; calls are serialized.
 @MainActor
-public final class MicrophoneRecorder {
+public protocol VoiceRecordingDevice: AnyObject {
+    var permissionStatus: MicrophonePermissionStatus { get }
+    var rmsLevel: Float { get }
+    func start(deviceUID: String, maximumSeconds: Int) async throws
+    func stop() async throws -> Data
+    func cancel()
+}
+
+@MainActor
+public final class MicrophoneRecorder: VoiceRecordingDevice {
     private enum State {
         case idle, starting, recording, stopping, failed(MicrophoneError)
     }

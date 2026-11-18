@@ -19,6 +19,21 @@ public struct MacDictationTarget: @unchecked Sendable {
     }
 }
 
+#if DEBUG
+extension MacDictationTarget {
+    public static func performanceFixture(processID: Int32) -> MacDictationTarget {
+        MacDictationTarget(processID: processID, focusedElement: nil, windowID: nil)
+    }
+}
+#endif
+
+@MainActor
+public protocol DictationDelivering: AnyObject {
+    func capture(processID: Int32) throws -> MacDictationTarget
+    func deliver(_ text: String, to target: MacDictationTarget,
+                 stillValid: () -> Bool) async throws -> DeliveryState
+}
+
 public enum DictationTargetPolicy {
     public static func maySend(capturedPID: Int32, foregroundPID: Int32?, secureInput: Bool) -> Bool {
         capturedPID > 0 && foregroundPID == capturedPID && !secureInput
@@ -41,7 +56,7 @@ public enum DictationTargetPolicy {
 /// The only normal dictation writer. Selected-text edits retain the separate
 /// strict AccessibilityClient and InteractionSession authorization.
 @MainActor
-public final class MacDictationDelivery {
+public final class MacDictationDelivery: DictationDelivering {
     private let clipboard = MacClipboardTransactions.shared
 
     public init() {}
