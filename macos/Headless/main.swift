@@ -439,25 +439,38 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
 
     private func paste(_ text: String) {
         // Do not retry uncertain writes: a Cmd+V event is not proof of editor insertion.
+        // Prepare both events before touching the clipboard; don't report a
+        // paste event if CoreGraphics could not create one.
+        let source = CGEventSource(stateID: .hidSystemState)
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {
+            reset("Paste unavailable")
+            return
+        }
         let board = NSPasteboard.general
-        let old = board.pasteboardItems?.compactMap { $0.copy() as? NSPasteboardItem } ?? []
+        let originals = board.pasteboardItems ?? []
+        let saved = originals.compactMap { $0.copy() as? NSPasteboardItem }
+        // Don't silently lose an unsupported clipboard item while taking a lease.
+        guard saved.count == originals.count,
+              board.types?.isEmpty != false || board.pasteboardItems != nil else {
+            reset("Clipboard unsupported")
+            return
+        }
         board.clearContents()
         guard board.setString(text, forType: .string) else { reset("Paste failed"); return }
-        let source = CGEventSource(stateID: .hidSystemState)
-        let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true)
-        let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false)
-        down?.flags = .maskCommand
-        up?.flags = .maskCommand
-        down?.post(tap: .cghidEventTap)
-        up?.post(tap: .cghidEventTap)
+        let lease = board.changeCount
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
         show("Sent ✓")
         pill.result(.sent)
-        // Restore only if this lease still owns the clipboard.
+        // Text equality alone does not prove ownership: another app can copy
+        // the very same text. changeCount protects that user's newer clipboard.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-            if board.string(forType: .string) == text {
-                board.clearContents()
-                if !old.isEmpty { _ = board.writeObjects(old) }
-            }
+            guard board.changeCount == lease else { return }
+            board.clearContents()
+            if !saved.isEmpty { _ = board.writeObjects(saved) }
         }
     }
     // Clicking the floating pill cancels the active capture or suppresses a
