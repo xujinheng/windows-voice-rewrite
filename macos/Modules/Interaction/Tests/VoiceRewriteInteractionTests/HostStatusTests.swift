@@ -359,7 +359,7 @@ final class HostStatusTests: XCTestCase {
                 wasVisible: true, wasPending: false, wasPhase: previousPhase,
                 pending: true, phase: 1, now: newStart,
                 started: previousStart, changed: previousStart)
-            XCTAssertEqual(next.started, newStart, "phase \\(previousPhase) must not leak elapsed seconds")
+            XCTAssertEqual(next.started, newStart, "phase \(previousPhase) must not leak elapsed seconds")
             XCTAssertEqual(next.changed, newStart)
         }
 
