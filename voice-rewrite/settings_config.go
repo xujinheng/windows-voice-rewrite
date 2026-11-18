@@ -13,7 +13,7 @@ import (
 func uxRecordingSeconds(value string) (int, error) {
 	seconds, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil || seconds < coreconfig.RecordSecondsMin || seconds > coreconfig.RecordSecondsMax {
-	    return 0, errors.New("最长录音必须是 1–180 秒之间的整数")
+		return 0, errors.New("最长录音必须是 1–180 秒之间的整数")
 	}
 	return seconds, nil
 }
