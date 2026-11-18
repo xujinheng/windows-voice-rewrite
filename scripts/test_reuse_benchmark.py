@@ -153,6 +153,34 @@ class ReuseBenchmarkTests(unittest.TestCase):
         with self.assertRaisesRegex(b.BenchmarkError, "frozen 38"):
             b.run(b.Snapshot(self.root), self.catalog)
 
+    def test_handwritten_swift_target_is_a_real_file_inventory(self):
+        # The initial fixture has two handwritten files, including native audio.
+        report = b.run(b.Snapshot(self.root), self.catalog)
+        swift = report["source_inventory"]["native_swift"]
+        self.assertEqual(swift["nonblank_lines"], 3)
+        self.assertEqual(swift["target_max_nonblank_lines"], 4999)
+        self.assertTrue(swift["target_met"])
+        self.assertEqual(swift["lines_to_remove"], 0)
+        self.assertEqual(swift["largest_files"][0]["path"], self.swift)
+
+        # The budget cannot be met by counting generated SettingsView as handwritten.
+        self.write("macos/VoiceRewrite/UI/SettingsView.swift", "generated\n" * 60)
+        self.commit("add generated code")
+        report = b.run(b.Snapshot(self.root), self.catalog)
+        self.assertEqual(report["source_inventory"]["native_swift"]["nonblank_lines"], 3)
+        self.assertEqual(report["source_inventory"]["generated_swift"]["nonblank_lines"], 60)
+
+    def test_handwritten_swift_target_gap_is_not_a_go_reuse_score(self):
+        self.write(self.swift, "if hasInsertion {\n" + "native work\n" * 4999)
+        report = b.run(b.Snapshot(self.root), self.catalog)
+        swift = report["source_inventory"]["native_swift"]
+        self.assertEqual(swift["nonblank_lines"], 5001)
+        self.assertEqual(swift["lines_to_remove"], 2)
+        self.assertFalse(swift["target_met"])
+        summary = b.markdown(report, None, [])
+        self.assertIn("5,001 / 4,999 maximum", summary)
+        self.assertIn("2 further nonblank lines", summary)
+
     def test_meta_only_pr_has_zero_delta(self):
         before = b.run(b.Snapshot(self.root, self.base), self.catalog)
         after = b.run(b.Snapshot(self.root), self.catalog)

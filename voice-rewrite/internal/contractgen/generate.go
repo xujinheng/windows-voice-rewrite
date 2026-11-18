@@ -137,12 +137,12 @@ func emitSideHold(path string) (string, error) {
 	}
 	var value string
 	for _, spec := range constSpecs(file) {
-		if spec.name == "MacSideHold" {
+		if spec.name == "WindowsSideHold" {
 			value = spec.value
 		}
 	}
 	if value == "" {
-		return "", fmt.Errorf("MacSideHold")
+		return "", fmt.Errorf("WindowsSideHold")
 	}
 	return sourceNote("voice-rewrite/internal/core/input") +
 		"import Foundation\n\npublic enum SideHold {\n    public static let threshold: TimeInterval = " + value + "\n}\n", nil

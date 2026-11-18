@@ -2,6 +2,14 @@
 
 VoiceRewrite has native Windows (Go/Win32) and macOS (SwiftUI/AppKit with a bundled Go `voicebridge`) desktop hosts. Portable Go packages under `internal/core` contain shared processing, provider protocols, connection probing and task orchestration. Platform adapters own device access, UI, input, configuration files and OS credential storage.
 
+## Non-Meeting task authority (integration gate, #153)
+
+The merged baseline uses `session.Epoch` for cancelable Windows task generations. The native hosts own physical key/mouse events, PCM, editor-target leases, and OS effects. `input` may debounce physical gestures; it must not independently decide the main task's ASR/model/write state. `meeting.SessionRuntime` is a separate domain.
+
+Before merging proposed `voiceflow.Engine`, `input.Coordinator`, `recording.Controller`, or `session.Policy`, trace **one task** through both production hosts and establish exactly one owner for generation, phase, cancel, deadline and write authorization. An input release buffer and a recorder PCM stop receipt may be separate, but neither may silently create a second authoritative task epoch. Synthetic bridge tests alone do not prove Windows or macOS production adoption. Keep unmerged proposals out of the baseline inventory and do not count their stacked diffs cumulatively.
+
+The cross-host Mouse4/Mouse5 gesture threshold has one literal in Go (`input.WindowsSideHold`); `contractgen` emits the same number to the macOS `SideHold.swift`. Run `go run ./cmd/contractgen -check` to detect drift.
+
 ## Portable core
 
 | Package | Responsibility |

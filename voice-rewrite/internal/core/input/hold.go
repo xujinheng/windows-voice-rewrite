@@ -145,12 +145,9 @@ func RewriteHotkeyAction(paused, busy, recording, holdMode bool) RewriteHotkey {
 	return RewritePrepareToggle
 }
 
-const (
-	// WindowsSideHold is how long Mouse4 or Mouse5 must stay down before recording starts.
-	WindowsSideHold = 250 * time.Millisecond
-	// MacSideHold matches the Windows 250ms threshold so button navigation feels the same.
-	MacSideHold = 250 * time.Millisecond
-)
+// WindowsSideHold is the single Go source for the cross-platform Mouse4/Mouse5
+// gesture threshold. The macOS SideHold constant is generated from this value.
+const WindowsSideHold = 250 * time.Millisecond
 
 // Hold is one physical button's press, hold, and release.
 // A late timer carries the old token and cannot start a newer press.

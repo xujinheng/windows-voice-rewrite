@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# Explicit target: <5,000 handwritten nonblank production Swift source lines.
+SWIFT_HANDWRITTEN_TARGET_MAX = 4_999
 CATALOG = ROOT / "scripts" / "reuse_journeys.json"
 
 
@@ -211,6 +213,7 @@ def inventory(snapshot: Snapshot) -> dict:
         "native_swift": {"files": 0, "nonblank_lines": 0},
         "generated_swift": {"files": 0, "nonblank_lines": 0},
     }
+    swift_files: list[dict[str, int | str]] = []
     for path in snapshot.paths():
         if "/Tests/" in path or path.endswith("_test.go") or path.endswith("Tests.swift"):
             continue
@@ -236,9 +239,18 @@ def inventory(snapshot: Snapshot) -> dict:
         if source is None:
             continue
         groups[group]["files"] += 1
-        groups[group]["nonblank_lines"] += sum(1 for line in source.splitlines() if line.strip())
+        nonblank = sum(1 for line in source.splitlines() if line.strip())
+        groups[group]["nonblank_lines"] += nonblank
+        if group == "native_swift":
+            swift_files.append({"path": path, "nonblank_lines": nonblank})
     total = sum(v["nonblank_lines"] for v in groups.values())
     groups["total_nonblank_lines"] = total
+    handwritten = groups["native_swift"]
+    handwritten["target_max_nonblank_lines"] = SWIFT_HANDWRITTEN_TARGET_MAX
+    handwritten["target_met"] = handwritten["nonblank_lines"] <= SWIFT_HANDWRITTEN_TARGET_MAX
+    handwritten["lines_to_remove"] = max(0, handwritten["nonblank_lines"] - SWIFT_HANDWRITTEN_TARGET_MAX)
+    handwritten["largest_files"] = sorted(
+        swift_files, key=lambda item: (-item["nonblank_lines"], item["path"]))[:10]
     groups["shared_go_source_share_pct"] = round(
         100 * groups["shared_go"]["nonblank_lines"] / total, 1
     ) if total else 0.0
@@ -406,9 +418,21 @@ def markdown(report: dict, base: str | None, errors: list[str]) -> str:
         f"generated Swift {inv['generated_swift']['nonblank_lines']:,}. "
         f"Go share in this explicitly scoped source inventory: "
         f"{inv['shared_go_source_share_pct']:.1f}%.{source_deltas}",
+        f"**Handwritten Swift limit (<5,000):** "
+        f"{inv['native_swift']['nonblank_lines']:,} / {SWIFT_HANDWRITTEN_TARGET_MAX:,} maximum; "
+        f"{inv['native_swift']['lines_to_remove']:,} further nonblank lines must be removed. "
+        f"Target met: {inv['native_swift']['target_met']}. "
+        "This is a scope-limited source inventory, not proof of behavior parity; "
+        "deleting comments, reformatting, moving Swift into generated files or other languages "
+        "without eliminating duplicated behavior is not acceptable progress.",
         "",
-        f"Baseline: \`{base}\`." if base else "Baseline unavailable (new benchmark or shallow checkout).",
-        "The full per-stage evidence and owners are in \`scripts/reuse_journeys.json\`; "
+        "| Largest handwritten Swift source | Nonblank lines |",
+        "| --- | ---: |",
+        *(f"| `{item['path']}` | {item['nonblank_lines']:,} |"
+          for item in inv["native_swift"]["largest_files"]),
+        "",
+        f"Baseline: `{base}`." if base else "Baseline unavailable (new benchmark or shallow checkout).",
+        "The full per-stage evidence and owners are in `scripts/reuse_journeys.json`; "
         "changing or removing a decision point requires code review.",
         "**Coverage limitations:** Go AST checks actual source functions, meaningful "
         "bodies and imported host call expressions; this is not a whole-program "
@@ -427,6 +451,8 @@ def main() -> int:
     parser.add_argument("--json-output", default="")
     parser.add_argument("--summary", default="")
     parser.add_argument("--no-regression", action="store_true")
+    parser.add_argument("--require-swift-target", action="store_true",
+                        help="fail until scoped handwritten Swift is at most 4999 lines")
     parser.add_argument("--root", default=str(ROOT), help="test fixture repository")
     args = parser.parse_args()
     root = Path(args.root)
@@ -461,6 +487,10 @@ def main() -> int:
                         step["swift"] = current_step["swift"]
         old_report = run(old_snap, old_catalog if old_text is not None else catalog)
         errors.extend(compare(current, old_report))
+    if args.require_swift_target and not current["source_inventory"]["native_swift"]["target_met"]:
+        errors.append("handwritten Swift exceeds <5,000 target by "
+                      + str(current["source_inventory"]["native_swift"]["lines_to_remove"])
+                      + " nonblank lines")
     if args.json_output:
         Path(args.json_output).write_text(
             json.dumps(current, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -470,7 +500,7 @@ def main() -> int:
     if args.summary:
         with Path(args.summary).open("a", encoding="utf-8") as f:
             f.write(doc)
-    if errors and args.no_regression:
+    if errors and (args.no_regression or args.require_swift_target):
         return 1
     return 0
 

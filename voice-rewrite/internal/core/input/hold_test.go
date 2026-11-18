@@ -87,9 +87,10 @@ func TestVoiceStartKeepsSideAndKeyboardWindowsApart(t *testing.T) {
 	}
 }
 
-func TestSideHoldDurationsMatchAcrossHosts(t *testing.T) {
-	if WindowsSideHold != 250*time.Millisecond || MacSideHold != WindowsSideHold {
-		t.Fatalf("windows %s mac %s", WindowsSideHold, MacSideHold)
+func TestSideHoldUsesCanonicalGoThreshold(t *testing.T) {
+	// contractgen -check enforces the same value in generated macOS SideHold.swift.
+	if WindowsSideHold != 250*time.Millisecond {
+		t.Fatalf("canonical cross-host side hold threshold: %s", WindowsSideHold)
 	}
 }
 
