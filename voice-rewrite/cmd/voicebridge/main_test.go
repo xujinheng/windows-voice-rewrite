@@ -51,7 +51,7 @@ func TestHeadlessProfileValidatesSettingsAndNeverLeaksKeys(t *testing.T) {
 			t.Fatal(err)
 		}
 		if strings.Contains(out.String(), secret) || !strings.Contains(out.String(), tt.want) {
-			t.Fatalf("invalid profile result: %s",out.String())
+			t.Fatalf("invalid profile result: %s", out.String())
 		}
 		var result response
 		if err := json.Unmarshal(out.Bytes(), &result); err != nil {
