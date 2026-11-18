@@ -16,6 +16,18 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(classify(["voice-rewrite/internal/core/meeting/meeting.go"]), {
             "core": True, "macos": True, "windows": True, "oneclick": False, "ui": True, "direct2d": False)
 
+    def test_windows_only_native_code(self):
+        selected = classify(["voice-rewrite/task_worker_windows.go"])
+        self.assertEqual(selected, {
+            "core": False, "macos": False, "windows": True,
+            "oneclick": False, "ui": False, "direct2d": False})
+
+    def test_voicebridge_only(self):
+        selected = classify(["voice-rewrite/cmd/voicebridge/main.go"])
+        self.assertEqual(selected, {
+            "core": True, "macos": True, "windows": False,
+            "oneclick": False, "ui": False, "direct2d": False})
+
     def test_oneclick(self):
         self.assertEqual(classify(["oneclick/main.go"]), {
             "core": False, "macos": False, "windows": False, "oneclick": True, "ui": False, "direct2d": False})
