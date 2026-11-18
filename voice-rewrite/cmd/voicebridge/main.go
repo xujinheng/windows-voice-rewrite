@@ -59,7 +59,7 @@ type request struct {
 	ReplyIndex      int             `json:"reply_index"`
 	ViewButton      int             `json:"button_id"`
 	FocusExpression bool            `json:"focus_expression"`
-	Event           string          `json:"event"`
+	EpochEvent      string          `json:"epoch_event"`
 	Generation      uint64          `json:"generation"`
 	Stage           string          `json:"stage"`
 	RequestID       string          `json:"request_id"`
@@ -314,7 +314,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 // echoes exact generation ownership and the Go-issued effects.
 func (s *bridgeServer) voiceEpochRequest(req request) response {
     decision := s.voiceEpoch.Apply(sessioncore.Event{
-        Type: sessioncore.EventType(req.Event),
+        Type: sessioncore.EventType(req.EpochEvent),
         SessionID: req.SessionID,
         Generation: req.Generation,
         Stage: sessioncore.Stage(req.Stage),

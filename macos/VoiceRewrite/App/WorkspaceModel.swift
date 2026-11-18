@@ -2305,7 +2305,7 @@ final class WorkspaceModel: ObservableObject {
         let sessionID = UUID().uuidString
         voiceEpochSessionID = sessionID
         bridge?.send(operation: "voice_epoch", fields: [
-            "event": .string("begin"), "session_id": .string(sessionID),
+            "epoch_event": .string("begin"), "session_id": .string(sessionID),
             "generation": .number(Double(token))
         ]) { [weak self] reply in
             Task { @MainActor [weak self] in
@@ -2330,7 +2330,7 @@ final class WorkspaceModel: ObservableObject {
         voiceEpochSessionID = nil
         voiceEpochStage = nil
         bridge?.send(operation: "voice_epoch", fields: [
-            "event": .string("cancel"), "session_id": .string(sessionID),
+            "epoch_event": .string("cancel"), "session_id": .string(sessionID),
             "generation": .number(Double(token)), "reason": .string(reason)
         ]) { _ in }
     }
@@ -2338,7 +2338,7 @@ final class WorkspaceModel: ObservableObject {
     private func bindVoiceEpochRequest(token: UInt64, requestID: String) {
         guard let sessionID = voiceEpochSessionID else { return }
         bridge?.send(operation: "voice_epoch", fields: [
-            "event": .string("bind"), "session_id": .string(sessionID),
+            "epoch_event": .string("bind"), "session_id": .string(sessionID),
             "generation": .number(Double(token)), "request_id": .string(requestID)
         ]) { _ in }
     }
@@ -2348,7 +2348,7 @@ final class WorkspaceModel: ObservableObject {
               resultGeneration.accepts(token) else { return false }
         let allowed = await withCheckedContinuation { continuation in
             bridge.send(operation: "voice_epoch", fields: [
-                "event": .string("authorize"), "session_id": .string(sessionID),
+                "epoch_event": .string("authorize"), "session_id": .string(sessionID),
                 "generation": .number(Double(token)), "stage": .string(stage)
             ]) { reply in
                 let response = try? reply.get()
@@ -2365,7 +2365,7 @@ final class WorkspaceModel: ObservableObject {
         guard voiceEpochSessionID == sessionID, voiceEpochStage == stage,
               resultGeneration.accepts(token), let bridge else { return }
         bridge.send(operation: "voice_epoch", fields: [
-            "event": .string("timeout"), "session_id": .string(sessionID),
+            "epoch_event": .string("timeout"), "session_id": .string(sessionID),
             "generation": .number(Double(token)), "stage": .string(stage)
         ]) { [weak self] reply in
             Task { @MainActor [weak self] in
@@ -2407,7 +2407,7 @@ final class WorkspaceModel: ObservableObject {
         guard let sessionID = voiceEpochSessionID, let bridge else { return }
         voiceEpochStage = stage
         bridge.send(operation: "voice_epoch", fields: [
-            "event": .string("stage"), "session_id": .string(sessionID),
+            "epoch_event": .string("stage"), "session_id": .string(sessionID),
             "generation": .number(Double(token)), "stage": .string(stage),
             "audio_bytes": .number(Double(audioBytes)),
             "record_seconds": .number(Double(settings.maxRecordSeconds))
@@ -2440,7 +2440,7 @@ final class WorkspaceModel: ObservableObject {
         if let stage = voiceEpochStage, let sessionID = voiceEpochSessionID {
             let token = resultGeneration.latest
             bridge?.send(operation: "voice_epoch", fields: [
-                "event": .string("receipt"), "session_id": .string(sessionID),
+                "epoch_event": .string("receipt"), "session_id": .string(sessionID),
                 "generation": .number(Double(token)), "stage": .string(stage)
             ]) { _ in }
         }

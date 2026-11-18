@@ -9,14 +9,14 @@ import (
 
 func TestBridgeVoiceEpochTraceAndLateReceipt(t *testing.T) {
     events := []string{
-        `{"v":1,"id":"r1","op":"voice_epoch","event":"begin","session_id":"task-A","generation":1}`,
-        `{"v":1,"id":"r2","op":"voice_epoch","event":"stage","session_id":"task-A","generation":1,"stage":"asr","audio_bytes":32000}`,
-        `{"v":1,"id":"r3","op":"voice_epoch","event":"bind","session_id":"task-A","generation":1,"request_id":"provider-A"}`,
-        `{"v":1,"id":"r4","op":"voice_epoch","event":"cancel","session_id":"task-A","generation":1,"reason":"user"}`,
-        `{"v":1,"id":"r5","op":"voice_epoch","event":"authorize","session_id":"task-A","generation":1,"stage":"asr"}`,
-        `{"v":1,"id":"r6","op":"voice_epoch","event":"begin","session_id":"task-B","generation":2}`,
-        `{"v":1,"id":"r7","op":"voice_epoch","event":"receipt","session_id":"task-A","generation":1,"stage":"native_write"}`,
-        `{"v":1,"id":"r8","op":"voice_epoch","event":"authorize","session_id":"task-B","generation":2}`,
+        `{"v":1,"id":"r1","op":"voice_epoch","epoch_event":"begin","session_id":"task-A","generation":1}`,
+        `{"v":1,"id":"r2","op":"voice_epoch","epoch_event":"stage","session_id":"task-A","generation":1,"stage":"asr","audio_bytes":32000}`,
+        `{"v":1,"id":"r3","op":"voice_epoch","epoch_event":"bind","session_id":"task-A","generation":1,"request_id":"provider-A"}`,
+        `{"v":1,"id":"r4","op":"voice_epoch","epoch_event":"cancel","session_id":"task-A","generation":1,"reason":"user"}`,
+        `{"v":1,"id":"r5","op":"voice_epoch","epoch_event":"authorize","session_id":"task-A","generation":1,"stage":"asr"}`,
+        `{"v":1,"id":"r6","op":"voice_epoch","epoch_event":"begin","session_id":"task-B","generation":2}`,
+        `{"v":1,"id":"r7","op":"voice_epoch","epoch_event":"receipt","session_id":"task-A","generation":1,"stage":"native_write"}`,
+        `{"v":1,"id":"r8","op":"voice_epoch","epoch_event":"authorize","session_id":"task-B","generation":2}`,
     }
     var out bytes.Buffer
     if err := serve(strings.NewReader(strings.Join(events,"\n")+"\n"), &out); err != nil {
