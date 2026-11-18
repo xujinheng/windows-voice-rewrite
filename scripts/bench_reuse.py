@@ -213,6 +213,17 @@ def markdown(report: dict, base: str | None, errors: list[str]) -> str:
             f"| {journey['title']} | {journey['go_decisions']} | {journey['swift_decisions']} "
             f"| {journey['native_boundaries']} | {journey['go_portable_pct']:.1f}% | {previous} |"
         )
+    lines += [
+        "",
+        "<details><summary>Audited decision-stage owners (expand)</summary>",
+        "",
+        "| Journey / stage | Owner |",
+        "|---|---|",
+    ]
+    for journey in report["journeys"]:
+        for stage in journey["stages"]:
+            lines.append(f"| {journey['id']} / {stage['title']} | `{stage['owner']}` |")
+    lines += ["", "</details>"]
     inv = report["source_inventory"]
     lines += [
         "",
