@@ -8,6 +8,28 @@ go test -race -count=1 ./...
 The main CI continues Windows executable compilation, Windows UI capture and
 Direct2D regression checks. Do not remove or suppress failing Windows tests.
 
+## Interactive acceptance checklist
+
+Use disposable text and a Windows 11 desktop with ASR and LLM services configured.
+
+- [ ] Fresh launch: configure both API endpoints, microphone and shortcut; save and reopen Settings.
+- [ ] Short-click Mouse4/Mouse5 in Chrome and Edge: Back/Forward works once, including rapid clicks; no recording starts.
+- [ ] Hold Mouse4/Mouse5 longer than 250 ms: speaking immediately on pressing the button includes the first words; releasing finishes the recording and browser navigation does not occur.
+- [ ] Short clicks discard provisional audio: no transcription request, saved history entry or recording indicator appears.
+- [ ] Release just before or after 250 ms; test simultaneous presses, pause/resume and exit while held.
+- [ ] Mouse4: dictate into Notepad, VS Code and a browser text field; release to insert.
+- [ ] Mouse5: select text and request a rewrite or translation; confirm only the intended selection changes.
+- [ ] Mouse5: select read-only text and ask a question; confirm the answer card opens without modifying the source.
+- [ ] Result card: copy the full answer, scroll long text, close with the button, title bar and Escape.
+- [ ] Switch editor or selection while an API request is pending; stale output must not replace newer text.
+- [ ] Cancel an active task; confirm network work stops and nothing is inserted.
+- [ ] Test clipboard contents containing text, HTML, rich text, file lists and unsupported formats.
+- [ ] Test native password controls and browser password fields; confirm input is blocked where detected.
+- [ ] Try connection failures: invalid key, unreachable host, missing endpoint, invalid model ID.
+- [ ] Verify the tray, pause/resume, session history and exit restore mouse-button behavior.
+- [ ] Test at 100%, 125%, 150% and 200% system display scaling, including two monitors with different scaling.
+- [ ] Test fresh installation, upgrade and uninstall; user settings should survive uninstall.
+
 ## macOS headless
 ```sh
 python3 -m unittest discover -s scripts -p 'test_ci_*.py' -v

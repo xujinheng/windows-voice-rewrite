@@ -80,6 +80,12 @@ class HeadlessWorkflowTests(unittest.TestCase):
         self.assertIn("pill.processing()", host)
         self.assertIn("pill.result(.sent)", host)
         self.assertIn("pill.dismiss()", host)
+        # Clipboard ownership must use changeCount, not content equality:
+        # another application may copy the identical text during our lease.
+        self.assertIn("let lease = board.changeCount", host)
+        self.assertIn("guard board.changeCount == lease else { return }", host)
+        self.assertNotIn("board.string(forType: .string) == text", host)
+        self.assertIn("guard let down = CGEvent(", host)
         self.assertTrue((ROOT / "macos/Headless/config.example.json").is_file())
         self.assertTrue((ROOT / "scripts/check_headless_scope.py").is_file())
 
