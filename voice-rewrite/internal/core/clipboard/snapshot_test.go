@@ -23,8 +23,11 @@ func TestSnapshotStopsBeforeCopyingAnImage(t *testing.T) {
 	if SnapshotFits(0, 0) || !SnapshotFits(FormatMaxBytes, 0) || SnapshotFits(FormatMaxBytes+1, 0) {
 		t.Fatal("size")
 	}
-	if SnapshotFits(1, TotalMaxBytes) {
-		t.Fatal("total")
+	if SnapshotFits(1, TotalMaxBytes) || SnapshotFits(1, ^uintptr(0)) || SnapshotFits(2, ^uintptr(0)) {
+		t.Fatal("reject full or overflowing snapshot")
+	}
+	if !SnapshotFits(1, TotalMaxBytes-1) || SnapshotFits(2, TotalMaxBytes-1) {
+		t.Fatal("exact remaining capacity must be respected")
 	}
 	if TextBlockReadable(1) || !TextBlockReadable(2) || !TextBlockReadable(TextReadMax) || TextBlockReadable(TextReadMax+1) {
 		t.Fatal("text block")
