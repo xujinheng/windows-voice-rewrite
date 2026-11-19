@@ -13,6 +13,8 @@ class HeadlessWorkflowTests(unittest.TestCase):
         self.assertIn("macos-15, arch: arm64", job)
         self.assertIn("macos-15-intel, arch: x86_64", job)
         self.assertIn("bash scripts/build-macos-headless.sh", job)
+        self.assertIn("cat scripts/test-macos-focus.swift >>", job)
+        self.assertIn("go test -race -count=1 ./...", source)
         self.assertTrue((ROOT / "scripts/test-macos-focus.swift").is_file())
         self.assertNotIn("cmd/contractgen", (WORKFLOWS / "nightly.yml").read_text())
 
@@ -20,10 +22,12 @@ class HeadlessWorkflowTests(unittest.TestCase):
         for filename in ("ready-build.yml", "nightly.yml", "macos-distribution.yml"):
             with self.subTest(filename=filename):
                 source = (WORKFLOWS / filename).read_text()
-                        self.assertNotIn("xcodebuild", source)
+                self.assertIn("scripts/build-macos-headless.sh", source)
+                self.assertNotIn("xcodebuild", source)
         release = (WORKFLOWS / "macos-distribution.yml").read_text()
         self.assertIn("codesign --force --timestamp --options runtime", release)
         ready = (WORKFLOWS / "ready-build.yml").read_text()
+        self.assertIn("github.event.changes.title", ready)
 
     def test_source_budget_and_user_path(self):
         sources = [ROOT / "macos/Headless/main.swift",
@@ -43,8 +47,6 @@ class HeadlessWorkflowTests(unittest.TestCase):
         self.assertIn("-buildmode=c-archive", script)
         self.assertNotIn("Process()", host)
         self.assertNotIn("voicebridge", host)
-        # Clipboard ownership must use changeCount, not content equality:
-        # another application may copy the identical text during our lease.
         self.assertTrue((ROOT / "macos/Headless/config.example.json").is_file())
         self.assertTrue((ROOT / "scripts/check_headless_scope.py").is_file())
 
