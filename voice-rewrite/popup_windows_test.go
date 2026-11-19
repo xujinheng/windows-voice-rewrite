@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 	"unsafe"
+
+	"voicerewrite/internal/core/ux"
 )
 
 var (
@@ -56,6 +58,45 @@ func TestNativePopupPaintAndClose(t *testing.T) {
 	procSendMessage.Call(hwnd, WM_COMMAND, BUTTON_CLOSE, 0)
 	if activeAnswer != nil {
 		t.Fatal("Close button failed")
+	}
+}
+
+// This exercises the real native failure notification without a microphone or
+// interactive editor. A missing target must release busy and notify exactly the
+// card that started Apply; the Win32 pump rejects a zero/stale card handle.
+func TestClosedEditorApplyPostsCardIdentity(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	hwnd, err := createTrayCallbackWindow()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer procDestroyWindow.Call(hwnd)
+	app := &appState{Window: hwnd}
+	generation := app.epoch.Start()
+	defer app.epoch.Shutdown()
+	card := &answerPopup{
+		app: app, window: hwnd, generation: generation,
+		allowApply: true, selection: &selectedText{TargetWindow: 0},
+	}
+	card.apply()
+	if app.busy.Load() {
+		t.Fatal("closed editor retained the apply busy lease")
+	}
+	select {
+	case got := <-card.applyResult:
+		if got == nil || got.Error() != ux.ApplyWindowClosed {
+			t.Fatalf("apply result = %v; want closed-editor failure", got)
+		}
+	default:
+		t.Fatal("closed editor left no apply outcome")
+	}
+	var msg winMSG
+	if got, _, _ := procPeekMessageForTest.Call(uintptr(unsafe.Pointer(&msg)), hwnd, WM_APPLY_RESULT, WM_APPLY_RESULT, 1); got == 0 {
+		t.Fatal("closed editor did not notify the Win32 UI pump")
+	}
+	if msg.WParam != card.window {
+		t.Fatalf("apply notification card = %#x; want %#x", msg.WParam, card.window)
 	}
 }
 
