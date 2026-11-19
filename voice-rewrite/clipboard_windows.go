@@ -180,8 +180,8 @@ func waitCopyModifiersReleased(timeout time.Duration) bool {
 
 func copySelectionWithRetry(hwnd, target uintptr, cfg Config) (string, error) {
 	time.Sleep(clipboard.CopySettle) // Let mouse key-up and selection settle.
-	if err := clipboard.CopyModifiersReady(waitCopyModifiersReleased(clipboard.CopyModifierWait)); err != nil {
-		return "", err
+	if !waitCopyModifiersReleased(clipboard.CopyModifierWait) {
+		return "", errors.New(clipboard.CopyModifiersHeld)
 	}
 	var lastErr error
 	for i := 0; i < cfg.SelectionCopyAttempts; i++ {
@@ -204,14 +204,14 @@ func copySelectionWithRetry(hwnd, target uintptr, cfg Config) (string, error) {
 			time.Sleep(clipboard.CopyRetryPause(i))
 		}
 	}
-	return "", clipboard.CopyAttemptsFailed(cfg.SelectionCopyAttempts, lastErr)
+	return "", fmt.Errorf("复制选中文字失败（已尝试 %d 次）：%w", cfg.SelectionCopyAttempts, lastErr)
 }
 
 func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 	var sel selectedText
 	sel.TargetWindow, _, _ = procGetForegroundWindow.Call()
-	if err := clipboard.CaptureHasWindow(sel.TargetWindow != 0); err != nil {
-		return sel, err
+	if sel.TargetWindow == 0 {
+		return sel, errors.New(clipboard.CaptureNoWindow)
 	}
 	if nativePasswordFieldFocused(sel.TargetWindow) {
 		return sel, errors.New(ux.PasswordSelection)
@@ -269,23 +269,23 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 	if err = ux.ReplaceSelectionStillThere(err, actual, sel.Text); err != nil {
 		return err
 	}
-	if err = ux.ReplaceBeforePasteOK(taskValid() && isSameForegroundWindow(sel.TargetWindow)); err != nil {
-		return err
+	if !taskValid() || !isSameForegroundWindow(sel.TargetWindow) {
+		return errors.New(ux.ReplaceBeforePaste)
 	}
 	if err := setClipboardText(hwnd, replacement); err != nil {
 		return err
 	}
 	backup.markOwned(clipboardSeq())
-	if err = ux.ReplacePasteStillOK(taskValid() && isSameForegroundWindow(sel.TargetWindow)); err != nil {
-		return err
+	if !taskValid() || !isSameForegroundWindow(sel.TargetWindow) {
+		return errors.New(ux.ReplacePasteStopped)
 	}
 	if err := sendCombo('V'); err != nil {
 		return err
 	}
 	time.Sleep(270 * time.Millisecond)
 	if verifyBrowser {
-		if err = ux.ReplaceVerifyWindowOK(isSameForegroundWindow(sel.TargetWindow)); err != nil {
-			return err
+		if !isSameForegroundWindow(sel.TargetWindow) {
+			return errors.New(ux.ReplaceWindowAfterPaste)
 		}
 		beforeProbe := clipboardSeq()
 		stillSelected, verifyErr := clipboardCopy(hwnd, 470*time.Millisecond)
@@ -303,7 +303,7 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 		}
 	}
 	if err := backup.restoreIfOwned(hwnd); err != nil {
-		return ux.ReplaceClipboardRestored(err)
+		return fmt.Errorf("%s: %w", ux.ReplaceRestoreFailed, err)
 	}
 	return nil // Windows accepted Ctrl+V; target editor insertion remains best-effort.
 }

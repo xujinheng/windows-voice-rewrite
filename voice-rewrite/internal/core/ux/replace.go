@@ -2,7 +2,6 @@ package ux
 
 import (
 	"errors"
-	"fmt"
 )
 
 const (
@@ -46,21 +45,6 @@ func ReplaceSelectionStillThere(err error, actual, expected string) error {
 	return nil
 }
 
-func replaceStep(ok bool, message string) error {
-	if ok {
-		return nil
-	}
-	return errors.New(message)
-}
-
-// ReplaceBeforePasteOK, ReplacePasteStillOK, and ReplaceVerifyWindowOK are the
-// three later window checks. Each keeps its own sentence.
-func ReplaceBeforePasteOK(ok bool) error { return replaceStep(ok, ReplaceBeforePaste) }
-
-func ReplacePasteStillOK(ok bool) error { return replaceStep(ok, ReplacePasteStopped) }
-
-func ReplaceVerifyWindowOK(ok bool) error { return replaceStep(ok, ReplaceWindowAfterPaste) }
-
 // ReplacePasteKeptSelection reports that the original text is still selected after paste.
 func ReplacePasteKeptSelection(verifyErr error, stillSelected, expected string) error {
 	if verifyErr == nil && stillSelected == expected {
@@ -69,10 +53,3 @@ func ReplacePasteKeptSelection(verifyErr error, stillSelected, expected string) 
 	return nil
 }
 
-// ReplaceClipboardRestored wraps a restore error. A nil error stays nil.
-func ReplaceClipboardRestored(err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("%s: %w", ReplaceRestoreFailed, err)
-}
