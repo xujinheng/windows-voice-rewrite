@@ -108,8 +108,9 @@ func (o bridgeOptions) timeoutFor(req request) time.Duration {
 	return o.TranscribeTimeout
 }
 
-// Both the JSONL service and the in-process macOS host contain panics at the
-// Go boundary. Neither a provider panic nor its private data reaches Swift.
+// Both the JSONL service and in-process macOS C ABI use this boundary.
+// It owns the final cancellation result so ASR and rewrite do not each
+// duplicate context checks; private provider errors and panics stay contained.
 func safeProcessRequest(ctx context.Context, req request) (reply response) {
 	reply = failure(req.ID, "internal_error", "request failed")
 	defer func() { _ = recover() }()
@@ -309,13 +310,7 @@ func processRequest(ctx context.Context, req request) response {
 		}
 		text, err := speech.Transcribe(ctx, cfg, pcm)
 		if err != nil {
-			if ctx.Err() != nil {
-				return contextFailure(req.ID, ctx.Err())
-			}
 			return providerFailure(req.ID, "asr_failed", "speech transcription failed", err)
-		}
-		if ctx.Err() != nil {
-			return contextFailure(req.ID, ctx.Err())
 		}
 		return success(req.ID, map[string]any{
 			"text":  text,
@@ -332,13 +327,7 @@ func processRequest(ctx context.Context, req request) response {
 		}
 		result, instruction, err := textedit.ResolveSpokenTask(ctx, cfg, req.SelectedText, pcm, nil)
 		if err != nil {
-			if ctx.Err() != nil {
-				return contextFailure(req.ID, ctx.Err())
-			}
 			return providerFailure(req.ID, "textedit_failed", "selected text processing failed", err)
-		}
-		if ctx.Err() != nil {
-			return contextFailure(req.ID, ctx.Err())
 		}
 		return selectedTaskSuccess(req.ID, result, instruction)
 	}
