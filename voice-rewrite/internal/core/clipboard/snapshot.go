@@ -32,11 +32,6 @@ func TextBlockReadable(bytes uintptr) bool {
 	return bytes >= 2 && bytes <= TextReadMax
 }
 
-// TextTerminated is false when the buffer has no trailing NUL inside its allocation.
-func TextTerminated(index, units int) bool {
-	return index < units
-}
-
 // SnapshotFits refuses an empty block and a snapshot that would pass either byte cap.
 func SnapshotFits(size, total uintptr) bool {
 	return size != 0 && size <= FormatMaxBytes && total <= TotalMaxBytes && size <= TotalMaxBytes-total
