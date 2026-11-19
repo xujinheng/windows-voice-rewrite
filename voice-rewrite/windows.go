@@ -423,8 +423,7 @@ func runApp() {
 	var holdButton uint16
 	var holdIsDictation bool
 	var holdMeeting *meetingSession
-	var holdGeneration uint64
-	var selectedGeneration uint64
+	var activeGeneration uint64
 	var holdSession uintptr
 	var recordingSession uintptr
 	var holdWatch chan struct{}
@@ -466,9 +465,9 @@ func runApp() {
 		l.Print("recording stop requested; selection/model processing moved to worker")
 		kind := input.FinishRecording(cfg.RecordMode == "hold", holdIsDictation, holdMeeting != nil)
 		if kind == input.FinishDictation || kind == input.FinishMeeting {
-			app.postHandyPhase(indicator.Processing, holdGeneration)
+			app.postHandyPhase(indicator.Processing, activeGeneration)
 		} else if kind == input.FinishSpokenRewrite {
-			app.postHandyPhase(indicator.Selection, holdGeneration)
+			app.postHandyPhase(indicator.Selection, activeGeneration)
 		}
 		switch kind {
 		case input.FinishMeeting:
@@ -478,17 +477,17 @@ func runApp() {
 				app.setStatus(trayIdle)
 				closeHandyStatus()
 			} else {
-				go holdMeeting.express(app, rec, holdGeneration, meetingcore.VoiceMode(holdIsDictation))
+				go holdMeeting.express(app, rec, activeGeneration, meetingcore.VoiceMode(holdIsDictation))
 			}
 			holdMeeting = nil
 		case input.FinishDictation:
-			go processDictationHold(app, rec, holdTargetWindow, holdGeneration)
+			go processDictationHold(app, rec, holdTargetWindow, activeGeneration)
 		case input.FinishSpokenRewrite:
-			go processRecordedHold(app, rec, holdTargetWindow, currentCursorPoint(), holdGeneration)
+			go processRecordedHold(app, rec, holdTargetWindow, currentCursorPoint(), activeGeneration)
 		default:
 			sel := selected
 			sel.Anchor = currentCursorPoint()
-			go processRecorded(app, rec, sel, selectedGeneration)
+			go processRecorded(app, rec, sel, activeGeneration)
 		}
 	}
 
@@ -502,7 +501,7 @@ func runApp() {
 		if app.meeting != nil && !app.meeting.demo {
 			holdMeeting = app.meeting
 		}
-		holdGeneration = app.epoch.Start()
+		activeGeneration = app.epoch.Start()
 		active = rec
 		watchRecordingLimit(rec)
 		app.setStatus(trayRecording)
@@ -527,10 +526,10 @@ func runApp() {
 		// Keyboard hold has no preview, so the promote call stays on the side-button path.
 		promoted := false
 		if button != 0 {
-			promoted = promotePendingHandyStatus(rec, statusMode, holdGeneration)
+			promoted = promotePendingHandyStatus(rec, statusMode, activeGeneration)
 		}
 		if button == 0 || !promoted {
-			showHandyStatus(rec, statusMode, indicator.Recording, holdGeneration)
+			showHandyStatus(rec, statusMode, indicator.Recording, activeGeneration)
 		}
 		// The native status bar is the start feedback. A synchronous Beep
 		// blocks this Win32 message loop and makes the shortcut feel sluggish.
@@ -709,7 +708,7 @@ func runApp() {
 				result.rec.Stop()
 				continue
 			}
-			selectedGeneration = result.generation
+			activeGeneration = result.generation
 			active = result.rec
 			watchRecordingLimit(active)
 			selected = result.sel
