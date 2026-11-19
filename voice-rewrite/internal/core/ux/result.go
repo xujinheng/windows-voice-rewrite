@@ -95,9 +95,3 @@ func HistoryRestoreTitle(storedTitle string) string {
 	return strings.TrimSpace(storedTitle) + " · 历史结果"
 }
 
-func WindowsSaveNotice(restart bool) string {
-	if restart {
-		return WindowsSaveRestart
-	}
-	return WindowsSaveImmediate
-}
