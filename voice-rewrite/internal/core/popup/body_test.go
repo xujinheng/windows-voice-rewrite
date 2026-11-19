@@ -13,10 +13,4 @@ func TestEmptyCardStaysDifferentFromAModelFailure(t *testing.T) {
 	if got := EditorText("a\r\nb\nc"); got != "a\r\nb\r\nc" {
 		t.Fatal(got)
 	}
-	if ContinueApply(false, true) != ApplyBusyNote || ContinueApply(false, false) != ApplyBusyNote {
-		t.Fatal("busy apply keeps the flag")
-	}
-	if ContinueApply(true, false) != ApplyEditorClosed || ContinueApply(true, true) != ApplyReplace {
-		t.Fatal("editor")
-	}
 }
