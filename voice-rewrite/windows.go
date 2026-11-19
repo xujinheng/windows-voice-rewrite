@@ -424,25 +424,7 @@ func runApp() {
 	var holdIsDictation bool
 	var holdMeeting *meetingSession
 	var activeGeneration uint64
-	var holdSession uintptr
-	var recordingSession uintptr
 	var holdWatch chan struct{}
-	// The native recorder can reach its duration limit before a held key or
-	// mouse button is released. Observe recorder completion without consuming
-	// its PCM result (the worker is its sole reader).
-	watchRecordingLimit := func(rec *audioRecorder) {
-		recordingSession++
-		session := recordingSession
-		go func() {
-			<-rec.finished
-			if !rec.maxReached.Load() {
-				return
-			}
-			if ok, _, err := procPostMessage.Call(hwnd, WM_RECORD_LIMIT, session, 0); ok == 0 {
-				l.Printf("ERROR: cannot notify UI of recording limit: %v", err)
-			}
-		}()
-	}
 	stopHoldWatch := func() {
 		if holdWatch != nil {
 			close(holdWatch)
@@ -503,13 +485,12 @@ func runApp() {
 		}
 		activeGeneration = app.epoch.Start()
 		active = rec
-		watchRecordingLimit(rec)
+		watchRecordingLimit(hwnd, rec, activeGeneration, l)
 		app.setStatus(trayRecording)
-		holdSession++
 		holdWatch = make(chan struct{})
 		watchLimit := time.Duration(cfg.MaxRecordSeconds+2) * time.Second
 		if button != 0 {
-			go watchMouseHoldTimeout(hwnd, holdSession, holdWatch, watchLimit, l)
+			go watchMouseHoldTimeout(hwnd, uintptr(activeGeneration), holdWatch, watchLimit, l)
 		} else {
 			vk := recordVK
 			if dictation {
@@ -519,7 +500,7 @@ func runApp() {
 			if dictation {
 				mods = dictationMods
 			}
-			go watchHoldRelease(hwnd, vk, mods, holdSession, holdWatch, watchLimit, l)
+			go watchHoldRelease(hwnd, vk, mods, uintptr(activeGeneration), holdWatch, watchLimit, l)
 		}
 		statusMode := input.HoldModeLabel(dictation, holdMeeting != nil)
 		// Promote the immediate mouse-down preview without recreating its HWND.
@@ -705,7 +686,7 @@ func runApp() {
 			}
 			activeGeneration = result.generation
 			active = result.rec
-			watchRecordingLimit(active)
+			watchRecordingLimit(hwnd, active, activeGeneration, l)
 			selected = result.sel
 			app.busy.Store(false)
 			app.setStatus(trayRecording)
@@ -870,21 +851,21 @@ func runApp() {
 			return
 		}
 		if msg.Message == WM_HOLD_RELEASE {
-			if cfg.RecordMode == "hold" && active != nil && msg.WParam == holdSession {
+			if cfg.RecordMode == "hold" && active != nil && uint64(msg.WParam) == activeGeneration {
 				l.Print("hold key released; completing recording")
 				finish()
 			}
 			continue
 		}
 		if msg.Message == WM_RECORD_LIMIT {
-			if active != nil && msg.WParam == recordingSession {
+			if active != nil && uint64(msg.WParam) == activeGeneration {
 				l.Print("recording reached configured duration; submitting captured audio")
 				finish()
 			}
 			continue
 		}
 		if msg.Message == WM_HOLD_TIMEOUT {
-			if cfg.RecordMode == "hold" && active != nil && msg.WParam == holdSession {
+			if cfg.RecordMode == "hold" && active != nil && uint64(msg.WParam) == activeGeneration {
 				// The safety watcher is not proof that the mouse driver lost
 				// a release. Preserve the captured speech instead of discarding it.
 				l.Print("hold safety deadline reached; submitting available audio")
