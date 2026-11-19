@@ -410,7 +410,6 @@ func runApp() {
 		if pendingSide != nil && pendingSide.recorder != nil {
 			rec := pendingSide.recorder
 			rec.Stop()
-			go func() { <-rec.result }()
 		}
 		pendingSide = nil
 		if activeHandyStatus != nil && activeHandyStatus.pending {
@@ -473,21 +472,13 @@ func runApp() {
 		}
 		switch kind {
 		case input.FinishMeeting:
-			stop := meetingcore.MeetingStopAction(holdMeeting.runtime.Context().Err() != nil)
-			if stop.Express {
-				go holdMeeting.express(app, rec, holdGeneration, meetingcore.VoiceMode(holdIsDictation))
-			}
-			if stop.DrainRecorder {
-				go func() { <-rec.result }()
-			}
-			if stop.ClearBusy {
+			if holdMeeting.runtime.Context().Err() != nil {
+				// The single buffered recorder result needs no drain worker.
 				app.busy.Store(false)
-			}
-			if stop.IdleTray {
 				app.setStatus(trayIdle)
-			}
-			if stop.ClosePill {
 				closeHandyStatus()
+			} else {
+				go holdMeeting.express(app, rec, holdGeneration, meetingcore.VoiceMode(holdIsDictation))
 			}
 			holdMeeting = nil
 		case input.FinishDictation:
@@ -667,7 +658,6 @@ func runApp() {
 					rec := active
 					active = nil
 					rec.Stop()
-					go func() { <-rec.result }()
 				}
 				closeHandyStatus()
 				app.setStatus(trayIdle)
@@ -715,7 +705,6 @@ func runApp() {
 			result := <-toggleResult
 			if !app.epoch.Valid(result.generation) {
 				result.rec.Stop()
-				go func() { <-result.rec.result }()
 				continue
 			}
 			selectedGeneration = result.generation
@@ -880,7 +869,6 @@ func runApp() {
 			if active != nil {
 				stopHoldWatch()
 				active.Stop()
-				go func(rec *audioRecorder) { <-rec.result }(active)
 			}
 			l.Print("stopped via exit action")
 			return
