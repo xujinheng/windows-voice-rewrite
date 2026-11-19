@@ -226,32 +226,22 @@ func (p *answerPopup) apply() {
 		p.canceled.Load() || !p.app.epoch.Valid(p.generation) {
 		return
 	}
-	var app *appState
-	var sel selectedText
-	var body string
-	var hwnd uintptr
-	busyTaken := p.app.busy.CompareAndSwap(false, true)
-	editorOpen := false
-	if busyTaken {
-		app = p.app
-		sel = *p.selection
-		body = p.body
-		hwnd = p.window
-		p.applyResult = make(chan error, 1)
-		p.setNote(ux.ApplyChecking)
-		valid, _, _ := procIsWindow.Call(sel.TargetWindow)
-		editorOpen = valid != 0
-	}
-	switch corepopup.ContinueApply(busyTaken, editorOpen) {
-	case corepopup.ApplyBusyNote:
+	if !p.app.busy.CompareAndSwap(false, true) {
 		p.setNote(ux.ApplyBusy)
 		return
-	case corepopup.ApplyEditorClosed:
+	}
+	app := p.app
+	sel := *p.selection
+	body := p.body
+	hwnd := p.window
+	p.applyResult = make(chan error, 1)
+	p.setNote(ux.ApplyChecking)
+	if valid, _, _ := procIsWindow.Call(sel.TargetWindow); valid == 0 {
 		p.applyResult <- errors.New(ux.ApplyWindowClosed)
-		procPostMessage.Call(app.Window, WM_APPLY_RESULT, 0, 0)
+		// The UI message loop accepts only the card that owns this result.
+		procPostMessage.Call(app.Window, WM_APPLY_RESULT, hwnd, 0)
 		app.busy.Store(false)
 		return
-	default:
 	}
 	procSetForegroundWindow.Call(sel.TargetWindow)
 	go func() {
