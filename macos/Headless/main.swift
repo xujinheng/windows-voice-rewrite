@@ -8,6 +8,20 @@ import Foundation
 // All transcription, intent and routing decisions call the linked Go Core.
 private enum Action { case dictation, rewrite }
 
+// The native AX range identifies which occurrence of repeated text was selected.
+// An editor exposing only AXSelectedText retains the existing text-only fallback.
+struct AXSelection {
+    let text: String
+    let range: CFRange?
+
+    func matches(_ current: AXSelection?) -> Bool {
+        guard let current, text == current.text else { return false }
+        guard let range else { return true }
+        guard let other = current.range else { return false }
+        return range.location == other.location && range.length == other.length
+    }
+}
+
 // Require stable native window and focused-element identities, not editor text.
 // Also check the window title when exposed to catch browser tab changes.
 struct FocusIdentity {
@@ -227,7 +241,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var taskID: UInt64 = 0
     private var targetPID: pid_t = 0
     private var targetFocus: FocusIdentity?
-    private var selected: String?
+    private var selected: AXSelection?
     private var pending = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -379,10 +393,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         targetFocus = FocusIdentity(window: window, element: element, title: windowTitle(window))
         selected = nil
         if action == .rewrite {
-            guard let text = selectionFromAX(), !text.isEmpty else {
+            guard let snapshot = selectionFromAX() else {
                 reset("Select text"); return
             }
-            selected = text
+            selected = snapshot
         }
         taskID = VREpochStart()
         do {
@@ -412,7 +426,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 let result = Result {
                     try GoCore.request(config: configValue,
                                       operation: action == .dictation ? "transcribe" : "selected_voice_task",
-                                      audio: pcm, selection: selectedValue, token: token)
+                                      audio: pcm, selection: selectedValue?.text, token: token)
                 }
                 DispatchQueue.main.async {
                     guard let self, VREpochValid(token) == 1 else { return }
@@ -438,7 +452,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                             title: currentWindow.flatMap(self.windowTitle)) else {
                             self.reset("Focus changed"); return
                         }
-                        if action == .rewrite && self.selectionFromAX() != selectedValue {
+                        if action == .rewrite && selectedValue?.matches(self.selectionFromAX()) != true {
                             self.reset("Selection changed"); return
                         }
                         self.paste(text)
@@ -471,29 +485,35 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         return value as? String
     }
 
-    private func selectionFromAX() -> String? {
+    private func selectionFromAX() -> AXSelection? {
         guard let focused = focusedElement() else { return nil }
         var value: CFTypeRef?
-        if AXUIElementCopyAttributeValue(focused, kAXSelectedTextAttribute as CFString,
-                                         &value) == .success, let text = value as? String {
-            return text
-        }
-        // Some editors only expose a selected range. Read that exact range,
-        // never the whole document or the clipboard, and fail closed if unsupported.
+        let status = AXUIElementCopyAttributeValue(focused, kAXSelectedTextAttribute as CFString, &value)
+        let direct = status == .success ? (value as? String).flatMap { $0.isEmpty ? nil : $0 } : nil
+        // Preserve direct text on editors without AX ranges. When a range
+        // exists, retain it so the same text at a different position is stale.
         var selectedRange: CFTypeRef?
         guard AXUIElementCopyAttributeValue(focused, kAXSelectedTextRangeAttribute as CFString,
                                             &selectedRange) == .success,
-              let selectedRange, CFGetTypeID(selectedRange) == AXValueGetTypeID() else { return nil }
+              let selectedRange, CFGetTypeID(selectedRange) == AXValueGetTypeID() else {
+            return direct.map { AXSelection(text: $0, range: nil) }
+        }
         let rangeValue = selectedRange as! AXValue
         var range = CFRange(location: 0, length: 0)
         guard AXValueGetType(rangeValue) == .cfRange,
               AXValueGetValue(rangeValue, .cfRange, &range),
-              range.location >= 0, range.length > 0 else { return nil }
+              range.location >= 0, range.length > 0 else {
+            return direct.map { AXSelection(text: $0, range: nil) }
+        }
+        if let direct { return AXSelection(text: direct, range: range) }
+        // SelectedText can be unavailable OR empty in editors that expose
+        // only a range. Ask for the exact range, never whole text or clipboard.
         var text: CFTypeRef?
         guard AXUIElementCopyParameterizedAttributeValue(
             focused, kAXStringForRangeParameterizedAttribute as CFString,
-            rangeValue, &text) == .success else { return nil }
-        return text as? String
+            rangeValue, &text) == .success, let string = text as? String,
+              !string.isEmpty else { return nil }
+        return AXSelection(text: string, range: range)
     }
 
     private func paste(_ text: String) {
@@ -583,7 +603,15 @@ MainActor.assumeIsolated {
     precondition(!focus.matches(window: otherWindow, element: editor, title: "Original tab"))
     precondition(!focus.matches(window: window, element: otherEditor, title: "Original tab"))
     precondition(!focus.matches(window: window, element: editor, title: "Switched tab"))
-    print("AX focus identity smoke passed")
+    let initial = AXSelection(text: "repeat", range: CFRange(location: 5, length: 6))
+    precondition(initial.matches(AXSelection(text: "repeat", range: CFRange(location: 5, length: 6))))
+    precondition(!initial.matches(AXSelection(text: "repeat", range: CFRange(location: 30, length: 6))))
+    precondition(!initial.matches(AXSelection(text: "repeat", range: nil)))
+    precondition(!initial.matches(AXSelection(text: "changed", range: CFRange(location: 5, length: 6))))
+    let textOnly = AXSelection(text: "repeat", range: nil)
+    precondition(textOnly.matches(AXSelection(text: "repeat", range: nil)))
+    precondition(!textOnly.matches(AXSelection(text: "changed", range: nil)))
+    print("AX focus and selection identity smoke passed")
 }
 #else
 MainActor.assumeIsolated {
