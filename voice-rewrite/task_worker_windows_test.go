@@ -8,7 +8,7 @@ func TestCanceledRewriteHoldReleasesBusy(t *testing.T) {
 	app := &appState{}
 	generation := app.epoch.Start()
 	app.busy.Store(true) // finish() marks post-record processing busy
-	app.epoch.Start()     // dismissing the active pill cancels that task
+	app.epoch.Start()    // dismissing the active pill cancels that task
 	rec := &audioRecorder{done: make(chan struct{})}
 
 	processRecordedHold(app, rec, 0, trayPoint{}, generation)
