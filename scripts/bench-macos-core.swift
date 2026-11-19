@@ -39,4 +39,4 @@ measure("clock") { i in
     checksum += Double(clock[0])
 }
 precondition(checksum.isFinite && checksum > 0)
-print("native Go ABI smoke passed; 70ms pill frame contains ~19 direct calls")
+print("native Go ABI smoke passed; 70ms recording frame uses at most 11 direct calls")

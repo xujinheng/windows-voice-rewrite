@@ -35,6 +35,9 @@ func TestSharedHostTimeouts(t *testing.T) {
 func TestInProcessRequestDeadlineCancelsASR(t *testing.T) {
 	seen := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Read the multipart upload before waiting. An unread HTTP request
+		// body can delay when the test server notices client disconnects.
+		_, _ = io.Copy(io.Discard, r.Body)
 		seen <- struct{}{}
 		select {
 		case <-r.Context().Done():
