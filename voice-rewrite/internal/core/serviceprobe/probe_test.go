@@ -79,13 +79,13 @@ func TestProbeASRSendsOnlySilentWAVThroughSharedSpeechCore(t *testing.T) {
 				}
 			}
 		}
-		if r.FormValue("model") != "whisper-1" {
+		if r.FormValue("model") != "qwen3-asr" {
 			t.Errorf("wrong model: %q", r.FormValue("model"))
 		}
 		w.WriteHeader(200)
 	}))
 	defer server.Close()
-	got := ProbeModel(context.Background(), "ASR", server.URL+"/v1", "", "whisper-1")
+	got := ProbeModel(context.Background(), "ASR", server.URL+"/v1", "", "qwen3-asr")
 	if !strings.Contains(got, "静音测试成功") {
 		t.Fatalf("got %q", got)
 	}
@@ -97,7 +97,7 @@ func TestProbeReportsInvalidURLAndContextCancellation(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if got := ProbeModel(ctx, "ASR", "http://127.0.0.1:1/v1", "", "whisper-1"); !strings.Contains(got, "超时") && !strings.Contains(got, "无法连接") {
+	if got := ProbeModel(ctx, "ASR", "http://127.0.0.1:1/v1", "", "qwen3-asr"); !strings.Contains(got, "超时") && !strings.Contains(got, "无法连接") {
 		t.Fatalf("cancel returned unexpected result: %q", got)
 	}
 }

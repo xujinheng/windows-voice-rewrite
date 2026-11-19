@@ -6,15 +6,17 @@ Standalone Windows x64 Go launcher/proxy for `llama-server`, providing Qwen3-ASR
 
 1. Download `Qwen3-ASR-OneClick-Windows-x64.exe` from the project's release/build.
 2. Place the EXE in a writable folder (for example, `D:\\ASR`) and double-click it.
-3. The launcher creates `Qwen3-ASR/` **beside the EXE**, downloads the Q8_0 GGUF and matching audio projector from **ModelScope (魔搭)**, then installs a pinned llama.cpp Windows release via mainland-friendly download mirrors. Both are verified against upstream SHA-256 digests.
+3. The launcher creates `Qwen3-ASR/` **beside the EXE**, downloads the Q8_0 main GGUF and **bf16 audio projector** from **ModelScope (魔搭)**, then installs a pinned llama.cpp Windows release via mainland-friendly download mirrors. Both are verified against upstream SHA-256 digests.
 4. It detects an NVIDIA CUDA GPU and tries the CUDA 12.4 backend; otherwise it installs the CPU backend. If the CUDA device check fails, it falls back to CPU.
 5. When the console prints `READY!`, leave it open. The ASR API is `http://127.0.0.1:8080/v1` by default, matching VoiceRewrite's default ASR endpoint; no manual endpoint change is needed. llama.cpp listens internally on `127.0.0.1:8082`.
+
+The API model ID is `qwen3-asr`, matching the Windows and macOS VoiceRewrite defaults; the loaded model is Qwen3-ASR-1.7B, not Whisper. Existing client configuration files that still specify `whisper-1` must change `asr_model` to `qwen3-asr` when switching to this launcher version.
 
 No Python, pip, Git, or manual model management is required. First setup needs internet and several gigabytes of free disk space. ModelScope hosts the weights and projector; the llama.cpp mirrors relay **official GitHub release archives**, so no direct access to GitHub or Hugging Face is required. Mirror availability varies by network.
 
 ### Idempotency and file layout
 
-- `Qwen3-ASR/models/`: model files, each re-checked against SHA-256 and downloaded only if missing or corrupt.
+- `Qwen3-ASR/models/`: `Qwen3-ASR-1.7B-Q8_0.gguf` and `mmproj-Qwen3-ASR-1.7B-bf16.gguf`, each re-checked against SHA-256 and downloaded only if missing or corrupt. An existing Q8_0 projector is not selected automatically.
 - `Qwen3-ASR/runtime/cuda/` or `Qwen3-ASR/runtime/cpu/`: pinned llama.cpp build with its DLL dependencies.
 - `Qwen3-ASR/downloads/`: resumable `.part` files and temporary verified archives; ZIP files are removed after successful installation.
 - `config.json`: created alongside the EXE on first launch. Existing explicit paths and externally managed llama-server setups remain supported.

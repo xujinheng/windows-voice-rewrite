@@ -206,7 +206,7 @@ func defaultConfig() config {
 	return config{
 		LlamaServerPath: "llama-server.exe",
 		ModelPath:       "Qwen3-ASR-1.7B-Q8_0.gguf",
-		MMProjPath:      "mmproj-Qwen3-ASR-1.7B-bf16.gguf",
+		MMProjPath:      asrProjectorFilename,
 		ListenAddress:   "127.0.0.1:8080",
 		BackendHost:     "127.0.0.1",
 		BackendPort:     8082,
@@ -296,10 +296,7 @@ func findModelPaths(directory string, opts *options) error {
 	}
 	if opts.mmprojPath == "" {
 		base := filepath.Dir(opts.modelPath)
-		opts.mmprojPath = firstExisting(
-			filepath.Join(base, "mmproj-Qwen3-ASR-1.7B-bf16.gguf"),
-			filepath.Join(base, "mmproj-Qwen3-ASR-1.7B-Q8_0.gguf"),
-		)
+		opts.mmprojPath = firstExisting(filepath.Join(base, asrProjectorFilename))
 	}
 	if opts.mmprojPath == "" {
 		return errors.New("audio encoder not configured: set mmproj_path in config.json")
@@ -312,7 +309,7 @@ func findModelPaths(directory string, opts *options) error {
 
 func llamaArgs(o options) []string {
 	return []string{"-m", o.modelPath, "--mmproj", o.mmprojPath,
-		"-ngl", fmt.Sprint(o.gpuLayers), "-c", fmt.Sprint(o.contextSize),
+		"--alias", "qwen3-asr", "-ngl", fmt.Sprint(o.gpuLayers), "-c", fmt.Sprint(o.contextSize),
 		"-np", "1", "--host", o.upstreamHost, "--port", fmt.Sprint(o.llamaPort)}
 }
 

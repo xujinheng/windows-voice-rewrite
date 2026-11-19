@@ -106,7 +106,7 @@ func Defaults() Config {
 		ASRBaseURL:             "http://127.0.0.1:8080/v1",
 		LLMBaseURL:             "http://127.0.0.1:1234/v1",
 		TextModel:              "auto",
-		ASRModel:               "whisper-1",
+		ASRModel:               "qwen3-asr",
 		AudioDeviceID:          -1,
 		HotkeyRecord:           "Mouse5",
 		DictationHotkey:        "Mouse4",

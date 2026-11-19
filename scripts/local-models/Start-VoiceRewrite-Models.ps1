@@ -19,7 +19,7 @@ foreach ($file in @($llamaServer, $asrModel, $asrMmproj, $llmModel)) {
 }
 
 # Qwen3-ASR endpoint: http://127.0.0.1:8080/v1
-$asrArgs = '-m "{0}" --mmproj "{1}" --host 127.0.0.1 --port 8080 -ngl 99 -c 8192 -np 1 --alias whisper-1 --no-webui' -f $asrModel, $asrMmproj
+$asrArgs = '-m "{0}" --mmproj "{1}" --host 127.0.0.1 --port 8080 -ngl 99 -c 8192 -np 1 --alias qwen3-asr --no-webui' -f $asrModel, $asrMmproj
 
 # Qwen3.5 endpoint: http://127.0.0.1:1234/v1
 # Adjust model parameters for the installed llama.cpp build and GPU.

@@ -21,7 +21,8 @@ import (
 const (
 	llamaRelease = "b12503"
 	asrModelSHA = "58e22d0532d4eacaf034cfac17a6fed159f37c41390c710186783be439d1fc57"
-	asrProjectorSHA = "46c1d533af3f354ceb37ce855dbceff7da7fa7cf1e6a523df3b13440bd164c0d"
+	asrProjectorFilename = "mmproj-Qwen3-ASR-1.7B-bf16.gguf"
+	asrProjectorSHA = "8882e9ddab3186f9aa71b1417c847177913e1466655ac944cf86e9b846735d62"
 	cpuZipSHA = "64bee9b6fece8e66c665c40290cbb84706af23c670041d024b56a71a39859d77"
 	cudaZipSHA = "9df9b6316051ce258debb234b3475762eecd8721e6bb41474f0743d54aad08aa"
 	cudaRuntimeZipSHA = "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6"
@@ -34,10 +35,12 @@ var bootstrapClient = &http.Client{Transport: &http.Transport{
 type downloadSpec struct { filename, sha string; urls []string }
 
 func modelDownload(filename, sha string) downloadSpec {
-	return downloadSpec{filename, sha, []string{
-		"https://modelscope.cn/api/v1/models/42ailab/Qwen3-ASR-1.7B-GGUF/repo?Revision=master&FilePath=" + filename,
-		"https://modelscope.cn/api/v1/models/ggml-org/Qwen3-ASR-1.7B-GGUF/repo?Revision=master&FilePath=" + filename,
-	}}
+	urls := []string{"https://modelscope.cn/api/v1/models/ggml-org/Qwen3-ASR-1.7B-GGUF/repo?Revision=master&FilePath=" + filename}
+	if filename != asrProjectorFilename {
+		// The 42ailab backup contains Q8_0 weights, but not the bf16 projector.
+		urls = append([]string{"https://modelscope.cn/api/v1/models/42ailab/Qwen3-ASR-1.7B-GGUF/repo?Revision=master&FilePath=" + filename}, urls...)
+	}
+	return downloadSpec{filename, sha, urls}
 }
 
 func releaseDownload(asset, sha string) downloadSpec {
@@ -226,12 +229,12 @@ func bootstrapWindows(cfg config, directory string) (config, error) {
 			cfg.ModelPath = dest
 		}
 	}
-	if cfg.MMProjPath == "mmproj-Qwen3-ASR-1.7B-bf16.gguf" || cfg.MMProjPath == "mmproj-Qwen3-ASR-1.7B-Q8_0.gguf" {
+	if cfg.MMProjPath == asrProjectorFilename {
 		existing := filepath.Join(directory, cfg.MMProjPath)
 		if stat, err := os.Stat(existing); err == nil && !stat.IsDir() {
 			cfg.MMProjPath = existing
 		} else {
-			spec := modelDownload("mmproj-Qwen3-ASR-1.7B-Q8_0.gguf", asrProjectorSHA)
+			spec := modelDownload(asrProjectorFilename, asrProjectorSHA)
 			dest := filepath.Join(root, "models", spec.filename)
 			if err := downloadVerified(context.Background(), dest, spec); err != nil { return cfg, err }
 			cfg.MMProjPath = dest

@@ -55,7 +55,7 @@ func TestActualASRProbeUsesAudioTranscription(t *testing.T) {
 				w.WriteHeader(tc.status)
 			}))
 			defer server.Close()
-			got := serviceprobe.ProbeModel(context.Background(), "ASR", server.URL+"/v1", "testkey", "whisper-1")
+			got := serviceprobe.ProbeModel(context.Background(), "ASR", server.URL+"/v1", "testkey", "qwen3-asr")
 			if !strings.Contains(got, tc.want) {
 				t.Fatalf("status=%d: %s", tc.status, got)
 			}
