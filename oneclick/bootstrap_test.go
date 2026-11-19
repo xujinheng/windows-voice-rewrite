@@ -83,6 +83,48 @@ func TestBootstrapZipSlip(t *testing.T) {
 	if locateServer(filepath.Join(dir,"out"))==""{t.Fatal("missing server after extraction")}
 }
 
+func TestBootstrapProjectorUsesBF16(t *testing.T) {
+	if got := defaultConfig().MMProjPath; got != asrProjectorFilename {
+		t.Fatalf("default mmproj = %q, want %q", got, asrProjectorFilename)
+	}
+	if asrProjectorSHA != "8882e9ddab3186f9aa71b1417c847177913e1466655ac944cf86e9b846735d62" {
+		t.Fatal("bf16 projector must use the upstream SHA-256 checksum")
+	}
+	spec := modelDownload(asrProjectorFilename, asrProjectorSHA)
+	if spec.filename != asrProjectorFilename || spec.sha != asrProjectorSHA || len(spec.urls) == 0 {
+		t.Fatalf("wrong bf16 projector download: %+v", spec)
+	}
+	for _, source := range spec.urls {
+		if strings.Contains(source, "/42ailab/") || !strings.Contains(source, "FilePath="+asrProjectorFilename) {
+			t.Fatalf("bf16 projector must come from a source with that file: %s", source)
+		}
+	}
+}
+
+func TestFindModelPathsDoesNotFallBackToQ8Projector(t *testing.T) {
+	dir := t.TempDir()
+	model := filepath.Join(dir, "Qwen3-ASR-1.7B-Q8_0.gguf")
+	if err := os.WriteFile(model, []byte("test"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	q8 := filepath.Join(dir, "mmproj-Qwen3-ASR-1.7B-Q8_0.gguf")
+	if err := os.WriteFile(q8, []byte("test"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	opts := options{modelPath: model}
+	if err := findModelPaths(dir, &opts); err == nil {
+		t.Fatal("selected the obsolete Q8 projector instead of requiring bf16")
+	}
+	bf16 := filepath.Join(dir, asrProjectorFilename)
+	if err := os.WriteFile(bf16, []byte("test"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	opts.mmprojPath = ""
+	if err := findModelPaths(dir, &opts); err != nil || opts.mmprojPath != bf16 {
+		t.Fatalf("bf16 projector not selected: path=%q err=%v", opts.mmprojPath, err)
+	}
+}
+
 func TestBootstrapDomesticSources(t *testing.T) {
 	for _,u:=range modelDownload("model.gguf","sha").urls{
 		if !strings.HasPrefix(u,"https://modelscope.cn/"){t.Fatal(u)}
