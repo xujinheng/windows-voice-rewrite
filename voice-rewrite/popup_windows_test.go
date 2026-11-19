@@ -75,10 +75,7 @@ func TestClosedEditorApplyPostsCardIdentity(t *testing.T) {
 	app := &appState{Window: hwnd}
 	generation := app.epoch.Start()
 	defer app.epoch.Shutdown()
-	card := &answerPopup{
-		app: app, window: hwnd, generation: generation,
-		allowApply: true, selection: &selectedText{TargetWindow: 0},
-	}
+	card := &answerPopup{app: app, window: hwnd, generation: generation, allowApply: true, selection: &selectedText{}}
 	card.apply()
 	if app.busy.Load() {
 		t.Fatal("closed editor retained the apply busy lease")
