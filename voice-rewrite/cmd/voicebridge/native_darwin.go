@@ -66,7 +66,8 @@ func VRActivate(code C.int, token C.ulonglong) C.int {
 //export VRRelease
 func VRRelease(code C.int) C.int {
 	held, active := nativeHold(int(code)).Release()
-	if nativeKey == int(code) {
+	primary := nativeKey == int(code)
+	if primary {
 		nativeKey = 0
 	}
 	if !held {
@@ -75,7 +76,10 @@ func VRRelease(code C.int) C.int {
 	if active {
 		return 2
 	}
-	return 1 // ordinary short click, if this was a mouse button
+	if primary {
+		return 3 // released an armed shortcut before its activation timer
+	}
+	return 1 // an unrelated side button should still navigate
 }
 
 //export VRAbandon

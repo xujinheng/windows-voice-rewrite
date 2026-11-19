@@ -5,7 +5,7 @@ import CoreGraphics
 import Foundation
 
 // Native boundaries only: device input, microphone, menu bar and OS text delivery.
-// All transcription, prompt/intent and routing decisions live in voicebridge (Go).
+// All transcription, intent and routing decisions call the linked Go Core.
 private enum Action { case dictation, rewrite }
 private enum HostError: Error {
     case config(String), microphone(String), conversion, bridge(String)
@@ -276,7 +276,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             if type == .flagsChanged {
                 app.handleModifier(code: code, flags: event.flags)
             } else if type == .keyDown {
-                if VRArmed() != 0 && !app.microphone.running { VRAbandon() }
+                if VRArmed() != 0 && !app.microphone.running {
+                    VRAbandon()
+                    app.activeAction = nil
+                }
             } else if type == .otherMouseDown || type == .otherMouseUp {
                 if event.getIntegerValueField(.eventSourceUserData) == 0x56525842 {
                     return Unmanaged.passUnretained(event)
@@ -334,8 +337,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         } else {
             let outcome = VRRelease(key)
             if outcome == 2 && microphone.running { finish() }
-            else if outcome != 0 { activeAction = nil }
-            if outcome == 1, let cursor { replayClick(button: code - 100, cursor: cursor) }
+            else if outcome == 2 || outcome == 3 { activeAction = nil }
+            if (outcome == 1 || outcome == 3), let cursor {
+                replayClick(button: code - 100, cursor: cursor)
+            }
         }
     }
     private func replayClick(button: Int64, cursor: CGPoint) {
