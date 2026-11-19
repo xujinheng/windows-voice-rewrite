@@ -54,20 +54,6 @@ const (
 	MouseExitPrefix         = "mouse button "
 )
 
-// FixedMessage reports a shortcut sentence a host can show unchanged.
-func FixedMessage(message string) bool {
-	switch message {
-	case KeyRejectedMessage, WindowsComboMessage, BareKeyMessage, ShiftLetterMessage,
-		EmptyShortcutMessage, CtrlRepeatMessage, AltRepeatMessage, ShiftRepeatMessage,
-		PauseReleaseMessage, DictationInvalidMessage, SameMouseMessage, DictationHoldMessage,
-		MouseHoldMessage, PauseHoldMessage, RecordExitDifferMessage:
-		return true
-	}
-	return strings.HasPrefix(message, UnknownModifierPrefix) ||
-		strings.HasSuffix(message, ShortcutCollisionSuffix) ||
-		strings.HasPrefix(message, MouseExitPrefix)
-}
-
 var namedKeys = map[string]uint32{
 	"SPACE": 0x20, "TAB": 0x09, "ENTER": 0x0D,
 	"LEFT": 0x25, "UP": 0x26, "RIGHT": 0x27, "DOWN": 0x28,

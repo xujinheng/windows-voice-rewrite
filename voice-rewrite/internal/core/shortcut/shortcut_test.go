@@ -145,20 +145,6 @@ func TestBindingReportsKeyAndModifiers(t *testing.T) {
 	}
 }
 
-func TestFixedMessageMatchesParserErrors(t *testing.T) {
-	_, _, _, _, err := Parse("Win+P")
-	if err == nil || !FixedMessage(err.Error()) {
-		t.Fatalf("modifier: %v", err)
-	}
-	_, err = ValidateDictation("F8", "F8", "Ctrl+Alt+F10")
-	if err == nil || !FixedMessage(err.Error()) {
-		t.Fatalf("collision: %v", err)
-	}
-	if FixedMessage("Helper 未运行") {
-		t.Fatal("transport text treated as a shortcut sentence")
-	}
-}
-
 func TestCaptureKeyIgnoresModifiersAndWindowsKey(t *testing.T) {
 	if _, err := CaptureKey(0x11, Ctrl, false); !errors.Is(err, ErrSkipCapture) {
 		t.Fatal("ctrl alone")
