@@ -5,6 +5,11 @@ MainActor.assumeIsolated {
     let otherWindow = AXUIElementCreateApplication(90002)
     let editor = AXUIElementCreateApplication(90003)
     let otherEditor = AXUIElementCreateApplication(90004)
+    // AX focused elements have an owning PID; never accept another app's
+    // selected text even when the system-wide focus changes mid-capture.
+    var owner: pid_t = 0
+    precondition(AXUIElementGetPid(editor, &owner) == .success && owner == 90003)
+    precondition(AXUIElementGetPid(otherEditor, &owner) == .success && owner != 90003)
     let focus = FocusIdentity(window: window, element: editor, title: "Original tab")
     precondition(focus.matches(window: window, element: editor, title: "Original tab"))
     precondition(!focus.matches(window: nil, element: editor, title: "Original tab"))

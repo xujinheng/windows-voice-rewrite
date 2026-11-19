@@ -487,7 +487,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(),
                 kAXFocusedUIElementAttribute as CFString, &value) == .success, let value,
               CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        return (value as! AXUIElement)
+        let element = value as! AXUIElement
+        var owner: pid_t = 0
+        // System-wide AX focus can belong to an app that became active
+        // after capture began. Never read its selection for another task.
+        guard AXUIElementGetPid(element, &owner) == .success, owner == targetPID else { return nil }
+        return element
     }
 
     private func windowTitle(_ window: AXUIElement) -> String? {
