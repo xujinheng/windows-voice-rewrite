@@ -21,7 +21,7 @@ func TestDictationTranscribesWithoutLLM(t *testing.T) {
 		if err := r.ParseMultipartForm(1 << 20); err != nil {
 			t.Errorf("multipart: %v", err)
 		}
-		if r.FormValue("model") != "whisper-1" {
+		if r.FormValue("model") != "qwen3-asr" {
 			t.Errorf("model=%s", r.FormValue("model"))
 		}
 		w.Header().Set("Content-Type", "application/json")
