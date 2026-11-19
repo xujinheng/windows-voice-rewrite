@@ -538,7 +538,8 @@ func runApp() {
 	}
 
 	startHold := func(dictation bool, button uint16) {
-		if input.VoiceStartBlocked(app.paused.Load(), app.busy.Load(), active != nil, pendingSide != nil, uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window)) {
+		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil ||
+			uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
 			return
 		}
 		win, _, _ := procGetForegroundWindow.Call()
@@ -555,7 +556,8 @@ func runApp() {
 	}
 
 	armSide := func(button uint16) {
-		if input.VoiceStartBlocked(app.paused.Load(), app.busy.Load(), active != nil, pendingSide != nil, input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "ignore") {
+		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil ||
+			input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "ignore" {
 			return
 		}
 		if uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
