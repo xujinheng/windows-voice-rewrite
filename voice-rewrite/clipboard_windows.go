@@ -63,24 +63,24 @@ func openClipboard(hwnd uintptr) error {
 	}
 	return errors.New(clipboard.OpenFailed)
 }
-func getClipboardText(hwnd uintptr) (string, bool, error) {
+func getClipboardText(hwnd uintptr) (string, bool, uintptr, error) {
 	if e := openClipboard(hwnd); e != nil {
-		return "", false, e
+		return "", false, 0, e
 	}
 	defer procCloseClipboard.Call()
 	h, _, _ := procGetClipboardData.Call(CF_UNICODETEXT)
 	if h == 0 {
-		return "", false, nil
+		return "", false, 0, nil
 	}
 	p, _, _ := procGlobalLock.Call(h)
 	if p == 0 {
-		return "", false, errors.New(clipboard.ReadFailed)
+		return "", false, 0, errors.New(clipboard.ReadFailed)
 	}
 	defer procGlobalUnlock.Call(h)
 	// Limit reads to the actual allocation instead of assuming a huge buffer.
 	allocationSize, _, _ := procGlobalSize.Call(h)
 	if !clipboard.TextBlockReadable(allocationSize) {
-		return "", false, errors.New(clipboard.TextLengthRejected)
+		return "", false, 0, errors.New(clipboard.TextLengthRejected)
 	}
 	data := unsafe.Slice((*uint16)(unsafe.Pointer(p)), int(allocationSize/2))
 	n := 0
@@ -88,14 +88,17 @@ func getClipboardText(hwnd uintptr) (string, bool, error) {
 		n++
 	}
 	if !clipboard.TextTerminated(n, len(data)) {
-		return "", false, errors.New(clipboard.TextLengthRejected)
+		return "", false, 0, errors.New(clipboard.TextLengthRejected)
 	}
 	text := string(utf16.Decode(data[:n]))
-	return text, true, nil
+	return text, true, clipboardSeq(), nil
 }
-func setClipboardText(hwnd uintptr, s string) error {
+
+// Return the sequence while the clipboard is still open. A later external
+// copy must never become the sequence our snapshot claims to own.
+func setClipboardText(hwnd uintptr, s string) (uintptr, error) {
 	if e := openClipboard(hwnd); e != nil {
-		return e
+		return 0, e
 	}
 	defer procCloseClipboard.Call()
 	chars := utf16.Encode([]rune(s))
@@ -103,45 +106,45 @@ func setClipboardText(hwnd uintptr, s string) error {
 	size := uintptr(len(chars) * 2)
 	h, _, _ := procGlobalAlloc.Call(GMEM_MOVEABLE, size)
 	if h == 0 {
-		return errors.New(clipboard.AllocFailed)
+		return 0, errors.New(clipboard.AllocFailed)
 	}
 	p, _, _ := procGlobalLock.Call(h)
 	if p == 0 {
 		procGlobalFree.Call(h)
-		return errors.New(clipboard.LockFailed)
+		return 0, errors.New(clipboard.LockFailed)
 	}
 	copy(unsafe.Slice((*uint16)(unsafe.Pointer(p)), len(chars)), chars)
 	procGlobalUnlock.Call(h)
 	if ok, _, _ := procEmptyClipboard.Call(); ok == 0 {
 		procGlobalFree.Call(h)
-		return errors.New(clipboard.EmptyFailed)
+		return 0, errors.New(clipboard.EmptyFailed)
 	}
 	if out, _, _ := procSetClipboardData.Call(CF_UNICODETEXT, h); out == 0 {
 		procGlobalFree.Call(h)
-		return errors.New(clipboard.WriteFailed)
+		return 0, errors.New(clipboard.WriteFailed)
 	}
-	return nil
+	return clipboardSeq(), nil
 }
 
-func clipboardCopy(hwnd uintptr, timeout time.Duration) (string, error) {
+func clipboardCopy(hwnd uintptr, timeout time.Duration) (string, uintptr, error) {
 	old := clipboardSeq()
 	if err := sendCombo('C'); err != nil {
-		return "", err
+		return "", 0, err
 	}
 	deadline := time.Now().Add(timeout)
 	changed := false
 	for time.Now().Before(deadline) {
 		if clipboardSeq() != old {
 			changed = true
-			s, ok, e := getClipboardText(hwnd)
+			s, ok, sequence, e := getClipboardText(hwnd)
 			if clipboard.SelectionReadable(e, ok, s) {
-				return s, nil
+				return s, sequence, nil
 			}
 		}
 		time.Sleep(clipboard.CopyPoll)
 	}
 	// Do not use the clipboard's previous content as a supposed selection.
-	return "", clipboard.CopyPollMissed(changed)
+	return "", 0, clipboard.CopyPollMissed(changed)
 }
 func isSameForegroundWindow(target uintptr) bool {
 	if target == 0 {
@@ -178,33 +181,33 @@ func waitCopyModifiersReleased(timeout time.Duration) bool {
 	}
 }
 
-func copySelectionWithRetry(hwnd, target uintptr, cfg Config) (string, error) {
+func copySelectionWithRetry(hwnd, target uintptr, cfg Config) (string, uintptr, error) {
 	time.Sleep(clipboard.CopySettle) // Let mouse key-up and selection settle.
 	if !waitCopyModifiersReleased(clipboard.CopyModifierWait) {
-		return "", errors.New(clipboard.CopyModifiersHeld)
+		return "", 0, errors.New(clipboard.CopyModifiersHeld)
 	}
 	var lastErr error
 	for i := 0; i < cfg.SelectionCopyAttempts; i++ {
 		if err := clipboard.CopyWindowReady(isSameForegroundWindow(target), false); err != nil {
-			return "", err
+			return "", 0, err
 		}
 		// Two-attempt default: retry an ignored Ctrl+C sooner, reserving
 		// the remaining budget for a slow clipboard response. No extra
 		// delay on successful copies and no longer overall timeout.
 		timeout := clipboard.AttemptTimeout(time.Duration(cfg.SelectionCopyTimeoutMS)*time.Millisecond, i, cfg.SelectionCopyAttempts)
-		text, err := clipboardCopy(hwnd, timeout)
+		text, sequence, err := clipboardCopy(hwnd, timeout)
 		if windowErr := clipboard.CopyWindowReady(isSameForegroundWindow(target), true); windowErr != nil {
-			return "", windowErr
+			return "", 0, windowErr
 		}
 		if clipboard.SelectionReadable(err, true, text) {
-			return text, nil
+			return text, sequence, nil
 		}
 		lastErr = err
 		if i+1 < cfg.SelectionCopyAttempts {
 			time.Sleep(clipboard.CopyRetryPause(i))
 		}
 	}
-	return "", fmt.Errorf("复制选中文字失败（已尝试 %d 次）：%w", cfg.SelectionCopyAttempts, lastErr)
+	return "", 0, fmt.Errorf("复制选中文字失败（已尝试 %d 次）：%w", cfg.SelectionCopyAttempts, lastErr)
 }
 
 func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
@@ -221,11 +224,13 @@ func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 		return sel, err
 	}
 	sel.ClipboardBackup = backup
-	text, err := copySelectionWithRetry(hwnd, sel.TargetWindow, cfg)
-	backup.markOwned(clipboardSeq())
+	text, sequence, err := copySelectionWithRetry(hwnd, sel.TargetWindow, cfg)
 	if err != nil {
+		// Failed selection capture cannot prove that the latest clipboard
+		// update came from our Ctrl+C, rather than another application.
 		return sel, err
 	}
+	backup.markOwned(sequence)
 	sel.Text = text
 	return sel, nil
 }
@@ -260,10 +265,15 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 	// Recheck foreground and selection before mutating the editor. Each Ctrl+C
 	// changes the clipboard; track its sequence as part of our own operation.
 	beforeCopy := clipboardSeq()
-	actual, err := copySelectionWithRetry(hwnd, sel.TargetWindow, cfg)
-	afterCopy := clipboardSeq()
-	if afterCopy != beforeCopy {
-		backup.markOwned(afterCopy)
+	actual, copiedSequence, err := copySelectionWithRetry(hwnd, sel.TargetWindow, cfg)
+	if err == nil {
+		if copiedSequence != beforeCopy {
+			backup.markOwned(copiedSequence)
+		}
+	} else if clipboardSeq() != beforeCopy {
+		// After a failed Ctrl+C, the latest sequence may belong to another
+		// process. Preserve it instead of restoring our old snapshot over it.
+		backup.abandon()
 	}
 	if err = ux.ReplaceSelectionStillThere(err, actual, sel.Text); err != nil {
 		return err
@@ -271,10 +281,11 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 	if !taskValid() || !isSameForegroundWindow(sel.TargetWindow) {
 		return errors.New(ux.ReplaceBeforePaste)
 	}
-	if err := setClipboardText(hwnd, replacement); err != nil {
+	sequence, err := setClipboardText(hwnd, replacement)
+	if err != nil {
 		return err
 	}
-	backup.markOwned(clipboardSeq())
+	backup.markOwned(sequence)
 	if !taskValid() || !isSameForegroundWindow(sel.TargetWindow) {
 		return errors.New(ux.ReplacePasteStopped)
 	}
@@ -287,15 +298,14 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 			return errors.New(ux.ReplaceWindowAfterPaste)
 		}
 		beforeProbe := clipboardSeq()
-		stillSelected, verifyErr := clipboardCopy(hwnd, 470*time.Millisecond)
-		afterProbe := clipboardSeq()
-		if afterProbe != beforeProbe {
-			if verifyErr == nil {
-				backup.markOwned(afterProbe)
-			} else {
-				// Clipboard ownership is uncertain: don't overwrite an external edit.
-				backup.abandon()
+		stillSelected, probedSequence, verifyErr := clipboardCopy(hwnd, 470*time.Millisecond)
+		if verifyErr == nil {
+			if probedSequence != beforeProbe {
+				backup.markOwned(probedSequence)
 			}
+		} else if clipboardSeq() != beforeProbe {
+			// An unsuccessful probe cannot claim the latest clipboard update.
+			backup.abandon()
 		}
 		if err = ux.ReplacePasteKeptSelection(verifyErr, stillSelected, sel.Text); err != nil {
 			return err

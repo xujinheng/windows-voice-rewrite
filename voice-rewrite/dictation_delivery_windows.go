@@ -25,10 +25,11 @@ func insertDictationText(hwnd, target uintptr, text string, valid func() bool) e
 		// file, or an application's private object merely to paste text.
 		return sendUnicodeText(text, func() bool { return valid() && isSameForegroundWindow(target) })
 	}
-	if err = setClipboardText(hwnd, text); err != nil {
+	sequence, err := setClipboardText(hwnd, text)
+	if err != nil {
 		return err
 	}
-	backup.markOwned(clipboardSeq())
+	backup.markOwned(sequence)
 	defer backup.restoreIfOwned(hwnd)
 	if !windowOK() {
 		return errors.New(ux.DictationWindowChanged)
