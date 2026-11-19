@@ -48,7 +48,7 @@ func VRDown(code C.int) C.int {
 func VRPress(code C.int, busy C.int) C.ulonglong {
 	h := nativeHold(int(code))
 	token, ok := h.Press()
-	if !ok || nativeKey != 0 || input.VoiceStartBlocked(false, busy != 0, false, false, false) {
+	if !ok || nativeKey != 0 || busy != 0 {
 		return 0
 	}
 	nativeKey = int(code)
