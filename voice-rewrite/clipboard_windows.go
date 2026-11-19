@@ -61,7 +61,7 @@ func openClipboard(hwnd uintptr) error {
 		}
 		time.Sleep(clipboard.OpenPause)
 	}
-	return clipboard.OpenError()
+	return errors.New(clipboard.OpenFailed)
 }
 func getClipboardText(hwnd uintptr) (string, bool, error) {
 	if e := openClipboard(hwnd); e != nil {
@@ -74,13 +74,13 @@ func getClipboardText(hwnd uintptr) (string, bool, error) {
 	}
 	p, _, _ := procGlobalLock.Call(h)
 	if p == 0 {
-		return "", false, clipboard.ReadError()
+		return "", false, errors.New(clipboard.ReadFailed)
 	}
 	defer procGlobalUnlock.Call(h)
 	// Limit reads to the actual allocation instead of assuming a huge buffer.
 	allocationSize, _, _ := procGlobalSize.Call(h)
 	if !clipboard.TextBlockReadable(allocationSize) {
-		return "", false, clipboard.TextLengthError()
+		return "", false, errors.New(clipboard.TextLengthRejected)
 	}
 	data := unsafe.Slice((*uint16)(unsafe.Pointer(p)), int(allocationSize/2))
 	n := 0
@@ -88,7 +88,7 @@ func getClipboardText(hwnd uintptr) (string, bool, error) {
 		n++
 	}
 	if !clipboard.TextTerminated(n, len(data)) {
-		return "", false, clipboard.TextLengthError()
+		return "", false, errors.New(clipboard.TextLengthRejected)
 	}
 	text := string(utf16.Decode(data[:n]))
 	return text, true, nil
@@ -103,22 +103,22 @@ func setClipboardText(hwnd uintptr, s string) error {
 	size := uintptr(len(chars) * 2)
 	h, _, _ := procGlobalAlloc.Call(GMEM_MOVEABLE, size)
 	if h == 0 {
-		return clipboard.AllocError()
+		return errors.New(clipboard.AllocFailed)
 	}
 	p, _, _ := procGlobalLock.Call(h)
 	if p == 0 {
 		procGlobalFree.Call(h)
-		return clipboard.LockError()
+		return errors.New(clipboard.LockFailed)
 	}
 	copy(unsafe.Slice((*uint16)(unsafe.Pointer(p)), len(chars)), chars)
 	procGlobalUnlock.Call(h)
 	if ok, _, _ := procEmptyClipboard.Call(); ok == 0 {
 		procGlobalFree.Call(h)
-		return clipboard.EmptyError()
+		return errors.New(clipboard.EmptyFailed)
 	}
 	if out, _, _ := procSetClipboardData.Call(CF_UNICODETEXT, h); out == 0 {
 		procGlobalFree.Call(h)
-		return clipboard.WriteError()
+		return errors.New(clipboard.WriteFailed)
 	}
 	return nil
 }
