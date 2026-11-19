@@ -1001,6 +1001,9 @@ func runApp() {
 				}
 				toggleResult <- togglePrepareResult{rec: rec, sel: sel, generation: generation}
 				if ok, _, _ := procPostMessage.Call(hwnd, WM_TOGGLE_READY, 0, 0); ok == 0 {
+					// The UI never received the ready notification. Withdraw the
+					// buffered result so a later toggle cannot block on a full channel.
+					<-toggleResult
 					finishTogglePrepare(app, hwnd, sel, rec, input.ToggleNotifyMissed, errors.New(input.ToggleUINotifyFailed))
 				}
 			}()
