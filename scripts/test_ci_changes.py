@@ -28,6 +28,13 @@ class ClassifyTests(unittest.TestCase):
             "core": True, "macos": True, "windows": False,
             "oneclick": False, "ui": False, "direct2d": False})
 
+    def test_shared_asrtext_rebuilds_oneclick_too(self):
+        selected = classify(["voice-rewrite/asrtext/clean.go"])
+        self.assertEqual(selected, {
+            "core": True, "macos": True, "windows": True, "oneclick": True,
+            "ui": False, "direct2d": False,
+        })
+
     def test_oneclick(self):
         self.assertEqual(classify(["oneclick/main.go"]), {
             "core": False, "macos": False, "windows": False, "oneclick": True, "ui": False, "direct2d": False})

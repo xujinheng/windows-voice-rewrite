@@ -47,7 +47,10 @@ def classify(paths):
                 or path.startswith("scripts/test_ci_")):
             return dict.fromkeys(scope, True)
         if path.startswith("voice-rewrite/"):
-            if path.startswith("voice-rewrite/cmd/voicebridge/"):
+            if path.startswith("voice-rewrite/asrtext/"):
+                # OneClick imports this shared package through its local module replacement.
+                scope.update(core=True, macos=True, windows=True, oneclick=True)
+            elif path.startswith("voice-rewrite/cmd/voicebridge/"):
                 scope.update(core=True, macos=True)
             elif path.startswith("voice-rewrite/internal/core/meeting/"):
                 # Headless macOS does not link Meeting.
