@@ -127,7 +127,7 @@ func TestConfigAndPaths(t *testing.T) {
 
 func TestLlamaArgs(t *testing.T) {
 	args := llamaArgs(options{modelPath: "model.gguf", mmprojPath: "mmproj.gguf", gpuLayers: 99, contextSize: 8192, upstreamHost: "127.0.0.1", llamaPort: 8080})
-	if strings.Join(args, " ") != "-m model.gguf --mmproj mmproj.gguf -ngl 99 -c 8192 -np 1 --host 127.0.0.1 --port 8080" {
+	if strings.Join(args, " ") != "-m model.gguf --mmproj mmproj.gguf --alias whisper-1 -ngl 99 -c 8192 -np 1 --host 127.0.0.1 --port 8080" {
 		t.Fatalf("args mismatch %q", args)
 	}
 }
