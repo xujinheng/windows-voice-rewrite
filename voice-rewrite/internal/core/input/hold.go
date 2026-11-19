@@ -10,34 +10,6 @@ const (
 	ToggleUINotifyFailed = "无法通知 UI 线程准备录音"
 )
 
-// SideConfirmResult is what a side-button hold does when the button comes up into a voice hold.
-type SideConfirmResult int
-
-const (
-	// SideConfirmIgnore leaves another button's preview alone.
-	SideConfirmIgnore SideConfirmResult = iota
-	// SideConfirmDiscard stops a hold that is no longer ready.
-	SideConfirmDiscard
-	// SideConfirmReport closes the preview and shows the microphone error. It does not activate.
-	SideConfirmReport
-	// SideConfirmActivate starts the voice hold.
-	SideConfirmActivate
-)
-
-// SideConfirm chooses that result. A hold that is not ready is discarded even when the microphone also failed.
-func SideConfirm(hasPending, sameButton, ready, recorderFailed bool) SideConfirmResult {
-	if !hasPending || !sameButton {
-		return SideConfirmIgnore
-	}
-	if !ready {
-		return SideConfirmDiscard
-	}
-	if recorderFailed {
-		return SideConfirmReport
-	}
-	return SideConfirmActivate
-}
-
 // HoldModeLabel is the recording pill. Meeting dictation and meeting rewrite stay distinct.
 func HoldModeLabel(dictation, meeting bool) string {
 	switch {

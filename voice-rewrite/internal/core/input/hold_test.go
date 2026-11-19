@@ -6,15 +6,6 @@ import (
 )
 
 func TestVoiceStartKeepsSideAndKeyboardWindowsApart(t *testing.T) {
-	if SideConfirm(false, true, true, true) != SideConfirmIgnore || SideConfirm(true, false, true, true) != SideConfirmIgnore {
-		t.Fatal("ignore other button")
-	}
-	if SideConfirm(true, true, false, true) != SideConfirmDiscard {
-		t.Fatal("discard before the microphone error")
-	}
-	if SideConfirm(true, true, true, true) != SideConfirmReport || SideConfirm(true, true, true, false) != SideConfirmActivate {
-		t.Fatal("ready hold")
-	}
 	if SettingsMouseCapture(3, 3, 1) != "Mouse4" || SettingsMouseCapture(3, 3, 2) != "Mouse5" || SettingsMouseCapture(3, 3, 0) != "" || SettingsMouseCapture(3, 4, 1) != "" || SettingsMouseCapture(0, 0, 1) != "Mouse4" {
 		t.Fatal("mouse capture")
 	}
