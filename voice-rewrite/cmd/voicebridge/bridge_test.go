@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/jsonl"
 	"voicerewrite/internal/core/ux"
 )
@@ -24,6 +25,24 @@ func TestSharedHostTimeouts(t *testing.T) {
 	limits := defaultOptions()
 	if limits.TranscribeTimeout != 220*time.Second || limits.SpokenSelectedTimeout != 240*time.Second {
 		t.Fatalf("unexpected shared timeouts: %+v", limits)
+	}
+}
+
+
+func TestNativePCMUsesIdenticalGoValidation(t *testing.T) {
+	cfg := coreconfig.Config{MaxRecordSeconds: 30}
+	audio := make([]byte, 3200) // 100ms exactly, valid on both paths
+	raw, nativeReason := decodeRequestPCM(request{NativePCM: audio}, cfg)
+	encoded, jsonReason := decodeRequestPCM(request{PCMBase64: base64.StdEncoding.EncodeToString(audio)}, cfg)
+	if nativeReason != "" || jsonReason != "" || !bytes.Equal(raw, encoded) {
+		t.Fatalf("native and JSONL capture paths differ: native=%q JSON=%q", nativeReason, jsonReason)
+	}
+	for _, size := range []int{0, 1, 3198, 3201, 30*32000 + 2} {
+		pcm := make([]byte, size)
+		_, reason := decodeRequestPCM(request{NativePCM: pcm}, cfg)
+		if reason == "" {
+			t.Errorf("accepted invalid native PCM size %d", size)
+		}
 	}
 }
 
