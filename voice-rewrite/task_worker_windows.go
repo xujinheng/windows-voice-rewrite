@@ -157,7 +157,6 @@ func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintp
 	started := time.Now()
 	if !app.epoch.Valid(generation) {
 		rec.Stop()
-		go func() { <-rec.result }()
 		return
 	}
 	defer app.busy.Store(false)
@@ -169,7 +168,6 @@ func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintp
 	}()
 	if !isSameForegroundWindow(expectedWindow) {
 		rec.Stop()
-		go func() { <-rec.result }()
 		app.fail(errors.New(ux.HoldWindowChanged))
 		return
 	}
@@ -184,7 +182,6 @@ func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintp
 		err = textedit.SelectedLengthError(app.cfg.MaxSelectedRunes, sel.Text)
 	}
 	if err != nil {
-		go func() { <-rec.result }()
 		app.fail(err)
 		return
 	}
