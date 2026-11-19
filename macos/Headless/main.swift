@@ -474,9 +474,26 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func selectionFromAX() -> String? {
         guard let focused = focusedElement() else { return nil }
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(focused, kAXSelectedTextAttribute as CFString,
-                                            &value) == .success else { return nil }
-        return value as? String
+        if AXUIElementCopyAttributeValue(focused, kAXSelectedTextAttribute as CFString,
+                                         &value) == .success, let text = value as? String {
+            return text
+        }
+        // Some editors only expose a selected range. Read that exact range,
+        // never the whole document or the clipboard, and fail closed if unsupported.
+        var selectedRange: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(focused, kAXSelectedTextRangeAttribute as CFString,
+                                            &selectedRange) == .success,
+              let selectedRange, CFGetTypeID(selectedRange) == AXValueGetTypeID() else { return nil }
+        let rangeValue = selectedRange as! AXValue
+        var range = CFRange(location: 0, length: 0)
+        guard AXValueGetType(rangeValue) == .cfRange,
+              AXValueGetValue(rangeValue, .cfRange, &range),
+              range.location >= 0, range.length > 0 else { return nil }
+        var text: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(
+            focused, kAXStringForRangeParameterizedAttribute as CFString,
+            rangeValue, &text) == .success else { return nil }
+        return text as? String
     }
 
     private func paste(_ text: String) {
