@@ -10,6 +10,8 @@ Standalone Windows x64 Go launcher/proxy for `llama-server`, providing Qwen3-ASR
 4. It detects an NVIDIA CUDA GPU and tries the CUDA 12.4 backend; otherwise it installs the CPU backend. If the CUDA device check fails, it falls back to CPU.
 5. When the console prints `READY!`, leave it open. The ASR API is `http://127.0.0.1:8080/v1` by default, matching VoiceRewrite's default ASR endpoint; no manual endpoint change is needed. llama.cpp listens internally on `127.0.0.1:8082`.
 
+The API model ID is `qwen3-asr`, matching the Windows and macOS VoiceRewrite defaults; the loaded model is Qwen3-ASR-1.7B, not Whisper. Existing client configuration files that still specify `whisper-1` must change `asr_model` to `qwen3-asr` when switching to this launcher version.
+
 No Python, pip, Git, or manual model management is required. First setup needs internet and several gigabytes of free disk space. ModelScope hosts the weights and projector; the llama.cpp mirrors relay **official GitHub release archives**, so no direct access to GitHub or Hugging Face is required. Mirror availability varies by network.
 
 ### Idempotency and file layout
