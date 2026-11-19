@@ -222,8 +222,7 @@ func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 	}
 	sel.ClipboardBackup = backup
 	text, err := copySelectionWithRetry(hwnd, sel.TargetWindow, cfg)
-	sel.CopyClipboardSeq = clipboardSeq()
-	backup.markOwned(sel.CopyClipboardSeq)
+	backup.markOwned(clipboardSeq())
 	if err != nil {
 		return sel, err
 	}
