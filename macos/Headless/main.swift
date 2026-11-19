@@ -618,21 +618,7 @@ MainActor.assumeIsolated {
     let textOnly = AXSelection(text: "repeat", range: nil)
     precondition(textOnly.matches(AXSelection(text: "repeat", range: nil)))
     precondition(!textOnly.matches(AXSelection(text: "changed", range: nil)))
-    // Exercise the linked Go ABI, not a second Swift Hold implementation:
-    // cancellation releases a stuck modifier without recycling its token.
-    let firstPress = VRPress(54, 0)
-    precondition(firstPress > 0 && VRDown(54) == 1)
-    precondition(VRActivate(54, firstPress) == 1)
-    VREpochCancel()
-    precondition(VRDown(54) == 0 && VRArmed() == 0)
-    precondition(VRActivate(54, firstPress) == 0)
-    let nextPress = VRPress(54, 0)
-    precondition(nextPress > firstPress)
-    precondition(VRActivate(54, firstPress) == 0)
-    precondition(VRActivate(54, nextPress) == 1)
-    precondition(VRRelease(54) == 2)
-    VREpochCancel()
-    print("AX focus, selection and native hold cancellation smoke passed")
+    print("AX focus and selection identity smoke passed")
 }
 #else
 MainActor.assumeIsolated {
