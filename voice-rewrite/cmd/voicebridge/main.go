@@ -317,7 +317,9 @@ func decodeRequestPCM(req request, cfg coreconfig.Config) ([]byte, string) {
 		}
 		var err error
 		pcm, err = base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
-		if err != nil { return nil, "invalid" }
+		if err != nil {
+			return nil, "invalid"
+		}
 	}
 	if len(pcm) == 0 || len(pcm)%2 != 0 || len(pcm) > maxBytes {
 		return nil, "invalid"
