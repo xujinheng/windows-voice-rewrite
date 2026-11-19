@@ -29,10 +29,10 @@ def main():
     for swift in swift_files:
         if swift.relative_to(ROOT).as_posix() not in build_script:
             raise SystemExit(f"unaccounted Swift host source: {swift}")
-    # The Darwin-only cgo export surface is linked into the same executable.
-    # Linux go list cannot include it, so count that actual compiled source once.
-    native = ROOT / "voice-rewrite/cmd/voicebridge/native_darwin.go"
-    go_lines = sum(nonblank(p) for p in paths) + nonblank(native)
+    # Linux go list omits the Darwin C ABI, but Darwin go list already
+    # includes it. Count the compiled source once on either runner.
+    paths.add(ROOT / "voice-rewrite/cmd/voicebridge/native_darwin.go")
+    go_lines = sum(nonblank(p) for p in paths)
     swift_lines = sum(nonblank(swift) for swift in swift_files)
     if not go_lines or not swift_lines or len(swift_files) != 2:
         raise SystemExit("missing linked Go or two native Swift sources")

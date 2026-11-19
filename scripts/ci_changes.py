@@ -69,6 +69,8 @@ def classify(paths):
         elif path.startswith("installer/"):
             scope["windows"] = True
         elif path.startswith("scripts/"):
+            if path == "scripts/check_headless_scope.py":
+                scope.update(core=True, macos=True)
             if "macos" in path or "swift" in path or "acceptance" in path:
                 scope["macos"] = True
             if "windows" in path or "meeting-ui" in path or "acceptance" in path:
