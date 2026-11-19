@@ -630,7 +630,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				reply := p.displayedReplies[p.selectedReply]
 				value := meetingcore.CopyText(action, reply.English, reply.Complete, p.copyExpression)
 				if value != "" {
-					if err := setClipboardText(hwnd, value); err != nil {
+					if _, err := setClipboardText(hwnd, value); err != nil {
 						winErr(meetingcore.CopyFailed + err.Error())
 					}
 				}
