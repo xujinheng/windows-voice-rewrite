@@ -19,6 +19,8 @@ class HeadlessWorkflowTests(unittest.TestCase):
         self.assertIn("go test -race -count=1 ./...", source)
         self.assertIn("bench-macos-core.swift", job)
         self.assertIn("FOCUS_GUARD_TEST", job)
+        self.assertIn("cat scripts/test-macos-focus.swift >>", job)
+        self.assertTrue((ROOT / "scripts/test-macos-focus.swift").is_file())
         self.assertNotIn("cmd/contractgen", (WORKFLOWS / "nightly.yml").read_text())
 
     def test_ready_and_distribution_build_same_app(self):
