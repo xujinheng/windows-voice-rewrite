@@ -16,7 +16,6 @@ import (
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/session"
-	"voicerewrite/internal/core/ux"
 )
 
 var nativeEpoch session.Epoch
