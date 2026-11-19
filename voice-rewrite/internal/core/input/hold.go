@@ -10,6 +10,13 @@ const (
 	ToggleUINotifyFailed = "无法通知 UI 线程准备录音"
 )
 
+// VoiceStartBlocked is the shared reason a keyboard hold or side-button arm does not start.
+// Callers pass their own extra reason: the settings window for a keyboard hold,
+// or an unbound button for a side arm. A missing window is decided after this.
+func VoiceStartBlocked(paused, busy, recording, pendingSide, extra bool) bool {
+	return paused || busy || recording || pendingSide || extra
+}
+
 // SideConfirmResult is what a side-button hold does when the button comes up into a voice hold.
 type SideConfirmResult int
 
@@ -23,13 +30,6 @@ const (
 	// SideConfirmActivate starts the voice hold.
 	SideConfirmActivate
 )
-
-// VoiceStartBlocked is the shared reason a keyboard hold or side-button arm does not start.
-// Callers pass their own extra reason: the settings window for a keyboard hold,
-// or an unbound button for a side arm. A missing window is decided after this.
-func VoiceStartBlocked(paused, busy, recording, pendingSide, extra bool) bool {
-	return paused || busy || recording || pendingSide || extra
-}
 
 // SideConfirm chooses that result. A hold that is not ready is discarded even when the microphone also failed.
 func SideConfirm(hasPending, sameButton, ready, recorderFailed bool) SideConfirmResult {
