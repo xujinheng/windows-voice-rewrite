@@ -794,7 +794,7 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_TRAY_TOGGLE_PAUSE {
-			switch ux.ChoosePause(app.busy.Load(), app.paused.Load()) {
+			switch ux.ChoosePause(app.busy.Load() || active != nil, app.paused.Load()) {
 			case ux.PauseRefused:
 				winErr(ux.PauseWhileBusy)
 			case ux.PauseOn:
