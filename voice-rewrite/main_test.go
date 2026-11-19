@@ -62,7 +62,7 @@ func TestAudioAndLLMWorkflow(t *testing.T) {
 			t.Errorf("bad multipart: %v", e)
 			return
 		}
-		if r.FormValue("model") != "whisper-1" {
+		if r.FormValue("model") != "qwen3-asr" {
 			t.Error("ASR model parameter incorrect")
 		}
 		if r.FormValue("response_format") != "json" {
