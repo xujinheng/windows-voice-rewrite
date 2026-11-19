@@ -10,21 +10,6 @@ const (
 	RailCategory              = "设置分类"
 )
 
-// MutedControls are the hint and the two probe statuses.
-// The Windows input note uses the muted font and is not one of these controls.
-func MutedControls(hint, asrProbe, llmProbe uintptr) [3]uintptr {
-	return [3]uintptr{hint, asrProbe, llmProbe}
-}
-
-func MutedControl(hwnd, hint, asrProbe, llmProbe uintptr) bool {
-	for _, item := range MutedControls(hint, asrProbe, llmProbe) {
-		if hwnd == item {
-			return true
-		}
-	}
-	return false
-}
-
 // RailColor is the settings navigation rail. It is not the window background.
 func RailColor(dark bool) uint32 {
 	if dark {
