@@ -143,10 +143,9 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	case ux.DictationRoutePreview:
 		// A result card preserves the transcript without requiring the user to
 		// guess what happened to their clipboard after a focus change.
-		follow := ux.DictationUnfocused()
 		app.history.Remember(ux.DictationHistoryTitle, text)
-		app.showAnswer(follow.Title, text, currentCursorPoint(), nil, false, generation)
-		app.postHandyPhase(follow.Phase, generation)
+		app.showAnswer(ux.DictationNotInserted, text, currentCursorPoint(), nil, false, generation)
+		app.postHandyPhase(indicator.Fallback, generation)
 		return
 	}
 	start = time.Now()

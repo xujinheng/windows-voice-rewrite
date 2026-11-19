@@ -2,11 +2,7 @@
 // The catalog never echoes request bodies, selected text, or API keys.
 package ux
 
-import (
-	"strings"
-
-	"voicerewrite/internal/core/shortcut"
-)
+import "strings"
 
 const (
 	unsupportedAudio = "语音接口不支持上传的音频格式（HTTP 415）。请确认 ASR 服务提供 /v1/audio/transcriptions，而不只是 /v1/chat/completions。"
@@ -77,26 +73,6 @@ func fixedRecovery(message string) (string, bool) {
 		}
 	}
 	return message, true
-}
-
-func ownedSentence(message string) bool {
-	if _, ok := fixedRecovery(message); ok {
-		return true
-	}
-	switch message {
-	case unsupportedAudio, authFailed, unreachable, timedOut, selectionMoved:
-		return true
-	}
-	return shortcut.FixedMessage(message)
-}
-
-// HostMessage is the status line for a bridge failure. A catalog sentence is
-// shown as Windows shows it. Any other text keeps the host's own prefix.
-func HostMessage(prefix, message string) string {
-	if ownedSentence(message) {
-		return message
-	}
-	return prefix + message
 }
 
 // Present is the Windows host message: a catalog recovery string, or the

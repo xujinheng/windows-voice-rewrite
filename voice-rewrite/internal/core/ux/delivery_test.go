@@ -31,10 +31,6 @@ func TestDictationInsertStopsAtTheFirstFailure(t *testing.T) {
 }
 
 func TestDictationDeliveryKeepsTheCardAndPillPair(t *testing.T) {
-	lost := DictationUnfocused()
-	if !lost.ShowCard || lost.Title != DictationNotInserted || lost.Phase != indicator.Fallback || lost.TraySuccess {
-		t.Fatalf("unfocused %+v", lost)
-	}
 	failed := DictationInserted(errors.New("paste"))
 	if !failed.ShowCard || failed.Title != DictationCopyManually || failed.Phase != indicator.Fallback {
 		t.Fatalf("failed %+v", failed)
