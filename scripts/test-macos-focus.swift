@@ -26,6 +26,6 @@ MainActor.assumeIsolated {
     precondition(!partial.matches(window: otherWindow, element: nil, title: "Original tab"))
     let noAX = FocusIdentity(window: nil, element: nil, title: nil)
     precondition(noAX.matches(window: nil, element: nil, title: nil))
-    precondition(!noAX.matches(window: nil, element: nil, title: "Other") == false)
+    precondition(noAX.matches(window: nil, element: nil, title: "Other"))
     print("AX focus and selection identity smoke passed")
 }
