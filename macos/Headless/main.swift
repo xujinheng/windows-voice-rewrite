@@ -8,8 +8,7 @@ import Foundation
 // All transcription, intent and routing decisions call the linked Go Core.
 private enum Action { case dictation, rewrite }
 
-// The native AX range identifies which occurrence of repeated text was selected.
-// An editor exposing only AXSelectedText retains the existing text-only fallback.
+// Native AX ranges distinguish repeated text; text-only selection is still supported.
 struct AXSelection {
     let text: String
     let range: CFRange?
@@ -22,8 +21,7 @@ struct AXSelection {
     }
 }
 
-// Match every AX identity the editor exposes; missing attributes do not
-// block ordinary dictation, while rewrite requires both at capture.
+// Match available AX identities; ordinary dictation need not have AX attributes.
 struct FocusIdentity {
     let window: AXUIElement?
     let element: AXUIElement?
@@ -43,8 +41,7 @@ private enum HostError: Error {
     case config(String), microphone(String), conversion, bridge(String)
 }
 
-// Presentation values come from the Windows-owned Go indicator package.
-// Swift only decodes the one-time profile and draws native AppKit pixels.
+// One-time Go presentation profile drives native AppKit drawing.
 struct PillSpec: Decodable {
     let recordingWidth, workingWidth, height, cancelWidth, cancelInset: Int
     let clockX, clockWidth, iconY, waveStartX, waveStep, waveBarWidth, waveBars: Int
@@ -233,6 +230,22 @@ private enum GoCore {
     }
 }
 
+// Prebuild events so an unsupported grapheme cannot cause partial Unicode input.
+private func unicodeKeyEvents(_ text: String) -> [CGEvent]? {
+    let source = CGEventSource(stateID: .hidSystemState)
+    var events: [CGEvent] = []
+    for character in text {
+        let units = Array(String(character).utf16)
+        guard units.count <= 20 else { return nil }
+        for down in [true, false] {
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: down) else { return nil }
+            units.withUnsafeBufferPointer { event.keyboardSetUnicodeString(stringLength: $0.count, unicodeString: $0.baseAddress) }
+            events.append(event)
+        }
+    }
+    return events
+}
+
 @MainActor
 private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var item: NSStatusItem!
@@ -355,8 +368,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         case 61: (name, family) = ("RightOption", .maskAlternate)
         default: return
         }
-        // Right-side flagsChanged events can fire while another modifier is held.
-        // A tracked press is a release; a new press requires the matching flag.
+        // Right-side flags may change with other modifiers; only track real presses.
         updatePress(code: code, name: name,
                     down: VRDown(Int32(code)) == 0 && flags.contains(family),
                     delay: Double(config.profile.modifierDelayMS) / 1000)
@@ -489,8 +501,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
               CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
         let element = value as! AXUIElement
         var owner: pid_t = 0
-        // System-wide AX focus can belong to an app that became active
-        // after capture began. Never read its selection for another task.
+        // Never read an AX selection from a different process.
         guard AXUIElementGetPid(element, &owner) == .success, owner == targetPID else { return nil }
         return element
     }
@@ -507,8 +518,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         var value: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(focused, kAXSelectedTextAttribute as CFString, &value)
         let direct = status == .success ? (value as? String).flatMap { $0.isEmpty ? nil : $0 } : nil
-        // Preserve direct text on editors without AX ranges. When a range
-        // exists, retain it so the same text at a different position is stale.
+        // Preserve text-only selection or a position-aware range when supported.
         var selectedRange: CFTypeRef?
         guard AXUIElementCopyAttributeValue(focused, kAXSelectedTextRangeAttribute as CFString,
                                             &selectedRange) == .success,
@@ -523,8 +533,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             return direct.map { AXSelection(text: $0, range: nil) }
         }
         if let direct { return AXSelection(text: direct, range: range) }
-        // SelectedText can be unavailable OR empty in editors that expose
-        // only a range. Ask for the exact range, never whole text or clipboard.
+        // A range-only editor is queried for just the selected span.
         var text: CFTypeRef?
         guard AXUIElementCopyParameterizedAttributeValue(
             focused, kAXStringForRangeParameterizedAttribute as CFString,
@@ -534,9 +543,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func paste(_ text: String) {
-        // Do not retry uncertain writes: a Cmd+V event is not proof of editor insertion.
-        // Prepare both events before touching the clipboard; don't report a
-        // paste event if CoreGraphics could not create one.
+        // Prebuild the single paste event; a sent event is not confirmed insertion.
         let source = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {
@@ -547,7 +554,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let stamp = board.changeCount
         let originals = board.pasteboardItems
         guard originals != nil || board.types?.isEmpty != false else {
-            reset("Clipboard unsupported"); return
+            pasteUnicode(text); return
         }
         // NSPasteboardItem is not NSCopying; preserve each advertised data type.
         var saved: [NSPasteboardItem] = []
@@ -555,7 +562,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             let copy = NSPasteboardItem()
             for type in item.types {
                 guard let data = item.data(forType: type), copy.setData(data, forType: type) else {
-                    reset("Clipboard unsupported"); return
+                    pasteUnicode(text); return
                 }
             }
             saved.append(copy)
@@ -564,8 +571,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         board.clearContents()
         let cleared = board.changeCount
         guard board.setString(text, forType: .string) else {
-            // A competing clipboard owner wins. Failed writes must not erase
-            // another app's newer contents while trying to restore ours.
+            // Failed writes must not erase a newer clipboard owner.
             if board.changeCount == cleared && !saved.isEmpty { _ = board.writeObjects(saved) }
             reset("Paste failed")
             return
@@ -573,23 +579,27 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let lease = board.changeCount
         down.flags = .maskCommand
         up.flags = .maskCommand
-        // A different app may have copied after our temporary text was set.
-        // Never paste that newer content into an unrelated target.
+        // Never paste clipboard content replaced by another app.
         guard board.changeCount == lease else { reset("Clipboard changed"); return }
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
         show(config.profile.pill.sentLabel)
         pill.result(.sent)
-        // Text equality alone does not prove ownership: another app can copy
-        // the very same text. changeCount protects that user's newer clipboard.
+        // Only changeCount, not matching text, fences clipboard ownership.
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.profile.pasteRestoreMS) / 1000) {
             guard board.changeCount == lease else { return }
             board.clearContents()
             if !saved.isEmpty { _ = board.writeObjects(saved) }
         }
     }
-    // Clicking the floating pill cancels the active capture or suppresses a
-    // pending bridge result. It must never retry or deliver a stale write.
+    private func pasteUnicode(_ text: String) {
+        guard let events = unicodeKeyEvents(text) else { reset("Paste unavailable"); return }
+        events.forEach { $0.post(tap: .cghidEventTap) }
+        show(config.profile.pill.sentLabel)
+        pill.result(.sent)
+    }
+
+    // Cancel capture and suppress stale task output without retrying.
     private func cancelFromPill() {
         VREpochCancel()
         if microphone.running { _ = try? microphone.stop(discard: true) }

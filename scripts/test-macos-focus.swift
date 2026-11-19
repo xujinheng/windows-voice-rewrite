@@ -32,5 +32,20 @@ MainActor.assumeIsolated {
     let noAX = FocusIdentity(window: nil, element: nil, title: nil)
     precondition(noAX.matches(window: nil, element: nil, title: nil))
     precondition(noAX.matches(window: nil, element: nil, title: "Other"))
-    print("AX focus and selection identity smoke passed")
+    // Construct without posting: UTF-16, surrogate pairs and combining marks
+    // must survive the native fallback, including both key-down and key-up.
+    let sample = "a中🙂e\u{301}"
+    guard let events = unicodeKeyEvents(sample) else { preconditionFailure("Unicode event creation") }
+    precondition(events.count == sample.count * 2)
+    for (index, character) in sample.enumerated() {
+        var size = 0
+        var buffer = [UniChar](repeating: 0, count: 20)
+        buffer.withUnsafeMutableBufferPointer {
+            events[index * 2].keyboardGetUnicodeString(maxStringLength: $0.count,
+                actualStringLength: &size, unicodeString: $0.baseAddress)
+        }
+        precondition(String(decoding: buffer.prefix(size), as: UTF16.self) == String(character))
+    }
+    precondition(unicodeKeyEvents(String(repeating: "\u{0301}", count: 21)) == nil)
+    print("AX focus, selection and Unicode event smoke passed")
 }
