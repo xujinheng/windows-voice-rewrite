@@ -19,6 +19,21 @@ import (
 	"voicerewrite/internal/core/ux"
 )
 
+// A recorder may reach its hardware duration limit before the held key or
+// mouse is released. Notify the UI using the same epoch as other hold events;
+// the audio worker remains the sole consumer of the buffered PCM result.
+func watchRecordingLimit(hwnd uintptr, rec *audioRecorder, generation uint64, logger *log.Logger) {
+	go func() {
+		<-rec.finished
+		if !rec.maxReached.Load() {
+			return
+		}
+		if ok, _, err := procPostMessage.Call(hwnd, WM_RECORD_LIMIT, uintptr(generation), 0); ok == 0 {
+			logger.Printf("ERROR: cannot notify UI of recording limit: %v", err)
+		}
+	}()
+}
+
 func watchMouseHoldTimeout(hwnd, session uintptr, canceled <-chan struct{}, timeout time.Duration, logger *log.Logger) {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
