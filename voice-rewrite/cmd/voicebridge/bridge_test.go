@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -25,6 +26,40 @@ func TestSharedHostTimeouts(t *testing.T) {
 	limits := defaultOptions()
 	if limits.TranscribeTimeout != 220*time.Second || limits.SpokenSelectedTimeout != 240*time.Second {
 		t.Fatalf("unexpected shared timeouts: %+v", limits)
+	}
+	if limits.timeoutFor("transcribe") != 220*time.Second || limits.timeoutFor("selected_voice_task") != 240*time.Second {
+		t.Fatalf("JSONL and in-process Go entrypoints use different deadlines: %+v", limits)
+	}
+}
+
+func TestInProcessRequestDeadlineCancelsASR(t *testing.T) {
+	seen := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen <- struct{}{}
+		select {
+		case <-r.Context().Done():
+		case <-time.After(3 * time.Second):
+			t.Error("ASR request did not propagate a deadline")
+		}
+	}))
+	defer srv.Close()
+	cfg, err := json.Marshal(configFor(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	reply := safeProcessRequest(ctx, request{
+		ID: "native", Op: "transcribe", Config: cfg,
+		NativePCM: make([]byte, 3200), CanInsert: true,
+	})
+	if reply.Error == nil || reply.Error.Code != "timeout" {
+		t.Fatalf("in-process ASR did not stop at its deadline: %#v", reply)
+	}
+	select {
+	case <-seen:
+	default:
+		t.Fatal("test did not reach the ASR network path")
 	}
 }
 

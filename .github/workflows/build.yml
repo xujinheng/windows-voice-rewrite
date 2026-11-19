@@ -139,6 +139,16 @@ jobs:
           test ! -e "$app/Contents/MacOS/voicebridge"
           nm -g "$app/Contents/MacOS/VoiceRewrite" | grep ' _VRPress' >/dev/null
           codesign --verify --deep --strict "$app"
+      - name: Smoke native Go ABI and benchmark real Swift-to-Go call overhead
+        shell: bash
+        run: |
+          set -euo pipefail
+          swiftc -O -target '${{ matrix.arch }}-apple-macosx13.0' \
+            -import-objc-header macos/Headless/VoiceCore.h \
+            -framework Foundation -framework Security -framework CoreFoundation \
+            -o "$RUNNER_TEMP/voicecore-bench" scripts/bench-macos-core.swift \
+            "$RUNNER_TEMP/headless/libvoicecore.a"
+          "$RUNNER_TEMP/voicecore-bench"
       - name: Upload one developer .app per architecture on main and tags
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

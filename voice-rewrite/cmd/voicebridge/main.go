@@ -72,6 +72,25 @@ func defaultOptions() bridgeOptions {
 	return bridgeOptions{MaxInFlight: 4, TranscribeTimeout: speech.TranscribeTimeout, SpokenSelectedTimeout: textedit.SpokenTaskTimeout}
 }
 
+func (o bridgeOptions) timeoutFor(op string) time.Duration {
+	if op == "selected_voice_task" {
+		return o.SpokenSelectedTimeout
+	}
+	return o.TranscribeTimeout
+}
+
+// Both the JSONL service and the in-process macOS host contain panics at the
+// Go boundary. Neither a provider panic nor its private data reaches Swift.
+func safeProcessRequest(ctx context.Context, req request) (reply response) {
+	reply = failure(req.ID, "internal_error", "request failed")
+	defer func() { _ = recover() }()
+	reply = processRequest(ctx, req)
+	if err := ctx.Err(); err != nil {
+		return contextFailure(req.ID, err)
+	}
+	return reply
+}
+
 type bridgeTask struct {
 	cancel   context.CancelFunc
 	canceled bool
@@ -229,11 +248,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		s.send(failure(req.ID, "busy", "too many active requests"))
 		return
 	}
-	timeout := s.options.TranscribeTimeout
-	if req.Op == "selected_voice_task" {
-		timeout = s.options.SpokenSelectedTimeout
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), s.options.timeoutFor(req.Op))
 	task := &bridgeTask{cancel: cancel}
 	s.active[req.ID] = task
 	s.wg.Add(1)
@@ -245,13 +260,7 @@ func (s *bridgeServer) runTask(ctx context.Context, task *bridgeTask, req reques
 	defer s.wg.Done()
 	defer task.cancel()
 
-	reply := failure(req.ID, "internal_error", "request failed")
-	func() {
-		// Provider errors and unexpected panics may contain private request data.
-		// Reaching the protocol requires a fixed recovery string or a constant fallback.
-		defer func() { _ = recover() }()
-		reply = processRequest(ctx, req)
-	}()
+	reply := safeProcessRequest(ctx, req)
 
 	s.mu.Lock()
 	if task.canceled || errors.Is(ctx.Err(), context.Canceled) {

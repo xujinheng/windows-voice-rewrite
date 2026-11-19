@@ -16,7 +16,7 @@ void VREpochCancel(void);
 double VRLevel(double previous, double raw);
 int VRWave(int index, double level, unsigned int tick);
 unsigned int VRSpinner(int index, unsigned int tick);
-char *VRDuration(long long seconds);
+void VRDuration(long long seconds, char *buffer, int capacity);
 void VRFree(void *ptr);
 char *VRProfile(const char *config);
 char *VRRun(const char *config, const char *operation, const unsigned char *audio,

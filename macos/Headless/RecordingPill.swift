@@ -168,12 +168,13 @@ private final class PillSurface: NSView {
                                width: CGFloat(spec.waveBarWidth), height: h),
                         radius: CGFloat(spec.waveBarWidth) / 2, color: color)
             }
-            if let clock = VRDuration(Int64(Date().timeIntervalSince(started))) {
-                label(String(cString: clock), x: CGFloat(spec.clockX),
-                      width: CGFloat(spec.clockWidth), size: 14,
-                      centered: true, color: rgb(spec.clockColor))
-                VRFree(clock)
+            var clock = [CChar](repeating: 0, count: 24)
+            clock.withUnsafeMutableBufferPointer {
+                VRDuration(Int64(Date().timeIntervalSince(started)), $0.baseAddress, Int32($0.count))
             }
+            label(String(cString: clock), x: CGFloat(spec.clockX),
+                  width: CGFloat(spec.clockWidth), size: 14,
+                  centered: true, color: rgb(spec.clockColor))
         } else {
             drawMark()
             let message: String

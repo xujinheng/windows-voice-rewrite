@@ -9,6 +9,7 @@ package main
 import "C"
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 	"unsafe"
@@ -125,8 +126,14 @@ func VRSpinner(index C.int, tick C.uint) C.uint {
 }
 
 //export VRDuration
-func VRDuration(seconds C.longlong) *C.char {
-	return C.CString(indicator.DurationText(time.Unix(0, 0), time.Unix(int64(seconds), 0)))
+func VRDuration(seconds C.longlong, buffer *C.char, capacity C.int) {
+	if buffer == nil || capacity <= 0 || capacity > 64 {
+		return
+	}
+	value := indicator.DurationText(time.Unix(0, 0), time.Unix(int64(seconds), 0))
+	dst := unsafe.Slice((*byte)(unsafe.Pointer(buffer)), int(capacity))
+	n := copy(dst[:len(dst)-1], value)
+	dst[n] = 0
 }
 
 //export VRFree
@@ -160,5 +167,9 @@ func VRRun(config, operation *C.char, audio *C.uchar, length C.int, selection *C
 	if selection != nil {
 		req.SelectedText = C.GoString(selection)
 	}
-	return nativeJSON(processRequest(nativeEpoch.ContextFor(uint64(token)), req))
+	// Share the CLI's 220s ASR / 240s selected-text deadlines, even when
+	// Swift never launches a helper. Epoch invalidation remains the parent.
+	ctx, cancel := context.WithTimeout(nativeEpoch.ContextFor(uint64(token)), defaultOptions().timeoutFor(req.Op))
+	defer cancel()
+	return nativeJSON(safeProcessRequest(ctx, req))
 }
