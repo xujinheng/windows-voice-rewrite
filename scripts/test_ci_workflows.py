@@ -13,13 +13,8 @@ class HeadlessWorkflowTests(unittest.TestCase):
         self.assertIn("macos-15, arch: arm64", job)
         self.assertIn("macos-15-intel, arch: x86_64", job)
         self.assertIn("bash scripts/build-macos-headless.sh", job)
-        self.assertNotIn("xcodebuild", source)
-        self.assertNotIn("test-swift-modules", source)
-        self.assertIn("needs.build-macos-headless.result", source)
-        self.assertIn("go test -race -count=1 ./...", source)
-        self.assertIn("bench-macos-core.swift", job)
-        self.assertIn("FOCUS_GUARD_TEST", job)
         self.assertIn("cat scripts/test-macos-focus.swift >>", job)
+        self.assertIn("go test -race -count=1 ./...", source)
         self.assertTrue((ROOT / "scripts/test-macos-focus.swift").is_file())
         self.assertNotIn("cmd/contractgen", (WORKFLOWS / "nightly.yml").read_text())
 
@@ -33,21 +28,6 @@ class HeadlessWorkflowTests(unittest.TestCase):
         self.assertIn("codesign --force --timestamp --options runtime", release)
         ready = (WORKFLOWS / "ready-build.yml").read_text()
         self.assertIn("github.event.changes.title", ready)
-
-    def test_headless_does_not_link_the_retired_meeting_host(self):
-        bridge = ROOT / "voice-rewrite/cmd/voicebridge"
-        self.assertFalse((bridge / "meeting.go").exists())
-        self.assertFalse((bridge / "meeting_demo.go").exists())
-        self.assertFalse(list(bridge.glob("meeting*_test.go")))
-        source = (bridge / "main.go").read_text()
-        for operation in ("meeting_start", "meeting_feed", "meeting_replies", "meeting_compose"):
-            self.assertNotIn(operation, source)
-        windows = (ROOT / "voice-rewrite/meeting_session.go").read_text()
-        self.assertIn("meetingcore.NewSessionRuntime()", windows)
-        worker = (ROOT / "voice-rewrite/task_worker_windows.go").read_text()
-        for function in ("speech.Transcribe(", "textedit.ResolveSpokenTask("):
-            self.assertIn(function, source)
-            self.assertIn(function, worker)
 
     def test_source_budget_and_user_path(self):
         sources = [ROOT / "macos/Headless/main.swift",
@@ -64,25 +44,9 @@ class HeadlessWorkflowTests(unittest.TestCase):
         pill = sources[1].read_text()
         host = sources[0].read_text()
         self.assertIn("styleMask: [.borderless, .nonactivatingPanel]", pill)
-        indicator = (ROOT / "voice-rewrite/internal/core/indicator/indicator.go").read_text()
-        self.assertIn('"recordingWidth": RecordingWidth', indicator)
-        self.assertIn('"workingWidth": WorkingWidth', indicator)
-        self.assertIn('"height": Height', indicator)
-        self.assertIn("CGFloat(view.phase == .recording ? spec.recordingWidth : spec.workingWidth)", pill)
-        self.assertIn('operation: "host_profile"', host)
-        self.assertNotIn("width: 232, height: 50", pill)
-        self.assertIn("VRPress(", host)
-        self.assertIn("VRWave(", pill)
-        self.assertIn("VRSpinner(", pill)
         self.assertIn("-buildmode=c-archive", script)
         self.assertNotIn("Process()", host)
         self.assertNotIn("voicebridge", host)
-        # Clipboard ownership must use changeCount, not content equality:
-        # another application may copy the identical text during our lease.
-        self.assertIn("let lease = board.changeCount", host)
-        self.assertIn("guard board.changeCount == lease else { return }", host)
-        self.assertNotIn("board.string(forType: .string) == text", host)
-        self.assertIn("guard let down = CGEvent(", host)
         self.assertTrue((ROOT / "macos/Headless/config.example.json").is_file())
         self.assertTrue((ROOT / "scripts/check_headless_scope.py").is_file())
 

@@ -162,13 +162,10 @@ type togglePrepareResult struct {
 }
 
 type selectedText struct {
-	Text                 string
-	OriginalClipboard    string
-	HadOriginalClipboard bool
-	TargetWindow         uintptr
-	CopyClipboardSeq     uintptr // clipboard after our simulated Ctrl+C
-	ClipboardBackup      *clipboardSnapshot
-	Anchor               trayPoint
+	Text            string
+	TargetWindow    uintptr
+	ClipboardBackup *clipboardSnapshot
+	Anchor          trayPoint
 }
 type appState struct {
 	meeting     *meetingSession // owned by the UI thread
@@ -267,7 +264,7 @@ func singleInstanceGuard() (func(), error) {
 func finishTogglePrepare(app *appState, hwnd uintptr, sel selectedText, rec *audioRecorder, fault input.ToggleFault, err error) {
 	cleanup := input.CleanupToggle(fault)
 	if cleanup.RestoreClipboard {
-		restoreSelectionClipboardIfOwned(hwnd, sel)
+		_ = sel.ClipboardBackup.restoreIfOwned(hwnd)
 	}
 	if cleanup.StopRecorder && rec != nil {
 		rec.Stop()

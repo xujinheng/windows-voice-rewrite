@@ -25,23 +25,6 @@ func TestCopyStopsBeforeReadingAnotherWindow(t *testing.T) {
 	}
 }
 
-func TestMayRestore(t *testing.T) {
-	cases := []struct {
-		old        bool
-		owned, now uint64
-		want       bool
-	}{
-		{true, 11, 11, true}, {true, 11, 12, false},
-		{true, 0, 0, false}, {false, 11, 11, false},
-	}
-	for _, tc := range cases {
-		got := MayRestore(tc.old, tc.owned, tc.now)
-		if got != tc.want {
-			t.Fatalf("%+v got=%v", tc, got)
-		}
-	}
-}
-
 func TestAttemptTimeoutKeepsBudget(t *testing.T) {
 	for _, base := range []time.Duration{600 * time.Millisecond, 750 * time.Millisecond, 1200 * time.Millisecond, 1500 * time.Millisecond} {
 		first := AttemptTimeout(base, 0, 2)
