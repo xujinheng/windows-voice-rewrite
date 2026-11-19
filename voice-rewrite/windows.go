@@ -576,30 +576,25 @@ func runApp() {
 	}
 
 	confirmSide := func(button uint16) {
-		hasPending := pendingSide != nil
-		same := hasPending && pendingSide.button == button
-		var ready, failed bool
-		var held *sideCapture
-		if same {
-			held = pendingSide
-			ready = !app.paused.Load() && !app.busy.Load() && active == nil && held.targetWindow != 0 && isSameForegroundWindow(held.targetWindow)
-			failed = held.err != nil
-		}
-		switch input.SideConfirm(hasPending, same, ready, failed) {
-		case input.SideConfirmIgnore:
+		if pendingSide == nil || pendingSide.button != button {
 			return
-		case input.SideConfirmDiscard:
+		}
+		held := pendingSide
+		if app.paused.Load() || app.busy.Load() || active != nil ||
+			held.targetWindow == 0 || !isSameForegroundWindow(held.targetWindow) {
 			discardPendingSide()
-		case input.SideConfirmReport:
-			pendingSide = nil
+			return
+		}
+		pendingSide = nil
+		if held.err != nil {
 			if activeHandyStatus != nil && activeHandyStatus.pending {
 				closeHandyStatus()
 			}
 			app.fail(held.err)
-		default:
-			pendingSide = nil
-			activateHold(held.recorder, input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation", button, held.targetWindow)
+			return
 		}
+		// Leave the provisional pill alive: activateHold promotes it in-place.
+		activateHold(held.recorder, input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation", button, held.targetWindow)
 	}
 
 	for {
