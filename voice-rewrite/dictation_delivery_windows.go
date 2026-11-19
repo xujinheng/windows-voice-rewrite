@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"voicerewrite/internal/core/clipboard"
@@ -37,7 +38,7 @@ func insertDictationText(hwnd, target uintptr, text string, valid func() bool) e
 	}
 	time.Sleep(clipboard.WindowsPasteWaitMilliseconds * time.Millisecond)
 	if err = backup.restoreIfOwned(hwnd); err != nil {
-		return ux.DictationClipboardRestored(err)
+		return fmt.Errorf("%s: %w", ux.DictationRestoreFailed, err)
 	}
 	return nil // SendInput accepted; insertion cannot be proven in all editors.
 }

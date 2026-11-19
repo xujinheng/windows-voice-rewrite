@@ -2,7 +2,6 @@ package ux
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 
 	"voicerewrite/internal/core/indicator"
@@ -33,37 +32,6 @@ func DictationInsertReady(text string, keysReleased, windowOK, password func() b
 	}
 	if password() {
 		return errors.New(PasswordDictation)
-	}
-	return nil
-}
-
-// DictationClipboardRestored wraps a restore error. A nil error stays nil.
-func DictationClipboardRestored(err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("%s: %w", DictationRestoreFailed, err)
-}
-
-// DictationCaptureProblem prefers a capture error over the short-buffer sentence.
-func DictationCaptureProblem(err error, tooShort bool) error {
-	if err != nil {
-		return err
-	}
-	if tooShort {
-		return errors.New(DictationTooShort)
-	}
-	return nil
-}
-
-// RewriteCaptureProblem prefers a capture error over the short-buffer sentence.
-// The caller does not change the pill for this error.
-func RewriteCaptureProblem(err error, tooShort bool) error {
-	if err != nil {
-		return err
-	}
-	if tooShort {
-		return errors.New(RewriteTooShort)
 	}
 	return nil
 }

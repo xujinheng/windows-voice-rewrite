@@ -951,14 +951,6 @@ func runApp() {
 			continue
 		}
 		switch msg.WParam {
-		case HOTKEY_EXIT:
-			if active != nil {
-				stopHoldWatch()
-				active.Stop()
-				go func(rec *audioRecorder) { <-rec.result }(active)
-			}
-			l.Print("stopped via exit hotkey")
-			return
 		case HOTKEY_DICTATION:
 			if !app.paused.Load() {
 				startHold(true, 0)

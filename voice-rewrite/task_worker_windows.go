@@ -108,8 +108,12 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	if !app.epoch.Valid(generation) {
 		return
 	}
-	if err := ux.DictationCaptureProblem(r.err, audio.BelowMinCapture(r.pcm)); err != nil {
-		app.fail(err)
+	captureErr := r.err
+	if captureErr == nil && audio.BelowMinCapture(r.pcm) {
+		captureErr = errors.New(ux.DictationTooShort)
+	}
+	if captureErr != nil {
+		app.fail(captureErr)
 		app.postHandyPhase(indicator.Error, generation)
 		return
 	}
@@ -228,8 +232,12 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	if !app.epoch.Valid(generation) {
 		return
 	}
-	if err := ux.RewriteCaptureProblem(r.err, audio.BelowMinCapture(r.pcm)); err != nil {
-		app.fail(err)
+	captureErr := r.err
+	if captureErr == nil && audio.BelowMinCapture(r.pcm) {
+		captureErr = errors.New(ux.RewriteTooShort)
+	}
+	if captureErr != nil {
+		app.fail(captureErr)
 		return
 	}
 	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/audio.PCMBytesPerSecond)
