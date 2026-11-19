@@ -76,7 +76,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "base=VoiceRewrite-$version-macOS-${{ matrix.public_arch }}-Notarized" >> "$GITHUB_OUTPUT"
 
-      - name: Build single-architecture native app and bundled Go helper
+      - name: Build single-architecture app with linked Go Core
         env:
           VERSION: ${{ steps.metadata.outputs.version }}
           ARCH: ${{ matrix.arch }}
@@ -84,10 +84,9 @@ jobs:
           set -euo pipefail
           CODESIGN_ADHOC=0 bash scripts/build-macos-headless.sh "$ARCH" "$RUNNER_TEMP/release-build" "$VERSION"
           app="$RUNNER_TEMP/release-build/VoiceRewrite.app"
-          for executable in VoiceRewrite voicebridge; do
-            test -x "$app/Contents/MacOS/$executable"
-            test "$(lipo -archs "$app/Contents/MacOS/$executable")" = "$ARCH"
-          done
+          test -x "$app/Contents/MacOS/VoiceRewrite"
+          test "$(lipo -archs "$app/Contents/MacOS/VoiceRewrite")" = "$ARCH"
+          test ! -e "$app/Contents/MacOS/voicebridge"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$VERSION"
 
       - name: Developer ID sign, notarize, staple and verify application
@@ -124,8 +123,6 @@ jobs:
               codesign --force --timestamp --options runtime --sign "$SIGN_IDENTITY" "$nested"
             done < <(find "$app/Contents/Frameworks" -depth \( -name '*.dylib' -o -name '*.framework' \) -print0)
           fi
-          codesign --force --timestamp --options runtime --sign "$SIGN_IDENTITY" \
-            "$app/Contents/MacOS/voicebridge"
           codesign --force --timestamp --options runtime --sign "$SIGN_IDENTITY" \
             --entitlements scripts/macos-hardened.entitlements "$app"
           bash scripts/verify-macos-package.sh app "$app" "$ARCH" "$VERSION" signed

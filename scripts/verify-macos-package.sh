@@ -22,7 +22,7 @@ fail() { echo "macOS package verification failed: $*" >&2; exit 1; }
 signature_info() { /usr/bin/codesign -dv --verbose=4 "$1" 2>&1; }
 
 verify_app() {
-  local app="$1" binary found info helper_info app_team helper_team
+  local app="$1" found info app_team
   [[ -d "$app/Contents" ]] || fail "invalid app directory: $app"
   [[ -f "$app/Contents/Info.plist" ]] || fail "missing Info.plist"
   [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" == "com.xujinheng.VoiceRewrite" ]] ||
@@ -30,34 +30,25 @@ verify_app() {
   found="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
   [[ "$found" == "$version" ]] || fail "expected version $version, found $found"
 
-  for binary in VoiceRewrite voicebridge; do
-    local exe="$app/Contents/MacOS/$binary"
-    [[ -f "$exe" && -x "$exe" ]] || fail "missing or non-executable $binary"
-    found="$(/usr/bin/lipo -archs "$exe")" || fail "invalid Mach-O: $binary"
-    [[ "$found" == "$arch" ]] || fail "$binary: expected only $arch, found $found"
-  done
+  local exe="$app/Contents/MacOS/VoiceRewrite"
+  [[ -f "$exe" && -x "$exe" ]] || fail "missing or non-executable VoiceRewrite"
+  found="$(/usr/bin/lipo -archs "$exe")" || fail "invalid Mach-O"
+  [[ "$found" == "$arch" ]] || fail "expected only $arch, found $found"
+  [[ ! -e "$app/Contents/MacOS/voicebridge" ]] || fail "obsolete Go subprocess included"
   /usr/bin/codesign --verify --deep --strict "$app" || fail "invalid app signature"
-  /usr/bin/codesign --verify --strict "$app/Contents/MacOS/voicebridge" ||
-    fail "invalid helper signature"
   info="$(signature_info "$app")"
-  helper_info="$(signature_info "$app/Contents/MacOS/voicebridge")"
 
   case "$trust" in
     dev)
-      [[ "$info" == *"Signature=adhoc"* && "$helper_info" == *"Signature=adhoc"* ]] ||
+      [[ "$info" == *"Signature=adhoc"* ]] ||
         fail "developer package must be explicitly ad-hoc signed"
       ;;
     signed|notarized)
       [[ "$info" == *"Authority=Developer ID Application:"* ]] ||
         fail "app lacks Developer ID Application signature"
-      [[ "$helper_info" == *"Authority=Developer ID Application:"* ]] ||
-        fail "helper lacks Developer ID Application signature"
-      [[ "$info" == *"(runtime)"* && "$helper_info" == *"(runtime)"* ]] ||
-        fail "hardened runtime missing from app or helper"
+      [[ "$info" == *"(runtime)"* ]] || fail "hardened runtime missing"
       app_team="$(printf '%s\n' "$info" | sed -n 's/^TeamIdentifier=//p' | head -1)"
-      helper_team="$(printf '%s\n' "$helper_info" | sed -n 's/^TeamIdentifier=//p' | head -1)"
-      [[ -n "$app_team" && "$app_team" != "not set" && "$app_team" == "$helper_team" ]] ||
-        fail "app/helper Developer ID teams differ"
+      [[ -n "$app_team" && "$app_team" != "not set" ]] || fail "app has no Developer ID team"
       if [[ "$trust" == notarized ]]; then
         /usr/bin/xcrun stapler validate "$app" || fail "app notarization ticket missing"
         /usr/sbin/spctl --assess --type execute --verbose=2 "$app" ||

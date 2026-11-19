@@ -121,7 +121,7 @@ jobs:
         with:
           go-version: '1.23'
           cache-dependency-path: voice-rewrite/go.mod
-      - name: Build headless status-bar app with native Go helper
+      - name: Build headless app with in-process Go Core
         shell: bash
         run: |
           set -euo pipefail
@@ -135,12 +135,10 @@ jobs:
           set -euo pipefail
           app="$RUNNER_TEMP/headless/VoiceRewrite.app"
           test "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$app/Contents/Info.plist")" = true
-          for executable in VoiceRewrite voicebridge; do
-            test "$(lipo -archs "$app/Contents/MacOS/$executable")" = '${{ matrix.arch }}'
-          done
+          test "$(lipo -archs "$app/Contents/MacOS/VoiceRewrite")" = '${{ matrix.arch }}'
+          test ! -e "$app/Contents/MacOS/voicebridge"
+          nm -g "$app/Contents/MacOS/VoiceRewrite" | grep -q '_VRPress'
           codesign --verify --deep --strict "$app"
-          printf '{"v":1,"id":"smoke","op":"hello"}\n' |
-            "$app/Contents/MacOS/voicebridge" | grep -q '"ok":true'
       - name: Upload one developer .app per architecture on main and tags
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

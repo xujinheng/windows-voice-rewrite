@@ -71,6 +71,12 @@ class HeadlessWorkflowTests(unittest.TestCase):
         self.assertIn("pill.processing()", host)
         self.assertIn("pill.result(.sent)", host)
         self.assertIn("pill.dismiss()", host)
+        self.assertIn("VRPress(", host)
+        self.assertIn("VRWave(", pill)
+        self.assertIn("VRSpinner(", pill)
+        self.assertIn("-buildmode=c-archive", script)
+        self.assertNotIn("Process()", host)
+        self.assertNotIn("voicebridge", host)
         # Clipboard ownership must use changeCount, not content equality:
         # another application may copy the identical text during our lease.
         self.assertIn("let lease = board.changeCount", host)

@@ -18,8 +18,6 @@ struct PillSpec: Decodable {
     let clockX, clockWidth, iconY, waveStartX, waveStep, waveBarWidth, waveBars: Int
     let textX, textRightGap, spinnerDots, spinnerX, spinnerRadius, spinnerDotSize: Int
     let terminalMS: Int
-    let levelGain: Double
-    let waveShape, levelWeights, spinnerShape: [Double]
     let pillColor, clockColor, labelColor, dictationAccent, rewriteAccent: [Int]
     let errorAccent, sentMark, fallbackMark, closeColor, closeHover, attentionGlyph: [Int]
     let processingDictation, processingRewrite, sentLabel, errorLabel, fallbackLabel: String
@@ -175,64 +173,31 @@ private struct BridgeReply: Decodable {
     struct Failure: Decodable { let code: String; let message: String }
 }
 
+// In-process Go Core. Event/animation calculations never cross IPC.
 private enum GoCore {
-    private static let taskLock = NSLock()
-    private static var currentTask: Process?
-    private static var canceledGeneration: UInt64 = 0
-    static func cancel(generation: UInt64 = 0) {
-        taskLock.withLock {
-            if generation != 0 { canceledGeneration = generation }
-            if currentTask?.isRunning == true { currentTask?.terminate() }
-        }
-    }
-    static func request(config: [String: Any], operation: String,
-                        audio: Data, selection: String?, generation: UInt64 = 0) throws -> BridgeReply.Output {
-        if taskLock.withLock({ generation != 0 && canceledGeneration == generation }) {
-            throw HostError.bridge("request canceled")
-        }
-        let executable = Bundle.main.executableURL!
-            .deletingLastPathComponent().appendingPathComponent("voicebridge")
-        guard FileManager.default.isExecutableFile(atPath: executable.path) else {
-            throw HostError.bridge("missing bundled voicebridge")
-        }
-        let process = Process()
-        process.executableURL = executable
-        let stdin = Pipe(), stdout = Pipe()
-        process.standardInput = stdin
-        process.standardOutput = stdout
-        process.standardError = FileHandle.standardError
-        let payload: [String: Any] = [
-            "v": 1, "id": UUID().uuidString, "op": operation,
-            "config": config, "pcm_base64": audio.base64EncodedString(),
-            "can_insert": true, "selected_text": selection ?? ""
-        ]
-        let request = try JSONSerialization.data(withJSONObject: payload)
-        try process.run()
-        stdin.fileHandleForWriting.write(request + Data([10]))
-        try? stdin.fileHandleForWriting.close()
-        if generation != 0 {
-            taskLock.withLock {
-                if canceledGeneration == generation { process.terminate() }
-                else { currentTask = process }
+    static func request(config: [String: Any], operation: String, audio: Data,
+                        selection: String?, token: UInt64 = 0) throws -> BridgeReply.Output {
+        let data = try JSONSerialization.data(withJSONObject: config)
+        let json = String(decoding: data, as: UTF8.self)
+        let result = json.withCString { cfg in
+            if operation == "host_profile" { return VRProfile(cfg) }
+            return operation.withCString { op in
+                (selection ?? "").withCString { selected in
+                    audio.withUnsafeBytes { pcm in
+                        VRRun(cfg, op, pcm.bindMemory(to: UInt8.self).baseAddress,
+                              Int32(audio.count), selected, token)
+                    }
+                }
             }
         }
-        defer {
-            taskLock.withLock {
-                if currentTask === process { currentTask = nil }
-            }
-        }
-        // Drain stdout while the helper is alive to avoid pipe-buffer deadlocks.
-        let output = stdout.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0,
-              let line = output.split(separator: 10).last,
-              let reply = try? JSONDecoder().decode(BridgeReply.self, from: Data(line)) else {
-            throw HostError.bridge("voicebridge failed or returned malformed JSON")
-        }
-        guard reply.ok, let result = reply.result else {
+        guard let result else { throw HostError.bridge("Go Core returned no response") }
+        defer { VRFree(result) }
+        let reply = try JSONDecoder().decode(BridgeReply.self,
+                           from: Data(bytes: result, count: strlen(result)))
+        guard reply.ok, let output = reply.result else {
             throw HostError.bridge(reply.error?.message ?? "Go Core operation failed")
         }
-        return result
+        return output
     }
 }
 
@@ -244,11 +209,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private let pill = RecordingPill()
     private var config: HostConfig!
     private var configURL: URL!
-    // An active physical press carries its native replay/consumed bit.
-    private var pressed = [Int64: Bool]()
-    private var activeKey: Int64?
     private var activeAction: Action?
-    private var generation: UInt64 = 0
+    private var taskID: UInt64 = 0
     private var targetPID: pid_t = 0
     private var targetWindow: AXUIElement?
     private var selected: String?
@@ -292,7 +254,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             fputs("VoiceRewrite config: \(error)\n", stderr)
         }
     }
-    @objc private func quit() { GoCore.cancel(); NSApp.terminate(nil) }
+    @objc private func quit() { VREpochCancel(); NSApp.terminate(nil) }
     private func show(_ text: String) { item.button?.title = text }
 
     private func startEventTap() {
@@ -314,7 +276,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             if type == .flagsChanged {
                 app.handleModifier(code: code, flags: event.flags)
             } else if type == .keyDown {
-                if app.activeKey != nil && !app.microphone.running { app.generation &+= 1 }
+                if VRArmed() != 0 && !app.microphone.running { VRAbandon() }
             } else if type == .otherMouseDown || type == .otherMouseUp {
                 if event.getIntegerValueField(.eventSourceUserData) == 0x56525842 {
                     return Unmanaged.passUnretained(event)
@@ -353,32 +315,27 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         // Right-side flagsChanged events can fire while another modifier is held.
         // A tracked press is a release; a new press requires the matching flag.
         updatePress(code: code, name: name,
-                    down: pressed[code] == nil && flags.contains(family),
+                    down: VRDown(Int32(code)) == 0 && flags.contains(family),
                     delay: Double(config.profile.modifierDelayMS) / 1000)
     }
     private func updatePress(code: Int64, name: String, down: Bool, delay: TimeInterval,
                              cursor: CGPoint? = nil) {
         guard name == config.profile.dictation || name == config.profile.rewrite else { return }
+        let key = Int32(code)
         if down {
-            guard pressed[code] == nil else { return }
-            pressed[code] = false
-            guard activeKey == nil, !pending else { return }
-            activeKey = code
+            let token = VRPress(key, pending ? 1 : 0)
+            guard token != 0 else { return }
             activeAction = name == config.profile.dictation ? .dictation : .rewrite
-            generation &+= 1
-            let token = generation
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self, self.generation == token, self.pressed[code] != nil,
-                      self.activeKey == code, let action = self.activeAction else { return }
+                guard let self, VRActivate(key, token) == 1,
+                      let action = self.activeAction else { return }
                 self.begin(action)
             }
-        } else if let consumed = pressed.removeValue(forKey: code) {
-            if activeKey == code {
-                generation &+= 1
-                if microphone.running { finish() }
-                else { activeKey = nil; activeAction = nil }
-            }
-            if let cursor, !consumed { replayClick(button: code - 100, cursor: cursor) }
+        } else {
+            let outcome = VRRelease(key)
+            if outcome == 2 && microphone.running { finish() }
+            else if outcome != 0 { activeAction = nil }
+            if outcome == 1, let cursor { replayClick(button: code - 100, cursor: cursor) }
         }
     }
     private func replayClick(button: Int64, cursor: CGPoint) {
@@ -393,7 +350,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func begin(_ action: Action) {
-        if let key = activeKey, key >= 103 { pressed[key] = true }
         targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
         guard targetPID > 0 else { reset("No target"); return }
         targetWindow = focusedWindow()
@@ -404,21 +360,21 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             }
             selected = text
         }
+        taskID = VREpochStart()
         do {
             try microphone.start(maximumSeconds: config.profile.maximumSeconds)
             pill.recording(rewrite: action == .rewrite, started: Date(),
                            meter: { [weak self] in self?.microphone.meterLevel ?? 0 })
             show("●")
-            let token = generation
+            let token = taskID
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.profile.maximumSeconds)) { [weak self] in
-                guard let self, self.generation == token, self.microphone.running else { return }
+                guard let self, VREpochValid(token) == 1, self.microphone.running else { return }
                 self.finish()
             }
         } catch { reset("Mic error"); fputs("Microphone: \(error)\n", stderr) }
     }
     private func finish() {
         guard microphone.running, let action = activeAction else { return }
-        activeKey = nil
         activeAction = nil
         pending = true
         pill.processing()
@@ -426,17 +382,17 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let configValue = config.raw
         let selectedValue = selected
         let pid = targetPID
-        let token = generation
+        let token = taskID
         do {
             let pcm = try microphone.stop()
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let result = Result {
                     try GoCore.request(config: configValue,
                                       operation: action == .dictation ? "transcribe" : "selected_voice_task",
-                                      audio: pcm, selection: selectedValue, generation: token)
+                                      audio: pcm, selection: selectedValue, token: token)
                 }
                 DispatchQueue.main.async {
-                    guard let self, self.generation == token else { return }
+                    guard let self, VREpochValid(token) == 1 else { return }
                     self.pending = false
                     switch result {
                     case .failure(let error):
@@ -539,9 +495,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     // Clicking the floating pill cancels the active capture or suppresses a
     // pending bridge result. It must never retry or deliver a stale write.
     private func cancelFromPill() {
-        let token = generation
-        generation &+= 1
-        if pending { GoCore.cancel(generation: token) }
+        VREpochCancel()
         if microphone.running { _ = try? microphone.stop(discard: true) }
         clearSession()
         pill.dismiss()
@@ -555,7 +509,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func clearSession() {
-        activeKey = nil
         activeAction = nil
         selected = nil
         targetWindow = nil

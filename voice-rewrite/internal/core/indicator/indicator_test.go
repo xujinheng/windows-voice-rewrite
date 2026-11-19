@@ -200,22 +200,3 @@ func TestUnifiedStatusPhases(t *testing.T) {
 		t.Fatalf("spinner bead %d,%d alpha %d", x, y, alpha)
 	}
 }
-
-func TestHostMotionParametersMatchSharedRenderer(t *testing.T) {
-	spec := HostSpec()
-	wave := spec["waveShape"].([]float64)
-	if len(wave) != 7 || wave[0] != WaveMinHeight || wave[1] != WaveHeightRange ||
-		wave[2] != WaveLevelExponent || wave[3] != WaveEnvelopeBase ||
-		wave[4] != WaveEnvelopeRange || wave[5] != WaveBarPhase || wave[6] != WaveTickPhase {
-		t.Fatalf("native waveform parameters drifted: %v", wave)
-	}
-	weights := spec["levelWeights"].([]float64)
-	if len(weights) != 2 || weights[0] != LevelPastWeight || weights[1] != LevelCurrentWeight {
-		t.Fatalf("native level smoother drifted: %v", weights)
-	}
-	spinner := spec["spinnerShape"].([]float64)
-	if len(spinner) != 4 || spinner[0] != SpinnerTickPhase || spinner[1] != SpinnerBarPhase ||
-		spinner[2] != SpinnerBaseAlpha || spinner[3] != SpinnerAlphaStep {
-		t.Fatalf("native spinner parameters drifted: %v", spinner)
-	}
-}

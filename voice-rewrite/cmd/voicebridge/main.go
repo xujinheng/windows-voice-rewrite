@@ -46,6 +46,7 @@ type request struct {
 	CanInsert    bool            `json:"can_insert"`
 	Instruction  string          `json:"instruction"`
 	TargetID     string          `json:"target_id"`
+	NativePCM    []byte          `json:"-"`
 }
 
 type bridgeError struct {
@@ -307,11 +308,18 @@ func decodeRequestPCM(req request, cfg coreconfig.Config) ([]byte, string) {
 	if limit := cfg.MaxRecordSeconds * audio.PCMBytesPerSecond; limit > 0 && limit < maxBytes {
 		maxBytes = limit
 	}
-	if len(req.PCMBase64) == 0 || len(req.PCMBase64) > base64.StdEncoding.EncodedLen(maxBytes) {
-		return nil, "invalid"
+	var pcm []byte
+	if req.NativePCM != nil {
+		pcm = req.NativePCM
+	} else {
+		if len(req.PCMBase64) == 0 || len(req.PCMBase64) > base64.StdEncoding.EncodedLen(maxBytes) {
+			return nil, "invalid"
+		}
+		var err error
+		pcm, err = base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
+		if err != nil { return nil, "invalid" }
 	}
-	pcm, err := base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
-	if err != nil || len(pcm) == 0 || len(pcm)%2 != 0 || len(pcm) > maxBytes {
+	if len(pcm) == 0 || len(pcm)%2 != 0 || len(pcm) > maxBytes {
 		return nil, "invalid"
 	}
 	if audio.BelowMinCapture(pcm) {

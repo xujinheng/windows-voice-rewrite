@@ -15,14 +15,12 @@ case "$architecture" in
 esac
 
 test -x "$app/Contents/MacOS/VoiceRewrite"
-test -x "$app/Contents/MacOS/voicebridge"
-for executable in VoiceRewrite voicebridge; do
-  actual="$(lipo -archs "$app/Contents/MacOS/$executable")"
-  if [[ "$actual" != "$architecture" ]]; then
-    echo "$executable: expected $architecture, found $actual" >&2
-    exit 1
-  fi
-done
+test ! -e "$app/Contents/MacOS/voicebridge"
+actual="$(lipo -archs "$app/Contents/MacOS/VoiceRewrite")"
+if [[ "$actual" != "$architecture" ]]; then
+  echo "VoiceRewrite: expected $architecture, found $actual" >&2
+  exit 1
+fi
 
 codesign --verify --deep --strict "$app"
 mkdir -p "$(dirname "$output")"
