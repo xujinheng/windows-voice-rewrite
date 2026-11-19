@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"runtime"
+	"syscall"
 	"testing"
 	"time"
 	"unsafe"
@@ -33,9 +34,13 @@ func TestCanceledRewriteHoldReleasesBusy(t *testing.T) {
 func TestRecordingWatchersPostTaskGeneration(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	hwnd, err := createTrayCallbackWindow()
-	if err != nil {
-		t.Fatal(err)
+	// Use the built-in Win32 class: another test already registers the
+	// application's tray window class in this process.
+	class, _ := syscall.UTF16PtrFromString("STATIC")
+	hwnd, _, err := procCreateWindow.Call(0, uintptr(unsafe.Pointer(class)), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	runtime.KeepAlive(class)
+	if hwnd == 0 {
+		t.Fatalf("create message sink: %v", err)
 	}
 	defer procDestroyWindow.Call(hwnd)
 
