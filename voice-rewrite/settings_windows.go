@@ -664,7 +664,11 @@ func (p *uxSettings) save() error {
 		return err
 	}
 	p.app.cfg = cfg
-	uxSetText(p.hint, ux.WindowsSaveNotice(changedShortcut || changedDuration || changedAudioDevice))
+	notice := ux.WindowsSaveImmediate
+	if changedShortcut || changedDuration || changedAudioDevice {
+		notice = ux.WindowsSaveRestart
+	}
+	uxSetText(p.hint, notice)
 	p.app.logger.Print("settings updated: connection configuration saved (endpoint/key values redacted)")
 	return nil
 }
