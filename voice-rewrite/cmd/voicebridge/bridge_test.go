@@ -20,6 +20,7 @@ import (
 	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/jsonl"
+	"voicerewrite/internal/core/session"
 	"voicerewrite/internal/core/ux"
 )
 
@@ -84,6 +85,93 @@ func TestInProcessRequestDeadlineCancelsASR(t *testing.T) {
 	case <-seen:
 	default:
 		t.Fatal("test did not reach the ASR network path")
+	}
+}
+
+// Cancellation must reach an already-connected provider, not merely hide a
+// stale completion in Swift. Both hosts call safeProcessRequest; macOS supplies
+// the parent context through the native C ABI's session.Epoch.
+func TestInProcessEpochCancellationReachesProvider(t *testing.T) {
+	for _, tc := range []struct {
+		name, operation, blockedPath string
+		wantCalls                    int32
+	}{
+		{"asr", "transcribe", "/v1/audio/transcriptions", 1},
+		{"rewrite_llm", "selected_voice_task", "/v1/chat/completions", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			entered := make(chan struct{}, 1)
+			disconnected := make(chan struct{}, 1)
+			var calls atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if r.URL.Path == "/v1/audio/transcriptions" && tc.blockedPath != r.URL.Path {
+					_, _ = io.WriteString(w, `{"text":"请写成英文"}`)
+					return
+				}
+				if r.URL.Path != tc.blockedPath {
+					t.Errorf("unexpected provider request: %s", r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				_, _ = io.Copy(io.Discard, r.Body)
+				entered <- struct{}{}
+				select {
+				case <-r.Context().Done():
+					disconnected <- struct{}{}
+				case <-time.After(4 * time.Second):
+					t.Error("cancellation never disconnected the provider")
+				}
+			}))
+			defer srv.Close()
+
+			cfg := configFor(srv.URL)
+			cfg["text_model"] = "text-model"
+			raw, err := json.Marshal(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := request{
+				ID: "native", Op: tc.operation, Config: raw, CanInsert: true,
+				SelectedText: "你好", NativePCM: make([]byte, 3200),
+			}
+			var epoch session.Epoch
+			defer epoch.Shutdown()
+			token := epoch.Start()
+			done := make(chan response, 1)
+			go func() { done <- safeProcessRequest(epoch.ContextFor(token), req) }()
+
+			select {
+			case <-entered:
+			case <-time.After(5 * time.Second):
+				t.Fatal("request did not reach the provider before cancellation")
+			}
+			next := epoch.Start() // VREpochCancel invalidates the prior generation.
+			select {
+			case <-disconnected:
+			case <-time.After(5 * time.Second):
+				t.Fatal("provider did not observe the HTTP cancellation")
+			}
+			select {
+			case reply := <-done:
+				if reply.OK || reply.Error == nil || reply.Error.Code != "canceled" {
+					t.Fatalf("canceled task returned a usable result: %#v", reply)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("canceled worker did not stop")
+			}
+			if epoch.Valid(token) || !epoch.Valid(next) {
+				t.Fatal("stale generation remains eligible for native delivery")
+			}
+			// A delayed Swift worker must not contact the provider after cancel.
+			reply := safeProcessRequest(epoch.ContextFor(token), req)
+			if reply.OK || reply.Error == nil || reply.Error.Code != "canceled" {
+				t.Fatalf("stale request was processed: %#v", reply)
+			}
+			if got := calls.Load(); got != tc.wantCalls {
+				t.Fatalf("cancellation contacted %d provider endpoints, want %d", got, tc.wantCalls)
+			}
+		})
 	}
 }
 
