@@ -94,4 +94,3 @@ func HistoryTitle(intent string) string {
 func HistoryRestoreTitle(storedTitle string) string {
 	return strings.TrimSpace(storedTitle) + " · 历史结果"
 }
-
