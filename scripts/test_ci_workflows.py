@@ -29,6 +29,27 @@ class HeadlessWorkflowTests(unittest.TestCase):
         ready = (WORKFLOWS / "ready-build.yml").read_text()
         self.assertIn("github.event.changes.title", ready)
 
+    def test_release_has_oneclick_and_experimental_mac_downloads(self):
+        workflow = (WORKFLOWS / "build.yml").read_text()
+        self.assertIn("release/Qwen3-ASR-OneClick-Windows-x64.exe", workflow)
+        self.assertIn("release/VoiceRewrite-*-macOS-*-Experimental.zip", workflow)
+        self.assertIn("ditto -c -k --sequesterRsrc --keepParent", workflow)
+        self.assertIn("name: Qwen3-ASR-OneClick-Windows-x64", workflow)
+        self.assertIn("release/VoiceRewrite-Setup-*-x64.exe", workflow)
+        self.assertIn("gh api -X POST", workflow)
+        for path in (ROOT / "README.md", ROOT / "README.en.md"):
+            readme = path.read_text(encoding="utf-8")
+            self.assertIn("docs/demo/voicerewrite-demo.mp4", readme)
+            for asset in (
+                "Qwen3-ASR-OneClick-Windows-x64.exe",
+                "VoiceRewrite-Setup-0.1.1-x64.exe",
+                "VoiceRewrite-0.1.1-macOS-arm64-Experimental.zip",
+                "VoiceRewrite-0.1.1-macOS-x86_64-Experimental.zip",
+            ):
+                self.assertIn(f"releases/download/v0.1.1/{asset}", readme)
+        self.assertIn("目前不稳定", (ROOT / "README.md").read_text(encoding="utf-8"))
+        self.assertIn("currently unstable", (ROOT / "README.en.md").read_text(encoding="utf-8"))
+
     def test_source_budget_and_user_path(self):
         sources = [ROOT / "macos/Headless/main.swift",
                    ROOT / "macos/Headless/RecordingPill.swift"]

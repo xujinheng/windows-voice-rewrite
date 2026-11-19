@@ -126,7 +126,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$(uname -m)" = '${{ matrix.arch }}'
-          bash scripts/build-macos-headless.sh '${{ matrix.arch }}' "$RUNNER_TEMP/headless" 0.1.0
+          version=0.1.0
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then version="${GITHUB_REF_NAME#v}"; fi
+          bash scripts/build-macos-headless.sh '${{ matrix.arch }}' "$RUNNER_TEMP/headless" "$version"
       - name: Verify Go-linked production source share
         run: python3 scripts/check_headless_scope.py
       - name: Verify signed binary and basic configuration
@@ -163,6 +165,23 @@ jobs:
             "$RUNNER_TEMP/main.swift" macos/Headless/RecordingPill.swift \
             "$RUNNER_TEMP/headless/libvoicecore.a"
           "$RUNNER_TEMP/voicecore-focus-test"
+      - name: Package explicitly labeled experimental, unnotarized Mac ZIP on tags
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          out="$RUNNER_TEMP/headless/VoiceRewrite-$version-macOS-${{ matrix.arch }}-Experimental.zip"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/headless/VoiceRewrite.app" "$out"
+          test -s "$out"
+      - name: Upload experimental Mac ZIP for the versioned Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: VoiceRewrite-Experimental-macOS-${{ matrix.arch }}
+          path: ${{ runner.temp }}/headless/VoiceRewrite-*-macOS-${{ matrix.arch }}-Experimental.zip
+          retention-days: 7
+          if-no-files-found: error
       - name: Upload one developer .app per architecture on main and tags
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -397,20 +416,56 @@ jobs:
           pattern: VoiceRewrite-*
           path: release
           merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: Qwen3-ASR-OneClick-Windows-x64
+          path: release
       - name: Publish unsigned release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          prerelease: ${{ github.ref_name != 'v0.1.0' }}
+          prerelease: false
           name: VoiceRewrite ${{ github.ref_name }}
           generate_release_notes: false
           body_path: release-metadata/release-notes/${{ github.ref_name }}.md
           overwrite_files: true
-          # EXE and checksums remain available as CI artifacts, but not Release assets.
-          # Both public packages already contain the program and license.
+          # Public assets include the Windows OneClick ASR server and the two
+          # explicitly experimental unnotarized Mac builds; checksums stay in CI.
           files: |
+            release/Qwen3-ASR-OneClick-Windows-x64.exe
             release/VoiceRewrite-Setup-*-x64.exe
             release/VoiceRewrite-windows-x64.zip
+            release/VoiceRewrite-*-macOS-*-Experimental.zip
           fail_on_unmatched_files: true
+
+  # Single-use requested v0.1.1 publication. Only the specifically titled
+  # merged main commit can run this, and only after all platform checks pass.
+  # GITHUB_TOKEN tag pushes do not themselves trigger workflows, so dispatch
+  # the validated tag explicitly. Remove this job after publication.
+  tag-v0-1-1:
+    name: Publish requested v0.1.1 tag after main validation
+    if: >-
+      ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'docs(release): prepare v0.1.1') }}
+    needs: [changes, test-core, build-macos-headless, build, build-oneclick]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Tag validated commit and dispatch tagged Release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v0.1.1" >/dev/null 2>&1; then
+            echo "::notice::v0.1.1 already exists; leaving it unchanged"
+            exit 0
+          fi
+          gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref=refs/tags/v0.1.1 -f sha="$GITHUB_SHA"
+          # A tag created by GITHUB_TOKEN does not trigger push workflows.
+          gh api -X POST "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/dispatches" \
+            -f ref=v0.1.1
 
   windows-acceptance:
     name: Windows UI capture (parallel)
