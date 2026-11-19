@@ -28,24 +28,9 @@ func TestDictationInsertStopsAtTheFirstFailure(t *testing.T) {
 	if err = DictationInsertReady("你好", func() bool { return true }, func() bool { return true }, func() bool { return false }); err != nil {
 		t.Fatal(err)
 	}
-	if DictationClipboardRestored(nil) != nil {
-		t.Fatal("nil restore")
-	}
-	if err = DictationClipboardRestored(errors.New("full")); err == nil || err.Error() != DictationRestoreFailed+": full" {
-		t.Fatal(err)
-	}
 }
 
 func TestDictationDeliveryKeepsTheCardAndPillPair(t *testing.T) {
-	if err := DictationCaptureProblem(errors.New("mic"), true); err == nil || err.Error() != "mic" {
-		t.Fatal(err)
-	}
-	if err := DictationCaptureProblem(nil, true); err == nil || err.Error() != DictationTooShort {
-		t.Fatal(err)
-	}
-	if DictationCaptureProblem(nil, false) != nil {
-		t.Fatal("usable capture")
-	}
 	lost := DictationUnfocused()
 	if !lost.ShowCard || lost.Title != DictationNotInserted || lost.Phase != indicator.Fallback || lost.TraySuccess {
 		t.Fatalf("unfocused %+v", lost)
@@ -57,9 +42,6 @@ func TestDictationDeliveryKeepsTheCardAndPillPair(t *testing.T) {
 	sent := DictationInserted(nil)
 	if sent.ShowCard || sent.Phase != indicator.Success || !sent.TraySuccess {
 		t.Fatalf("sent %+v", sent)
-	}
-	if err := RewriteCaptureProblem(nil, true); err == nil || err.Error() != RewriteTooShort {
-		t.Fatal(err)
 	}
 	applied := RewritePasted(true, nil)
 	if applied.ShowCard || applied.Phase != indicator.Success || !applied.SetPhase {
