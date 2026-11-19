@@ -28,6 +28,9 @@ func TestToggleCleanupKeepsClipboardAndStatusApart(t *testing.T) {
 }
 
 func TestVoiceStartKeepsSideAndKeyboardWindowsApart(t *testing.T) {
+	if !VoiceStartBlocked(false, false, false, false, true) || VoiceStartBlocked(false, false, false, false, false) {
+		t.Fatal("blocked")
+	}
 	if SideConfirm(false, true, true, true) != SideConfirmIgnore || SideConfirm(true, false, true, true) != SideConfirmIgnore {
 		t.Fatal("ignore other button")
 	}
