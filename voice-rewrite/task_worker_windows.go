@@ -154,12 +154,12 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 // The selection must be copied AFTER releasing the held shortcut. This function
 // runs off the UI and low-level mouse-hook threads, and enforces a small time budget.
 func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintptr, anchor trayPoint, generation uint64) {
+	defer app.busy.Store(false)
 	started := time.Now()
 	if !app.epoch.Valid(generation) {
 		rec.Stop()
 		return
 	}
-	defer app.busy.Store(false)
 	defer func() {
 		if reason := recover(); reason != nil {
 			app.logger.Printf("hold worker panic: %v\n%s", reason, debug.Stack())
