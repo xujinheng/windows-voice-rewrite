@@ -442,7 +442,7 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		if activeAnswer != nil && activeAnswer.window == hwnd {
 			switch uint16(wParam & 0xffff) {
 			case BUTTON_COPY:
-				if err := setClipboardText(hwnd, activeAnswer.body); err == nil {
+				if _, err := setClipboardText(hwnd, activeAnswer.body); err == nil {
 					activeAnswer.setNote(ux.CopySucceeded)
 				} else {
 					activeAnswer.setNote(ux.CopyFailed)
