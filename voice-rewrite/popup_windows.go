@@ -415,20 +415,16 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case WM_CTLCOLORSTATIC:
 		if activeAnswer != nil && activeAnswer.window == hwnd {
 			procSetBkMode.Call(wParam, TRANSPARENT)
-			kind := ux.CardChrome
-			if lParam == activeAnswer.edit {
-				kind = ux.CardEditor
-			} else if activeAnswer.note == lParam {
-				kind = ux.CardNote
-			}
-			if paintCardInk(wParam, kind) {
+			editor := lParam == activeAnswer.edit
+			muted := !editor && lParam == activeAnswer.note
+			if paintCardInk(wParam, muted, editor) {
 				return activeAnswer.editBrush
 			}
 			return activeAnswer.bgBrush
 		}
 	case WM_CTLCOLOREDIT:
 		if activeAnswer != nil && activeAnswer.window == hwnd && activeAnswer.editBrush != 0 {
-			paintCardInk(wParam, ux.CardEditor)
+			paintCardInk(wParam, false, true)
 			return activeAnswer.editBrush
 		}
 	case WM_DRAWITEM:
@@ -486,8 +482,7 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	return result
 }
 
-func paintCardInk(dc uintptr, kind ux.CardSurface) bool {
-	muted, editor := ux.CardInk(kind)
+func paintCardInk(dc uintptr, muted, editor bool) bool {
 	color := activeAnswer.palette.text
 	if muted {
 		color = activeAnswer.palette.muted
@@ -505,17 +500,16 @@ func drawCardButton(item *drawItemStruct) bool {
 	if item == nil || activeAnswer == nil {
 		return false
 	}
-	button := ux.CardButton(-1)
+	var label string
+	var primary bool
 	switch item.CtlID {
 	case BUTTON_COPY:
-		button = ux.CardCopy
+		label, primary = ux.CopyAction, !activeAnswer.allowApply
 	case BUTTON_APPLY:
-		button = ux.CardApply
+		label, primary = ux.ApplyAction, true
 	case BUTTON_CLOSE:
-		button = ux.CardClose
-	}
-	label, primary, ok := ux.CardButtonFace(button, activeAnswer.allowApply)
-	if !ok {
+		label = ux.CloseGlyph
+	default:
 		return false
 	}
 	var font uintptr
