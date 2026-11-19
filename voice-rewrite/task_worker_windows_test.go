@@ -59,8 +59,8 @@ func TestRecordingWatchersPostTaskGeneration(t *testing.T) {
 	// The UI must not apply the older recording's queued duration notice to
 	// the currently active one. Both watchers tag their own recording epoch.
 	want := map[uint32]uintptr{
-		WM_RECORD_LIMIT:  uintptr(previousGeneration),
-		WM_HOLD_TIMEOUT:  uintptr(activeGeneration),
+		WM_RECORD_LIMIT: uintptr(previousGeneration),
+		WM_HOLD_TIMEOUT: uintptr(activeGeneration),
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for len(want) != 0 && time.Now().Before(deadline) {
