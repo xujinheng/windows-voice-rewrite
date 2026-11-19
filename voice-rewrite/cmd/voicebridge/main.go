@@ -1,4 +1,4 @@
-// voicebridge is the local JSON-lines process entry point for the macOS host.
+// voicebridge provides the linked macOS Go Core and an optional serial JSONL diagnostic command.
 package main
 
 import (
@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -45,7 +44,6 @@ type request struct {
 	SelectedText string          `json:"selected_text"`
 	CanInsert    bool            `json:"can_insert"`
 	Instruction  string          `json:"instruction"`
-	TargetID     string          `json:"target_id"`
 	NativePCM    []byte          `json:"-"`
 }
 
@@ -63,13 +61,12 @@ type response struct {
 }
 
 type bridgeOptions struct {
-	MaxInFlight           int
 	TranscribeTimeout     time.Duration
 	SpokenSelectedTimeout time.Duration
 }
 
 func defaultOptions() bridgeOptions {
-	return bridgeOptions{MaxInFlight: 4, TranscribeTimeout: speech.TranscribeTimeout, SpokenSelectedTimeout: textedit.SpokenTaskTimeout}
+	return bridgeOptions{TranscribeTimeout: speech.TranscribeTimeout, SpokenSelectedTimeout: textedit.SpokenTaskTimeout}
 }
 
 // Short clips should not wait for a stalled service as long as a multi-chunk
@@ -123,25 +120,6 @@ func safeProcessRequest(ctx context.Context, req request) (reply response) {
 	return reply
 }
 
-type bridgeTask struct {
-	cancel   context.CancelFunc
-	canceled bool
-}
-
-type bridgeServer struct {
-	mu      sync.Mutex
-	active  map[string]*bridgeTask
-	seen    map[string]struct{}
-	wg      sync.WaitGroup
-	options bridgeOptions
-
-	input    io.Reader
-	output   io.Writer
-	writeMu  sync.Mutex
-	writeErr error
-	stopOnce sync.Once
-}
-
 func failure(id, code, message string) response {
 	return response{Version: jsonl.Version, ID: id, Error: &bridgeError{Code: code, Message: message}}
 }
@@ -184,125 +162,32 @@ func readFrame(r *bufio.Reader) ([]byte, error) {
 	}
 }
 
-func (s *bridgeServer) shutdown() {
-	s.stopOnce.Do(func() {
-		s.mu.Lock()
-		for _, task := range s.active {
-			task.canceled = true
-			task.cancel()
-		}
-		s.mu.Unlock()
-	})
-}
-
-// All writes, including asynchronous task completions, are one JSON line.
-// A broken stdout cancels network work and closes stdin to unblock the reader.
-func (s *bridgeServer) send(r response) {
-	s.writeMu.Lock()
-	if s.writeErr != nil {
-		s.writeMu.Unlock()
-		return
-	}
-	err := json.NewEncoder(s.output).Encode(r)
-	if err != nil {
-		s.writeErr = err
-	}
-	s.writeMu.Unlock()
-	if err != nil {
-		s.shutdown()
-		if closer, ok := s.input.(io.Closer); ok {
-			_ = closer.Close()
-		}
-	}
-}
-
-func (s *bridgeServer) outputError() error {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	return s.writeErr
-}
-
-func (s *bridgeServer) dispatch(frame []byte) {
+// The shipped macOS app calls Go in-process. The optional JSONL command is
+// deliberately serial; it does not need an active-task map or a second cancel
+// protocol. Timeouts still bound every ASR/LLM operation.
+func dispatch(frame []byte, options bridgeOptions) response {
 	var req request
 	if !utf8.Valid(frame) || json.Unmarshal(frame, &req) != nil {
-		s.send(failure("", "invalid_json", "invalid request JSON"))
-		return
+		return failure("", "invalid_json", "invalid request JSON")
 	}
 	if req.Version != jsonl.Version {
-		s.send(failure(req.ID, "protocol_version", "unsupported protocol version"))
-		return
+		return failure(req.ID, "protocol_version", "unsupported protocol version")
 	}
 	if req.ID == "" || len(req.ID) > jsonl.MaxIDBytes {
-		s.send(failure(req.ID, "invalid_id", fmt.Sprintf("request ID must be 1..%d bytes", jsonl.MaxIDBytes)))
-		return
+		return failure(req.ID, "invalid_id", fmt.Sprintf("request ID must be 1..%d bytes", jsonl.MaxIDBytes))
 	}
-
-	s.mu.Lock()
-	if _, exists := s.seen[req.ID]; exists {
-		s.mu.Unlock()
-		s.send(failure(req.ID, "duplicate_id", "request ID already used"))
-		return
+	switch req.Op {
+	case "hello":
+		return success(req.ID, map[string]any{"name": jsonl.HelloName, "protocol": jsonl.Version})
+	case "host_profile":
+		return headlessProfile(req)
+	case "transcribe", "selected_voice_task":
+		ctx, cancel := context.WithTimeout(context.Background(), options.timeoutFor(req))
+		defer cancel()
+		return safeProcessRequest(ctx, req)
+	default:
+		return failure(req.ID, "unsupported_op", msgUnsupported)
 	}
-	if len(s.seen) >= jsonl.MaxSeenIDs {
-		s.mu.Unlock()
-		s.send(failure(req.ID, "id_limit", "helper request limit reached; restart helper"))
-		return
-	}
-	s.seen[req.ID] = struct{}{}
-
-	if req.Op != "transcribe" && req.Op != "selected_voice_task" {
-		s.mu.Unlock()
-		switch req.Op {
-		case "hello":
-			s.send(success(req.ID, map[string]any{"name": jsonl.HelloName, "protocol": jsonl.Version}))
-		case "host_profile":
-			s.send(headlessProfile(req))
-		case "cancel":
-			if req.TargetID == "" {
-				s.send(failure(req.ID, "invalid_request", "target_id is required"))
-				return
-			}
-			s.mu.Lock()
-			task, found := s.active[req.TargetID]
-			if found {
-				task.canceled = true
-				task.cancel()
-			}
-			s.mu.Unlock()
-			s.send(success(req.ID, map[string]bool{"found": found}))
-		default:
-			s.send(failure(req.ID, "unsupported_op", msgUnsupported))
-		}
-		return
-	}
-	if len(s.active) >= s.options.MaxInFlight {
-		s.mu.Unlock()
-		s.send(failure(req.ID, "busy", "too many active requests"))
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), s.options.timeoutFor(req))
-	task := &bridgeTask{cancel: cancel}
-	s.active[req.ID] = task
-	s.wg.Add(1)
-	s.mu.Unlock()
-	go s.runTask(ctx, task, req)
-}
-
-func (s *bridgeServer) runTask(ctx context.Context, task *bridgeTask, req request) {
-	defer s.wg.Done()
-	defer task.cancel()
-
-	reply := safeProcessRequest(ctx, req)
-
-	s.mu.Lock()
-	if task.canceled || errors.Is(ctx.Err(), context.Canceled) {
-		reply = failure(req.ID, "canceled", msgCanceled)
-	} else if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		reply = failure(req.ID, "timeout", msgTimedOut)
-	}
-	delete(s.active, req.ID)
-	s.mu.Unlock()
-	s.send(reply)
 }
 
 // headlessProfile shares the existing config normalizer and indicator with
@@ -476,45 +361,33 @@ func contextFailure(id string, err error) response {
 	return failure(id, "canceled", msgCanceled)
 }
 
+// serveWithOptions is a serial diagnostic endpoint. Its one-request-then-EOF
+// lifecycle is tested, but production macOS calls safeProcessRequest directly
+// through the C ABI rather than spawning this command.
 func serveWithOptions(input io.Reader, output io.Writer, options bridgeOptions) error {
-	if options.MaxInFlight < 1 || options.TranscribeTimeout <= 0 || options.SpokenSelectedTimeout <= 0 {
+	if options.TranscribeTimeout <= 0 || options.SpokenSelectedTimeout <= 0 {
 		return errors.New("invalid bridge options")
 	}
-	s := &bridgeServer{
-		active: make(map[string]*bridgeTask), seen: make(map[string]struct{}),
-		input: input, output: output, options: options,
-	}
 	reader := bufio.NewReaderSize(input, 64<<10)
-	var readErr error
+	encoder := json.NewEncoder(output)
 	for {
 		frame, err := readFrame(reader)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		var reply response
 		switch {
 		case errors.Is(err, errFrameTooLarge):
-			s.send(failure("", "request_too_large", fmt.Sprintf("request exceeds %d MiB", jsonl.MaxRequestBytes>>20)))
-		case errors.Is(err, io.EOF):
-			goto done
+			reply = failure("", "request_too_large", fmt.Sprintf("request exceeds %d MiB", jsonl.MaxRequestBytes>>20))
 		case err != nil:
-			readErr = err
-			goto done
+			return err
 		default:
-			s.dispatch(frame)
+			reply = dispatch(frame, options)
 		}
-		if s.outputError() != nil {
-			break
+		if err := encoder.Encode(reply); err != nil {
+			return err
 		}
 	}
-done:
-	// The headless host writes one request then closes stdin. EOF is not a
-	// cancellation signal: let the bounded provider task return its reply.
-	// Actual read failures and broken stdout still cancel in-flight work.
-	if readErr != nil {
-		s.shutdown()
-	}
-	s.wg.Wait()
-	if err := s.outputError(); err != nil {
-		return err
-	}
-	return readErr
 }
 
 func serve(input io.Reader, output io.Writer) error {
