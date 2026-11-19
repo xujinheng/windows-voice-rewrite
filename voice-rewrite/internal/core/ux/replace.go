@@ -52,4 +52,3 @@ func ReplacePasteKeptSelection(verifyErr error, stillSelected, expected string) 
 	}
 	return nil
 }
-
