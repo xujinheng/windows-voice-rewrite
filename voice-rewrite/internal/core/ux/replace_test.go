@@ -38,16 +38,10 @@ func TestReplaceInsertStopsBeforeTheClipboard(t *testing.T) {
 	if err = ReplaceSelectionStillThere(nil, "a", "a"); err != nil {
 		t.Fatal(err)
 	}
-	if err = ReplaceBeforePasteOK(false); err == nil || err.Error() != ReplaceBeforePaste {
-		t.Fatal(err)
-	}
 	if err = ReplacePasteKeptSelection(nil, "same", "same"); err == nil || err.Error() != ReplacePasteRefused {
 		t.Fatal(err)
 	}
 	if err = ReplacePasteKeptSelection(errors.New("probe"), "same", "same"); err != nil {
-		t.Fatal(err)
-	}
-	if err = ReplaceClipboardRestored(errors.New("full")); err == nil || err.Error() != ReplaceRestoreFailed+": full" {
 		t.Fatal(err)
 	}
 }

@@ -4,7 +4,6 @@ package clipboard
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 )
@@ -27,14 +26,6 @@ const (
 	CaptureNoWindow   = "找不到当前编辑窗口"
 )
 
-// CopyModifiersReady stops a synthetic copy while Ctrl, Alt, or Shift is down.
-func CopyModifiersReady(released bool) error {
-	if released {
-		return nil
-	}
-	return errors.New(CopyModifiersHeld)
-}
-
 // CopyWindowReady stops before the copy or after it. The two sentences stay distinct.
 func CopyWindowReady(same, during bool) error {
 	if same {
@@ -56,25 +47,12 @@ func CopyRetryPause(attempt int) time.Duration {
 	return time.Duration(100*(attempt+1)) * time.Millisecond
 }
 
-// CopyAttemptsFailed keeps the attempt count in front of the last read error.
-func CopyAttemptsFailed(attempts int, last error) error {
-	return fmt.Errorf("复制选中文字失败（已尝试 %d 次）：%w", attempts, last)
-}
-
 // CopyPollMissed distinguishes a clipboard that never changed from one that changed without text.
 func CopyPollMissed(changed bool) error {
 	if !changed {
 		return errors.New(CopyUnchanged)
 	}
 	return errors.New(CopyEmpty)
-}
-
-// CaptureHasWindow rejects a missing foreground editor before any copy.
-func CaptureHasWindow(found bool) error {
-	if found {
-		return nil
-	}
-	return errors.New(CaptureNoWindow)
 }
 
 // MayRestore reports whether a plain-text snapshot may be written back.
