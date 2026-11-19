@@ -871,6 +871,16 @@ func runApp() {
 			}
 			continue
 		}
+		// Settings must receive registered hotkeys (including Exit) before the
+		// normal exit command. Otherwise recording a conflicting chord quits
+		// the app. Once settings loses focus, global hotkeys work normally.
+		if msg.Message == WM_HOTKEY && uxActiveSettings != nil &&
+			uxActiveSettings.capturingShortcut != 0 && isSameForegroundWindow(uxActiveSettings.window) {
+			vk := uint32((msg.LParam >> 16) & 0xffff)
+			mods := uint32(msg.LParam & 0x0007)
+			uxActiveSettings.acceptShortcutKey(vk, mods)
+			continue
+		}
 		if msg.Message == WM_TRAY_EXIT || (msg.Message == WM_HOTKEY && msg.WParam == HOTKEY_EXIT) {
 			discardPendingSide()
 			closeHandyStatus()
@@ -911,14 +921,6 @@ func runApp() {
 					p.acceptShortcut(name)
 				}
 			}
-			continue
-		}
-		if msg.Message == WM_HOTKEY && uxActiveSettings != nil && uxActiveSettings.capturingShortcut != 0 {
-			// RegisterHotKey consumes existing global bindings. Capture these
-			// as user input rather than firing the existing command/exit.
-			vk := uint32((msg.LParam >> 16) & 0xffff)
-			mods := uint32(msg.LParam & 0x0007)
-			uxActiveSettings.acceptShortcutKey(vk, mods)
 			continue
 		}
 		if msg.Message == WM_SIDE_ARM {
