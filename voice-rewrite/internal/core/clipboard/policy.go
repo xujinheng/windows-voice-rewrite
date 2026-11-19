@@ -16,6 +16,9 @@ const (
 	CopyPoll         = 35 * time.Millisecond
 	CopyModifierWait = 900 * time.Millisecond
 
+	// A native Windows paste must allow its target to consume the clipboard.
+	WindowsPasteWaitMilliseconds = 250
+
 	CopyModifiersHeld = "Ctrl/Alt/Shift 仍被按住，已停止模拟复制；请松开修饰键后再试"
 	CopyWindowBefore  = "编辑窗口已切换，已停止自动复制，避免读取其他窗口的文字"
 	CopyWindowDuring  = "复制期间编辑窗口发生切换，已停止自动复制"

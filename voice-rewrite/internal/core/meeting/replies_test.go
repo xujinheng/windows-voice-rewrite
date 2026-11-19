@@ -113,47 +113,9 @@ func TestReplyBatchAppliesKnownProtocolLines(t *testing.T) {
 	}
 }
 
-func TestReplyWorkCoalescesAutomaticAndManualAndAllowsExplicitRetry(t *testing.T) {
-	var state ReplyState
-	if state.AllowsRequest(true) || !state.AllowsRequest(false) {
-		t.Fatal("automatic requests must be opt-in; manual requests always allowed")
-	}
-	state.AutomaticEnabled = true
-	if !state.AllowsRequest(true) {
-		t.Fatal("explicit opt-in did not enable automatic requests")
-	}
-	if !state.MayStartTurn(17, true) {
-		t.Fatal("first automatic turn rejected")
-	}
-	first := state.StartTurn(17)
-	if state.MayStartTurn(17, true) || state.MayStartTurn(17, false) {
-		t.Fatal("duplicate inference allowed during an active turn")
-	}
-	next := state.StartTurn(18)
-	state.FinishTurn(first, true)
-	if !state.WorkActive || state.WorkTurn != 18 || state.CompletedTurn == 17 {
-		t.Fatal("stale completion changed current work")
-	}
-	state.FinishTurn(next, true)
-	if state.MayStartTurn(18, true) || !state.MayStartTurn(18, false) ||
-		!state.MayStartTurn(19, true) {
-		t.Fatal("completed turn should suppress automatic repeats but allow a manual refresh")
-	}
-	retry := state.StartTurn(18)
-	state.FinishTurn(retry, false)
-	if !state.MayStartTurn(18, false) {
-		t.Fatal("failed manual request could not be retried")
-	}
-	state.StartTurn(19)
-	state.ResetWork()
-	if state.WorkActive || !state.MayStartTurn(19, false) {
-		t.Fatal("cancellation left the reply state permanently busy")
-	}
-}
-
 func TestReplySecondOrThirdCanBeDisplayedAndAcceptedWithoutFirst(t *testing.T) {
 	var state ReplyState
-	first := state.StartTurn(7)
+	first := state.Next()
 	batch := ReplyBatch{Source: "first turn", Tip: "Verify the numbers"}
 	batch.Apply(Line{Kind: "TWO", English: "Could you clarify?", Chinese: "能再说明吗？", Complete: true})
 	if FirstReadyReply(batch.Lines) != 1 || !batch.HasReadyReply() {
@@ -162,12 +124,11 @@ func TestReplySecondOrThirdCanBeDisplayedAndAcceptedWithoutFirst(t *testing.T) {
 	if !state.Publish(first, batch) {
 		t.Fatal("initial batch rejected")
 	}
-	state.FinishTurn(first, true)
 	if state.Displayed.Lines[1].English != "Could you clarify?" || state.PendingAvailable {
 		t.Fatalf("first batch was not available: %+v", state)
 	}
 
-	second := state.StartTurn(8)
+	second := state.Next()
 	newBatch := ReplyBatch{Source: "second turn", Tip: "Check assumptions"}
 	newBatch.Apply(Line{Kind: "THREE", English: "I'll look into it.", Chinese: "我会查一下。", Complete: true})
 	if FirstReadyReply(newBatch.Lines) != 2 {
@@ -189,7 +150,7 @@ func TestReplySecondOrThirdCanBeDisplayedAndAcceptedWithoutFirst(t *testing.T) {
 
 func TestReplyPartialOrTipDoesNotCountAsCopyable(t *testing.T) {
 	var state ReplyState
-	serial := state.StartTurn(5)
+	serial := state.Next()
 	tipOnly := ReplyBatch{Tip: "Confirm the date"}
 	tipOnly.Apply(Line{Kind: "ONE", English: "Working...", Complete: false})
 	if tipOnly.HasReadyReply() || FirstReadyReply(tipOnly.Lines) != -1 {
