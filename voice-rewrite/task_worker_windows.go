@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"voicerewrite/internal/core/audio"
-	"voicerewrite/internal/core/clipboard"
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/speech"
@@ -78,18 +77,6 @@ func watchHoldRelease(hwnd, vk, mods, session uintptr, canceled <-chan struct{},
 				return
 			}
 		}
-	}
-}
-
-// Restore every snapshotted clipboard format when the sequence is still ours.
-// Never overwrite a later clipboard change made by the user or another app.
-func restoreSelectionClipboardIfOwned(hwnd uintptr, sel selectedText) {
-	if sel.ClipboardBackup != nil {
-		_ = sel.ClipboardBackup.restoreIfOwned(hwnd)
-		return
-	}
-	if clipboard.MayRestore(sel.HadOriginalClipboard, uint64(sel.CopyClipboardSeq), uint64(clipboardSeq())) {
-		_ = setClipboardText(hwnd, sel.OriginalClipboard)
 	}
 }
 
@@ -188,7 +175,7 @@ func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintp
 	}
 	sel, err := captureSelection(app.Window, app.cfg)
 	sel.Anchor = anchor
-	defer restoreSelectionClipboardIfOwned(app.Window, sel)
+	defer sel.ClipboardBackup.restoreIfOwned(app.Window)
 	app.logger.Printf("stage=selection mode=hold ms=%d", time.Since(started).Milliseconds())
 	if err == nil && sel.TargetWindow != expectedWindow {
 		err = errors.New(ux.HoldSelectionMoved)
@@ -212,7 +199,7 @@ func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintp
 
 func processRecorded(app *appState, rec *audioRecorder, sel selectedText, generation uint64) {
 	defer app.busy.Store(false)
-	defer restoreSelectionClipboardIfOwned(app.Window, sel)
+	defer sel.ClipboardBackup.restoreIfOwned(app.Window)
 	defer func() {
 		if reason := recover(); reason != nil {
 			app.logger.Printf("worker panic: %v\n%s", reason, debug.Stack())
