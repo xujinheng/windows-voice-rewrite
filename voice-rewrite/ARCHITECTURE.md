@@ -1,63 +1,70 @@
-# VoiceRewrite architecture — Go-first host boundaries
+# VoiceRewrite architecture
 
-The shared Go Core is authoritative for JSON config normalization, ASR, LLM,
-spoken selected-text rewriting, error classification and result routing.
-Windows is the existing Win32 host. macOS is a small headless `NSStatusItem`
-host whose native Swift files are `macos/Headless/main.swift` (native
-input/audio/AX/paste) and `macos/Headless/RecordingPill.swift` (floating
-non-activating status panel).
+VoiceRewrite is **one Go business core with two native desktop hosts**. Windows
+owns the established Win32 feature set. macOS is a deliberately small headless
+status-bar app for dictation and selected-text rewrite, not a second application
+stack. `oneclick/` is an independent standalone ASR-server bootstrapper with its
+own Go module; it must not be coupled to the desktop host just for reuse.
 
-## macOS production path
+## Runtime boundaries
 
-1. Quartz tap identifies physical RightCommand/RightOption or Mouse4/Mouse5.
-   A 200/250-ms hold threshold avoids ordinary modifier taps.
-2. AVAudioEngine captures microphone audio while the hold is active and
-   AVAudioConverter produces 16-kHz mono PCM16 after recording stops.
-3. Swift launches the existing bundled Go `cmd/voicebridge` executable and
-   sends one JSONL request (`transcribe` or `selected_voice_task`) with the
-   configured JSON fields. No synchronized per-audio-frame IPC.
-4. Go Core owns the provider request, instruction parsing, response and route.
-5. macOS displays the original 232×50 waveform/clock pill on capture and a
-   252×50 processing/result pill without activating the foreground editor.
-   Its cancel action stops native capture or invalidates a pending result
-   generation. macOS checks foreground target/selected-text freshness, sends
-   at most one native paste, and conditionally restores its pasteboard lease.
-   A sent event is not a confirmed editor write; no automatic retry.
+Windows (`voice-rewrite/*.go` and `*_windows.go`) owns Win32 messages, UIA,
+WASAPI/WinMM, hooks, clipboard handles, native windows and Meeting HUD pixels.
+Keep physical side effects and their thread/OS lifetime here; shared portable
+decisions belong under `internal/core`.
 
-There is **no macOS copy of the ASR/LLM decision logic** and no second Swift
-session coordinator. Native capture lifetime and input permissions necessarily
-remain in the macOS adapter; the Go bridge owns its request timeout.
+macOS (`macos/Headless/main.swift`, `RecordingPill.swift`) owns Quartz events,
+AVAudioEngine/AVAudioConverter, AX focus/selection, NSPasteboard leases,
+AppKit panel and status-menu drawing. It links Go `cmd/voicebridge` as a Darwin
+**C archive in the same process**, exposing a small explicit C ABI through
+`VoiceCore.h`. It does not start a Go helper, exchange audio-frame IPC, or
+implement a second voice-policy state machine.
 
-## Shared Go packages
+On macOS, physical shortcut events call Go `input.Hold`, task generations and
+provider cancellation call Go `session.Epoch`, and each waveform/spinner/clock
+frame calls Go `indicator` through the in-process ABI. Swift performs the OS
+operations and draws the returned pixels. The same Go `processRequest`
+invokes `speech.Transcribe`, `textedit.ResolveSpokenTask`, and `ux` routing,
+using the same 220-second transcription and 240-second spoken-task deadlines
+as the JSONL entrypoint. `cmd/voicebridge` retains its command-line JSONL
+mode for independent tests, but is not shipped as a second macOS process.
 
-`internal/core/config`: config parsing/normalization.
-`internal/core/audio`: PCM validation and framing.
-`internal/core/speech`: transcription and ASR providers.
-`internal/core/textedit`: selected-text instruction/model integration.
-`internal/core/ux`: result classification and routing.
-`cmd/voicebridge`: JSONL boundary used by macOS.
-Windows uses the Go Core directly from its Win32 main package, including the
-full Windows-only Meeting experience via `internal/core/meeting`. The macOS
-`voicebridge` deliberately has no Meeting session coordinator or Meeting
-protocol; unknown/retired Meeting requests return `unsupported_op`.
+**Delivery is not equivalent to text insertion.** Native hosts verify current
+window/selection and clipboard ownership before attempting one paste; a sent
+input event does not prove editor acceptance, and uncertain pastes are never
+automatically retried. Only the OS adapter can perform these final checks.
 
-## Source ownership and tests
+## Package ownership
 
-`scripts/check_headless_scope.py` counts only production Go source included
-by `go list -deps ./cmd/voicebridge` and the two compiled Swift host files; standard library,
-Go tooling, test source, Windows-only host and inactive files do not count.
-The audit reports actual linked Go and Swift LOC without counting obsolete
-Meeting modules. Its hard gates instead protect the two host paths' shared
-Go transcription/selected-task calls, a <=850 nonblank-line native adapter
-budget, and absence of macOS Meeting dependencies. A high Go LOC ratio that
-can only be reached by retaining dead modules is not accepted as evidence
-of meaningful reuse. This still is **not** dynamic runtime coverage.
+- `internal/core/config`: durable configuration and validation.
+- `internal/core/audio`: PCM and source framing, Meeting segmentation.
+- `internal/core/provider`: model discovery and private HTTP transport.
+- `internal/core/speech`: ASR request/response and transcript processing.
+- `internal/core/textedit`: selected-text intent and model rewriting.
+- `internal/core/input`, `session`: hold lifecycle and cancellable task epoch.
+- `internal/core/indicator`, `ux`, `clipboard`: presentation decisions,
+  delivery policies and clipboard guards. Native hosts own the system APIs.
+- `internal/core/meeting`: Windows-only Meeting business logic. Its
+  `SessionRuntime` owns pause/epochs; `Pipeline` owns ASR/translation queues;
+  `Scheduler` owns single-GPU inference priority; `ReplyState` owns
+  displayed/pending reply generation. They are distinct concerns, not four
+  competing authorities for the same voice task.
+- `internal/contract`, `settingsform`, `popup`, `shortcut`: shared native
+  UI commands, geometry and shortcut rules; no parallel settings app on macOS.
 
-CI compiles both Apple Silicon and Intel .app bundles and continues to run Go
-race tests and Windows host checks. Physical microphone, editor integration,
-AX permission, side-button hardware and actual ASR/LLM accuracy require
-explicit real-device testing; CI compilation cannot prove those operations.
+## Verification and maintenance
 
-All old macOS SwiftUI/Meeting/settings/visual parity checks were intentionally
-retired after the product scope was changed to this headless version. Git history
-retains the previous implementation.
+Before changing behavior, follow its Windows production entrypoint through
+the Go owner and into the native OS adapter. Remove superseded decisions and
+dead state along with the change; **do not create standalone state holders
+that are only called by their own tests**. Do not split a native file merely
+because it is long if doing so scatters the same platform lifecycle.
+
+The CI gate runs Go unit/race tests, Windows builds/UI and native Swift + Go
+C-archive builds for both macOS architectures. The macOS ABI smoke test calls
+the linked Go exports and benchmarks their direct overhead.
+`scripts/check_headless_scope.py` audits only compiled linked Go sources and
+the two Swift host files; source ratios are not runtime-coverage or UX
+measurements. Physical microphone, mouse side buttons, Accessibility,
+clipboard ownership, network performance and third-party editor insertion
+still require real-device acceptance.
