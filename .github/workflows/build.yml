@@ -443,7 +443,8 @@ jobs:
   # the validated tag explicitly. Remove this job after publication.
   tag-v0-1-1:
     name: Publish requested v0.1.1 tag after main validation
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'docs(release): prepare v0.1.1') }}
+    if: >-
+      ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'docs(release): prepare v0.1.1') }}
     needs: [changes, test-core, build-macos-headless, build, build-oneclick]
     runs-on: ubuntu-latest
     timeout-minutes: 5
