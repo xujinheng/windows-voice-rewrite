@@ -70,7 +70,6 @@ func SnapshotFormatReady(id uint32, handleOK, sizeOK, lockOK func() bool) error 
 	return nil
 }
 
-
 func RestorePartial(failed int) error {
 	return fmt.Errorf("剪贴板恢复部分失败：%d 个格式未能写回", failed)
 }
