@@ -88,7 +88,7 @@ func getClipboardText(hwnd uintptr) (string, bool, uintptr, error) {
 		n++
 	}
 	if !clipboard.TextTerminated(n, len(data)) {
-		return "", false, errors.New(clipboard.TextLengthRejected)
+		return "", false, 0, errors.New(clipboard.TextLengthRejected)
 	}
 	text := string(utf16.Decode(data[:n]))
 	return text, true, clipboardSeq(), nil
