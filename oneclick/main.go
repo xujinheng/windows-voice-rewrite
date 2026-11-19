@@ -309,7 +309,7 @@ func findModelPaths(directory string, opts *options) error {
 
 func llamaArgs(o options) []string {
 	return []string{"-m", o.modelPath, "--mmproj", o.mmprojPath,
-		"--alias", "whisper-1", "-ngl", fmt.Sprint(o.gpuLayers), "-c", fmt.Sprint(o.contextSize),
+		"--alias", "qwen3-asr", "-ngl", fmt.Sprint(o.gpuLayers), "-c", fmt.Sprint(o.contextSize),
 		"-np", "1", "--host", o.upstreamHost, "--port", fmt.Sprint(o.llamaPort)}
 }
 
