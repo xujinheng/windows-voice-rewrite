@@ -1,7 +1,6 @@
 package clipboard
 
 import (
-	"errors"
 	"fmt"
 	"time"
 )
@@ -40,7 +39,7 @@ func TextTerminated(index, units int) bool {
 
 // SnapshotFits refuses an empty block and a snapshot that would pass either byte cap.
 func SnapshotFits(size, total uintptr) bool {
-	return size != 0 && size <= FormatMaxBytes && total+size <= TotalMaxBytes
+	return size != 0 && size <= FormatMaxBytes && total <= TotalMaxBytes && size <= TotalMaxBytes-total
 }
 
 // UnsafeFormat is a bitmap, palette, metafile, or owner-display clipboard format.
@@ -70,17 +69,6 @@ func SnapshotFormatReady(id uint32, handleOK, sizeOK, lockOK func() bool) error 
 	}
 	return nil
 }
-
-func OpenError() error         { return errors.New(OpenFailed) }
-func ReadError() error         { return errors.New(ReadFailed) }
-func TextLengthError() error   { return errors.New(TextLengthRejected) }
-func AllocError() error        { return errors.New(AllocFailed) }
-func LockError() error         { return errors.New(LockFailed) }
-func EmptyError() error        { return errors.New(EmptyFailed) }
-func WriteError() error        { return errors.New(WriteFailed) }
-func RestoreAllocError() error { return errors.New(RestoreAllocFailed) }
-func RestoreLockError() error  { return errors.New(RestoreLockFailed) }
-func RestoreEmptyError() error { return errors.New(RestoreEmptyFailed) }
 
 func RestorePartial(failed int) error {
 	return fmt.Errorf("剪贴板恢复部分失败：%d 个格式未能写回", failed)

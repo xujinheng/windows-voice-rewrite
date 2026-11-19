@@ -43,6 +43,13 @@ class WorkflowEventOwnership(unittest.TestCase):
         self.assertIn("'.github/workflows/demo-video.yml'", screenshot)
         self.assertIn("    branches: [main]", screenshot)
 
+    def test_nightly_verifies_its_own_workflow_on_main_only(self):
+        nightly = events("nightly.yml")
+        self.assertIn("  push:\n    branches: [main]\n    paths: ['.github/workflows/nightly.yml']", nightly)
+        self.assertIn("  schedule:", nightly)
+        self.assertIn("  workflow_dispatch:", nightly)
+        self.assertNotIn("'voice-rewrite/", nightly)
+
     def test_ready_apps_do_not_fire_on_unrelated_labels(self):
         ready = events("ready-build.yml")
         self.assertIn("    types: [edited]", ready)
