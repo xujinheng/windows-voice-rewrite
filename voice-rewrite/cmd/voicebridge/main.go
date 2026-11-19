@@ -98,6 +98,12 @@ func (o bridgeOptions) timeoutFor(req request) time.Duration {
 		// The JSONL protocol carries base64; calculate the original byte
 		// estimate without allocating or decoding a second copy.
 		pcmBytes = len(req.PCMBase64) / 4 * 3
+		if n := len(req.PCMBase64); n > 0 && req.PCMBase64[n-1] == '=' {
+			pcmBytes--
+			if n > 1 && req.PCMBase64[n-2] == '=' {
+				pcmBytes--
+			}
+		}
 	}
 	if budget := transcribeBudget(pcmBytes); budget < o.TranscribeTimeout {
 		return budget
