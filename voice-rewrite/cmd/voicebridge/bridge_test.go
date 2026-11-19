@@ -28,7 +28,6 @@ func TestSharedHostTimeouts(t *testing.T) {
 	}
 }
 
-
 func TestNativePCMUsesIdenticalGoValidation(t *testing.T) {
 	cfg := coreconfig.Config{MaxRecordSeconds: 30}
 	audio := make([]byte, 3200) // 100ms exactly, valid on both paths
