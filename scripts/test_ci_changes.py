@@ -77,6 +77,12 @@ class ClassifyTests(unittest.TestCase):
         self.assertTrue(classify(["voice-rewrite/popup_layout.go"])["direct2d"])
         self.assertFalse(classify(["voice-rewrite/internal/core/meeting/meeting.go"])["direct2d"])
 
+    def test_headless_scope_change_runs_real_audit(self):
+        self.assertEqual(classify(["scripts/check_headless_scope.py"]), {
+            "core": True, "macos": True, "windows": False,
+            "oneclick": False, "ui": False, "direct2d": False,
+        })
+
     def test_portable_boundary(self):
         self.assertTrue(classify(["scripts/check-portable-core.py"])["core"])
 
