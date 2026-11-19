@@ -137,7 +137,7 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$app/Contents/Info.plist")" = true
           test "$(lipo -archs "$app/Contents/MacOS/VoiceRewrite")" = '${{ matrix.arch }}'
           test ! -e "$app/Contents/MacOS/voicebridge"
-          nm -g "$app/Contents/MacOS/VoiceRewrite" | grep -q '_VRPress'
+          nm -g "$app/Contents/MacOS/VoiceRewrite" | grep ' _VRPress' >/dev/null
           codesign --verify --deep --strict "$app"
       - name: Upload one developer .app per architecture on main and tags
         if: github.event_name != 'pull_request'

@@ -432,7 +432,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(targetPID),
                 kAXFocusedWindowAttribute as CFString, &value) == .success, let value else { return nil }
-        return value as! AXUIElement
+        return value as? AXUIElement
     }
 
     private func selectionFromAX() -> String? {

@@ -17,7 +17,9 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 # Link the same Go Core into the native status-bar host. Each HID/frame
 # decision is a direct C ABI call: no per-event subprocess and no second Go runtime.
 ( cd voice-rewrite
-  CGO_ENABLED=1 GOOS=darwin GOARCH="$goarch" go build -trimpath -buildmode=c-archive \
+  MACOSX_DEPLOYMENT_TARGET=13.0 CGO_CFLAGS="-mmacosx-version-min=13.0" \
+    CGO_LDFLAGS="-mmacosx-version-min=13.0" \
+    CGO_ENABLED=1 GOOS=darwin GOARCH="$goarch" go build -trimpath -buildmode=c-archive \
     -o "$out/libvoicecore.a" ./cmd/voicebridge
 )
 swiftc -O -target "${arch}-apple-macosx13.0" \
