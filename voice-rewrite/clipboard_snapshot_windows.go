@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"sync"
 	"unsafe"
 
@@ -129,20 +130,20 @@ func (s *clipboardSnapshot) restoreIfOwned(hwnd uintptr) error {
 		h, _, _ := procGlobalAlloc.Call(GMEM_MOVEABLE, uintptr(len(f.data)))
 		if h == 0 {
 			freeSnapshotHandles(handles)
-			return clipboard.RestoreAllocError()
+			return errors.New(clipboard.RestoreAllocFailed)
 		}
 		handles[i] = h
 		p, _, _ := procGlobalLock.Call(h)
 		if p == 0 {
 			freeSnapshotHandles(handles)
-			return clipboard.RestoreLockError()
+			return errors.New(clipboard.RestoreLockFailed)
 		}
 		copy(unsafe.Slice((*byte)(unsafe.Pointer(p)), len(f.data)), f.data)
 		procGlobalUnlock.Call(h)
 	}
 	if ok, _, _ := procEmptyClipboard.Call(); ok == 0 {
 		freeSnapshotHandles(handles)
-		return clipboard.RestoreEmptyError()
+		return errors.New(clipboard.RestoreEmptyFailed)
 	}
 	s.finished = true
 	var failed int
