@@ -228,3 +228,29 @@ func TestSessionRuntimeStopCancelsTrackedTasks(t *testing.T) {
 		t.Fatal("runtime shutdown did not stop the model requests")
 	}
 }
+
+func TestSessionRuntimeStopsExternallyOwnedCaptions(t *testing.T) {
+	for _, action := range []struct {
+		name string
+		run  func(*SessionRuntime)
+	}{
+		{"reset", (*SessionRuntime).ResetWork},
+		{"pause", func(r *SessionRuntime) { r.SetPaused(true) }},
+		{"stop", (*SessionRuntime).Stop},
+	} {
+		t.Run(action.name, func(t *testing.T) {
+			r := NewSessionRuntime()
+			defer r.Stop()
+			_, epoch, _ := r.Snapshot()
+			external, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if !r.TrackCaption(epoch, 42, cancel) {
+				t.Fatal("active session rejected caption")
+			}
+			action.run(r)
+			if external.Err() != context.Canceled {
+				t.Fatalf("%s did not invoke the tracked caption cancellation", action.name)
+			}
+		})
+	}
+}

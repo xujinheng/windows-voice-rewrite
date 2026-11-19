@@ -42,19 +42,7 @@ func (s *SessionRuntime) Stop() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.stop()
-	s.cancelWork()
-	if s.stopExpression != nil {
-		s.stopExpression()
-		s.stopExpression = nil
-	}
-	if s.stopReply != nil {
-		s.stopReply()
-		s.stopReply = nil
-	}
-	if s.stopCaption != nil {
-		s.stopCaption()
-		s.stopCaption = nil
-	}
+	s.cancelTasksLocked()
 }
 
 func (s *SessionRuntime) Snapshot() (context.Context, uint64, bool) {
@@ -74,20 +62,24 @@ func (s *SessionRuntime) Active(epoch uint64) bool {
 	return s.activeLocked(epoch)
 }
 
-func (s *SessionRuntime) resetLocked() {
+// cancelTasksLocked also cancels externally owned caption work.
+// The same teardown runs for session shutdown, pause and reset.
+func (s *SessionRuntime) cancelTasksLocked() {
 	s.cancelWork()
 	if s.stopExpression != nil {
 		s.stopExpression()
-		s.stopExpression = nil
 	}
 	if s.stopReply != nil {
 		s.stopReply()
-		s.stopReply = nil
 	}
 	if s.stopCaption != nil {
 		s.stopCaption()
-		s.stopCaption = nil
 	}
+	s.stopExpression, s.stopReply, s.stopCaption = nil, nil, nil
+}
+
+func (s *SessionRuntime) resetLocked() {
+	s.cancelTasksLocked()
 	s.epoch++
 	s.turnID++ // IDs cannot collide with canceled ASR snapshots.
 	s.work, s.cancelWork = context.WithCancel(s.ctx)
