@@ -557,15 +557,20 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         }
         guard board.changeCount == stamp else { reset("Clipboard changed"); return }
         board.clearContents()
+        let cleared = board.changeCount
         guard board.setString(text, forType: .string) else {
-            board.clearContents()
-            if !saved.isEmpty { _ = board.writeObjects(saved) }
+            // A competing clipboard owner wins. Failed writes must not erase
+            // another app's newer contents while trying to restore ours.
+            if board.changeCount == cleared && !saved.isEmpty { _ = board.writeObjects(saved) }
             reset("Paste failed")
             return
         }
         let lease = board.changeCount
         down.flags = .maskCommand
         up.flags = .maskCommand
+        // A different app may have copied after our temporary text was set.
+        // Never paste that newer content into an unrelated target.
+        guard board.changeCount == lease else { reset("Clipboard changed"); return }
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
         show(config.profile.pill.sentLabel)
