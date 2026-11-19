@@ -29,6 +29,7 @@ Mouse button events assigned to voice shortcuts are intercepted to avoid
 accidental browser navigation.
 
 Grant microphone, Accessibility and Input Monitoring permissions when prompted.
+The rewrite selection reader first uses `AXSelectedText`. If an editor does not expose it, the native adapter tries `AXSelectedTextRange` with `AXStringForRange`. Both paths read only the selected text and are rechecked before paste; unsupported editors still fail closed. No synthetic Cmd+C / clipboard fallback is used.
 The app refuses unsafe rewrites (missing or changed selection, focus change),
 never retries a potentially delivered paste, and only restores clipboard data if
 the inserted text still owns the clipboard. `Sent ✓` means a paste event was
