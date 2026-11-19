@@ -107,7 +107,16 @@ func VREpochValid(token C.ulonglong) C.int {
 }
 
 //export VREpochCancel
-func VREpochCancel() { nativeEpoch.Start(); nativeKey = 0 }
+func VREpochCancel() {
+	nativeEpoch.Start()
+	nativeKey = 0
+	// A disabled event tap can lose the physical key-up event. Release the
+	// existing Hold objects; do not replace them, or old timer tokens can
+	// collide with a later press.
+	for _, hold := range nativeHolds {
+		hold.Release()
+	}
+}
 
 //export VRLevel
 func VRLevel(previous, raw C.double) C.double {

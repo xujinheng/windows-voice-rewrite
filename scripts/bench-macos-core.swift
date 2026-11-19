@@ -15,6 +15,16 @@ let epoch = VREpochStart()
 precondition(VREpochValid(epoch) == 1)
 VREpochCancel()
 precondition(VREpochValid(epoch) == 0)
+// Lost Quartz key-up events must release Go's Hold without reusing the token:
+// an already-scheduled activation must not activate the user's next press.
+let canceledHold = VRPress(54, 0)
+precondition(canceledHold != 0 && VRDown(54) == 1 && VRActivate(54, canceledHold) == 1)
+VREpochCancel()
+precondition(VRDown(54) == 0 && VRArmed() == 0 && VRActivate(54, canceledHold) == 0)
+let resumedHold = VRPress(54, 0)
+precondition(resumedHold > canceledHold && VRActivate(54, canceledHold) == 0)
+precondition(VRActivate(54, resumedHold) == 1 && VRRelease(54) == 2)
+VREpochCancel()
 
 var clock = [CChar](repeating: 0, count: 24)
 clock.withUnsafeMutableBufferPointer { VRDuration(125, $0.baseAddress, Int32($0.count)) }

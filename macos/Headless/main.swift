@@ -296,6 +296,13 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             guard let info else { return Unmanaged.passUnretained(event) }
             let app = Unmanaged<HeadlessApp>.fromOpaque(info).takeUnretainedValue()
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                // A lost key-up must not leave Go's physical Hold armed or
+                // allow an old inference response to paste into the editor.
+                if app.microphone.running || app.pending || VRArmed() != 0 {
+                    app.cancelFromPill()
+                } else {
+                    VREpochCancel()
+                }
                 if let tap = app.tap { CGEvent.tapEnable(tap: tap, enable: true) }
                 return Unmanaged.passUnretained(event)
             }
