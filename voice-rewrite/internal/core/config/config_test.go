@@ -22,7 +22,7 @@ func TestParseMarshalDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.MeetingBackground != "team" || cfg.RecordMode != "toggle" || cfg.AudioDeviceID != -1 {
+	if cfg.MeetingBackground != "team" || cfg.RecordMode != "toggle" || cfg.AudioDeviceID != -1 || cfg.ASRModel != "qwen3-asr" {
 		t.Fatalf("defaults not retained: %+v", cfg)
 	}
 	data, err := Marshal(cfg)
