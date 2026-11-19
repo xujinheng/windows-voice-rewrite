@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -16,32 +17,90 @@ import (
 	"testing"
 	"time"
 
+	"voicerewrite/internal/core/audio"
+	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/jsonl"
 	"voicerewrite/internal/core/ux"
 )
 
-func TestTranscribeBudgetMatchesAudioLength(t *testing.T) {
-	// Short audio gets a bounded service wait rather than the former 220s
-	// default, but long clips retain the multi-chunk upper bound.
-	cases := []struct {
-		seconds int
-		want    time.Duration
-	}{
-		{1, 65 * time.Second},
-		{10, 67 * time.Second},
-		{30, 105 * time.Second},
-		{60, 165 * time.Second},
-		{180, 220 * time.Second},
+func TestSharedHostTimeouts(t *testing.T) {
+	limits := defaultOptions()
+	if limits.TranscribeTimeout != 220*time.Second || limits.SpokenSelectedTimeout != 240*time.Second {
+		t.Fatalf("unexpected shared timeouts: %+v", limits)
 	}
-	for _, tc := range cases {
-		pcmBytes := tc.seconds * 32000
-		encodedLength := base64.StdEncoding.EncodedLen(pcmBytes)
-		if got := transcribeBudget(encodedLength); got != tc.want {
-			t.Errorf("%ds: got %s, want %s", tc.seconds, got, tc.want)
+	if limits.timeoutFor(request{Op: "transcribe", NativePCM: make([]byte, 32000)}) != 65*time.Second ||
+		limits.timeoutFor(request{Op: "selected_voice_task"}) != 240*time.Second {
+		t.Fatalf("wrong shared request deadlines: %+v", limits)
+	}
+	// Native PCM and its JSONL base64 envelope must receive one budget.
+	for _, seconds := range []int{1, 10, 11, 30, 60, 90, 120, 200} {
+		pcm := make([]byte, seconds*audio.PCMBytesPerSecond)
+		native := limits.timeoutFor(request{Op: "transcribe", NativePCM: pcm})
+		jsonl := limits.timeoutFor(request{Op: "transcribe", PCMBase64: base64.StdEncoding.EncodeToString(pcm)})
+		if native != jsonl {
+			t.Fatalf("%ds PCM timeout differs: native=%v JSONL=%v", seconds, native, jsonl)
+		}
+		if native < 65*time.Second || native > 220*time.Second {
+			t.Fatalf("%ds PCM timeout out of bounds: %v", seconds, native)
 		}
 	}
-	if got := transcribeBudget(-1); got != 65*time.Second {
-		t.Fatalf("invalid size: got %s", got)
+	if got := limits.timeoutFor(request{Op: "transcribe", NativePCM: make([]byte, 11*audio.PCMBytesPerSecond)}); got != 67*time.Second {
+		t.Fatalf("11s clip should have the previous 67s deadline, got %v", got)
+	}
+	limits.TranscribeTimeout = 200 * time.Millisecond
+	if got := limits.timeoutFor(request{Op: "transcribe"}); got != 200*time.Millisecond {
+		t.Fatalf("custom test deadline was extended: %v", got)
+	}
+}
+
+func TestInProcessRequestDeadlineCancelsASR(t *testing.T) {
+	seen := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Read the multipart upload before waiting. An unread HTTP request
+		// body can delay when the test server notices client disconnects.
+		_, _ = io.Copy(io.Discard, r.Body)
+		seen <- struct{}{}
+		select {
+		case <-r.Context().Done():
+		case <-time.After(3 * time.Second):
+			t.Error("ASR request did not propagate a deadline")
+		}
+	}))
+	defer srv.Close()
+	cfg, err := json.Marshal(configFor(srv.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	reply := safeProcessRequest(ctx, request{
+		ID: "native", Op: "transcribe", Config: cfg,
+		NativePCM: make([]byte, 3200), CanInsert: true,
+	})
+	if reply.Error == nil || reply.Error.Code != "timeout" {
+		t.Fatalf("in-process ASR did not stop at its deadline: %#v", reply)
+	}
+	select {
+	case <-seen:
+	default:
+		t.Fatal("test did not reach the ASR network path")
+	}
+}
+
+func TestNativePCMUsesIdenticalGoValidation(t *testing.T) {
+	cfg := coreconfig.Config{MaxRecordSeconds: 30}
+	audio := make([]byte, 3200) // 100ms exactly, valid on both paths
+	raw, nativeReason := decodeRequestPCM(request{NativePCM: audio}, cfg)
+	encoded, jsonReason := decodeRequestPCM(request{PCMBase64: base64.StdEncoding.EncodeToString(audio)}, cfg)
+	if nativeReason != "" || jsonReason != "" || !bytes.Equal(raw, encoded) {
+		t.Fatalf("native and JSONL capture paths differ: native=%q JSON=%q", nativeReason, jsonReason)
+	}
+	for _, size := range []int{0, 1, 3198, 3201, 30*32000 + 2} {
+		pcm := make([]byte, size)
+		_, reason := decodeRequestPCM(request{NativePCM: pcm}, cfg)
+		if reason == "" {
+			t.Errorf("accepted invalid native PCM size %d", size)
+		}
 	}
 }
 

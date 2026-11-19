@@ -23,8 +23,8 @@ fi
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 /usr/bin/ditto "$app" "$stage/VoiceRewrite.app"
-rm "$stage/VoiceRewrite.app/Contents/MacOS/voicebridge"
+rm "$stage/VoiceRewrite.app/Contents/MacOS/VoiceRewrite"
 if bash "$verify" app "$stage/VoiceRewrite.app" "$arch" "$version" dev >/dev/null 2>&1; then
-  echo "verifier accepted an app without its helper" >&2; exit 1
+  echo "verifier accepted an app without the native Go-linked executable" >&2; exit 1
 fi
 echo "macOS package verifier negative cases passed"

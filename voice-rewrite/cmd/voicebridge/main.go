@@ -46,6 +46,7 @@ type request struct {
 	CanInsert    bool            `json:"can_insert"`
 	Instruction  string          `json:"instruction"`
 	TargetID     string          `json:"target_id"`
+	NativePCM    []byte          `json:"-"`
 }
 
 type bridgeError struct {
@@ -68,27 +69,58 @@ type bridgeOptions struct {
 }
 
 func defaultOptions() bridgeOptions {
-	return bridgeOptions{MaxInFlight: 4, TranscribeTimeout: 220 * time.Second, SpokenSelectedTimeout: 360 * time.Second}
+	return bridgeOptions{MaxInFlight: 4, TranscribeTimeout: speech.TranscribeTimeout, SpokenSelectedTimeout: textedit.SpokenTaskTimeout}
 }
 
-// Short dictations should not remain in "processing" for the entire 220s
-// multi-chunk maximum when a local or remote ASR service has stalled.
-// Allow more time for longer audio; never extend an explicit test/host limit.
-func transcribeBudget(base64Bytes int) time.Duration {
-	if base64Bytes < 0 {
-		base64Bytes = 0
+// Short clips should not wait for a stalled service as long as a multi-chunk
+// recording. This budget is shared by JSONL and native PCM: 65..220 seconds.
+func transcribeBudget(pcmBytes int) time.Duration {
+	if pcmBytes < 0 {
+		pcmBytes = 0
 	}
-	// Base64 expands three PCM bytes to four characters, rounded upward.
-	pcmBytes := base64Bytes / 4 * 3
 	seconds := (pcmBytes + audio.PCMBytesPerSecond - 1) / audio.PCMBytesPerSecond
 	budget := time.Duration(45+2*seconds) * time.Second
 	if budget < 65*time.Second {
 		return 65 * time.Second
 	}
-	if budget > 220*time.Second {
-		return 220 * time.Second
+	if budget > speech.TranscribeTimeout {
+		return speech.TranscribeTimeout
 	}
 	return budget
+}
+
+func (o bridgeOptions) timeoutFor(req request) time.Duration {
+	if req.Op == "selected_voice_task" {
+		return o.SpokenSelectedTimeout
+	}
+	pcmBytes := len(req.NativePCM)
+	if req.NativePCM == nil {
+		// The JSONL protocol carries base64; calculate the original byte
+		// estimate without allocating or decoding a second copy.
+		pcmBytes = len(req.PCMBase64) / 4 * 3
+		if n := len(req.PCMBase64); n > 0 && req.PCMBase64[n-1] == '=' {
+			pcmBytes--
+			if n > 1 && req.PCMBase64[n-2] == '=' {
+				pcmBytes--
+			}
+		}
+	}
+	if budget := transcribeBudget(pcmBytes); budget < o.TranscribeTimeout {
+		return budget
+	}
+	return o.TranscribeTimeout
+}
+
+// Both the JSONL service and the in-process macOS host contain panics at the
+// Go boundary. Neither a provider panic nor its private data reaches Swift.
+func safeProcessRequest(ctx context.Context, req request) (reply response) {
+	reply = failure(req.ID, "internal_error", "request failed")
+	defer func() { _ = recover() }()
+	reply = processRequest(ctx, req)
+	if err := ctx.Err(); err != nil {
+		return contextFailure(req.ID, err)
+	}
+	return reply
 }
 
 type bridgeTask struct {
@@ -248,16 +280,7 @@ func (s *bridgeServer) dispatch(frame []byte) {
 		s.send(failure(req.ID, "busy", "too many active requests"))
 		return
 	}
-	timeout := s.options.TranscribeTimeout
-	if req.Op == "transcribe" {
-		if budget := transcribeBudget(len(req.PCMBase64)); budget < timeout {
-			timeout = budget
-		}
-	}
-	if req.Op == "selected_voice_task" {
-		timeout = s.options.SpokenSelectedTimeout
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), s.options.timeoutFor(req))
 	task := &bridgeTask{cancel: cancel}
 	s.active[req.ID] = task
 	s.wg.Add(1)
@@ -269,13 +292,7 @@ func (s *bridgeServer) runTask(ctx context.Context, task *bridgeTask, req reques
 	defer s.wg.Done()
 	defer task.cancel()
 
-	reply := failure(req.ID, "internal_error", "request failed")
-	func() {
-		// Provider errors and unexpected panics may contain private request data.
-		// Reaching the protocol requires a fixed recovery string or a constant fallback.
-		defer func() { _ = recover() }()
-		reply = processRequest(ctx, req)
-	}()
+	reply := safeProcessRequest(ctx, req)
 
 	s.mu.Lock()
 	if task.canceled || errors.Is(ctx.Err(), context.Canceled) {
@@ -321,8 +338,9 @@ func headlessProfile(req request) response {
 	return success(req.ID, map[string]any{"profile": map[string]any{
 		"dictation": cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
 		"maximumSeconds": cfg.MaxRecordSeconds, "modifierDelayMS": 200,
-		"mouseDelayMS": int(input.WindowsSideHold / time.Millisecond),
-		"pill":         indicator.HostSpec(),
+		"pasteRestoreMS": ux.PasteReceiptMinimumMilliseconds,
+		"mouseDelayMS":   int(input.WindowsSideHold / time.Millisecond),
+		"pill":           indicator.HostSpec(),
 	}})
 }
 
@@ -331,11 +349,20 @@ func decodeRequestPCM(req request, cfg coreconfig.Config) ([]byte, string) {
 	if limit := cfg.MaxRecordSeconds * audio.PCMBytesPerSecond; limit > 0 && limit < maxBytes {
 		maxBytes = limit
 	}
-	if len(req.PCMBase64) == 0 || len(req.PCMBase64) > base64.StdEncoding.EncodedLen(maxBytes) {
-		return nil, "invalid"
+	var pcm []byte
+	if req.NativePCM != nil {
+		pcm = req.NativePCM
+	} else {
+		if len(req.PCMBase64) == 0 || len(req.PCMBase64) > base64.StdEncoding.EncodedLen(maxBytes) {
+			return nil, "invalid"
+		}
+		var err error
+		pcm, err = base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
+		if err != nil {
+			return nil, "invalid"
+		}
 	}
-	pcm, err := base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
-	if err != nil || len(pcm) == 0 || len(pcm)%2 != 0 || len(pcm) > maxBytes {
+	if len(pcm) == 0 || len(pcm)%2 != 0 || len(pcm) > maxBytes {
 		return nil, "invalid"
 	}
 	if audio.BelowMinCapture(pcm) {

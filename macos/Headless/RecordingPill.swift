@@ -13,8 +13,9 @@ final class RecordingPill {
     private var timer: Timer?
     private var terminalAt: Date?
     private var levelSource: () -> Double = { 0 }
-    private var smoothed = 0.0
     var onCancel: (() -> Void)?
+    var onRecordingSecond: ((Int) -> Void)?
+    private var lastSecond = -1
 
     var isVisible: Bool { panel?.isVisible == true }
 
@@ -46,12 +47,13 @@ final class RecordingPill {
 
     func recording(rewrite: Bool, started: Date, meter: @escaping () -> Double) {
         levelSource = meter
-        smoothed = 0
         terminalAt = nil
         view.rewrite = rewrite
         view.started = started
         view.phase = .recording
         view.level = 0
+        lastSecond = 0
+        onRecordingSecond?(0)
         display()
     }
 
@@ -73,7 +75,6 @@ final class RecordingPill {
         timer?.invalidate()
         timer = nil
         terminalAt = nil
-        smoothed = 0
         levelSource = { 0 }
         panel?.orderOut(nil)
     }
@@ -100,10 +101,13 @@ final class RecordingPill {
             return
         }
         if view.phase == .recording {
+            let seconds = max(0, Int(Date().timeIntervalSince(view.started)))
+            if seconds != lastSecond {
+                lastSecond = seconds
+                onRecordingSecond?(seconds)
+            }
             let raw = levelSource()
-            let normalized = raw.isFinite ? min(1, max(0, raw * (view.spec?.levelGain ?? 0))) : 0
-            smoothed = 0.72 * smoothed + 0.28 * normalized
-            view.level = smoothed
+            view.level = VRLevel(view.level, raw)
         }
         view.tick &+= 1
         view.needsDisplay = true
@@ -167,17 +171,19 @@ private final class PillSurface: NSView {
             color.setFill()
             NSBezierPath(ovalIn: NSRect(x: 23, y: CGFloat(spec.iconY - 4), width: 8, height: 8)).fill()
             for index in 0..<spec.waveBars {
-                let envelope = 0.44 + 0.56 * abs(sin(Double(index) * 0.75 + Double(tick) * 0.24))
-                let h = CGFloat(min(18, max(4, (4 + 14 * pow(level, 0.7) * envelope).rounded())))
+                let h = CGFloat(VRWave(Int32(index), level, tick))
                 capsule(NSRect(x: CGFloat(spec.waveStartX + index * spec.waveStep),
                                y: CGFloat(spec.iconY) - h / 2,
                                width: CGFloat(spec.waveBarWidth), height: h),
                         radius: CGFloat(spec.waveBarWidth) / 2, color: color)
             }
-            let seconds = max(0, Int(Date().timeIntervalSince(started)))
-            let time = String(format: "%02d:%02d", seconds / 60, seconds % 60)
-            label(time, x: CGFloat(spec.clockX), width: CGFloat(spec.clockWidth),
-                  size: 14, centered: true, color: rgb(spec.clockColor))
+            var clock = [CChar](repeating: 0, count: 24)
+            clock.withUnsafeMutableBufferPointer {
+                VRDuration(Int64(Date().timeIntervalSince(started)), $0.baseAddress, Int32($0.count))
+            }
+            label(String(cString: clock), x: CGFloat(spec.clockX),
+                  width: CGFloat(spec.clockWidth), size: 14,
+                  centered: true, color: rgb(spec.clockColor))
         } else {
             drawMark()
             let message: String
@@ -226,22 +232,17 @@ private final class PillSurface: NSView {
         let color = accent
         if phase == .processing {
             for index in 0..<spec.spinnerDots {
-                let angle = Double(tick) * 0.2 + Double(index) * .pi / 4
-                let x = CGFloat(Double(spec.spinnerX) + Double(spec.spinnerRadius) * cos(angle))
-                let y = CGFloat(Double(spec.iconY) + Double(spec.spinnerRadius) * sin(angle))
-                color.withAlphaComponent(CGFloat(min(255, 65 + index * 25)) / 255).setFill()
+                let dot = VRSpinner(Int32(index), tick)
+                let x = CGFloat(dot & 255)
+                let y = CGFloat((dot >> 8) & 255)
+                color.withAlphaComponent(CGFloat((dot >> 16) & 255) / 255).setFill()
                 let size = CGFloat(spec.spinnerDotSize)
                 NSBezierPath(ovalIn: NSRect(x: x - size / 2, y: y - size / 2,
                                             width: size, height: size)).fill()
             }
         } else {
-            let fill: NSColor
-            switch phase {
-            case .sent: fill = rgb(spec.sentMark)
-            case .fallback: fill = rgb(spec.fallbackMark)
-            default: fill = rgb(spec.errorAccent)
-            }
-            fill.setFill()
+            rgb(phase == .sent ? spec.sentMark :
+                phase == .fallback ? spec.fallbackMark : spec.errorAccent).setFill()
             NSBezierPath(ovalIn: NSRect(x: 22, y: 17, width: 16, height: 16)).fill()
             label(phase == .sent ? "✓" : "!", x: 22, width: 16, size: 11,
                   centered: true, color: rgb(spec.attentionGlyph))

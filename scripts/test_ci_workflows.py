@@ -17,6 +17,8 @@ class HeadlessWorkflowTests(unittest.TestCase):
         self.assertNotIn("test-swift-modules", source)
         self.assertIn("needs.build-macos-headless.result", source)
         self.assertIn("go test -race -count=1 ./...", source)
+        self.assertIn("bench-macos-core.swift", job)
+        self.assertIn("FOCUS_GUARD_TEST", job)
 
     def test_ready_and_distribution_build_same_app(self):
         for filename in ("ready-build.yml", "nightly.yml", "macos-distribution.yml"):
@@ -71,6 +73,12 @@ class HeadlessWorkflowTests(unittest.TestCase):
         self.assertIn("pill.processing()", host)
         self.assertIn("pill.result(.sent)", host)
         self.assertIn("pill.dismiss()", host)
+        self.assertIn("VRPress(", host)
+        self.assertIn("VRWave(", pill)
+        self.assertIn("VRSpinner(", pill)
+        self.assertIn("-buildmode=c-archive", script)
+        self.assertNotIn("Process()", host)
+        self.assertNotIn("voicebridge", host)
         # Clipboard ownership must use changeCount, not content equality:
         # another application may copy the identical text during our lease.
         self.assertIn("let lease = board.changeCount", host)

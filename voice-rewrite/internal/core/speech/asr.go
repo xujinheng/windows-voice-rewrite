@@ -80,6 +80,9 @@ func EncodeWAV(pcm []byte) ([]byte, error) {
 	return b, nil
 }
 
+// One end-to-end ASR budget for both desktop hosts.
+const TranscribeTimeout = 220 * time.Second
+
 // Transcribe sends the exact multipart request expected by Handy-compatible ASR.
 func Transcribe(ctx context.Context, cfg coreconfig.Config, pcm []byte) (string, error) {
 	return TranscribeWithPrompt(ctx, cfg, pcm, "")

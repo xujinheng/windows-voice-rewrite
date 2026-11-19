@@ -5,8 +5,22 @@ import CoreGraphics
 import Foundation
 
 // Native boundaries only: device input, microphone, menu bar and OS text delivery.
-// All transcription, prompt/intent and routing decisions live in voicebridge (Go).
+// All transcription, intent and routing decisions call the linked Go Core.
 private enum Action { case dictation, rewrite }
+
+// Require stable native window and focused-element identities, not editor text.
+// Also check the window title when exposed to catch browser tab changes.
+struct FocusIdentity {
+    let window: AXUIElement
+    let element: AXUIElement
+    let title: String?
+
+    func matches(window: AXUIElement?, element: AXUIElement?, title: String?) -> Bool {
+        guard let window, let element,
+              CFEqual(self.window, window), CFEqual(self.element, element) else { return false }
+        return self.title == nil || self.title == title
+    }
+}
 private enum HostError: Error {
     case config(String), microphone(String), conversion, bridge(String)
 }
@@ -18,7 +32,6 @@ struct PillSpec: Decodable {
     let clockX, clockWidth, iconY, waveStartX, waveStep, waveBarWidth, waveBars: Int
     let textX, textRightGap, spinnerDots, spinnerX, spinnerRadius, spinnerDotSize: Int
     let terminalMS: Int
-    let levelGain: Double
     let pillColor, clockColor, labelColor, dictationAccent, rewriteAccent: [Int]
     let errorAccent, sentMark, fallbackMark, closeColor, closeHover, attentionGlyph: [Int]
     let processingDictation, processingRewrite, sentLabel, errorLabel, fallbackLabel: String
@@ -26,16 +39,13 @@ struct PillSpec: Decodable {
 
 private struct HostProfile: Decodable {
     let dictation, rewrite: String
-    let maximumSeconds, modifierDelayMS, mouseDelayMS: Int
+    let maximumSeconds, modifierDelayMS, mouseDelayMS, pasteRestoreMS: Int
     let pill: PillSpec
 }
 
 private struct HostConfig {
     let raw: [String: Any]
     let profile: HostProfile
-    var dictation: String { profile.dictation }
-    var rewrite: String { profile.rewrite }
-    var maximumSeconds: Int { profile.maximumSeconds }
 
     static func load(_ url: URL) throws -> HostConfig {
         let data = try Data(contentsOf: url)
@@ -106,7 +116,7 @@ private final class Microphone {
         }
     }
 
-    func stop() throws -> Data {
+    func stop(discard: Bool = false) throws -> Data {
         guard running else { throw HostError.microphone("not recording") }
         running = false
         engine.stop()
@@ -117,9 +127,7 @@ private final class Microphone {
         samples = []
         rms = 0
         lock.unlock()
-        guard captured.count >= Int(rate / 10) else {
-            throw HostError.microphone("audio shorter than 100 ms")
-        }
+        guard !discard, !captured.isEmpty else { return Data() }
         // AVAudioConverter supplies quality resampling; never resample on the audio callback.
         guard let source = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate,
                                          channels: 1, interleaved: false),
@@ -179,41 +187,31 @@ private struct BridgeReply: Decodable {
     struct Failure: Decodable { let code: String; let message: String }
 }
 
+// In-process Go Core. Event/animation calculations never cross IPC.
 private enum GoCore {
-    static func request(config: [String: Any], operation: String,
-                        audio: Data, selection: String?) throws -> BridgeReply.Output {
-        let executable = Bundle.main.executableURL!
-            .deletingLastPathComponent().appendingPathComponent("voicebridge")
-        guard FileManager.default.isExecutableFile(atPath: executable.path) else {
-            throw HostError.bridge("missing bundled voicebridge")
+    static func request(config: [String: Any], operation: String, audio: Data,
+                        selection: String?, token: UInt64 = 0) throws -> BridgeReply.Output {
+        let data = try JSONSerialization.data(withJSONObject: config)
+        let json = String(decoding: data, as: UTF8.self)
+        let result = json.withCString { cfg in
+            if operation == "host_profile" { return VRProfile(cfg) }
+            return operation.withCString { op in
+                (selection ?? "").withCString { selected in
+                    audio.withUnsafeBytes { pcm in
+                        VRRun(cfg, op, pcm.bindMemory(to: UInt8.self).baseAddress,
+                              Int32(audio.count), selected, token)
+                    }
+                }
+            }
         }
-        let process = Process()
-        process.executableURL = executable
-        let stdin = Pipe(), stdout = Pipe()
-        process.standardInput = stdin
-        process.standardOutput = stdout
-        process.standardError = FileHandle.standardError
-        let payload: [String: Any] = [
-            "v": 1, "id": UUID().uuidString, "op": operation,
-            "config": config, "pcm_base64": audio.base64EncodedString(),
-            "can_insert": true, "selected_text": selection ?? ""
-        ]
-        let request = try JSONSerialization.data(withJSONObject: payload)
-        try process.run()
-        stdin.fileHandleForWriting.write(request + Data([10]))
-        try? stdin.fileHandleForWriting.close()
-        // Drain stdout while the helper is alive to avoid pipe-buffer deadlocks.
-        let output = stdout.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0,
-              let line = output.split(separator: 10).last,
-              let reply = try? JSONDecoder().decode(BridgeReply.self, from: Data(line)) else {
-            throw HostError.bridge("voicebridge failed or returned malformed JSON")
-        }
-        guard reply.ok, let result = reply.result else {
+        guard let result else { throw HostError.bridge("Go Core returned no response") }
+        defer { VRFree(result) }
+        let reply = try JSONDecoder().decode(BridgeReply.self,
+                           from: Data(bytes: result, count: strlen(result)))
+        guard reply.ok, let output = reply.result else {
             throw HostError.bridge(reply.error?.message ?? "Go Core operation failed")
         }
-        return result
+        return output
     }
 }
 
@@ -221,18 +219,14 @@ private enum GoCore {
 private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var item: NSStatusItem!
     private var tap: CFMachPort?
-    private var source: CFRunLoopSource?
     private var microphone = Microphone()
     private let pill = RecordingPill()
     private var config: HostConfig!
     private var configURL: URL!
-    private var pressed = Set<Int64>()
-    private var activeKey: Int64?
     private var activeAction: Action?
-    private var started: Date?
-    private var timer: Timer?
-    private var generation: UInt64 = 0
+    private var taskID: UInt64 = 0
     private var targetPID: pid_t = 0
+    private var targetFocus: FocusIdentity?
     private var selected: String?
     private var pending = false
 
@@ -241,13 +235,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "VR"
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "VoiceRewrite — headless", action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Reload config", action: #selector(reload), keyEquivalent: "r"))
-        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         for entry in menu.items where entry.action != nil { entry.target = self }
         item.menu = menu
         pill.onCancel = { [weak self] in self?.cancelFromPill() }
+        pill.onRecordingSecond = { [weak self] seconds in self?.show("● \(seconds)s") }
         pill.prepare()
         let defaultPath = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/voicerewrite/config.json")
@@ -276,7 +269,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             fputs("VoiceRewrite config: \(error)\n", stderr)
         }
     }
-    @objc private func quit() { NSApp.terminate(nil) }
+    @objc private func quit() { VREpochCancel(); NSApp.terminate(nil) }
     private func show(_ text: String) { item.button?.title = text }
 
     private func startEventTap() {
@@ -298,13 +291,22 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             if type == .flagsChanged {
                 app.handleModifier(code: code, flags: event.flags)
             } else if type == .keyDown {
-                if app.activeKey != nil && !app.microphone.running { app.generation &+= 1 }
+                if VRArmed() != 0 && !app.microphone.running {
+                    VRAbandon()
+                    app.activeAction = nil
+                }
             } else if type == .otherMouseDown || type == .otherMouseUp {
+                if event.getIntegerValueField(.eventSourceUserData) == 0x56525842 {
+                    return Unmanaged.passUnretained(event)
+                }
                 if mouse == 3 || mouse == 4 {
                     let name = mouse == 3 ? "Mouse4" : "Mouse5"
-                    if name == app.config.dictation || name == app.config.rewrite {
-                        app.handleButton(code: 100 + mouse, down: type == .otherMouseDown)
-                        return nil // a configured voice button must not navigate the browser
+                    if name == app.config.profile.dictation || name == app.config.profile.rewrite {
+                        app.updatePress(code: 100 + mouse, name: name,
+                                        down: type == .otherMouseDown,
+                                        delay: Double(app.config.profile.mouseDelayMS) / 1000,
+                                        cursor: event.location)
+                        return nil // Intercept hold; replay an ordinary short click below
                     }
                 }
             }
@@ -315,8 +317,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                 callback: callback,
                                 userInfo: Unmanaged.passUnretained(self).toOpaque())
         guard let tap else { show("Input denied"); return }
-        source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        if let source { CFRunLoopAddSource(CFRunLoopGetMain(), source, CFRunLoopMode.commonModes) }
+        if let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) {
+            CFRunLoopAddSource(CFRunLoopGetMain(), source, CFRunLoopMode.commonModes)
+        }
         CGEvent.tapEnable(tap: tap, enable: true)
     }
 
@@ -330,38 +333,50 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         // Right-side flagsChanged events can fire while another modifier is held.
         // A tracked press is a release; a new press requires the matching flag.
         updatePress(code: code, name: name,
-                    down: !pressed.contains(code) && flags.contains(family),
+                    down: VRDown(Int32(code)) == 0 && flags.contains(family),
                     delay: Double(config.profile.modifierDelayMS) / 1000)
     }
-    private func handleButton(code: Int64, down: Bool) {
-        updatePress(code: code, name: code == 103 ? "Mouse4" : "Mouse5",
-                    down: down, delay: Double(config.profile.mouseDelayMS) / 1000)
-    }
-    private func updatePress(code: Int64, name: String, down: Bool, delay: TimeInterval) {
-        guard name == config.dictation || name == config.rewrite else { return }
+    private func updatePress(code: Int64, name: String, down: Bool, delay: TimeInterval,
+                             cursor: CGPoint? = nil) {
+        guard name == config.profile.dictation || name == config.profile.rewrite else { return }
+        let key = Int32(code)
         if down {
-            guard pressed.insert(code).inserted else { return }
-            arm(code: code, action: name == config.dictation ? .dictation : .rewrite,
-                delay: delay)
-        } else if pressed.remove(code) != nil {
-            release(code)
+            let token = VRPress(key, pending ? 1 : 0)
+            guard token != 0 else { return }
+            activeAction = name == config.profile.dictation ? .dictation : .rewrite
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, VRActivate(key, token) == 1,
+                      let action = self.activeAction else { return }
+                self.begin(action)
+            }
+        } else {
+            let outcome = VRRelease(key)
+            if outcome == 2 && microphone.running { finish() }
+            else if outcome == 2 || outcome == 3 { activeAction = nil }
+            if (outcome == 1 || outcome == 3), let cursor {
+                replayClick(button: code - 100, cursor: cursor)
+            }
         }
     }
-    private func arm(code: Int64, action: Action, delay: TimeInterval) {
-        guard activeKey == nil, !pending else { return }
-        activeKey = code
-        activeAction = action
-        generation &+= 1
-        let token = generation
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, self.generation == token, self.pressed.contains(code),
-                  self.activeKey == code else { return }
-            self.begin(action)
+    private func replayClick(button: Int64, cursor: CGPoint) {
+        let source = CGEventSource(stateID: .hidSystemState)
+        for kind in [CGEventType.otherMouseDown, .otherMouseUp] {
+            guard let event = CGEvent(mouseEventSource: source, mouseType: kind,
+                                      mouseCursorPosition: cursor, mouseButton: .center) else { return }
+            event.setIntegerValueField(.mouseEventButtonNumber, value: button)
+            event.setIntegerValueField(.eventSourceUserData, value: 0x56525842)
+            event.post(tap: .cghidEventTap)
         }
     }
+
     private func begin(_ action: Action) {
         targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
         guard targetPID > 0 else { reset("No target"); return }
+        // No AX text access needed: only verify a stable destination identity.
+        guard let window = focusedWindow(), let element = focusedElement() else {
+            reset("Target unavailable"); return
+        }
+        targetFocus = FocusIdentity(window: window, element: element, title: windowTitle(window))
         selected = nil
         if action == .rewrite {
             guard let text = selectionFromAX(), !text.isEmpty else {
@@ -369,67 +384,58 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             }
             selected = text
         }
+        taskID = VREpochStart()
         do {
-            try microphone.start(maximumSeconds: config.maximumSeconds)
-            let startTime = Date()
-            started = startTime
-            pill.recording(rewrite: action == .rewrite, started: startTime,
+            try microphone.start(maximumSeconds: config.profile.maximumSeconds)
+            pill.recording(rewrite: action == .rewrite, started: Date(),
                            meter: { [weak self] in self?.microphone.meterLevel ?? 0 })
-            show("● 0s")
-            timer?.invalidate()
-            timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-                DispatchQueue.main.async {
-                    guard let self, let started = self.started else { return }
-                    let elapsed = Int(Date().timeIntervalSince(started))
-                    self.show("● \(elapsed)s")
-                    if elapsed >= self.config.maximumSeconds { self.finish() }
-                }
+            let token = taskID
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.profile.maximumSeconds)) { [weak self] in
+                guard let self, VREpochValid(token) == 1, self.microphone.running else { return }
+                self.finish()
             }
         } catch { reset("Mic error"); fputs("Microphone: \(error)\n", stderr) }
     }
-    private func release(_ code: Int64) {
-        guard activeKey == code else { return }
-        generation &+= 1
-        if microphone.running { finish() }
-        else { activeKey = nil; activeAction = nil }
-    }
     private func finish() {
         guard microphone.running, let action = activeAction else { return }
-        timer?.invalidate()
-        timer = nil
-        started = nil
-        activeKey = nil
         activeAction = nil
         pending = true
         pill.processing()
-        show("Processing…")
+        show(action == .dictation ? config.profile.pill.processingDictation : config.profile.pill.processingRewrite)
         let configValue = config.raw
         let selectedValue = selected
         let pid = targetPID
-        let token = generation
+        let token = taskID
         do {
             let pcm = try microphone.stop()
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let result = Result {
                     try GoCore.request(config: configValue,
                                       operation: action == .dictation ? "transcribe" : "selected_voice_task",
-                                      audio: pcm, selection: selectedValue)
+                                      audio: pcm, selection: selectedValue, token: token)
                 }
                 DispatchQueue.main.async {
-                    guard let self, self.generation == token else { return }
+                    guard let self, VREpochValid(token) == 1 else { return }
                     self.pending = false
                     switch result {
                     case .failure(let error):
-                        self.reset("ASR error")
+                        self.reset(self.config.profile.pill.errorLabel)
                         fputs("VoiceRewrite: \(error)\n", stderr)
                     case .success(let value):
                         guard let text = value.text, !text.isEmpty else {
                             self.reset("Empty"); return
                         }
                         guard value.route == "replace" || (action == .dictation && value.route == "insert") else {
-                            self.reset("Preview only"); return
+                            self.reset(self.config.profile.pill.fallbackLabel, phase: .fallback); return
                         }
                         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else {
+                            self.reset("Focus changed"); return
+                        }
+                        let currentWindow = self.focusedWindow()
+                        guard let focus = self.targetFocus,
+                              focus.matches(window: currentWindow,
+                                            element: self.focusedElement(),
+                                            title: currentWindow.flatMap(self.windowTitle)) else {
                             self.reset("Focus changed"); return
                         }
                         if action == .rewrite && self.selectionFromAX() != selectedValue {
@@ -442,15 +448,34 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         } catch { pending = false; reset("Audio error"); fputs("Audio: \(error)\n", stderr) }
     }
 
-    private func selectionFromAX() -> String? {
-        let system = AXUIElementCreateSystemWide()
-        var focused: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString,
-                                            &focused) == .success, let focused else { return nil }
+    private func focusedWindow() -> AXUIElement? {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(focused as! AXUIElement,
-                                            kAXSelectedTextAttribute as CFString, &value) == .success
-        else { return nil }
+        guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(targetPID),
+                kAXFocusedWindowAttribute as CFString, &value) == .success, let value else { return nil }
+        guard CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return (value as! AXUIElement)
+    }
+
+    private func focusedElement() -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(),
+                kAXFocusedUIElementAttribute as CFString, &value) == .success, let value,
+              CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return (value as! AXUIElement)
+    }
+
+    private func windowTitle(_ window: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString,
+                                             &value) == .success else { return nil }
+        return value as? String
+    }
+
+    private func selectionFromAX() -> String? {
+        guard let focused = focusedElement() else { return nil }
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(focused, kAXSelectedTextAttribute as CFString,
+                                            &value) == .success else { return nil }
         return value as? String
     }
 
@@ -494,11 +519,11 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         up.flags = .maskCommand
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
-        show("Sent ✓")
+        show(config.profile.pill.sentLabel)
         pill.result(.sent)
         // Text equality alone does not prove ownership: another app can copy
         // the very same text. changeCount protects that user's newer clipboard.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.profile.pasteRestoreMS) / 1000) {
             guard board.changeCount == lease else { return }
             board.clearContents()
             if !saved.isEmpty { _ = board.writeObjects(saved) }
@@ -507,35 +532,47 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     // Clicking the floating pill cancels the active capture or suppresses a
     // pending bridge result. It must never retry or deliver a stale write.
     private func cancelFromPill() {
-        generation &+= 1
-        if microphone.running { _ = try? microphone.stop() }
+        VREpochCancel()
+        if microphone.running { _ = try? microphone.stop(discard: true) }
         clearSession()
         pill.dismiss()
         show("Cancelled")
     }
 
-    private func reset(_ message: String) {
-        if pill.isVisible {
-            pill.result(message == "Preview only" ? .fallback : .error)
-        }
+    private func reset(_ message: String, phase: PillAppearance = .error) {
+        if pill.isVisible { pill.result(phase) }
         clearSession()
         show(message)
     }
 
     private func clearSession() {
-        timer?.invalidate()
-        timer = nil
-        activeKey = nil
         activeAction = nil
-        started = nil
         selected = nil
+        targetFocus = nil
         pending = false
     }
 }
 
+#if FOCUS_GUARD_TEST
+MainActor.assumeIsolated {
+    let window = AXUIElementCreateApplication(90001)
+    let otherWindow = AXUIElementCreateApplication(90002)
+    let editor = AXUIElementCreateApplication(90003)
+    let otherEditor = AXUIElementCreateApplication(90004)
+    let focus = FocusIdentity(window: window, element: editor, title: "Original tab")
+    precondition(focus.matches(window: window, element: editor, title: "Original tab"))
+    precondition(!focus.matches(window: nil, element: editor, title: "Original tab"))
+    precondition(!focus.matches(window: window, element: nil, title: "Original tab"))
+    precondition(!focus.matches(window: otherWindow, element: editor, title: "Original tab"))
+    precondition(!focus.matches(window: window, element: otherEditor, title: "Original tab"))
+    precondition(!focus.matches(window: window, element: editor, title: "Switched tab"))
+    print("AX focus identity smoke passed")
+}
+#else
 MainActor.assumeIsolated {
     let app = NSApplication.shared
     let delegate = HeadlessApp()
     app.delegate = delegate
     app.run()
 }
+#endif

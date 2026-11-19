@@ -14,14 +14,20 @@ command -v go >/dev/null
 app="$out/VoiceRewrite.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+# Link the same Go Core into the native status-bar host. Each HID/frame
+# decision is a direct C ABI call: no per-event subprocess and no second Go runtime.
 ( cd voice-rewrite
-  CGO_ENABLED=0 GOOS=darwin GOARCH="$goarch" go build -trimpath \
-    -o "$app/Contents/MacOS/voicebridge" ./cmd/voicebridge
+  MACOSX_DEPLOYMENT_TARGET=13.0 CGO_CFLAGS="-mmacosx-version-min=13.0" \
+    CGO_LDFLAGS="-mmacosx-version-min=13.0" \
+    CGO_ENABLED=1 GOOS=darwin GOARCH="$goarch" go build -trimpath -buildmode=c-archive \
+    -o "$out/libvoicecore.a" ./cmd/voicebridge
 )
 swiftc -O -target "${arch}-apple-macosx13.0" \
+  -import-objc-header macos/Headless/VoiceCore.h \
   -framework AppKit -framework AVFoundation -framework ApplicationServices \
-  -framework CoreGraphics -o "$app/Contents/MacOS/VoiceRewrite" \
-  macos/Headless/main.swift macos/Headless/RecordingPill.swift
+  -framework CoreGraphics -framework Security -framework CoreFoundation \
+  -o "$app/Contents/MacOS/VoiceRewrite" \
+  macos/Headless/main.swift macos/Headless/RecordingPill.swift "$out/libvoicecore.a"
 cat > "$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -40,12 +46,9 @@ cat > "$app/Contents/Info.plist" <<EOF
 EOF
 cp macos/Headless/config.example.json "$app/Contents/Resources/config.example.json"
 plutil -lint "$app/Contents/Info.plist"
-for bin in VoiceRewrite voicebridge; do
-  test -x "$app/Contents/MacOS/$bin"
-  test "$(lipo -archs "$app/Contents/MacOS/$bin")" = "$arch"
-done
+test -x "$app/Contents/MacOS/VoiceRewrite"
+test "$(lipo -archs "$app/Contents/MacOS/VoiceRewrite")" = "$arch"
 if [[ "${CODESIGN_ADHOC:-1}" == 1 ]]; then
-  codesign --force --sign - "$app/Contents/MacOS/voicebridge"
   codesign --force --sign - "$app"
   codesign --verify --deep --strict "$app"
 fi

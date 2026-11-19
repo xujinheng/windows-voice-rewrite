@@ -126,3 +126,14 @@ func TestRetiredGUIAndMeetingBridgeOperationsAreExplicitlyUnsupported(t *testing
 		}
 	}
 }
+
+func TestHostProfileUsesSharedPasteMinimum(t *testing.T) {
+	reply := headlessProfile(request{Config: json.RawMessage(`{}`)})
+	if !reply.OK {
+		t.Fatalf("profile failed: %+v", reply)
+	}
+	profile := reply.Result.(map[string]any)["profile"].(map[string]any)
+	if got := profile["pasteRestoreMS"]; got != 700 {
+		t.Fatalf("paste dwell must match shared minimum, got %v", got)
+	}
+}
