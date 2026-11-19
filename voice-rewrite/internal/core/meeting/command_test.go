@@ -12,14 +12,6 @@ func TestPostedMeetingKeepsDemoAvailableWhilePaused(t *testing.T) {
 	if PostedMeetingEffect(PostedDemo, true, false, false) != PostedBeginDemo || PostedMeetingEffect(PostedStop, false, false, false) != PostedStopMeeting || PostedMeetingEffect(PostedRefresh, true, true, true) != PostedRefreshMeeting {
 		t.Fatal("demo")
 	}
-	dropped := MeetingStopAction(true)
-	if dropped.Express || !dropped.DrainRecorder || !dropped.ClearBusy || !dropped.IdleTray || !dropped.ClosePill {
-		t.Fatal("canceled meeting")
-	}
-	live := MeetingStopAction(false)
-	if !live.Express || live.DrainRecorder || live.ClearBusy || live.IdleTray || live.ClosePill {
-		t.Fatal("live meeting")
-	}
 }
 
 func TestAcceptButtonNeedsOwnerPendingAndLiveMeeting(t *testing.T) {

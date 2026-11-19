@@ -261,21 +261,17 @@ func singleInstanceGuard() (func(), error) {
 	return func() { procCloseHandle.Call(handle) }, nil
 }
 
-func finishTogglePrepare(app *appState, hwnd uintptr, sel selectedText, rec *audioRecorder, fault input.ToggleFault, err error) {
-	cleanup := input.CleanupToggle(fault)
-	if cleanup.RestoreClipboard {
+// Toggle preparation owns native clipboard/recorder cleanup; no Go policy
+// needs to model which Win32 handles exist on each failure path.
+func finishTogglePrepare(app *appState, hwnd uintptr, sel selectedText, rec *audioRecorder, restoreClipboard bool, err error) {
+	if restoreClipboard {
 		_ = sel.ClipboardBackup.restoreIfOwned(hwnd)
 	}
-	if cleanup.StopRecorder && rec != nil {
+	if rec != nil {
 		rec.Stop()
-		go func() { <-rec.result }()
 	}
-	if cleanup.Report && err != nil {
-		app.fail(err)
-	}
-	if cleanup.ClearBusy {
-		app.busy.Store(false)
-	}
+	app.fail(err)
+	app.busy.Store(false)
 }
 
 func runApp() {
@@ -414,7 +410,6 @@ func runApp() {
 		if pendingSide != nil && pendingSide.recorder != nil {
 			rec := pendingSide.recorder
 			rec.Stop()
-			go func() { <-rec.result }()
 		}
 		pendingSide = nil
 		if activeHandyStatus != nil && activeHandyStatus.pending {
@@ -428,8 +423,7 @@ func runApp() {
 	var holdButton uint16
 	var holdIsDictation bool
 	var holdMeeting *meetingSession
-	var holdGeneration uint64
-	var selectedGeneration uint64
+	var activeGeneration uint64
 	var holdSession uintptr
 	var recordingSession uintptr
 	var holdWatch chan struct{}
@@ -471,37 +465,29 @@ func runApp() {
 		l.Print("recording stop requested; selection/model processing moved to worker")
 		kind := input.FinishRecording(cfg.RecordMode == "hold", holdIsDictation, holdMeeting != nil)
 		if kind == input.FinishDictation || kind == input.FinishMeeting {
-			app.postHandyPhase(indicator.Processing, holdGeneration)
+			app.postHandyPhase(indicator.Processing, activeGeneration)
 		} else if kind == input.FinishSpokenRewrite {
-			app.postHandyPhase(indicator.Selection, holdGeneration)
+			app.postHandyPhase(indicator.Selection, activeGeneration)
 		}
 		switch kind {
 		case input.FinishMeeting:
-			stop := meetingcore.MeetingStopAction(holdMeeting.runtime.Context().Err() != nil)
-			if stop.Express {
-				go holdMeeting.express(app, rec, holdGeneration, meetingcore.VoiceMode(holdIsDictation))
-			}
-			if stop.DrainRecorder {
-				go func() { <-rec.result }()
-			}
-			if stop.ClearBusy {
+			if holdMeeting.runtime.Context().Err() != nil {
+				// The single buffered recorder result needs no drain worker.
 				app.busy.Store(false)
-			}
-			if stop.IdleTray {
 				app.setStatus(trayIdle)
-			}
-			if stop.ClosePill {
 				closeHandyStatus()
+			} else {
+				go holdMeeting.express(app, rec, activeGeneration, meetingcore.VoiceMode(holdIsDictation))
 			}
 			holdMeeting = nil
 		case input.FinishDictation:
-			go processDictationHold(app, rec, holdTargetWindow, holdGeneration)
+			go processDictationHold(app, rec, holdTargetWindow, activeGeneration)
 		case input.FinishSpokenRewrite:
-			go processRecordedHold(app, rec, holdTargetWindow, currentCursorPoint(), holdGeneration)
+			go processRecordedHold(app, rec, holdTargetWindow, currentCursorPoint(), activeGeneration)
 		default:
 			sel := selected
 			sel.Anchor = currentCursorPoint()
-			go processRecorded(app, rec, sel, selectedGeneration)
+			go processRecorded(app, rec, sel, activeGeneration)
 		}
 	}
 
@@ -515,7 +501,7 @@ func runApp() {
 		if app.meeting != nil && !app.meeting.demo {
 			holdMeeting = app.meeting
 		}
-		holdGeneration = app.epoch.Start()
+		activeGeneration = app.epoch.Start()
 		active = rec
 		watchRecordingLimit(rec)
 		app.setStatus(trayRecording)
@@ -540,10 +526,10 @@ func runApp() {
 		// Keyboard hold has no preview, so the promote call stays on the side-button path.
 		promoted := false
 		if button != 0 {
-			promoted = promotePendingHandyStatus(rec, statusMode, holdGeneration)
+			promoted = promotePendingHandyStatus(rec, statusMode, activeGeneration)
 		}
 		if button == 0 || !promoted {
-			showHandyStatus(rec, statusMode, indicator.Recording, holdGeneration)
+			showHandyStatus(rec, statusMode, indicator.Recording, activeGeneration)
 		}
 		// The native status bar is the start feedback. A synchronous Beep
 		// blocks this Win32 message loop and makes the shortcut feel sluggish.
@@ -551,7 +537,8 @@ func runApp() {
 	}
 
 	startHold := func(dictation bool, button uint16) {
-		if input.VoiceStartBlocked(app.paused.Load(), app.busy.Load(), active != nil, pendingSide != nil, uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window)) {
+		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil ||
+			uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
 			return
 		}
 		win, _, _ := procGetForegroundWindow.Call()
@@ -568,7 +555,8 @@ func runApp() {
 	}
 
 	armSide := func(button uint16) {
-		if input.VoiceStartBlocked(app.paused.Load(), app.busy.Load(), active != nil, pendingSide != nil, input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "ignore") {
+		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil ||
+			input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "ignore" {
 			return
 		}
 		if uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
@@ -671,7 +659,6 @@ func runApp() {
 					rec := active
 					active = nil
 					rec.Stop()
-					go func() { <-rec.result }()
 				}
 				closeHandyStatus()
 				app.setStatus(trayIdle)
@@ -719,10 +706,9 @@ func runApp() {
 			result := <-toggleResult
 			if !app.epoch.Valid(result.generation) {
 				result.rec.Stop()
-				go func() { <-result.rec.result }()
 				continue
 			}
-			selectedGeneration = result.generation
+			activeGeneration = result.generation
 			active = result.rec
 			watchRecordingLimit(active)
 			selected = result.sel
@@ -884,7 +870,6 @@ func runApp() {
 			if active != nil {
 				stopHoldWatch()
 				active.Stop()
-				go func(rec *audioRecorder) { <-rec.result }(active)
 			}
 			l.Print("stopped via exit action")
 			return
@@ -974,7 +959,7 @@ func runApp() {
 			app.setStatus(trayTranscribing)
 			go func() {
 				if !waitKeysReleased(2500 * time.Millisecond) {
-					finishTogglePrepare(app, hwnd, selectedText{}, nil, input.ToggleKeysHeld, errors.New(ux.DictationReleaseKeys))
+					finishTogglePrepare(app, hwnd, selectedText{}, nil, false, errors.New(ux.DictationReleaseKeys))
 					return
 				}
 				begin := time.Now()
@@ -984,16 +969,16 @@ func runApp() {
 					err = textedit.SelectedLengthError(cfg.MaxSelectedRunes, sel.Text)
 				}
 				if err != nil {
-					finishTogglePrepare(app, hwnd, sel, nil, input.ToggleSelectionFailed, err)
+					finishTogglePrepare(app, hwnd, sel, nil, true, err)
 					return
 				}
 				rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
 				if err != nil {
-					finishTogglePrepare(app, hwnd, sel, nil, input.ToggleSelectionFailed, err)
+					finishTogglePrepare(app, hwnd, sel, nil, true, err)
 					return
 				}
 				if !app.epoch.Valid(generation) {
-					finishTogglePrepare(app, hwnd, sel, rec, input.ToggleGenerationStale, nil)
+					finishTogglePrepare(app, hwnd, sel, rec, true, nil)
 					return
 				}
 				toggleResult <- togglePrepareResult{rec: rec, sel: sel, generation: generation}
@@ -1001,7 +986,7 @@ func runApp() {
 					// The UI never received the ready notification. Withdraw the
 					// buffered result so a later toggle cannot block on a full channel.
 					<-toggleResult
-					finishTogglePrepare(app, hwnd, sel, rec, input.ToggleNotifyMissed, errors.New(input.ToggleUINotifyFailed))
+					finishTogglePrepare(app, hwnd, sel, rec, false, errors.New(input.ToggleUINotifyFailed))
 				}
 			}()
 		}

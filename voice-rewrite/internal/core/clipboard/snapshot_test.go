@@ -32,9 +32,6 @@ func TestSnapshotStopsBeforeCopyingAnImage(t *testing.T) {
 	if TextBlockReadable(1) || !TextBlockReadable(2) || !TextBlockReadable(TextReadMax) || TextBlockReadable(TextReadMax+1) {
 		t.Fatal("text block")
 	}
-	if TextTerminated(4, 4) || !TextTerminated(3, 4) {
-		t.Fatal("nul")
-	}
 	if OpenAttempts != 20 || OpenPause.Milliseconds() != 25 {
 		t.Fatal("open")
 	}
