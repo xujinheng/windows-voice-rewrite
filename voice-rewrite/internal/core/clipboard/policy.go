@@ -55,13 +55,6 @@ func CopyPollMissed(changed bool) error {
 	return errors.New(CopyEmpty)
 }
 
-// MayRestore reports whether a plain-text snapshot may be written back.
-// A zero owned sequence is never proof of ownership, and a changed sequence
-// means the user or another app has taken the clipboard.
-func MayRestore(hasOriginal bool, owned, current uint64) bool {
-	return hasOriginal && owned != 0 && current == owned
-}
-
 // AttemptTimeout schedules a synthetic copy retry. The common two-attempt
 // budget retries an ignored first copy after 450ms and gives the remainder
 // to the second attempt, so the combined wait stays the same. Other budgets
