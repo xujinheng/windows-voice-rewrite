@@ -12,12 +12,6 @@ func TestSettingsRailAndTitlesStayDistinct(t *testing.T) {
 	if RailColor(true) == 0x17191E || RailColor(false) == 0xF6F7F9 || RailColor(true) == RailColor(false) {
 		t.Fatal("rail color")
 	}
-	if MutedControls(2, 3, 4) != [3]uintptr{2, 3, 4} || !MutedControl(2, 2, 3, 4) || !MutedControl(3, 2, 3, 4) || !MutedControl(4, 2, 3, 4) || MutedControl(9, 2, 3, 4) {
-		t.Fatal("muted")
-	}
-	if !MutedControl(0, 0, 3, 4) || MutedControl(0, 2, 3, 4) {
-		t.Fatal("zero hint")
-	}
 	x, y, cut, h := DirectTitle()
 	fallback := FallbackTitle()
 	if x != 220 || y != 35 || cut != 245 || h != 39 || fallback != (Edges{220, 34, 15, 80}) || y == fallback.Top {

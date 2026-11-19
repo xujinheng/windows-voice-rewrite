@@ -538,7 +538,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMColorStatic:
 		if p != nil && p.window == hwnd && p.background != 0 {
 			color := p.palette.text
-			if settingsform.MutedControl(lParam, p.hint, p.probeStatus[0], p.probeStatus[1]) {
+			if lParam == p.hint || lParam == p.probeStatus[0] || lParam == p.probeStatus[1] {
 				color = p.palette.muted
 			}
 			uxSetTextColor.Call(wParam, p.palette.color(color))
@@ -1153,7 +1153,7 @@ func showNativeSettings(app *appState) error {
 	}
 	hint := settingsform.SettingsHint()
 	p.hint = makeOne("STATIC", "", stat, hint.X, hint.Y, hint.W, hint.H, 0, false)
-	for _, hwnd := range settingsform.MutedControls(p.hint, p.probeStatus[0], p.probeStatus[1]) {
+	for _, hwnd := range [3]uintptr{p.hint, p.probeStatus[0], p.probeStatus[1]} {
 		setFont(hwnd, p.mutedFont)
 	}
 	p.switchPage(0)
