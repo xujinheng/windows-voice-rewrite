@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"voicerewrite/asrtext"
 	"voicerewrite/internal/core/serviceprobe"
 	"voicerewrite/internal/core/speech"
 )
@@ -27,8 +28,8 @@ func TestOneClickLanguagePrefixAllLanguages(t *testing.T) {
 		{"I said language Chinese without a marker", "I said language Chinese without a marker"},
 	}
 	for _, tc := range cases {
-		if got := speech.CleanASR(tc.input); got != tc.expected {
-			t.Errorf("speech.CleanASR(%q) = %q, expected %q", tc.input, got, tc.expected)
+		if got := asrtext.Clean(tc.input); got != tc.expected {
+			t.Errorf("asrtext.Clean(%q) = %q, expected %q", tc.input, got, tc.expected)
 		}
 	}
 }

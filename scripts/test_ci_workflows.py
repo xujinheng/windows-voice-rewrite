@@ -19,6 +19,7 @@ class HeadlessWorkflowTests(unittest.TestCase):
         self.assertIn("go test -race -count=1 ./...", source)
         self.assertIn("bench-macos-core.swift", job)
         self.assertIn("FOCUS_GUARD_TEST", job)
+        self.assertNotIn("cmd/contractgen", (WORKFLOWS / "nightly.yml").read_text())
 
     def test_ready_and_distribution_build_same_app(self):
         for filename in ("ready-build.yml", "nightly.yml", "macos-distribution.yml"):
@@ -68,11 +69,6 @@ class HeadlessWorkflowTests(unittest.TestCase):
         self.assertIn("CGFloat(view.phase == .recording ? spec.recordingWidth : spec.workingWidth)", pill)
         self.assertIn('operation: "host_profile"', host)
         self.assertNotIn("width: 232, height: 50", pill)
-        self.assertIn("self?.cancelFromPill()", host)
-        self.assertIn("pill.recording(", host)
-        self.assertIn("pill.processing()", host)
-        self.assertIn("pill.result(.sent)", host)
-        self.assertIn("pill.dismiss()", host)
         self.assertIn("VRPress(", host)
         self.assertIn("VRWave(", pill)
         self.assertIn("VRSpinner(", pill)

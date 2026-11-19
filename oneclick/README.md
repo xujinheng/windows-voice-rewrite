@@ -1,6 +1,6 @@
 # Qwen3-ASR OneClick
 
-Shared Go launcher/proxy for `llama-server` on Windows and macOS with audio transcription, streamed chat continuation and tokenization APIs. Windows provides the command-line OneClick executable; macOS also offers a standalone native SwiftUI launcher built from the same Go module. See [macOS OneClick launcher](../macos/OneClickLauncher/README.md) for local GGUF selection, Metal/CPU controls, start/stop/restart and connection steps.
+Standalone Windows x64 Go launcher/proxy for `llama-server`, providing Qwen3-ASR and OpenAI-compatible endpoints. ASR marker normalization is shared with VoiceRewrite through the local `voicerewrite/asrtext` Go module; builds require `oneclick/` and `voice-rewrite/` in the same source checkout. The macOS VoiceRewrite host is a separate minimal menu-bar app that connects to a configured ASR server; it does not ship an old SwiftUI OneClick launcher.
 
 ## Windows: double-click to install and start
 
@@ -23,7 +23,7 @@ Repeating the launch **does not download intact files again**. Interrupted downl
 
 ### Advanced manual configuration
 
-If you already have `llama-server.exe` and matching GGUF files, place them alongside the EXE or edit `config.json` to point at your existing files. Custom paths are not auto-downloaded or overwritten. The legacy `config.voicerewrite.example.json` remains available for compatibility, but is now identical to the default port configuration. Existing `config.json` values are preserved; to migrate an older 8081 installation, change `listen_address` to `127.0.0.1:8080` and `backend_port` to `8082` before restarting. Model loading and GPU support still need hardware validation on a Windows machine.
+If you already have `llama-server.exe` and matching GGUF files, place them alongside the EXE or edit `config.json` to point at your existing files. Custom paths are not auto-downloaded or overwritten. Existing `config.json` values are preserved; to migrate an older 8081 installation, change `listen_address` to `127.0.0.1:8080` and `backend_port` to `8082` before restarting. Model loading and GPU support still need hardware validation on a Windows machine.
 
 ## API contract
 

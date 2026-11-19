@@ -25,9 +25,6 @@ def classify(paths):
             "voice-rewrite/internal/core/meeting/**",
             "voice-rewrite/internal/core/indicator/**",
             "voice-rewrite/internal/core/settingsform/**",
-            "macos/VoiceRewrite/UI/**", "macos/VoiceRewrite/App/**",
-            "macos/VoiceRewrite/BridgeClient/Tests/**", "macos/VoiceRewrite.xcodeproj/**",
-            "macos/Modules/Interaction/**",
         )):
             scope["ui"] = True
         if any(fnmatch.fnmatchcase(path, pattern) for pattern in (
@@ -43,18 +40,21 @@ def classify(paths):
         )):
             scope["direct2d"] = True
         # CI governance and reusable action changes must validate the whole matrix.
-        # Native Xcode support code below instead needs both macOS architectures.
         if (path.startswith((".github/workflows/", ".github/actions/"))
                 or path == ".github/dependabot.yml"
                 or path == "AGENTS.md"
                 or path == "scripts/ci_changes.py"
                 or path.startswith("scripts/test_ci_")):
             return dict.fromkeys(scope, True)
-        if path in ("scripts/ci_xcode_mtimes.py", "scripts/ci_xctest_coverage.py"):
-            scope["macos"] = True
         if path.startswith("voice-rewrite/"):
-            if path.startswith("voice-rewrite/cmd/voicebridge/"):
+            if path.startswith("voice-rewrite/asrtext/"):
+                # OneClick imports this shared package through its local module replacement.
+                scope.update(core=True, macos=True, windows=True, oneclick=True)
+            elif path.startswith("voice-rewrite/cmd/voicebridge/"):
                 scope.update(core=True, macos=True)
+            elif path.startswith("voice-rewrite/internal/core/meeting/"):
+                # Headless macOS does not link Meeting.
+                scope.update(core=True, windows=True)
             elif path.endswith(("_windows.go", "_windows_test.go")):
                 scope["windows"] = True
             elif path.endswith(("_darwin.go", "_darwin_test.go", "_macos.go")):
@@ -75,12 +75,6 @@ def classify(paths):
                 scope["windows"] = True
             if "portable-core" in path or "contract" in path:
                 scope["core"] = True
-    # Matched-state UI acceptance requires screenshots from *both* native hosts.
-    # Never schedule its comparison without the corresponding ARM/Intel and
-    # Windows capture jobs, even if the edited source belongs to one host.
-    if scope["ui"]:
-        scope["macos"] = True
-        scope["windows"] = True
     return scope
 
 

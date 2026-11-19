@@ -524,8 +524,9 @@ func runApp() {
 		app.setStatus(trayRecording)
 		holdSession++
 		holdWatch = make(chan struct{})
+		watchLimit := time.Duration(cfg.MaxRecordSeconds+2) * time.Second
 		if button != 0 {
-			go watchMouseHoldTimeout(hwnd, holdSession, holdWatch, input.HoldWatchLimit(cfg.MaxRecordSeconds), l)
+			go watchMouseHoldTimeout(hwnd, holdSession, holdWatch, watchLimit, l)
 		} else {
 			vk := recordVK
 			if dictation {
@@ -535,7 +536,7 @@ func runApp() {
 			if dictation {
 				mods = dictationMods
 			}
-			go watchHoldRelease(hwnd, vk, mods, holdSession, holdWatch, input.HoldWatchLimit(cfg.MaxRecordSeconds), l)
+			go watchHoldRelease(hwnd, vk, mods, holdSession, holdWatch, watchLimit, l)
 		}
 		statusMode := input.HoldModeLabel(dictation, holdMeeting != nil)
 		// Promote the immediate mouse-down preview without recreating its HWND.

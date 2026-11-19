@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"voicerewrite/asrtext"
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/provider"
 	"voicerewrite/internal/core/shortcut"
@@ -28,7 +29,7 @@ func TestCleanASR(t *testing.T) {
 		{"language Chinese<asr_text>", ""},
 	}
 	for _, tc := range cases {
-		if got := speech.CleanASR(tc.in); got != tc.want {
+		if got := asrtext.Clean(tc.in); got != tc.want {
 			t.Errorf("%q: got %q want %q", tc.in, got, tc.want)
 		}
 	}

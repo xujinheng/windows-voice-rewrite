@@ -59,11 +59,6 @@ func HoldModeLabel(dictation, meeting bool) string {
 	}
 }
 
-// HoldWatchLimit is the hold watcher deadline: the configured maximum plus two seconds.
-func HoldWatchLimit(maxRecordSeconds int) time.Duration {
-	return time.Duration(maxRecordSeconds+2) * time.Second
-}
-
 // RewriteHotkey is what the rewrite shortcut does. Dictation does not finish an in-progress toggle.
 type RewriteHotkey int
 

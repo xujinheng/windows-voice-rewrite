@@ -1,5 +1,5 @@
 // Qwen3-ASR OneClick starts llama.cpp and exposes ASR and continuation APIs.
-// Windows x64 executable; Go standard library only; no Python or pip.
+// Windows x64 executable; no external dependencies, Python or pip.
 package main
 
 import (
@@ -24,16 +24,9 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"voicerewrite/asrtext"
 )
-
-// Qwen3-ASR can emit "language English<asr_text>...", "language Chinese<asr_text>...",
-// and other language names, optionally multiple times in concatenated responses.
-// The delimiter is treated as metadata only when immediately preceded by "language <name>".
-var asrDelimiter = regexp.MustCompile(`(?i)language[ \t]+[a-z][a-z0-9 ,_+\-/]{0,79}[ \t]*<asr_text>`)
-
-func cleanTranscript(s string) string {
-	return strings.TrimSpace(asrDelimiter.ReplaceAllString(s, ""))
-}
 
 func cleanResponse(body []byte, contentType string) ([]byte, bool) {
 	var obj map[string]json.RawMessage
@@ -46,7 +39,7 @@ func cleanResponse(body []byte, contentType string) ([]byte, bool) {
 		if json.Unmarshal(raw, &s) != nil {
 			return body, false
 		}
-		cleaned := cleanTranscript(s)
+		cleaned := asrtext.StripMetadata(s)
 		if cleaned == s {
 			return body, false
 		}
@@ -59,7 +52,7 @@ func cleanResponse(body []byte, contentType string) ([]byte, bool) {
 		return body, false
 	}
 	if strings.Contains(strings.ToLower(contentType), "text/plain") {
-		cleaned := cleanTranscript(string(body))
+		cleaned := asrtext.StripMetadata(string(body))
 		if cleaned != string(body) {
 			return []byte(cleaned), true
 		}
