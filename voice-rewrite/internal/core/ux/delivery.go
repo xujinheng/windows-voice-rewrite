@@ -46,11 +46,6 @@ type Delivery struct {
 	TraySuccess bool
 }
 
-// DictationUnfocused is the card used when the target window changed during recognition.
-func DictationUnfocused() Delivery {
-	return Delivery{ShowCard: true, Title: DictationNotInserted, Phase: indicator.Fallback, SetPhase: true}
-}
-
 // DictationInserted is the pill and card after a dictation paste attempt.
 func DictationInserted(err error) Delivery {
 	// A non-nil error leaves delivery uncertain (the paste event may have fired).
