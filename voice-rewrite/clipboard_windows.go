@@ -93,6 +93,7 @@ func getClipboardText(hwnd uintptr) (string, bool, error) {
 	text := string(utf16.Decode(data[:n]))
 	return text, true, nil
 }
+
 // Return the sequence while the clipboard is still open. A later external
 // copy must never become the sequence our snapshot claims to own.
 func setClipboardText(hwnd uintptr, s string) (uintptr, error) {
