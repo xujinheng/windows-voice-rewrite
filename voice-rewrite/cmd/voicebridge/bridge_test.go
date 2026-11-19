@@ -301,43 +301,6 @@ func TestBridgeInvalidConfigNeverContactsProvider(t *testing.T) {
 	}
 }
 
-func TestBridgeCancelStopsNetworkAndSuppressesSuccess(t *testing.T) {
-	started := make(chan struct{}, 1)
-	canceled := make(chan struct{}, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.Copy(io.Discard, r.Body)
-		started <- struct{}{}
-		select {
-		case <-r.Context().Done():
-		case <-time.After(5 * time.Second):
-			t.Error("HTTP request was not canceled")
-		}
-		canceled <- struct{}{}
-	}))
-	defer srv.Close()
-	h := startBridge(t, defaultOptions())
-	h.send(requestForASR("slow", configFor(srv.URL)))
-	select {
-	case <-started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("ASR request never started")
-	}
-	h.send(map[string]any{"v": 1, "id": "stop", "op": "cancel", "target_id": "slow"})
-	replies := h.receiveIDs("stop", "slow")
-	if !replies["stop"].OK || object(t, replies["stop"].Result)["found"] != true {
-		t.Fatalf("cancel request did not find active task: %#v", replies["stop"])
-	}
-	if replies["slow"].OK || replies["slow"].Error == nil || replies["slow"].Error.Code != "canceled" {
-		t.Fatalf("canceled task reported success: %#v", replies["slow"])
-	}
-	select {
-	case <-canceled:
-	case <-time.After(5 * time.Second):
-		t.Fatal("network request did not observe context cancellation")
-	}
-	h.close()
-}
-
 func TestBridgeTimeout(t *testing.T) {
 	started := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -361,63 +324,6 @@ func TestBridgeTimeout(t *testing.T) {
 	case <-started:
 	default:
 		t.Error("timeout test did not reach HTTP server")
-	}
-	h.close()
-}
-
-func TestBridgeConcurrencyDuplicateIDAndBusy(t *testing.T) {
-	started := make(chan struct{}, 2)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.Copy(io.Discard, r.Body)
-		started <- struct{}{}
-		select {
-		case <-r.Context().Done():
-		case <-time.After(5 * time.Second):
-			t.Error("HTTP request was not canceled")
-		}
-	}))
-	defer srv.Close()
-	options := defaultOptions()
-	options.MaxInFlight = 2
-	h := startBridge(t, options)
-	cfg := configFor(srv.URL)
-	h.send(requestForASR("a", cfg))
-	h.send(requestForASR("b", cfg))
-	for i := 0; i < 2; i++ {
-		select {
-		case <-started:
-		case <-time.After(5 * time.Second):
-			t.Fatal("expected two concurrent in-flight HTTP requests")
-		}
-	}
-	h.send(requestForASR("a", cfg))
-	h.send(requestForASR("c", cfg))
-	h.send(map[string]any{"v": 1, "id": "stop-a", "op": "cancel", "target_id": "a"})
-	h.send(map[string]any{"v": 1, "id": "stop-b", "op": "cancel", "target_id": "b"})
-	// A duplicate ID produces its own error reply, even while the original
-	// request is still pending. Capture both replies for "a".
-	replies := make([]response, 0, 6)
-	for range 6 {
-		replies = append(replies, h.receive())
-	}
-	codes := map[string]int{}
-	for _, reply := range replies {
-		if reply.Error != nil {
-			codes[reply.Error.Code]++
-		}
-		if strings.HasPrefix(reply.ID, "stop-") &&
-			(!reply.OK || object(t, reply.Result)["found"] != true) {
-			t.Fatalf("cancel did not find task: %#v", reply)
-		}
-	}
-	for _, code := range []string{"duplicate_id", "busy", "canceled"} {
-		want := 1
-		if code == "canceled" {
-			want = 2
-		}
-		if codes[code] != want {
-			t.Fatalf("expected %d %s results, got %#v", want, code, replies)
-		}
 	}
 	h.close()
 }
@@ -568,12 +474,12 @@ type closedWriter struct{}
 
 func (closedWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
 
-func TestBridgeCancelMissing(t *testing.T) {
+func TestRetiredJSONLCancelOperationIsUnsupported(t *testing.T) {
 	h := startBridge(t, defaultOptions())
-	h.send(map[string]any{"v": 1, "id": "cancel-missing", "op": "cancel", "target_id": "unknown"})
+	h.send(map[string]any{"v": 1, "id": "cancel", "op": "cancel", "target_id": "unknown"})
 	reply := h.receive()
-	if !reply.OK || object(t, reply.Result)["found"] != false {
-		t.Fatalf("unexpected cancel response: %#v", reply)
+	if reply.OK || reply.Error == nil || reply.Error.Code != "unsupported_op" {
+		t.Fatalf("JSONL diagnostic must not recreate process-local cancel state: %#v", reply)
 	}
 	h.close()
 }
