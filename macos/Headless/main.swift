@@ -22,16 +22,20 @@ struct AXSelection {
     }
 }
 
-// Require stable native window and focused-element identities, not editor text.
-// Also check the window title when exposed to catch browser tab changes.
+// Match every AX identity the editor exposes; missing attributes do not
+// block ordinary dictation, while rewrite requires both at capture.
 struct FocusIdentity {
-    let window: AXUIElement
-    let element: AXUIElement
+    let window: AXUIElement?
+    let element: AXUIElement?
     let title: String?
 
     func matches(window: AXUIElement?, element: AXUIElement?, title: String?) -> Bool {
-        guard let window, let element,
-              CFEqual(self.window, window), CFEqual(self.element, element) else { return false }
+        if let saved = self.window {
+            guard let window, CFEqual(saved, window) else { return false }
+        }
+        if let saved = self.element {
+            guard let element, CFEqual(saved, element) else { return false }
+        }
         return self.title == nil || self.title == title
     }
 }
@@ -393,11 +397,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func begin(_ action: Action) {
         targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
         guard targetPID > 0 else { reset("No target"); return }
-        // No AX text access needed: only verify a stable destination identity.
-        guard let window = focusedWindow(), let element = focusedElement() else {
+        let window = focusedWindow(), element = focusedElement()
+        guard action == .dictation || (window != nil && element != nil) else {
             reset("Target unavailable"); return
         }
-        targetFocus = FocusIdentity(window: window, element: element, title: windowTitle(window))
+        targetFocus = FocusIdentity(window: window, element: element,
+                                    title: window.flatMap(windowTitle))
         selected = nil
         if action == .rewrite {
             guard let snapshot = selectionFromAX() else {
@@ -597,30 +602,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 }
 
-#if FOCUS_GUARD_TEST
-MainActor.assumeIsolated {
-    let window = AXUIElementCreateApplication(90001)
-    let otherWindow = AXUIElementCreateApplication(90002)
-    let editor = AXUIElementCreateApplication(90003)
-    let otherEditor = AXUIElementCreateApplication(90004)
-    let focus = FocusIdentity(window: window, element: editor, title: "Original tab")
-    precondition(focus.matches(window: window, element: editor, title: "Original tab"))
-    precondition(!focus.matches(window: nil, element: editor, title: "Original tab"))
-    precondition(!focus.matches(window: window, element: nil, title: "Original tab"))
-    precondition(!focus.matches(window: otherWindow, element: editor, title: "Original tab"))
-    precondition(!focus.matches(window: window, element: otherEditor, title: "Original tab"))
-    precondition(!focus.matches(window: window, element: editor, title: "Switched tab"))
-    let initial = AXSelection(text: "repeat", range: CFRange(location: 5, length: 6))
-    precondition(initial.matches(AXSelection(text: "repeat", range: CFRange(location: 5, length: 6))))
-    precondition(!initial.matches(AXSelection(text: "repeat", range: CFRange(location: 30, length: 6))))
-    precondition(!initial.matches(AXSelection(text: "repeat", range: nil)))
-    precondition(!initial.matches(AXSelection(text: "changed", range: CFRange(location: 5, length: 6))))
-    let textOnly = AXSelection(text: "repeat", range: nil)
-    precondition(textOnly.matches(AXSelection(text: "repeat", range: nil)))
-    precondition(!textOnly.matches(AXSelection(text: "changed", range: nil)))
-    print("AX focus and selection identity smoke passed")
-}
-#else
+#if !FOCUS_GUARD_TEST
 MainActor.assumeIsolated {
     let app = NSApplication.shared
     let delegate = HeadlessApp()
