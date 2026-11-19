@@ -7,6 +7,20 @@ import Foundation
 // Native boundaries only: device input, microphone, menu bar and OS text delivery.
 // All transcription, intent and routing decisions call the linked Go Core.
 private enum Action { case dictation, rewrite }
+
+// Require stable native window and focused-element identities, not editor text.
+// Also check the window title when exposed to catch browser tab changes.
+struct FocusIdentity {
+    let window: AXUIElement
+    let element: AXUIElement
+    let title: String?
+
+    func matches(window: AXUIElement?, element: AXUIElement?, title: String?) -> Bool {
+        guard let window, let element,
+              CFEqual(self.window, window), CFEqual(self.element, element) else { return false }
+        return self.title == nil || self.title == title
+    }
+}
 private enum HostError: Error {
     case config(String), microphone(String), conversion, bridge(String)
 }
@@ -212,7 +226,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var activeAction: Action?
     private var taskID: UInt64 = 0
     private var targetPID: pid_t = 0
-    private var targetWindow: AXUIElement?
+    private var targetFocus: FocusIdentity?
     private var selected: String?
     private var pending = false
 
@@ -226,6 +240,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         for entry in menu.items where entry.action != nil { entry.target = self }
         item.menu = menu
         pill.onCancel = { [weak self] in self?.cancelFromPill() }
+        pill.onRecordingSecond = { [weak self] seconds in self?.show("● \(seconds)s") }
         pill.prepare()
         let defaultPath = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/voicerewrite/config.json")
@@ -357,7 +372,11 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func begin(_ action: Action) {
         targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
         guard targetPID > 0 else { reset("No target"); return }
-        targetWindow = focusedWindow()
+        // No AX text access needed: only verify a stable destination identity.
+        guard let window = focusedWindow(), let element = focusedElement() else {
+            reset("Target unavailable"); return
+        }
+        targetFocus = FocusIdentity(window: window, element: element, title: windowTitle(window))
         selected = nil
         if action == .rewrite {
             guard let text = selectionFromAX(), !text.isEmpty else {
@@ -370,7 +389,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             try microphone.start(maximumSeconds: config.profile.maximumSeconds)
             pill.recording(rewrite: action == .rewrite, started: Date(),
                            meter: { [weak self] in self?.microphone.meterLevel ?? 0 })
-            show("●")
             let token = taskID
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.profile.maximumSeconds)) { [weak self] in
                 guard let self, VREpochValid(token) == 1, self.microphone.running else { return }
@@ -413,10 +431,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else {
                             self.reset("Focus changed"); return
                         }
-                        if let window = self.targetWindow {
-                            guard let current = self.focusedWindow(), CFEqual(window, current) else {
-                                self.reset("Window changed"); return
-                            }
+                        let currentWindow = self.focusedWindow()
+                        guard let focus = self.targetFocus,
+                              focus.matches(window: currentWindow,
+                                            element: self.focusedElement(),
+                                            title: currentWindow.flatMap(self.windowTitle)) else {
+                            self.reset("Focus changed"); return
                         }
                         if action == .rewrite && self.selectionFromAX() != selectedValue {
                             self.reset("Selection changed"); return
@@ -436,15 +456,26 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         return (value as! AXUIElement)
     }
 
-    private func selectionFromAX() -> String? {
-        let system = AXUIElementCreateSystemWide()
-        var focused: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString,
-                                            &focused) == .success, let focused else { return nil }
+    private func focusedElement() -> AXUIElement? {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(focused as! AXUIElement,
-                                            kAXSelectedTextAttribute as CFString, &value) == .success
-        else { return nil }
+        guard AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(),
+                kAXFocusedUIElementAttribute as CFString, &value) == .success, let value,
+              CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return (value as! AXUIElement)
+    }
+
+    private func windowTitle(_ window: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString,
+                                             &value) == .success else { return nil }
+        return value as? String
+    }
+
+    private func selectionFromAX() -> String? {
+        guard let focused = focusedElement() else { return nil }
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(focused, kAXSelectedTextAttribute as CFString,
+                                            &value) == .success else { return nil }
         return value as? String
     }
 
@@ -517,14 +548,31 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func clearSession() {
         activeAction = nil
         selected = nil
-        targetWindow = nil
+        targetFocus = nil
         pending = false
     }
 }
 
+#if FOCUS_GUARD_TEST
+MainActor.assumeIsolated {
+    let window = AXUIElementCreateApplication(90001)
+    let otherWindow = AXUIElementCreateApplication(90002)
+    let editor = AXUIElementCreateApplication(90003)
+    let otherEditor = AXUIElementCreateApplication(90004)
+    let focus = FocusIdentity(window: window, element: editor, title: "Original tab")
+    precondition(focus.matches(window: window, element: editor, title: "Original tab"))
+    precondition(!focus.matches(window: nil, element: editor, title: "Original tab"))
+    precondition(!focus.matches(window: window, element: nil, title: "Original tab"))
+    precondition(!focus.matches(window: otherWindow, element: editor, title: "Original tab"))
+    precondition(!focus.matches(window: window, element: otherEditor, title: "Original tab"))
+    precondition(!focus.matches(window: window, element: editor, title: "Switched tab"))
+    print("AX focus identity smoke passed")
+}
+#else
 MainActor.assumeIsolated {
     let app = NSApplication.shared
     let delegate = HeadlessApp()
     app.delegate = delegate
     app.run()
 }
+#endif

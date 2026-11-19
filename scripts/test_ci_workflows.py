@@ -18,6 +18,7 @@ class HeadlessWorkflowTests(unittest.TestCase):
         self.assertIn("needs.build-macos-headless.result", source)
         self.assertIn("go test -race -count=1 ./...", source)
         self.assertIn("bench-macos-core.swift", job)
+        self.assertIn("FOCUS_GUARD_TEST", job)
 
     def test_ready_and_distribution_build_same_app(self):
         for filename in ("ready-build.yml", "nightly.yml", "macos-distribution.yml"):

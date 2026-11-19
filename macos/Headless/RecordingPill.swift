@@ -14,6 +14,8 @@ final class RecordingPill {
     private var terminalAt: Date?
     private var levelSource: () -> Double = { 0 }
     var onCancel: (() -> Void)?
+    var onRecordingSecond: ((Int) -> Void)?
+    private var lastSecond = -1
 
     var isVisible: Bool { panel?.isVisible == true }
 
@@ -50,6 +52,8 @@ final class RecordingPill {
         view.started = started
         view.phase = .recording
         view.level = 0
+        lastSecond = 0
+        onRecordingSecond?(0)
         display()
     }
 
@@ -97,6 +101,11 @@ final class RecordingPill {
             return
         }
         if view.phase == .recording {
+            let seconds = max(0, Int(Date().timeIntervalSince(view.started)))
+            if seconds != lastSecond {
+                lastSecond = seconds
+                onRecordingSecond?(seconds)
+            }
             let raw = levelSource()
             view.level = VRLevel(view.level, raw)
         }

@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/jsonl"
 	"voicerewrite/internal/core/ux"
@@ -27,8 +28,28 @@ func TestSharedHostTimeouts(t *testing.T) {
 	if limits.TranscribeTimeout != 220*time.Second || limits.SpokenSelectedTimeout != 240*time.Second {
 		t.Fatalf("unexpected shared timeouts: %+v", limits)
 	}
-	if limits.timeoutFor("transcribe") != 220*time.Second || limits.timeoutFor("selected_voice_task") != 240*time.Second {
-		t.Fatalf("JSONL and in-process Go entrypoints use different deadlines: %+v", limits)
+	if limits.timeoutFor(request{Op: "transcribe", NativePCM: make([]byte, 32000)}) != 65*time.Second ||
+		limits.timeoutFor(request{Op: "selected_voice_task"}) != 240*time.Second {
+		t.Fatalf("wrong shared request deadlines: %+v", limits)
+	}
+	// Native PCM and its JSONL base64 envelope must receive one budget.
+	for _, seconds := range []int{1, 10, 11, 30, 60, 90, 120, 200} {
+		pcm := make([]byte, seconds*audio.PCMBytesPerSecond)
+		native := limits.timeoutFor(request{Op: "transcribe", NativePCM: pcm})
+		jsonl := limits.timeoutFor(request{Op: "transcribe", PCMBase64: base64.StdEncoding.EncodeToString(pcm)})
+		if native != jsonl {
+			t.Fatalf("%ds PCM timeout differs: native=%v JSONL=%v", seconds, native, jsonl)
+		}
+		if native < 65*time.Second || native > 220*time.Second {
+			t.Fatalf("%ds PCM timeout out of bounds: %v", seconds, native)
+		}
+	}
+	if got := limits.timeoutFor(request{Op: "transcribe", NativePCM: make([]byte, 11*audio.PCMBytesPerSecond)}); got != 67*time.Second {
+		t.Fatalf("11s clip should have the previous 67s deadline, got %v", got)
+	}
+	limits.TranscribeTimeout = 200 * time.Millisecond
+	if got := limits.timeoutFor(request{Op: "transcribe"}); got != 200*time.Millisecond {
+		t.Fatalf("custom test deadline was extended: %v", got)
 	}
 }
 

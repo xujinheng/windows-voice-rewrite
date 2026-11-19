@@ -169,7 +169,7 @@ func VRRun(config, operation *C.char, audio *C.uchar, length C.int, selection *C
 	}
 	// Share the CLI's 220s ASR / 240s selected-text deadlines, even when
 	// Swift never launches a helper. Epoch invalidation remains the parent.
-	ctx, cancel := context.WithTimeout(nativeEpoch.ContextFor(uint64(token)), defaultOptions().timeoutFor(req.Op))
+	ctx, cancel := context.WithTimeout(nativeEpoch.ContextFor(uint64(token)), defaultOptions().timeoutFor(req))
 	defer cancel()
 	return nativeJSON(safeProcessRequest(ctx, req))
 }
