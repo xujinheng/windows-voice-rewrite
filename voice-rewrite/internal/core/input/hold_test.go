@@ -28,9 +28,6 @@ func TestToggleCleanupKeepsClipboardAndStatusApart(t *testing.T) {
 }
 
 func TestVoiceStartKeepsSideAndKeyboardWindowsApart(t *testing.T) {
-	if !VoiceStartBlocked(false, false, false, false, true) || VoiceStartBlocked(false, false, false, false, false) {
-		t.Fatal("blocked")
-	}
 	if SideConfirm(false, true, true, true) != SideConfirmIgnore || SideConfirm(true, false, true, true) != SideConfirmIgnore {
 		t.Fatal("ignore other button")
 	}
@@ -45,9 +42,6 @@ func TestVoiceStartKeepsSideAndKeyboardWindowsApart(t *testing.T) {
 	}
 	if HoldModeLabel(true, true) != "会议直译" || HoldModeLabel(false, true) != "会议意图" || HoldModeLabel(true, false) != "听写" || HoldModeLabel(false, false) != "改写" {
 		t.Fatal("mode")
-	}
-	if HoldWatchLimit(180) != 182*time.Second {
-		t.Fatal(HoldWatchLimit(180))
 	}
 	if RewriteHotkeyAction(true, false, true, false) != RewriteIgnore || RewriteHotkeyAction(false, true, true, false) != RewriteIgnore {
 		t.Fatal("busy or paused does not finish")

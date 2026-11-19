@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"voicerewrite/asrtext"
 )
 
 func TestCleanTranscriptAllLanguages(t *testing.T) {
@@ -31,7 +33,7 @@ func TestCleanTranscriptAllLanguages(t *testing.T) {
 		{"language Chinese<asr_text>1. language English<asr_text>2. language Chinese<asr_text>3.", "1. 2. 3."},
 	}
 	for _, tc := range cases {
-		if got := cleanTranscript(tc.in); got != tc.out {
+		if got := asrtext.StripMetadata(tc.in); got != tc.out {
 			t.Errorf("input %q: got %q, want %q", tc.in, got, tc.out)
 		}
 	}

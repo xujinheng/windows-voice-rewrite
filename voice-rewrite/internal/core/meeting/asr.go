@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"voicerewrite/asrtext"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
 	"voicerewrite/internal/core/speech"
@@ -118,7 +119,7 @@ func (s *ASRState) Transcribe(ctx context.Context, cfg coreconfig.Config, pcm []
 	if err != nil {
 		return "", err
 	}
-	s.fixed = speech.CleanASR(prefix)
+	s.fixed = asrtext.Clean(prefix)
 	wav, err := speech.EncodeWAV(pcm)
 	if err != nil {
 		return "", err
@@ -160,7 +161,7 @@ func (s *ASRState) Transcribe(ctx context.Context, cfg coreconfig.Config, pcm []
 		if (strings.HasPrefix(strings.TrimSpace(text), "language") || strings.HasPrefix("language ", strings.TrimSpace(text))) && !strings.Contains(text, "<asr_text>") {
 			return
 		}
-		if clean := speech.CleanASR(text); clean != "" && ctx.Err() == nil {
+		if clean := asrtext.Clean(text); clean != "" && ctx.Err() == nil {
 			emit(clean)
 		}
 	}
@@ -223,7 +224,7 @@ func (s *ASRState) Transcribe(ctx context.Context, cfg coreconfig.Config, pcm []
 	if !observed {
 		return "", errors.New("ASR 返回空响应，未提交转录")
 	}
-	text := speech.CleanASR(raw.String())
+	text := asrtext.Clean(raw.String())
 	if text == "" || strings.HasPrefix(text, "language") {
 		return "", errors.New("ASR 未返回有效转录")
 	}

@@ -10,27 +10,15 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
+	"voicerewrite/asrtext"
 	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
 	"voicerewrite/internal/core/ux"
 )
-
-// Match OneClick's metadata delimiter, not arbitrary characters between "language"
-// and <asr_text>. Multiple delimiters may occur in one transcript.
-var asrMarker = regexp.MustCompile(`(?i)language[ \t]+[a-z][a-z0-9 ,_+\-/]{0,79}[ \t]*<asr_text>`)
-var standaloneMarker = regexp.MustCompile(`(?i)^\s*<asr_text>\s*`)
-
-func CleanASR(s string) string {
-	s = asrMarker.ReplaceAllString(s, "")
-	s = standaloneMarker.ReplaceAllString(s, "")
-	s = strings.ReplaceAll(s, "<|endoftext|>", "")
-	return strings.TrimSpace(s)
-}
 
 // OneClick and some llama.cpp/faster-whisper endpoints return JSON, while
 // other OpenAI-compatible servers return plain text. Never silently treat
@@ -175,7 +163,7 @@ func transcribeChunk(ctx context.Context, cfg coreconfig.Config, pcm []byte, pro
 	if e != nil {
 		return "", e
 	}
-	result := CleanASR(transcript)
+	result := asrtext.Clean(transcript)
 	if result == "" {
 		return "", errors.New(ux.NoSpeech)
 	}

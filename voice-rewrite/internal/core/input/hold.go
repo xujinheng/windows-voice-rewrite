@@ -10,13 +10,6 @@ const (
 	ToggleUINotifyFailed = "无法通知 UI 线程准备录音"
 )
 
-// VoiceStartBlocked is the shared reason a keyboard hold or side-button arm does not start.
-// Callers pass their own extra reason: the settings window for a keyboard hold,
-// or an unbound button for a side arm. A missing window is decided after this.
-func VoiceStartBlocked(paused, busy, recording, pendingSide, extra bool) bool {
-	return paused || busy || recording || pendingSide || extra
-}
-
 // SideConfirmResult is what a side-button hold does when the button comes up into a voice hold.
 type SideConfirmResult int
 
@@ -57,11 +50,6 @@ func HoldModeLabel(dictation, meeting bool) string {
 	default:
 		return "改写"
 	}
-}
-
-// HoldWatchLimit is the hold watcher deadline: the configured maximum plus two seconds.
-func HoldWatchLimit(maxRecordSeconds int) time.Duration {
-	return time.Duration(maxRecordSeconds+2) * time.Second
 }
 
 // RewriteHotkey is what the rewrite shortcut does. Dictation does not finish an in-progress toggle.

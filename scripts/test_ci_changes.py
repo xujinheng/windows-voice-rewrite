@@ -9,12 +9,12 @@ class ClassifyTests(unittest.TestCase):
             "core": False, "macos": False, "windows": False, "oneclick": False, "ui": False, "direct2d": False})
 
     def test_native_macos(self):
-        self.assertEqual(classify(["macos/Modules/Microphone/Sources/Record.swift"]), {
+        self.assertEqual(classify(["macos/Headless/main.swift"]), {
             "core": False, "macos": True, "windows": False, "oneclick": False, "ui": False, "direct2d": False})
 
     def test_shared_go(self):
         self.assertEqual(classify(["voice-rewrite/internal/core/meeting/meeting.go"]), {
-            "core": True, "macos": True, "windows": True, "oneclick": False, "ui": True, "direct2d": False})
+            "core": True, "macos": False, "windows": True, "oneclick": False, "ui": True, "direct2d": False})
 
     def test_windows_only_native_code(self):
         selected = classify(["voice-rewrite/task_worker_windows.go"])
@@ -43,35 +43,27 @@ class ClassifyTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue(all(classify([path]).values()))
 
-    def test_native_xcode_ci_helpers_validate_both_macos_architectures(self):
-        for path in ("scripts/ci_xcode_mtimes.py", "scripts/ci_xctest_coverage.py"):
-            with self.subTest(path=path):
-                self.assertEqual(classify([path]), {
-                    "core": False, "macos": True, "windows": False,
-                    "oneclick": False, "ui": False, "direct2d": False,
-                })
-
     def test_mixed_change(self):
-        self.assertEqual(classify(["macos/VoiceRewrite/App/Main.swift", "oneclick/go.mod"]),
-                         {"core": False, "macos": True, "windows": True, "oneclick": True, "ui": True, "direct2d": False})
+        self.assertEqual(classify(["macos/Headless/main.swift", "oneclick/config.example.json"]),
+                         {"core": False, "macos": True, "windows": False, "oneclick": True, "ui": False, "direct2d": False})
 
     def test_ui_acceptance(self):
-        self.assertTrue(classify(["macos/VoiceRewrite/UI/RecordingIndicator.swift"])["ui"])
+        self.assertTrue(classify(["voice-rewrite/internal/core/indicator/indicator.go"])["ui"])
         self.assertTrue(classify(["voice-rewrite/settings_windows.go"])["ui"])
-        self.assertFalse(classify(["macos/Modules/Microphone/Recorder.swift"])["ui"])
+        self.assertFalse(classify(["macos/Headless/RecordingPill.swift"])["ui"])
 
-    def test_windows_ui_requires_both_platforms(self):
+    def test_windows_only_ui_does_not_build_mac(self):
         routed = classify(["voice-rewrite/settings_windows.go"])
         self.assertTrue(routed["ui"])
         self.assertTrue(routed["windows"])
-        self.assertTrue(routed["macos"])
+        self.assertFalse(routed["macos"])
         self.assertFalse(routed["core"])
 
-    def test_macos_ui_requires_windows_capture(self):
-        routed = classify(["macos/VoiceRewrite/UI/RecordingIndicator.swift"])
-        self.assertTrue(routed["ui"])
+    def test_headless_mac_adapter_does_not_schedule_windows_ui(self):
+        routed = classify(["macos/Headless/RecordingPill.swift"])
+        self.assertFalse(routed["ui"])
         self.assertTrue(routed["macos"])
-        self.assertTrue(routed["windows"])
+        self.assertFalse(routed["windows"])
         self.assertFalse(routed["oneclick"])
 
     def test_direct2d_acceptance(self):

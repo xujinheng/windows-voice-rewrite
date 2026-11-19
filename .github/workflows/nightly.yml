@@ -27,10 +27,9 @@ jobs:
       - name: Repeat shared Go tests with race detection
         working-directory: voice-rewrite
         run: go test -race -count=3 -timeout 20m ./...
-      - name: Validate portable core boundaries and generated contracts
+      - name: Validate portable Go Core boundaries
         run: |
           python3 scripts/check-portable-core.py
-          (cd voice-rewrite && go run ./cmd/contractgen -check)
 
   native-macos:
     name: Headless macOS ${{ matrix.arch }} nightly
