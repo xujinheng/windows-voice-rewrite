@@ -681,7 +681,9 @@ func runApp() {
 		if msg.Message == WM_TOGGLE_READY {
 			result := <-toggleResult
 			if !app.epoch.Valid(result.generation) {
-				result.rec.Stop()
+				// Canceled while the worker's ready message was queued:
+				// restore only our clipboard lease and release its busy flag.
+				finishTogglePrepare(app, hwnd, result.sel, result.rec, true, nil)
 				continue
 			}
 			activeGeneration = result.generation
