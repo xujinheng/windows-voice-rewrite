@@ -228,24 +228,6 @@ func ReplyCopyEnabled(complete bool, english string) bool {
 	return complete && english != ""
 }
 
-// MeetingStop is the end of a meeting hold.
-// A canceled meeting drains the recorder and does not express.
-// A live meeting expresses and leaves the tray and pill alone.
-type MeetingStop struct {
-	Express       bool
-	DrainRecorder bool
-	ClearBusy     bool
-	IdleTray      bool
-	ClosePill     bool
-}
-
-func MeetingStopAction(canceled bool) MeetingStop {
-	if canceled {
-		return MeetingStop{DrainRecorder: true, ClearBusy: true, IdleTray: true, ClosePill: true}
-	}
-	return MeetingStop{Express: true}
-}
-
 func AcceptEnabled(owner, pending, paused bool) bool {
 	return owner && pending && !paused
 }
