@@ -24,27 +24,3 @@ func ResultShown(body string) error {
 func EditorText(body string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(body, "\r\n", "\n"), "\n", "\r\n")
 }
-
-// ApplyContinuation is the manual apply after the native host checks its input.
-type ApplyContinuation int
-
-const (
-	// ApplyBusyNote shows the busy sentence and leaves the flag with the task that owns it.
-	ApplyBusyNote ApplyContinuation = iota
-	// ApplyEditorClosed reports the closed editor and releases the flag taken for this apply.
-	ApplyEditorClosed
-	// ApplyReplace focuses the editor and replaces the selection.
-	ApplyReplace
-)
-
-// ContinueApply chooses that continuation.
-// A busy flag that was not taken stays with the other task even when the editor is closed.
-func ContinueApply(busyTaken, editorOpen bool) ApplyContinuation {
-	if !busyTaken {
-		return ApplyBusyNote
-	}
-	if !editorOpen {
-		return ApplyEditorClosed
-	}
-	return ApplyReplace
-}
