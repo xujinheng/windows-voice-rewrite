@@ -151,12 +151,16 @@ jobs:
           "$RUNNER_TEMP/voicecore-bench"
           # The real host source is compiled with its runtime entrypoint
           # replaced by synthetic AX identities; no microphone/UI is needed.
+          # Compile the real adapter once more with a CI-only entrypoint,
+          # keeping AX smoke assertions out of the two shipped Swift sources.
+          cp macos/Headless/main.swift "$RUNNER_TEMP/main.swift"
+          cat scripts/test-macos-focus.swift >> "$RUNNER_TEMP/main.swift"
           swiftc -O -D FOCUS_GUARD_TEST -target '${{ matrix.arch }}-apple-macosx13.0' \
             -import-objc-header macos/Headless/VoiceCore.h \
             -framework AppKit -framework AVFoundation -framework ApplicationServices \
             -framework CoreGraphics -framework Security -framework CoreFoundation \
             -o "$RUNNER_TEMP/voicecore-focus-test" \
-            macos/Headless/main.swift macos/Headless/RecordingPill.swift \
+            "$RUNNER_TEMP/main.swift" macos/Headless/RecordingPill.swift \
             "$RUNNER_TEMP/headless/libvoicecore.a"
           "$RUNNER_TEMP/voicecore-focus-test"
       - name: Upload one developer .app per architecture on main and tags
