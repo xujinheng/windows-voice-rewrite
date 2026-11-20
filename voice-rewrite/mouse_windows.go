@@ -103,7 +103,7 @@ func replaySideClick(button uint16) error {
 	return nil
 }
 
-func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, paused *atomic.Bool) (*sideMouseHook, error) {
+func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, paused *atomic.Bool, buttons *voice.Core) (*sideMouseHook, error) {
 	if hwnd == 0 || (rewriteButton != 0 && rewriteButton == dictationButton) {
 		return nil, errors.New("鼠标侧键钩子参数无效")
 	}
@@ -115,7 +115,6 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 		defer close(done)
 		tid, _, _ := procGetCurrentThreadID.Call()
 		var mu sync.Mutex
-		buttons := voice.NewCore(3)
 		var capturedDown [3]bool
 		var timers [3]*time.Timer
 		closed := false
