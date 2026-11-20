@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
 	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/provider"
 )

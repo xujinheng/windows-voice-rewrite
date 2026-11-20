@@ -7,8 +7,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/speech"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/textedit"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
