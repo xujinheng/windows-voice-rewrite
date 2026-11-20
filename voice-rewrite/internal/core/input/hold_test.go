@@ -66,21 +66,45 @@ func TestHoldDuplicateAndStaleEvents(t *testing.T) {
 
 func TestHoldsCrossPlatformExclusiveLifecycle(t *testing.T) {
 	s := NewHolds(105)
-	if s.Press(0, false) != 0 || s.Press(105, false) != 0 || s.Down(-1) { t.Fatal("invalid native code") }
-	if s.Press(54, true) != 0 || s.Down(54) { t.Fatal("busy event created phantom hold") }
+	if s.Press(0, false) != 0 || s.Press(105, false) != 0 || s.Down(-1) {
+		t.Fatal("invalid native code")
+	}
+	if s.Press(54, true) != 0 || s.Down(54) {
+		t.Fatal("busy event created phantom hold")
+	}
 	a := s.Press(54, false)
-	if a == 0 || !s.Armed() || !s.Down(54) { t.Fatal("owner was not armed") }
-	if s.Press(61, false) != 0 || s.Down(61) { t.Fatal("second key should pass through") }
-	if s.CanActivate(61, a) || !s.Activate(54, a) { t.Fatal("wrong activation owner") }
-	if held, active, primary := s.Release(61); held || active || primary { t.Fatal("phantom release") }
-	if held, active, primary := s.Release(54); !held || !active || !primary || s.Armed() { t.Fatal("owner release") }
+	if a == 0 || !s.Armed() || !s.Down(54) {
+		t.Fatal("owner was not armed")
+	}
+	if s.Press(61, false) != 0 || s.Down(61) {
+		t.Fatal("second key should pass through")
+	}
+	if s.CanActivate(61, a) || !s.Activate(54, a) {
+		t.Fatal("wrong activation owner")
+	}
+	if held, active, primary := s.Release(61); held || active || primary {
+		t.Fatal("phantom release")
+	}
+	if held, active, primary := s.Release(54); !held || !active || !primary || s.Armed() {
+		t.Fatal("owner release")
+	}
 	b := s.Press(54, false)
-	if b == 0 || b == a || s.Activate(54, a) { t.Fatal("stale timer replay") }
+	if b == 0 || b == a || s.Activate(54, a) {
+		t.Fatal("stale timer replay")
+	}
 	s.Abandon()
-	if s.Armed() || !s.Down(54) { t.Fatal("abandoned press lost physical release") }
-	if held, active, primary := s.Release(54); !held || active || primary { t.Fatal("abandoned key created task") }
+	if s.Armed() || !s.Down(54) {
+		t.Fatal("abandoned press lost physical release")
+	}
+	if held, active, primary := s.Release(54); !held || active || primary {
+		t.Fatal("abandoned key created task")
+	}
 	c := s.Press(54, false)
-	if c == 0 { t.Fatal("cannot start after abandon") }
+	if c == 0 {
+		t.Fatal("cannot start after abandon")
+	}
 	s.Cancel()
-	if s.Down(54) || s.Armed() || s.Activate(54, c) { t.Fatal("cancel left live key") }
+	if s.Down(54) || s.Armed() || s.Activate(54, c) {
+		t.Fatal("cancel left live key")
+	}
 }
