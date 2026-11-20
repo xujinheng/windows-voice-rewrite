@@ -16,7 +16,6 @@ import (
 
 	"voicerewrite/internal/core/desktop"
 	corepopup "voicerewrite/internal/core/popup"
-	"voicerewrite/internal/core/texttarget"
 	"voicerewrite/internal/core/ux"
 )
 
@@ -168,7 +167,7 @@ func windowClassName(hwnd uintptr) string {
 
 func isSafelyEditableControl(target uintptr) bool {
 	focusClass := foregroundFocusedClass(target)
-	if focusClass == "" || !texttarget.NativeEditClass(focusClass) {
+	if focusClass != "edit" && !strings.HasPrefix(focusClass, "richedit") && !strings.HasPrefix(focusClass, "windowsforms10.edit") {
 		return false
 	}
 	tid, _, _ := procGetWindowThreadProcessId.Call(target, 0)
