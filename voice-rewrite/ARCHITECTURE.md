@@ -25,10 +25,8 @@ provider cancellation call Go `session.Epoch`, and each waveform/spinner/clock
 frame calls Go `indicator` through the in-process ABI. Swift performs the OS
 operations and draws the returned pixels. The macOS `processRequest` and Windows workers call the same `voice.Run`,
 which owns PCM admission, `speech.Transcribe`, `textedit.ResolveSelectedTask`
-and result routing. The bridge preserves the same 220-second transcription and
-240-second spoken-task deadlines as its JSONL entrypoint. `cmd/voicebridge` retains a serial command-line JSONL diagnostic mode for
-independent tests, without a second task registry or in-process cancel
-protocol; it is not shipped as a second macOS process.
+and result routing. The Go task owns the shared transcription and spoken-task deadlines.
+`cmd/voicebridge` is a C archive, not a JSONL server or helper process.
 
 **Delivery is not equivalent to text insertion.** Native hosts verify current
 window/selection and clipboard ownership before attempting one paste; a sent
