@@ -79,7 +79,7 @@ def main():
     # Provider-level calls alone could still leave two independent pipelines.
     if any(token in bridge for token in ("func serve(", "func dispatch(", "func readFrame(", "PCMBase64", "req.Op")):
         raise SystemExit("unshipped JSONL bridge reintroduced a second desktop transport")
-    if "voicerewrite/internal/core/voice" not in imports or any(
+    if "voicerewrite/voice" not in imports or any(
         ".Execute(" not in host for host in (bridge, windows)
     ):
         raise SystemExit("both hosts must invoke the same Go voice task")

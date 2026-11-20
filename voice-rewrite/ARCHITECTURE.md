@@ -11,7 +11,7 @@ own Go module; it must not be coupled to the desktop host just for reuse.
 Windows (`voice-rewrite/*.go` and `*_windows.go`) owns Win32 messages, UIA,
 WASAPI/WinMM, hooks, clipboard handles, native windows and Meeting HUD pixels.
 Keep physical side effects and their thread/OS lifetime here; shared portable
-decisions belong under `internal/core`.
+decisions belong to `voice` and its internal Go dependencies.
 
 macOS (`macos/Headless/main.swift`, `RecordingPill.swift`) owns Quartz events,
 AVAudioEngine/AVAudioConverter, AX focus/selection, NSPasteboard leases,
@@ -40,7 +40,7 @@ automatically retried. Only the OS adapter can perform these final checks.
 - `internal/core/provider`: model discovery and private HTTP transport.
 - `internal/core/speech`: ASR request/response and transcript processing.
 - `internal/core/textedit`: selected-text intent and model rewriting.
-- `internal/core/voice`: single client-facing Core owns holds, generations, cancellation and voice execution.
+- `voice`: public client-facing Go Core package; owns holds, task generations, cancellation, results and voice execution.
 - `internal/core/indicator`, `ux`, `clipboard`: presentation decisions,
   delivery policies and clipboard guards. Native hosts own the system APIs.
 - `internal/core/meeting`: Windows-only Meeting business logic. Its

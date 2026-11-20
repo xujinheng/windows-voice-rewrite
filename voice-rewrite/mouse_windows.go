@@ -13,7 +13,7 @@ import (
 	"time"
 	"unsafe"
 
-	"voicerewrite/internal/core/voice"
+	"voicerewrite/voice"
 )
 
 // Mouse4/Mouse5 are XBUTTON1/XBUTTON2. A low-level hook MUST run on a dedicated
