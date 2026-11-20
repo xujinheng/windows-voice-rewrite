@@ -72,7 +72,7 @@ func TestInProcessRequestDeadlineCancelsASR(t *testing.T) {
 	defer cancel()
 	reply := safeProcessRequest(ctx, request{
 		ID: "native", Op: "transcribe", Config: cfg,
-		NativePCM: make([]byte, 3200), CanInsert: true,
+		NativePCM: make([]byte, 3200),
 	})
 	if reply.Error == nil || reply.Error.Code != "timeout" {
 		t.Fatalf("in-process ASR did not stop at its deadline: %#v", reply)
@@ -128,7 +128,7 @@ func TestInProcessEpochCancellationReachesProvider(t *testing.T) {
 				t.Fatal(err)
 			}
 			req := request{
-				ID: "native", Op: tc.operation, Config: raw, CanInsert: true,
+				ID: "native", Op: tc.operation, Config: raw,
 				SelectedText: "你好", NativePCM: make([]byte, 3200),
 			}
 			var epoch session.Epoch
@@ -353,7 +353,7 @@ func TestBridgeCoreHTTPRequestsAndRouting(t *testing.T) {
 	h.send(requestForASR("asr", cfg))
 	reply := h.receive()
 	if !reply.OK || object(t, reply.Result)["text"] != "hello from core" ||
-		object(t, reply.Result)["route"] != "preview" {
+		object(t, reply.Result)["route"] != "insert" {
 		t.Fatalf("bad ASR response: %#v", reply)
 	}
 	h.close()
