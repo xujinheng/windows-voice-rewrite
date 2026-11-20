@@ -131,14 +131,14 @@ func FromKey(vk, modifiers uint32) (string, error) {
 // WindowsSideButton maps a stored shortcut to the XBUTTON id used by the mouse hook.
 // Mouse4 is XBUTTON1 (1) and Mouse5 is XBUTTON2 (2).
 func WindowsSideButton(s string) (uint16, bool) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "mouse4", "xbutton1":
-		return 1, true
-	case "mouse5", "xbutton2":
-		return 2, true
-	default:
+	name, _, _, mouse, _ := Parse(s)
+	if !mouse {
 		return 0, false
 	}
+	if name == "Mouse4" {
+		return 1, true
+	}
+	return 2, true
 }
 
 // Parse returns the canonical shortcut, modifier bits, virtual key, and whether
