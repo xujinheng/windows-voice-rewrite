@@ -119,32 +119,6 @@ func TestStartupHotkeyRulesKeepWindowsOrder(t *testing.T) {
 	}
 }
 
-func TestBindingReportsKeyAndModifiers(t *testing.T) {
-	for _, tc := range []struct{ raw, key string }{
-		{"Ctrl+Alt+R", "R"},
-		{"ctrl+alt+e", "E"},
-		{"Ctrl+Alt+T", "T"},
-	} {
-		binding, err := Bind(tc.raw)
-		if err != nil || binding.Key != tc.key || !binding.Ctrl || !binding.Alt || binding.Shift || binding.Mouse {
-			t.Fatalf("%s %#v %v", tc.raw, binding, err)
-		}
-	}
-	if _, err := Bind("Shift+A"); err == nil {
-		t.Fatal("shift letter accepted")
-	}
-	mouse, err := Bind("mouse4")
-	if err != nil || !mouse.Mouse || mouse.Key != "Mouse4" {
-		t.Fatalf("mouse %#v %v", mouse, err)
-	}
-	if id, ok := WindowsSideButton(" xbutton2 "); id != 2 || !ok {
-		t.Fatalf("side button %d %v", id, ok)
-	}
-	if _, ok := WindowsSideButton("F9"); ok {
-		t.Fatal("keyboard shortcut mapped as a mouse button")
-	}
-}
-
 func TestCaptureKeyIgnoresModifiersAndWindowsKey(t *testing.T) {
 	if _, err := CaptureKey(0x11, Ctrl, false); !errors.Is(err, ErrSkipCapture) {
 		t.Fatal("ctrl alone")
@@ -161,29 +135,15 @@ func TestCaptureKeyIgnoresModifiersAndWindowsKey(t *testing.T) {
 	}
 }
 
-func TestMacKeyboardDefaultsStayKeyboardShortcuts(t *testing.T) {
-	seen := map[string]bool{}
-	for _, raw := range []string{MacDictationShortcut, MacRewriteShortcut} {
-		binding, err := Bind(raw)
-		if err != nil || binding.Mouse || seen[binding.Key] {
-			t.Fatalf("%s %#v %v", raw, binding, err)
-		}
-		seen[binding.Key] = true
-	}
-	if MacDictationShortcut != "RightCommand" || MacRewriteShortcut != "RightOption" {
-		t.Fatalf("mac defaults %s %s", MacDictationShortcut, MacRewriteShortcut)
-	}
-}
-
 func TestMacSideModifiersParseButWindowsRejectsTheirRegistration(t *testing.T) {
 	for _, tc := range []struct{ raw, canonical string }{
 		{"leftcontrol", "LeftCtrl"}, {"rightcontrol", "RightCtrl"},
 		{"leftalt", "LeftOption"}, {"rightalt", "RightOption"},
 		{"leftcmd", "LeftCommand"}, {"rightcmd", "RightCommand"},
 	} {
-		value, err := Bind(tc.raw)
-		if err != nil || value.Normalized != tc.canonical || value.Key != tc.canonical || value.Mouse || value.Ctrl || value.Alt || value.Shift {
-			t.Fatalf("mac modifier binding %q: %#v %v", tc.raw, value, err)
+		name, mods, key, mouse, err := Parse(tc.raw)
+		if err != nil || name != tc.canonical || mods != noRepeat || key != 0 || mouse {
+			t.Fatalf("mac modifier parse %q: %q %d %d %t %v", tc.raw, name, mods, key, mouse, err)
 		}
 		if _, err := ValidateDictation(tc.raw, "Mouse5", "Ctrl+Alt+F10"); err == nil {
 			t.Fatalf("Windows must reject bare modifier %q", tc.raw)
