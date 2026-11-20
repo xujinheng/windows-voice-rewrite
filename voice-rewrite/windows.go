@@ -453,9 +453,9 @@ func runApp() {
 			stopHoldWatch()
 			if holdButton == 0 {
 				if holdIsDictation {
-					app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyDictation}).Release
+					app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyDictation})
 				} else {
-					app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyRewrite}).Release
+					app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyRewrite})
 				}
 			}
 		}
@@ -560,7 +560,7 @@ func runApp() {
 		hold := app.core.Apply(voice.Command{Kind: voice.CommandPress, Code: key, Busy: false}).Token
 		if hold == 0 || !(app.core.Apply(voice.Command{Kind: voice.CommandActivate, Code: key, Token: hold}).Kind == voice.EventActivated) {
 			if hold != 0 {
-				app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: key}).Release
+				app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: key})
 			}
 			rec.Stop()
 			return
@@ -662,14 +662,14 @@ func runApp() {
 				if indicator.Terminal(status.phase) {
 					closeHandyStatus() // close a completed status, not the answer card
 				} else {
-					app.core.Apply(voice.Command{Kind: voice.CommandStart}).Token // cancel either Mouse4 or Mouse5 before paste
+					app.core.Apply(voice.Command{Kind: voice.CommandStart}) // cancel either Mouse4 or Mouse5 before paste
 					if active != nil {
 						stopHoldWatch()
 						if holdButton == 0 && cfg.RecordMode == "hold" {
 							if holdIsDictation {
-								app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyDictation}).Release
+								app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyDictation})
 							} else {
-								app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyRewrite}).Release
+								app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyRewrite})
 							}
 						}
 						rec := active
