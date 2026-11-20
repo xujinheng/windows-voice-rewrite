@@ -3,7 +3,17 @@
 package main
 
 /*
-#include "../../../macos/Headless/VoiceCore.h"
+#include <stdint.h>
+#include <stdlib.h>
+// Only the C ABI shapes are duplicated here for cgo; Core rules are in Go.
+// cgo exports non-const pointers, while the Swift header accepts const inputs.
+typedef struct { int kind; uint64_t token; int role; int release; } VRCommandEvent;
+typedef struct {
+    int role, held_role, down, armed, can_activate, valid;
+    uint64_t current;
+    int phase, closed;
+} VRCoreState;
+typedef void (*VREventCallback)(int kind, uint64_t token);
 static inline void vrReportEvent(VREventCallback fn, int kind, uint64_t token) { fn(kind, token); }
 */
 import "C"
