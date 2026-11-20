@@ -73,4 +73,3 @@ func fixedRecovery(message string) (string, bool) {
 	}
 	return message, true
 }
-
