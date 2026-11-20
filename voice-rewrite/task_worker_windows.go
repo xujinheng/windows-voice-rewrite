@@ -187,9 +187,6 @@ func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintp
 	}
 	app.logger.Printf("selection captured; chars=%d", utf8.RuneCountInString(sel.Text))
 	app.postHandyPhase(indicator.Processing, generation)
-	if !app.epoch.Valid(generation) {
-		return
-	}
 	// We already own the busy flag and error recovery: avoid a second outer worker.
 	processAudioAndRewrite(app, rec, sel, generation)
 }
