@@ -600,8 +600,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         pill.result(.sent)
     }
 
-    // Cancel capture and suppress stale task output without retrying.
     private func cancelFromPill() {
+        if activeAction == nil && !pending && !microphone.running { pill.dismiss(); show("VR"); return }
         VREpochCancel()
         if microphone.running { _ = try? microphone.stop(discard: true) }
         clearSession()
