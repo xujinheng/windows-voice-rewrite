@@ -20,11 +20,11 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/history"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/logfile"
-	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/shortcut"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/textedit"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/update"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/meeting"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
 )
 
@@ -478,13 +478,13 @@ func runApp() {
 			sel.Anchor = currentCursorPoint()
 			go processRecording(app, rec, recordingTask{selection: &sel}, activeGeneration)
 		case holdMeeting != nil:
-			if holdMeeting.runtime.Context().Err() != nil {
+			if holdMeeting.Context().Err() != nil {
 				// The single buffered recorder result needs no drain worker.
 				app.busy.Store(false)
 				app.setStatus(trayIdle)
 				closeHandyStatus()
 			} else {
-				go holdMeeting.express(app, rec, activeGeneration, meetingcore.VoiceMode(holdIsDictation))
+				go expressMeeting(holdMeeting, app, rec, activeGeneration, meetingcore.VoiceMode(holdIsDictation))
 			}
 			holdMeeting = nil
 		case holdIsDictation:
@@ -501,7 +501,7 @@ func runApp() {
 		holdButton = button
 		holdIsDictation = dictation
 		holdMeeting = nil
-		if app.meeting != nil && !app.meeting.demo {
+		if app.meeting != nil && !app.meeting.Demo() {
 			holdMeeting = app.meeting
 		}
 		activeGeneration = app.core.Start()
@@ -631,13 +631,13 @@ func runApp() {
 			case WM_MEETING_STOP:
 				message = meetingcore.PostedStop
 			}
-			switch meetingcore.PostedMeetingEffect(message, app.paused.Load(), app.meeting != nil, app.meeting != nil && app.meeting.demo) {
+			switch meetingcore.PostedMeetingEffect(message, app.paused.Load(), app.meeting != nil, app.meeting != nil && app.meeting.Demo()) {
 			case meetingcore.PostedBegin:
 				app.beginMeeting(uint32(msg.WParam), false)
 			case meetingcore.PostedBeginDemo:
 				app.beginMeeting(0, true)
 			case meetingcore.PostedReplies:
-				app.meeting.requestReplies()
+				app.meeting.RequestReplies()
 			case meetingcore.PostedStopMeeting:
 				app.closeMeeting()
 				if holdMeeting != nil {

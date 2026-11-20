@@ -22,7 +22,7 @@ def classify(paths):
             "voice-rewrite/meeting_ui_e2e_windows_test.go",
             "voice-rewrite/settings*.go", "voice-rewrite/handy_status_windows.go",
             "voice-rewrite/popup_windows.go", "voice-rewrite/meeting*.go",
-            "voice-rewrite/internal/core/meeting/**",
+            "voice-rewrite/meeting/**",
             "voice-rewrite/internal/core/indicator/**",
             "voice-rewrite/internal/core/settingsform/**",
         )):
@@ -52,7 +52,7 @@ def classify(paths):
                 scope.update(core=True, macos=True, windows=True, oneclick=True)
             elif path.startswith("voice-rewrite/cmd/voicebridge/"):
                 scope.update(core=True, macos=True)
-            elif path.startswith("voice-rewrite/internal/core/meeting/"):
+            elif path.startswith("voice-rewrite/meeting/"):
                 # Headless macOS does not link Meeting.
                 scope.update(core=True, windows=True)
             elif path == "voice-rewrite/windows.go" or path.endswith(("_windows.go", "_windows_test.go")):

@@ -8,7 +8,7 @@ import (
 	"unsafe"
 
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
-	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/meeting"
 )
 
 func (p *meetingHUD) openProfile() {
@@ -64,9 +64,7 @@ func (p *meetingHUD) openProfile() {
 		}
 	}
 	session := p.app.meeting
-	session.mu.Lock()
-	cfg := session.cfg
-	session.mu.Unlock()
+	cfg := session.Config()
 	uxSetText(p.profileBackground, cfg.MeetingBackground)
 	uxSetText(p.profileTerms, cfg.MeetingTerms)
 	procSendMessage.Call(p.profileMode, uxCBSetCurSel, uintptr(config.MeetingASRModeIndex(cfg.MeetingASRMode)), 0)
@@ -96,7 +94,7 @@ func (p *meetingHUD) saveProfile() {
 	if s == nil {
 		return
 	}
-	textErr := s.updateProfile(uxWinText(p.profileBackground), uxWinText(p.profileTerms))
+	textErr := s.UpdateProfile(uxWinText(p.profileBackground), uxWinText(p.profileTerms))
 	textStep := meetingcore.AfterProfileText(textErr != nil)
 	if !textStep.TryMode {
 		uxSetText(p.profileStatus, textStep.StatusPrefix+textErr.Error())
@@ -104,7 +102,7 @@ func (p *meetingHUD) saveProfile() {
 	}
 	index, _, _ := procSendMessage.Call(p.profileMode, uxCBGetCurSel, 0, 0)
 	mode := config.MeetingASRModeAt(int(index))
-	modeErr := s.setASRMode(mode)
+	modeErr := s.SetASRMode(mode)
 	modeStep := meetingcore.AfterProfileMode(modeErr != nil)
 	if !modeStep.Close {
 		uxSetText(p.profileStatus, modeStep.StatusPrefix+modeErr.Error())

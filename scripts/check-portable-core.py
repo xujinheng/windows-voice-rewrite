@@ -18,7 +18,7 @@ def packages_for(goos):
     env = os.environ.copy()
     env.update(GOOS=goos, GOARCH="amd64", CGO_ENABLED="0")
     result = subprocess.run(
-        ["go", "list", "-json", "./config", "./voice", "./internal/core/..."],
+        ["go", "list", "-json", "./config", "./voice", "./meeting", "./internal/core/..."],
         cwd=MODULE, env=env, capture_output=True, text=True, check=False,
     )
     if result.returncode:

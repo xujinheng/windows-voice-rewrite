@@ -11,7 +11,7 @@ import (
 	"testing"
 	"unsafe"
 
-	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/meeting"
 )
 
 func meetingE2EFirstLine(control uintptr) uintptr {
@@ -57,7 +57,7 @@ func TestMeetingWindowsE2E(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	view := meetingView{sourceName: "Meeting E2E", captions: meetingE2EHistory(65)}
+	view := meetingView{SourceName: "Meeting E2E", Captions: meetingE2EHistory(65)}
 	if err := showMeetingHUD(0, view); err != nil {
 		t.Fatalf("open native Meeting HUD: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestMeetingWindowsE2E(t *testing.T) {
 	// EM_GETFIRSTVISIBLELINE must remain unchanged and unread must increase.
 	procSendMessage.Call(p.captions, 0x0115, 6, 0) // WM_VSCROLL / SB_TOP
 	top := meetingE2EFirstLine(p.captions)
-	view.captions = append(view.captions, meetingcore.Caption{
+	view.Captions = append(view.Captions, meetingcore.Caption{
 		ID: 66, Source: "One more actual utterance", Chinese: "再补充一段实际发言",
 		TranslatedFrom: "One more actual utterance", Final: true,
 	})
@@ -148,8 +148,8 @@ func TestMeetingWindowsE2E(t *testing.T) {
 	}
 
 	longEnglish := strings.Repeat("This is a complete, speakable English answer for the meeting. ", 15)
-	view.expression = meetingcore.Line{Kind: "SAY", English: longEnglish, Complete: true}
-	view.expressionSource = "请告诉大家一个详细的回答"
+	view.Expression = meetingcore.Line{Kind: "SAY", English: longEnglish, Complete: true}
+	view.ExpressionSource = "请告诉大家一个详细的回答"
 	updateMeetingHUD(view)
 	if !p.expressionExpanded || p.copyExpression != longEnglish || uxWinText(p.expression) != longEnglish {
 		t.Fatal("new long spoken-English result did not expand and remain copyable")
@@ -160,8 +160,8 @@ func TestMeetingWindowsE2E(t *testing.T) {
 		t.Fatalf("history and expanded English overlap: history=%+v expression=%+v", history, expression)
 	}
 
-	view.expressionStatus = "英文生成失败：超时"
-	view.expressionSource = "识别到新的中文，但生成失败"
+	view.ExpressionStatus = "英文生成失败：超时"
+	view.ExpressionSource = "识别到新的中文，但生成失败"
 	updateMeetingHUD(view)
 	if p.copyExpression != longEnglish || uxWinText(p.expression) != longEnglish {
 		t.Fatal("failed inference wiped out previously completed English")
@@ -175,10 +175,10 @@ func TestMeetingWindowsE2E(t *testing.T) {
 		t.Fatal("native collapse-English action failed")
 	}
 	procSendMessage.Call(p.window, 0x0111, meetingcore.ButtonCaptions, 0)
-	view.expression = meetingcore.Line{Kind: "SAY", English: "A newly completed answer.", Complete: true}
-	view.expressionStatus = ""
+	view.Expression = meetingcore.Line{Kind: "SAY", English: "A newly completed answer.", Complete: true}
+	view.ExpressionStatus = ""
 	updateMeetingHUD(view)
-	if p.captionsOnly || !p.expressionExpanded || p.copyExpression != view.expression.English {
+	if p.captionsOnly || !p.expressionExpanded || p.copyExpression != view.Expression.English {
 		t.Fatal("new voice answer did not appear while reading captions only")
 	}
 	if p.splitterVisible[3] || !p.splitterVisible[2] || !p.splitterVisible[4] {

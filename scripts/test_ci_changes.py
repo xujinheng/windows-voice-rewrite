@@ -13,7 +13,7 @@ class ClassifyTests(unittest.TestCase):
             "core": False, "macos": True, "windows": False, "oneclick": False, "ui": False, "direct2d": False})
 
     def test_shared_go(self):
-        self.assertEqual(classify(["voice-rewrite/internal/core/meeting/meeting.go"]), {
+        self.assertEqual(classify(["voice-rewrite/meeting/session.go"]), {
             "core": True, "macos": False, "windows": True, "oneclick": False, "ui": True, "direct2d": False})
 
     def test_windows_only_native_code(self):
@@ -81,7 +81,7 @@ class ClassifyTests(unittest.TestCase):
 
     def test_direct2d_acceptance(self):
         self.assertTrue(classify(["voice-rewrite/popup_layout.go"])["direct2d"])
-        self.assertFalse(classify(["voice-rewrite/internal/core/meeting/meeting.go"])["direct2d"])
+        self.assertFalse(classify(["voice-rewrite/meeting/session.go"])["direct2d"])
 
     def test_headless_scope_change_runs_real_audit(self):
         self.assertEqual(classify(["scripts/check_headless_scope.py"]), {
