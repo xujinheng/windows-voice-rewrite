@@ -57,7 +57,11 @@ func safeProcessRequest(ctx context.Context, req request) (reply response) {
 			return
 		}
 		if err := ctx.Err(); err != nil {
-			reply = contextFailure(err)
+			if errors.Is(err, context.DeadlineExceeded) {
+				reply = failure("timeout", msgTimedOut)
+			} else {
+				reply = failure("canceled", msgCanceled)
+			}
 		}
 	}()
 	trimmed := bytes.TrimSpace(req.Config)
@@ -141,13 +145,6 @@ func headlessProfile(req request) response {
 		"mouseDelayMS":   int(input.WindowsSideHold / time.Millisecond),
 		"pill":           indicator.HostSpec(),
 	}})
-}
-
-func contextFailure(err error) response {
-	if errors.Is(err, context.DeadlineExceeded) {
-		return failure("timeout", msgTimedOut)
-	}
-	return failure("canceled", msgCanceled)
 }
 
 // Required by Go's c-archive build; the native host calls VRRun directly.
