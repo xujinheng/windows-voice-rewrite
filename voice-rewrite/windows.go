@@ -25,7 +25,7 @@ import (
 	"voicerewrite/internal/core/textedit"
 	"voicerewrite/internal/core/update"
 	"voicerewrite/internal/core/ux"
-	"voicerewrite/internal/core/voice"
+	"voicerewrite/voice"
 )
 
 var buildID = "0.29.0-dev" // overwritten by -ldflags -X at build time

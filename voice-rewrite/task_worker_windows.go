@@ -97,7 +97,7 @@ func watchHoldRelease(hwnd, vk, mods, session uintptr, canceled <-chan struct{},
 }
 
 // A native recording supplies either a caret target (dictation) or selected
-// text (rewrite). Both use one worker and the same portable voice.Run.
+// text (rewrite). Both use one worker and the same public voice.Core.Execute.
 type recordingTask struct {
 	dictation bool
 	target    uintptr

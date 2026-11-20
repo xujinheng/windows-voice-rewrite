@@ -8,7 +8,7 @@ import (
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/shortcut"
 	"voicerewrite/internal/core/ux"
-	"voicerewrite/internal/core/voice"
+	"voicerewrite/voice"
 )
 
 const (

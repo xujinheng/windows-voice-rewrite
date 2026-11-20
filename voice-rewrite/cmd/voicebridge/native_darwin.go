@@ -24,7 +24,7 @@ import (
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/ux"
-	"voicerewrite/internal/core/voice"
+	"voicerewrite/voice"
 )
 
 var nativeConfig atomic.Pointer[coreconfig.Config]
