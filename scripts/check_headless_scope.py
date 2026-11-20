@@ -81,7 +81,8 @@ def main():
                  *desktop.glob("*.go")]:
         if path.name.endswith("_test.go") or path.name.startswith("meeting"):
             continue
-        if any(token in path.read_text(encoding="utf-8") for token in forbidden):
+        source = path.read_text(encoding="utf-8")
+        if '"voicerewrite/internal/core/speech"' in source or any(token in source for token in forbidden):
             raise SystemExit(f"desktop host duplicates voice policy: {path.relative_to(ROOT)}")
     if any(token in swift for token in ("URLSession", "URLRequest", "/v1/chat/completions",
                                         "/v1/audio/transcriptions")):
