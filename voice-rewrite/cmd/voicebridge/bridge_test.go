@@ -292,9 +292,13 @@ func (h *bridgeHarness) close() {
 
 func object(t *testing.T, value any) map[string]any {
 	t.Helper()
-	result, ok := value.(map[string]any)
-	if !ok {
-		t.Fatalf("expected JSON object, got %#v", value)
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal(encoded, &result); err != nil {
+		t.Fatal(err)
 	}
 	return result
 }
