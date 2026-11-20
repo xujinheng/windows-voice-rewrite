@@ -32,15 +32,15 @@ func TestProbeSlotsFollowCatalogOrder(t *testing.T) {
 	if _, ok := ProbeSlot("missing"); ok {
 		t.Fatal("unknown field")
 	}
-	field, urlID, secret, modelID, ok := ProbeInputs("ASR")
-	if !ok || field != "asr_base_url" || urlID != field || secret != "asr_api_key" || modelID != "asr_model" {
-		t.Fatalf("asr probe %s %s %s %s", field, urlID, secret, modelID)
+	urlID, secret, modelID, ok := ProbeInputs("ASR")
+	if !ok || urlID != "asr_base_url" || secret != "asr_api_key" || modelID != "asr_model" {
+		t.Fatalf("asr probe %s %s %s", urlID, secret, modelID)
 	}
-	field, urlID, secret, modelID, ok = ProbeInputs("LLM")
-	if !ok || field != "llm_base_url" || urlID != field || secret != "llm_api_key" || modelID != "text_model" {
-		t.Fatalf("llm probe %s %s %s %s", field, urlID, secret, modelID)
+	urlID, secret, modelID, ok = ProbeInputs("LLM")
+	if !ok || urlID != "llm_base_url" || secret != "llm_api_key" || modelID != "text_model" {
+		t.Fatalf("llm probe %s %s %s", urlID, secret, modelID)
 	}
-	if _, _, _, _, ok = ProbeInputs("other"); ok {
+	if _, _, _, ok = ProbeInputs("other"); ok {
 		t.Fatal("unknown probe")
 	}
 }
