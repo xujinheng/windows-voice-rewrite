@@ -130,13 +130,12 @@ func FromKey(vk, modifiers uint32) (string, error) {
 	return strings.Join(append(parts, name), "+"), nil
 }
 
-// WindowsSideButton maps a stored shortcut to the XBUTTON id used by the mouse hook.
-// Mouse4 is XBUTTON1 (1) and Mouse5 is XBUTTON2 (2).
 // MacKeyCode is the single mapping of macOS voice shortcuts to Quartz codes.
 func MacKeyCode(s string) int {
 	return map[string]int{MacDictation: 54, MacRewrite: 61, "Mouse4": 103, "Mouse5": 104}[s]
 }
 
+// WindowsSideButton maps Mouse4/Mouse5 to the XBUTTON ids used by Windows.
 func WindowsSideButton(s string) (uint16, bool) {
 	name, _, _, mouse, _ := Parse(s)
 	if !mouse {
