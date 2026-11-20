@@ -24,6 +24,15 @@ extension HeadlessApp {
         NSStatusBar.system.removeStatusItem(item)
     }
 
+    func verifyCopyablePreviewResult() {
+        item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        lastResult = "Model preview retained for copying"
+        copyResult()
+        precondition(NSPasteboard.general.string(forType: .string) == lastResult)
+        precondition(item.button?.title == "Copied")
+        NSStatusBar.system.removeStatusItem(item)
+    }
+
     func verifyPillCancelLifecycle() {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let finishedToken = VREpochStart()
@@ -100,6 +109,10 @@ MainActor.assumeIsolated {
                                  after: host(original), modifier: false)
     hostApp.verifyReboundRelease(code: 54, name: "RightCommand", before: host(original),
                                  after: host(mouseBound), modifier: true)
+    let previewData = Data(#"{"ok":true,"result":{"text":"Preview body","route":"preview","intent":"answer"}}"#.utf8)
+    let preview = try! JSONDecoder().decode(BridgeReply.self, from: previewData)
+    precondition(preview.result?.text == "Preview body" && preview.result?.route == "preview")
+    hostApp.verifyCopyablePreviewResult()
     hostApp.verifyPillCancelLifecycle()
     hostApp.verifyPressTargetSurvivesDelayedActivation()
     print("AX focus, selection, clipboard budget, shortcut rebind, pill cancel and press-target smoke passed")
