@@ -91,12 +91,12 @@ func TestOneCoreCancellationRevokesHoldAndWork(t *testing.T) {
 
 func TestCorePhysicalRemapCannotReusePendingToken(t *testing.T) {
 	var core Core
-	old := core.Press(1, false)
-	if core.Release(1) != ReleaseShort {
-		t.Fatal("expected short press")
+	old := core.Press(103, false) // Quartz Mouse4
+	if core.Release(103) != ReleaseShort || core.Down(103) {
+		t.Fatal("old binding did not release")
 	}
-	next := core.Press(2, false)
-	if next == old || core.Activate(2, old) || !core.Activate(2, next) {
+	next := core.Press(54, false) // Quartz right Command
+	if next == old || core.Activate(54, old) || !core.Activate(54, next) {
 		t.Fatal("a stale timer from a remapped physical key activated the next input")
 	}
 }
