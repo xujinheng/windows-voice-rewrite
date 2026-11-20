@@ -29,24 +29,21 @@ func TestSharedHostTimeouts(t *testing.T) {
 	if limits.TranscribeTimeout != 220*time.Second || limits.SpokenSelectedTimeout != 240*time.Second {
 		t.Fatalf("unexpected shared timeouts: %+v", limits)
 	}
-	if limits.timeoutFor(request{Op: "transcribe", NativePCM: make([]byte, 32000)}) != 65*time.Second ||
-		limits.timeoutFor(request{Op: "selected_voice_task"}) != 240*time.Second {
-		t.Fatalf("wrong shared request deadlines: %+v", limits)
-	}
-	// Native PCM and its JSONL base64 envelope must receive one budget.
-	for _, seconds := range []int{1, 10, 11, 30, 60, 90, 120, 200} {
+	// Mac native and JSONL dictation must use the same ASR budget as Windows,
+	// independent of audio length. A slow provider must not time out on Mac only.
+	for _, seconds := range []int{1, 11, 60} {
 		pcm := make([]byte, seconds*audio.PCMBytesPerSecond)
-		native := limits.timeoutFor(request{Op: "transcribe", NativePCM: pcm})
-		jsonl := limits.timeoutFor(request{Op: "transcribe", PCMBase64: base64.StdEncoding.EncodeToString(pcm)})
-		if native != jsonl {
-			t.Fatalf("%ds PCM timeout differs: native=%v JSONL=%v", seconds, native, jsonl)
-		}
-		if native < 65*time.Second || native > 220*time.Second {
-			t.Fatalf("%ds PCM timeout out of bounds: %v", seconds, native)
+		for _, req := range []request{
+			{Op: "transcribe", NativePCM: pcm},
+			{Op: "transcribe", PCMBase64: base64.StdEncoding.EncodeToString(pcm)},
+		} {
+			if got := limits.timeoutFor(req); got != 220*time.Second {
+				t.Fatalf("%ds dictation budget %v, want 220s", seconds, got)
+			}
 		}
 	}
-	if got := limits.timeoutFor(request{Op: "transcribe", NativePCM: make([]byte, 11*audio.PCMBytesPerSecond)}); got != 67*time.Second {
-		t.Fatalf("11s clip should have the previous 67s deadline, got %v", got)
+	if got := limits.timeoutFor(request{Op: "selected_voice_task"}); got != 240*time.Second {
+		t.Fatalf("selected-text budget %v, want 240s", got)
 	}
 	limits.TranscribeTimeout = 200 * time.Millisecond
 	if got := limits.timeoutFor(request{Op: "transcribe"}); got != 200*time.Millisecond {
