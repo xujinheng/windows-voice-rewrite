@@ -14,7 +14,7 @@ import (
 // facts, audio and final OS effects; the core owns holds, task generations,
 // cancellation, inference and output routing.
 type Core struct {
-	History    history.Store
+	History   history.Store
 	mu        sync.Mutex
 	keys      map[int]*keyState
 	owner     int
