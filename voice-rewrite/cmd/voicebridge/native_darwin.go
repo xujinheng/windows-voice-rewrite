@@ -15,6 +15,8 @@ import (
 	"unsafe"
 
 	"voicerewrite/internal/core/indicator"
+	"voicerewrite/internal/core/clipboard"
+	"voicerewrite/internal/core/ux"
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/session"
 )
@@ -120,8 +122,22 @@ func VREpochCancel() {
 
 //export VRReady
 func VRReady(op C.int, token C.ulonglong, focusOK, sensitive, selectionOK C.int) C.int {
-	if deliveryReady(int(op), nativeEpoch.Valid(uint64(token)), nativeKey == 0,
-		focusOK != 0, sensitive != 0, selectionOK != 0) {
+	password := func() bool { return sensitive != 0 }
+	windowOK := func() bool { return focusOK != 0 }
+	keysUp := func() bool { return nativeKey == 0 }
+	var err error
+	switch int(op) {
+	case 0:
+		err = ux.SelectionReadReady(focusOK != 0, password)
+	case 1:
+		err = ux.DictationTargetReady(keysUp, func() bool { return nativeEpoch.Valid(uint64(token)) && windowOK() }, password)
+	case 2:
+		err = ux.ReplaceInsertReady(func() bool { return nativeEpoch.Valid(uint64(token)) }, keysUp,
+			func() bool { return windowOK() && selectionOK != 0 }, password)
+	default:
+		return 0
+	}
+	if err == nil {
 		return 1
 	}
 	return 0
@@ -129,7 +145,7 @@ func VRReady(op C.int, token C.ulonglong, focusOK, sensitive, selectionOK C.int)
 
 //export VRClipboardFits
 func VRClipboardFits(size, total C.longlong) C.int {
-	if clipboardSnapshotFits(int64(size), int64(total)) {
+	if size > 0 && total >= 0 && clipboard.SnapshotFits(uintptr(size), uintptr(total)) {
 		return 1
 	}
 	return 0
