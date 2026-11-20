@@ -22,12 +22,6 @@ const (
 	Shift = shift
 )
 
-// macOS settings defaults. Windows defaults stay Mouse4, Mouse5, and Ctrl+Alt+F10.
-const (
-	MacDictationShortcut = "RightCommand"
-	MacRewriteShortcut   = "RightOption"
-)
-
 const (
 	KeyRejectedMessage      = "该按键不能用作全局录音快捷键"
 	WindowsComboMessage     = "Windows 系统键组合不支持录音快捷键"
@@ -136,19 +130,6 @@ func FromKey(vk, modifiers uint32) (string, error) {
 		parts = append(parts, "Shift")
 	}
 	return strings.Join(append(parts, name), "+"), nil
-}
-
-// WindowsSideButton maps a stored shortcut to the XBUTTON id used by the mouse hook.
-// Mouse4 is XBUTTON1 (1) and Mouse5 is XBUTTON2 (2).
-func WindowsSideButton(s string) (uint16, bool) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "mouse4", "xbutton1":
-		return 1, true
-	case "mouse5", "xbutton2":
-		return 2, true
-	default:
-		return 0, false
-	}
 }
 
 // Parse returns the canonical shortcut, modifier bits, virtual key, and whether
