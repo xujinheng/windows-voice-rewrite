@@ -13,7 +13,7 @@ import (
 // cancellation, inference and output routing.
 type Core struct {
 	mu        sync.Mutex
-	keys      [3]keyState
+	keys      map[int]*keyState
 	owner     int
 	nextToken uint64
 	currentID uint64
@@ -53,10 +53,10 @@ const (
 )
 
 func (c *Core) key(code int) *keyState {
-	if code <= 0 || code >= len(c.keys) {
+	if code <= 0 {
 		return nil
 	}
-	return &c.keys[code]
+	return c.keys[code]
 }
 func (c *Core) Down(code int) bool {
 	c.mu.Lock()
@@ -68,8 +68,15 @@ func (c *Core) Press(code int, busy bool) uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	h := c.key(code)
-	if c.closed || h == nil || h.down || busy || c.owner != 0 {
+	if c.closed || code <= 0 || h != nil && h.down || busy || c.owner != 0 {
 		return 0
+	}
+	if h == nil {
+		if c.keys == nil {
+			c.keys = make(map[int]*keyState)
+		}
+		h = &keyState{}
+		c.keys[code] = h
 	}
 	c.nextToken++
 	h.token = c.nextToken
@@ -173,10 +180,10 @@ func (c *Core) cancelLocked() {
 	}
 	c.ctx = nil
 	c.owner = 0
-	for i := range c.keys {
-		if c.keys[i].down {
-			c.keys[i].down, c.keys[i].active = false, false
-			c.keys[i].token++
+	for _, key := range c.keys {
+		if key.down {
+			key.down, key.active = false, false
+			key.token++
 		}
 	}
 }
