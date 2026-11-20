@@ -45,3 +45,15 @@ func TestReplaceInsertStopsBeforeTheClipboard(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSelectionReadReady(t *testing.T) {
+	if err := SelectionReadReady(false, func() bool { t.Fatal("probe without target"); return false }); err == nil {
+		t.Fatal("missing target accepted")
+	}
+	if err := SelectionReadReady(true, func() bool { return true }); err == nil || err.Error() != PasswordSelection {
+		t.Fatal("secure selection accepted:", err)
+	}
+	if err := SelectionReadReady(true, func() bool { return false }); err != nil {
+		t.Fatal("ordinary selection rejected:", err)
+	}
+}
