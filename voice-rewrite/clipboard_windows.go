@@ -213,11 +213,10 @@ func copySelectionWithRetry(hwnd, target uintptr, cfg Config) (string, uintptr, 
 func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 	var sel selectedText
 	sel.TargetWindow, _, _ = procGetForegroundWindow.Call()
-	if sel.TargetWindow == 0 {
-		return sel, errors.New(clipboard.CaptureNoWindow)
-	}
-	if nativePasswordFieldFocused(sel.TargetWindow) {
-		return sel, errors.New(ux.PasswordSelection)
+	if err := ux.SelectionReadReady(sel.TargetWindow != 0, func() bool {
+		return nativePasswordFieldFocused(sel.TargetWindow)
+	}); err != nil {
+		return sel, err
 	}
 	backup, err := snapshotClipboard(hwnd)
 	if err != nil {
