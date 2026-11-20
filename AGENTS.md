@@ -1,58 +1,34 @@
-# Repository instructions for coding agents
+# Coding-agent rules
 
-This file describes the **current product**, not its history. Read `voice-rewrite/ARCHITECTURE.md` and inspect latest `main`, open PRs, CI and issues before editing.
+Read `voice-rewrite/ARCHITECTURE.md`, the current production call chain, latest `main`, open PRs and relevant CI before editing. This file describes the **desired current code**, not project history.
 
-## Product priorities
+## Product and ownership
 
-- **Usability first.** VoiceRewrite must reliably insert speech-derived text into ordinary editors. Fix input failures before Meeting expansion, polish or abstract refactoring. A green build is not a working app.
-- **Learn from working products.** Preserve Windows Mouse4 dictation, Mouse5 rewrite, shortcuts and result cards. Study Handy's native macOS paste/clipboard mechanisms without copying its stack; replace flawed code rather than defend it.
-- **Dictation favors compatibility.** Remember the original app, release trigger keys and send one native paste. Incomplete AX text/selection attributes or notifications must not alone block insertion. Use Unicode only when clipboard paste cannot be prepared, not because another paste is pending.
-- **Selected-text rewriting is distinct.** Verify intent, selection, target and task before replacement. Derive missing browser selections from verified AXValue and UTF-16 range when possible; otherwise preview. Do not impose rewrite-grade AX checks on ordinary dictation.
-- **Make delivery reliable and honest.** Serialize paste leases, restore only owned clipboard data, bound waits, honor cancellation, never retry a possibly delivered paste. Distinguish ASR success, event sent, confirmed insertion and uncertain outcome; sent is not confirmed.
-- **Minimize permissions and setup.** Require only necessary OS access, explain denial recovery and use stable signing/notarization for distribution. AX text availability is not required for a normal paste.
+- **Working dictation first.** Preserve Windows Mouse4 dictation, Mouse5 selected-text rewrite, shortcuts, result cards and Meeting. macOS is a small status-bar dictation/rewrite host, not a second settings/Meeting app. A green build is not real-device acceptance.
+- **One Go business core.** Portable config, ASR/LLM, text decisions, task/cancellation rules, clipboard budgets and UI specifications belong to the existing Go owner. Windows keeps Win32/UIA/audio/hooks/clipboard/UI; macOS keeps AppKit/AVAudioEngine/AX/Quartz/pasteboard. The hosts perform OS calls, not parallel business decisions. `oneclick/` is a separate ASR-server bootstrapper.
+- **Do not confuse intent with delivery.** Dictation favors native paste compatibility; incomplete AX text attributes must not alone block ordinary insertion. Selected-text rewrite requires a verified target and selection, with preview fallback. Verify task epoch, focus and clipboard ownership; do not retry a possibly delivered paste. An event sent is not confirmed editor insertion. Preserve real cancellation, permission and OS resource safeguards.
+- **Keep the final design only.** No legacy compatibility shims for unused internal APIs, duplicate state machines, transitional bridges, second policy copies or speculative security layers. Preserve actual user behavior, not obsolete implementation. Git history keeps old code.
 
-## Cross-platform product principles
+## Code reduction is a design requirement
 
-- **One Go Core, two deliberately different hosts.** Windows keeps its full Win32 feature set. macOS is a minimal headless NSStatusItem dictation/rewrite host; it intentionally has no settings GUI, Meeting, history or result cards.
-- **Change once, improve both.** Go Core or generated contracts own portable audio/ASR/LLM, text routing, task/delivery rules, configuration, UI copy, layout and state transitions. A typical business/UI change needs one shared edit.
-- **Split only at OS boundaries.** Windows owns Win32/UIA/WASAPI, hooks, DPAPI and rendering; macOS owns the single Swift AppKit/AVAudioEngine/AX/Quartz/pasteboard adapter and reads a JSON config; no second business model or Keychain settings screen. Native adapters execute OS calls, not portable algorithms.
-- **Prevent drift and regressions.** Keep both macOS native Swift adapter files thin; do not introduce parallel rules or synchronous per-frame IPC. Test both adapters and Go Core; protect working Windows behavior.
-- **Prove linked source ownership, not inflated repository percentages.** Run `python3 scripts/check_headless_scope.py` after Go setup. Count only Go files linked into the headless Go bridge plus both native Swift
-  boundary files. Never keep unreferenced Meeting Go packages merely to maintain
-  a Go percentage; check the actual shared task entrypoints and native LOC cap. Preserve real Windows Go tests and macOS Swift compilation checks. This static metric is not dynamic runtime ownership; verify actual ASR and paste paths on real devices.
+- **Fewer production lines for equivalent behavior is a primary quality metric.** Prefer the smallest direct algorithm and shortest call chain. LOC is not permission to hide complexity in dense one-liners, delete meaningful tests or omit necessary error handling.
+- Before adding code, trace the **full production path** from input to user-visible effect on **both** platforms. Identify the single owner of each decision, duplicated branches, state mirrors, thin wrappers, dead functions and unused contracts. Check actual callers, not merely imports or shared filenames.
+- **Delete before abstracting.** Inline one-caller wrappers that only forward, negate a flag, return constants or reformat an error. Remove the old branch, tests for deleted-only abstractions and unused fields when migrating ownership. Do not introduce Manager/Controller/Coordinator, new interfaces or extra IPC unless a concrete production need cannot be expressed directly.
+- Share **business decisions**, not OS API calls. Do not force different native APIs into a fake shared wrapper or keep duplicate host policies under a shared name. Count the production code actually compiled/linked; do not inflate a Go-sharing percentage with unused packages.
+- Every PR reports **production LOC before/after, total diff (+/-), state/call-chain owners removed, and any necessary added lines**. Prefer net deletion. A positive diff requires specific behavior, test or correctness evidence; do not defend it by vague “architecture improvement.” No arbitrary LOC target may override correct behavior.
 
-## Strict Go-first ownership
+## Continuous PR pipeline
 
-- **macOS Swift is an OS adapter, not another business app.** Keep only AVAudioEngine/CoreAudio capture, Quartz/HID events, AX selection/focus, AppKit status and rendering, clipboard delivery, and their OS-specific safety/cancellation handling in Swift. Shared Go owns config defaults/validation, transcription, rewrite, route decisions, status labels, palette, geometry and presentation timings.
-- **Reuse existing Windows Go Core first.** Before adding a macOS behavior, locate its existing Go implementation. Extend that shared owner rather than adding a Swift policy layer or a second controller/state machine.
-- **Render natively from one Go specification.** macOS may read a small validated Go startup profile; do not maintain a second list of UI colors, strings, sizes or delays, and never add per-frame IPC. Platform-specific pixels/window APIs remain native and cannot be copied verbatim from Windows.
-- **Delete duplicates instead of adding wrappers.** Each migration must remove the superseded Swift decisions, protect Windows call chains, retain clipboard/focus/cancellation guarantees, and show actual before/after native LOC. No Go/Swift reuse percentage or pixel-perfect parity claim without runtime evidence.
+1. Select the smallest **independent, behavior-preserving deletion** or a specific cross-platform defect. Inspect real call sites and adjacent PRs; do not rewrite the whole architecture or mix unrelated changes.
+2. Implement the final path and delete superseded code in the **same PR**. Keep Windows and macOS production paths aligned through Go; test real effects rather than constructing tests only to justify a wrapper.
+3. Run relevant Go unit/race, Windows build/behavior tests, macOS ARM64/Intel Go+Swift builds and linked-ABI smoke tests. Follow CI failures to their cause; never skip or weaken checks. Physical microphone, Mouse4/5, clipboard, editor insertion and focus changes need **separate real-device acceptance**.
+4. **Pipeline work:** while PR A waits for CI, start independent PR B on its own branch. Use stacked PRs only for real dependencies; show each PR's own diff and rebase/retarget after its parent merges. Avoid overlapping edits and redundant CI. Never merge a failing, stale or unchecked head.
+5. Merge only after reviewing the exact final diff, regressions, current head SHA and required CI. Check main CI afterward. Record concise PR link, merge SHA, production/total LOC delta and outstanding physical-test gaps; do not claim success from compilation alone.
+6. Continue to the next verified deletion or defect without waiting for a new planning instruction. **Stop making cosmetic PRs** when no meaningful redundancy or behavior issue remains; report the remaining acceptance work instead.
 
-## Final-state only
+## CI, performance and documentation
 
-- **No legacy obligations.** No user base requires old internal APIs, configs or workflows. Preserve working UX, not obsolete code; choose the clean final design.
-- Delete duplicate state machines, transitional shims, obsolete functions, dead tests/assets and abandoned paths. A deliberate current input alternative is not a legacy compatibility shim.
-- Keep one owner per feature. Update all call sites, tests and docs and remove superseded code together. Git history stores old implementations; `main` describes only the current design.
-- **No speculative AI scaffolding.** Inline a single-caller wrapper that only negates flags, returns a constant struct, or translates one boolean into a string/error; do not write tests solely to legitimize that wrapper. Avoid hypothetical interfaces, extra controllers and redundant platform logic. Keep actual cancellation, privacy, clipboard, concurrency and OS security checks; test the real effect at its boundary.
-
-## CI cost and execution efficiency
-
-- **Zero-cost CI by default.** This repository is public. Use only standard GitHub-hosted runners (currently `ubuntu-latest`, `windows-latest`, `macos-15`, `macos-15-intel`). Do not introduce larger/billable runners, paid external CI services, paid test APIs, or storage-increasing settings without the repository owner's explicit approval. Public-repo standard runner compute is free; artifact/cache storage can still have billing limits, so do not claim the entire workflow is unconditionally free.
-- **One build or test per necessary verification scope.** Before editing workflows, inspect all `.github/workflows/*` triggers, job matrices, test filters and build commands. Eliminate duplicate `go test`, `swift test`, `xcodebuild`, packaging, and screenshot generation when the same platform, source and test/evidence purpose are already covered. Prefer adding relevant checks to an existing platform build job instead of creating another expensive macOS matrix. Preserve genuinely distinct functional, visual, architectural and real-device evidence.
-- **Make CI work proportional to changes.** Use scoped `paths` filters when safe, cancel superseded PR runs using `concurrency`, retain necessary release/tag builds, and avoid building installers/releases on ordinary PRs. Keep required branch-protection checks reliable: a skipped optional workflow must not strand a required check.
-- **Cache selectively, measure results.** Reuse `actions/setup-go` module/build caching with the correct module dependency path. Only add SwiftPM/Xcode/Python caches when their measured save exceeds download/upload cost; do not upload huge DerivedData or build directories by default. Never reuse architecture-specific native build products across Intel/ARM or Windows/macOS, and do not cache secrets.
-- **Bound Actions storage.** Set explicit short `retention-days` (normally 7 days for screenshots/diagnostics; extend only when needed), upload small structured performance reports instead of redundant full apps, and review artifact/cache sizes and retention before adding new CI evidence.
-- **Performance means user-perceived latency.** For dictation, measure key/button trigger to indicator displayed, trigger to recording ready, and release to inserted visible text, including P50/P95/worst case, failures and timeouts. Run deterministic CI journey tests through production state transitions, reuse existing builds, and label synthetic microphone/ASR/editor stages honestly. Do not confuse CPU microbenchmarks with real HID, CoreAudio, network ASR or cross-app insertion acceptance.
-- **Report actual impact.** For CI changes, state which duplicate work was removed or reused, what caches/storage settings changed, and whether latest relevant CI passed. Do not claim a performance improvement without measured before/after evidence. If cost or runner eligibility is uncertain, verify current GitHub billing rules before making a change.
-
-## Documentation and execution
-
-- Document current usage, builds and limits, never a diary, versioned `README-V*.md` / `ARCHITECTURE-V*.md`, migrations, rejected approaches or interim-process commentary.
-- Inspect current code, implement the end state, delete old paths and test. Prefer one PR per coherent task; avoid parallel implementations and procedural reports.
-- Run Go unit/race and Windows native UI/Meeting regressions plus macOS Apple
-  Silicon/Intel direct Swift compilation as relevant; do not resurrect the
-  deleted Xcode project or generated Swift contracts. Test clipboard races, rapid dictation, focus/permission changes, cancellation, browser editors and Unicode.
-- CI cannot prove physical mic, mouse side buttons, permissions or insertion into third-party editors. Track device acceptance separately; never call a build user-ready or claim confirmed insertion without evidence.
-- Close completed/superseded issues and consolidate unfinished scope without claiming delivery. Report PR, merge SHA, CI and blockers concisely in the conversation, not source documents.
-
-Do not weaken credential security or cancellation to mask broken input; remove needless dictation gates rather than normalizing manual copying.
+- Use standard GitHub-hosted runners; no paid runners/services without approval. Scope CI to affected paths, cancel superseded runs, avoid duplicate builds and unnecessary artifacts/caches. Do not remove distinct functional or release checks just to reduce CI time.
+- Measure user-perceived trigger→indicator, trigger→recording, release→visible text (P50/P95/failures) on actual devices; label synthetic CI results honestly. Do not claim latency or recognition gains without before/after evidence.
+- Keep `README.md` and `ARCHITECTURE.md` concise and current, not a refactor diary. Update the architecture when ownership changes; keep issue history in GitHub, not source documents.
+- Use `python3 scripts/check_headless_scope.py` and existing Swift native LOC guard; inspect real linked paths. Preserve native Swift compilation, Windows regressions, cancellation, clipboard races, Unicode and focus tests. Close issues only when their **behavioral** acceptance is complete.
