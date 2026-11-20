@@ -78,17 +78,14 @@ func headlessProfile(req request) response {
 		return failure("invalid_config", msgInvalidConfig)
 	}
 	if _, ok := provided["dictation_hotkey"]; !ok {
-		cfg.DictationHotkey = "RightCommand"
+		cfg.DictationHotkey = shortcut.MacDictation
 	}
 	if _, ok := provided["hotkey_record"]; !ok {
-		cfg.HotkeyRecord = "RightOption"
-	}
-	allowed := func(s string) bool {
-		return s == "RightCommand" || s == "RightOption" || s == "Mouse4" || s == "Mouse5"
+		cfg.HotkeyRecord = shortcut.MacRewrite
 	}
 	dictation, _, _, _, errDictation := shortcut.Parse(cfg.DictationHotkey)
 	rewrite, _, _, _, errRewrite := shortcut.Parse(cfg.HotkeyRecord)
-	if errDictation != nil || errRewrite != nil || !allowed(dictation) || !allowed(rewrite) || dictation == rewrite {
+	if errDictation != nil || errRewrite != nil || shortcut.MacKeyCode(dictation) == 0 || shortcut.MacKeyCode(rewrite) == 0 || dictation == rewrite {
 		return failure("invalid_config", msgInvalidConfig)
 	}
 	cfg.DictationHotkey, cfg.HotkeyRecord = dictation, rewrite

@@ -128,3 +128,14 @@ func TestMacSideModifiersParseButWindowsRejectsTheirRegistration(t *testing.T) {
 		}
 	}
 }
+
+func TestMacKeyCode(t *testing.T) {
+	for name, expected := range map[string]int{
+		MacDictation: 54, MacRewrite: 61, "Mouse4": 103, "Mouse5": 104,
+		"LeftCommand": 0, "Unknown": 0,
+	} {
+		if got := MacKeyCode(name); got != expected {
+			t.Errorf("MacKeyCode(%q) = %d, want %d", name, got, expected)
+		}
+	}
+}

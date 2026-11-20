@@ -11,6 +11,9 @@ import (
 )
 
 const (
+	MacDictation = "RightCommand"
+	MacRewrite  = "RightOption"
+
 	alt      uint32 = 0x0001
 	ctrl     uint32 = 0x0002
 	shift    uint32 = 0x0004
@@ -130,6 +133,22 @@ func FromKey(vk, modifiers uint32) (string, error) {
 
 // WindowsSideButton maps a stored shortcut to the XBUTTON id used by the mouse hook.
 // Mouse4 is XBUTTON1 (1) and Mouse5 is XBUTTON2 (2).
+// MacKeyCode maps validated voice hotkeys to Quartz physical event codes.
+// Zero means the Mac headless host cannot register this shortcut.
+func MacKeyCode(s string) int {
+	switch s {
+	case MacDictation:
+		return 54
+	case MacRewrite:
+		return 61
+	case "Mouse4":
+		return 103
+	case "Mouse5":
+		return 104
+	}
+	return 0
+}
+
 func WindowsSideButton(s string) (uint16, bool) {
 	name, _, _, mouse, _ := Parse(s)
 	if !mouse {
