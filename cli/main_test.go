@@ -77,8 +77,8 @@ func TestCLIAndDirectClientShareResultContract(t *testing.T) {
 				t.Fatal(err)
 			}
 			var direct voice.Core
-			defer direct.Shutdown()
-			viaCore, err := direct.Execute(direct.Start(), cfg, pcm, selected, tc.rewrite, nil)
+			defer direct.Apply(voice.Command{Kind: voice.CommandShutdown})
+			viaCore, err := direct.Execute(direct.Apply(voice.Command{Kind: voice.CommandStart}).Token, cfg, pcm, selected, tc.rewrite, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
