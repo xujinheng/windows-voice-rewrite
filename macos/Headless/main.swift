@@ -5,7 +5,6 @@ import CoreGraphics
 import Foundation
 
 // Native input, microphone, menu and text delivery; transcription and routing use linked Go Core.
-private enum Action { case dictation, rewrite }
 
 // Native AX ranges distinguish repeated text; text-only selection is still supported.
 struct AXSelection {
@@ -221,11 +220,11 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private let pill = RecordingPill()
     private var config: HostConfig!
     private var configURL: URL!
-    private var activeAction: Action?
+    private var activeKey: Int32 = 0
     private var taskID: UInt64 = 0
     private var targetPID: pid_t = 0
     private var targetFocus: FocusIdentity?
-    private var pending: Bool { activeAction == nil && taskID != 0 }
+    private var pending: Bool { activeKey == 0 && taskID != 0 }
     private var lastResult: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -259,7 +258,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func reload() {
-        guard activeAction == nil && !pending else { show("Reload after current task"); return }
+        guard activeKey == 0 && !pending else { show("Reload after current task"); return }
         do {
             let json = try String(contentsOf: configURL, encoding: .utf8)
             guard let profile = try GoCore.request(config: json, operation: "host_profile",
@@ -310,7 +309,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 if VRArmed() != 0 && app.taskID == 0 {
                     VRAbandon()
                     if app.microphone.running { _ = try? app.microphone.stop(discard: true) }
-                    app.activeAction = nil
+                    app.activeKey = 0
                 }
             } else if type == .otherMouseDown || type == .otherMouseUp {
                 if event.getIntegerValueField(.eventSourceUserData) == 0x56525842 {
@@ -358,7 +357,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         if down {
             let token = VRPress(key, pending ? 1 : 0)
             guard token != 0 else { return }
-            activeAction = VRAction(key) == 1 ? .dictation : .rewrite
+            activeKey = key
             targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
             taskID = 0
             do { try microphone.start(maximumSeconds: config.profile.maximumSeconds) }
@@ -368,16 +367,15 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 self.targetFocus = FocusIdentity(window: self.focusedWindow(), element: nil, title: nil)
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self, VRActivate(key, token) == 1,
-                      let action = self.activeAction else { return }
-                self.begin(action)
+                guard let self, VRActivate(key, token) == 1 else { return }
+                self.begin()
             }
         } else {
             let outcome = VRRelease(key)
             if outcome == 2 && microphone.running { finish() }
             else if outcome == 2 || outcome == 3 {
                 if microphone.running { _ = try? microphone.stop(discard: true) }
-                activeAction = nil
+                activeKey = 0
             }
             if (outcome == 1 || outcome == 3), let cursor {
                 let source = CGEventSource(stateID: .hidSystemState)
@@ -392,17 +390,18 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func begin(_ action: Action) {
+    private func begin() {
+        let rewrite = VRAction(activeKey) == 2
         guard targetPID > 0 else { reset("No target"); return }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { reset("Focus changed"); return }
-        let window = targetFocus?.window ?? focusedWindow(), element = action == .rewrite ? focusedElement() : nil
+        let window = targetFocus?.window ?? focusedWindow(), element = rewrite ? focusedElement() : nil
         if targetFocus?.window != nil && targetFocus?.matches(window: focusedWindow(), element: nil, title: nil) != true { reset("Focus changed"); return }
-        guard action == .dictation || (window != nil && element != nil) else { reset("Target unavailable"); return }
+        guard !rewrite || (window != nil && element != nil) else { reset("Target unavailable"); return }
         targetFocus = FocusIdentity(window: window, element: element,
-                                    title: action == .rewrite ? window.flatMap(windowTitle) : nil)
+                                    title: rewrite ? window.flatMap(windowTitle) : nil)
         guard microphone.running else { reset("Mic error"); return }
         taskID = VREpochStart()
-        pill.recording(rewrite: action == .rewrite, started: Date(),
+        pill.recording(rewrite: rewrite, started: Date(),
                        meter: { [weak self] in self?.microphone.meterLevel ?? 0 })
         let token = taskID
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.profile.maximumSeconds)) { [weak self] in
@@ -411,22 +410,23 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         }
     }
     private func finish() {
-        guard microphone.running, let action = activeAction else { return }
-        activeAction = nil
-        pill.working(action == .dictation ? .processing : .selection)
-        show(action == .dictation ? config.profile.pill.processingDictation : config.profile.pill.selectionLabel)
+        guard microphone.running, activeKey != 0 else { return }
+        let rewrite = VRAction(activeKey) == 2
+        activeKey = 0
+        pill.working(rewrite ? .selection : .processing)
+        show(rewrite ? config.profile.pill.selectionLabel : config.profile.pill.processingDictation)
         let configValue = config.raw
         let token = taskID
         do {
             let pcm = try microphone.stop()
-            if action == .rewrite && !targetStillValid() { reset("Focus changed"); return }
-            let selectedValue = action == .rewrite ? selectionFromAX() : nil
-            if action == .rewrite && selectedValue == nil { reset("Select text"); return }
-            if action == .rewrite { pill.working(.processing); show(config.profile.pill.processingRewrite) }
+            if rewrite && !targetStillValid() { reset("Focus changed"); return }
+            let selectedValue = rewrite ? selectionFromAX() : nil
+            if rewrite && selectedValue == nil { reset("Select text"); return }
+            if rewrite { pill.working(.processing); show(config.profile.pill.processingRewrite) }
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let result = Result {
                     try GoCore.request(config: configValue,
-                                      operation: action == .dictation ? "transcribe" : "selected_voice_task",
+                                      operation: rewrite ? "selected_voice_task" : "transcribe",
                                       audio: pcm, selection: selectedValue?.text, token: token)
                 }
                 DispatchQueue.main.async {
@@ -443,7 +443,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                             self.reset(self.config.profile.pill.fallbackLabel, phase: .fallback); return
                         }
                         guard self.targetStillValid() else { self.reset("Focus changed"); return }
-                        if action == .rewrite && selectedValue?.matches(self.selectionFromAX()) != true {
+                        if rewrite && selectedValue?.matches(self.selectionFromAX()) != true {
                             self.reset("Selection changed"); return
                         }
                         if value.route == "replace" { self.pill.working(.applying); self.show(self.config.profile.pill.applyingLabel) }
@@ -598,7 +598,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func cancelFromPill() {
-        if activeAction == nil && !pending && !microphone.running { pill.dismiss(); show("VR"); return }
+        if activeKey == 0 && !pending && !microphone.running { pill.dismiss(); show("VR"); return }
         VREpochCancel()
         if microphone.running { _ = try? microphone.stop(discard: true) }
         clearSession()
@@ -614,7 +614,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func clearSession() {
-        activeAction = nil
+        activeKey = 0
         targetFocus = nil
         taskID = 0
     }
