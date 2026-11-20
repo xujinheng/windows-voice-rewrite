@@ -100,10 +100,6 @@ func CaptureKey(vk, mods uint32, winDown bool) (string, error) {
 	return FromKey(vk, mods)
 }
 
-func CaptureSaved(name string) string {
-	return "已录入 " + name + "。点击「保存设置」并重启软件后生效。"
-}
-
 // FromKey formats a physical key and Ctrl/Alt/Shift into the stored shortcut.
 func FromKey(vk, modifiers uint32) (string, error) {
 	name := keyName(vk)
@@ -244,43 +240,6 @@ func ValidateRewrite(candidate, dictation, exit string) (string, error) {
 	return validate(candidate, dictation, exit, "语音指令快捷键")
 }
 
-// AssignPair trims the two settings fields, validates rewrite, then dictation.
-// A validation error leaves the stored shortcuts unchanged.
-// ShortcutCaptureStep is what the settings window does after a capture attempt.
-type ShortcutCaptureStep int
-
-const (
-	ShortcutCaptureHint ShortcutCaptureStep = iota
-	ShortcutCaptureIgnore
-	ShortcutCaptureAccept
-	ShortcutCaptureStore
-)
-
-// AfterCaptureKey is the physical-key result.
-// A known failure shows the hint and keeps capturing.
-// A skipped modifier stays silent and keeps capturing.
-// A candidate continues into field validation.
-func AfterCaptureKey(err error) ShortcutCaptureStep {
-	if _, ok := CaptureFailure(err); ok {
-		return ShortcutCaptureHint
-	}
-	if err != nil {
-		return ShortcutCaptureIgnore
-	}
-	return ShortcutCaptureAccept
-}
-
-// AfterCaptureField is the field-validation result.
-// A known failure shows the hint and keeps capturing.
-// Success stores the shortcut and stops capture.
-// A non-hint error still stores, unlike the physical-key step.
-func AfterCaptureField(err error) ShortcutCaptureStep {
-	if _, ok := CaptureFailure(err); ok {
-		return ShortcutCaptureHint
-	}
-	return ShortcutCaptureStore
-}
-
 // CaptureFailure is the settings hint for a capture error.
 // A modifier that should be ignored returns ok=false. The Windows-key sentence has no prefix.
 func CaptureFailure(err error) (string, bool) {
@@ -291,18 +250,6 @@ func CaptureFailure(err error) (string, bool) {
 		return WinCaptureMessage, true
 	}
 	return CaptureFailedPrefix + err.Error(), true
-}
-
-// SettingsSaveAfterFields reports a field error before an in-progress shortcut capture.
-// The host still refuses a busy voice task before it reads the fields.
-func SettingsSaveAfterFields(configErr error, capturing bool) error {
-	if configErr != nil {
-		return configErr
-	}
-	if capturing {
-		return errors.New(CapturePendingMessage)
-	}
-	return nil
 }
 
 // SettingsKey is what the settings window does with one key message.
