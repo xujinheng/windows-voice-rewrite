@@ -367,7 +367,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             // Pre-roll starts on physical down; a short click discards it.
             do { try microphone.start(maximumSeconds: config.profile.maximumSeconds) }
             catch { VRAbandon(); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return }
-            // Capture the original AX window after the event tap returns, not 250ms later.
             DispatchQueue.main.async { [weak self] in
                 guard let self, VRDown(key) != 0 else { return }
                 self.targetFocus = FocusIdentity(window: self.focusedWindow(), element: nil, title: nil)
