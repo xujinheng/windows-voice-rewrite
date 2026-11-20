@@ -4,11 +4,8 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
-// Native boundaries only: device input, microphone, menu bar and OS text delivery.
-// All transcription, intent and routing decisions call the linked Go Core.
 private enum Action { case dictation, rewrite }
 
-// Native AX ranges distinguish repeated text; text-only selection is still supported.
 struct AXSelection {
     let text: String
     let range: CFRange?
@@ -21,19 +18,14 @@ struct AXSelection {
     }
 }
 
-// Match available AX identities; ordinary dictation need not have AX attributes.
 struct FocusIdentity {
     let window: AXUIElement?
     let element: AXUIElement?
     let title: String?
 
     func matches(window: AXUIElement?, element: AXUIElement?, title: String?) -> Bool {
-        if let saved = self.window {
-            guard let window, CFEqual(saved, window) else { return false }
-        }
-        if let saved = self.element {
-            guard let element, CFEqual(saved, element) else { return false }
-        }
+        if let saved = self.window, window.map({ CFEqual(saved, $0) }) != true { return false }
+        if let saved = self.element, element.map({ CFEqual(saved, $0) }) != true { return false }
         return self.title == nil || self.title == title
     }
 }
@@ -41,7 +33,6 @@ private enum HostError: Error {
     case config(String), microphone(String), conversion, bridge(String)
 }
 
-// One-time Go presentation profile drives native AppKit drawing.
 struct PillSpec: Decodable {
     let recordingWidth, workingWidth, height, cancelWidth, cancelInset: Int
     let clockX, clockWidth, iconY, waveStartX, waveStep, waveBarWidth, waveBars: Int
@@ -202,7 +193,6 @@ private struct BridgeReply: Decodable {
     struct Failure: Decodable { let code: String; let message: String }
 }
 
-// In-process Go Core. Event/animation calculations never cross IPC.
 private enum GoCore {
     static func request(config: [String: Any], operation: String, audio: Data,
                         selection: String?, token: UInt64 = 0) throws -> BridgeReply.Output {
@@ -230,7 +220,6 @@ private enum GoCore {
     }
 }
 
-// Prebuild events so an unsupported grapheme cannot cause partial Unicode input.
 private func unicodeKeyEvents(_ text: String) -> [CGEvent]? {
     let source = CGEventSource(stateID: .hidSystemState)
     var events: [CGEvent] = []
@@ -325,7 +314,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             }
             let code = event.getIntegerValueField(.keyboardEventKeycode)
             let mouse = event.getIntegerValueField(.mouseEventButtonNumber)
-            // The event tap executes on the main runloop; never perform audio/IPC here.
             if type == .flagsChanged {
                 app.handleModifier(code: code, flags: event.flags)
             } else if type == .keyDown {
@@ -368,7 +356,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         case 61: (name, family) = ("RightOption", .maskAlternate)
         default: return
         }
-        // Right-side flags may change with other modifiers; only track real presses.
         updatePress(code: code, name: name,
                     down: VRDown(Int32(code)) == 0 && flags.contains(family),
                     delay: Double(config.profile.modifierDelayMS) / 1000)
@@ -527,7 +514,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         var value: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(focused, kAXSelectedTextAttribute as CFString, &value)
         let direct = status == .success ? (value as? String).flatMap { $0.isEmpty ? nil : $0 } : nil
-        // Preserve text-only selection or a position-aware range when supported.
         var selectedRange: CFTypeRef?
         guard AXUIElementCopyAttributeValue(focused, kAXSelectedTextRangeAttribute as CFString,
                                             &selectedRange) == .success,
@@ -542,7 +528,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             return direct.map { AXSelection(text: $0, range: nil) }
         }
         if let direct { return AXSelection(text: direct, range: range) }
-        // A range-only editor is queried for just the selected span.
         var text: CFTypeRef?
         guard AXUIElementCopyParameterizedAttributeValue(
             focused, kAXStringForRangeParameterizedAttribute as CFString,
@@ -565,7 +550,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard originals != nil || board.types?.isEmpty != false else {
             pasteUnicode(text); return
         }
-        // NSPasteboardItem is not NSCopying; preserve each advertised data type.
         var saved: [NSPasteboardItem] = []
         var total: Int64 = 0
         for item in originals ?? [] {
@@ -621,7 +605,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         pill.result(.sent)
     }
 
-    // Cancel capture and suppress stale task output without retrying.
     private func cancelFromPill() {
         VREpochCancel()
         if microphone.running { _ = try? microphone.stop(discard: true) }
