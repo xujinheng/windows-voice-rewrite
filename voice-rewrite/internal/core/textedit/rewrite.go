@@ -118,7 +118,6 @@ func Rewrite(ctx context.Context, cfg coreconfig.Config, original, instruction s
 		}
 		text = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(text), "```"))
 	}
-	text = strings.TrimSpace(text)
 	if text == "" {
 		return "", errors.New(ux.EmptyModelText)
 	}
