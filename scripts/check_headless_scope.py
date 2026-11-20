@@ -77,12 +77,13 @@ def main():
     forbidden = ("speech.Transcribe(", "textedit.ResolveSelectedTask(",
                  "textedit.RouteTask(", "textedit.Rewrite(")
     desktop = ROOT / "voice-rewrite"
-    for path in [desktop / "cmd/voicebridge/main.go",
-                 *desktop.glob("*.go")]:
-        if path.name.endswith("_test.go") or path.name.startswith("meeting"):
+    for path in [*desktop.glob("cmd/voicebridge/*.go"), *desktop.glob("*.go")]:
+        if path.name.endswith("_test.go") or (path.parent == desktop and path.name.startswith("meeting")):
             continue
         source = path.read_text(encoding="utf-8")
-        if '"voicerewrite/internal/core/speech"' in source or any(token in source for token in forbidden):
+        if ('"voicerewrite/internal/core/speech"' in source or
+            path.name != "windows.go" and '"voicerewrite/internal/core/textedit"' in source or
+            any(token in source for token in forbidden)):
             raise SystemExit(f"desktop host duplicates voice policy: {path.relative_to(ROOT)}")
     if any(token in swift for token in ("URLSession", "URLRequest", "/v1/chat/completions",
                                         "/v1/audio/transcriptions")):
