@@ -174,7 +174,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 		s.mu.Unlock()
 	}
 	app.logger.Printf("meeting expression mode=%s recognized_chars=%d", mode, len([]rune(points)))
-	err = s.Complete(ctx, meetingcore.PriorityExpress, meetingcore.Query{Mode: mode, Prior: prior, UserPoints: points}, func(line meetingcore.Line) {
+	err = s.complete(ctx, meetingcore.PriorityExpress, meetingcore.Query{Mode: mode, Prior: prior, UserPoints: points}, func(line meetingcore.Line) {
 		if !app.core.Valid(generation) || line.Kind != "SAY" {
 			return
 		}
@@ -201,7 +201,9 @@ func (s *meetingSession) expressionFailed(app *appState, generation, epoch, seri
 	message := label + "：" + cause.Error()
 	s.applyExpression(epoch, serial, func() {
 		s.view.expressionStatus = message
-		s.view.expression = retainedEnglish(s.view.expression)
+		if !meetingcore.KeepFinishedEnglish(s.view.expression.Complete, s.view.expression.English) {
+			s.view.expression = meetingcore.Line{}
+		}
 	})
 	app.fail(fmt.Errorf("%s: %w", label, cause))
 	app.postHandyPhase(indicator.Error, generation)
