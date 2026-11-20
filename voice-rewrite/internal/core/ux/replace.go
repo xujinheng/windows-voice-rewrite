@@ -21,7 +21,7 @@ const (
 
 // ReplaceInsertReady is the order of checks before a selection replacement reads the clipboard.
 // Later checks are not called after an earlier one fails.
-func ReplaceInsertReady(taskValid, keysReleased, windowOK, password func() bool) error {
+func ReplaceInsertReady(taskValid, keysReleased, windowOK func() bool) error {
 	if !taskValid() {
 		return errors.New(ReplaceExpired)
 	}
@@ -30,9 +30,6 @@ func ReplaceInsertReady(taskValid, keysReleased, windowOK, password func() bool)
 	}
 	if !windowOK() {
 		return errors.New(ReplaceWindowSwitched)
-	}
-	if password() {
-		return errors.New(PasswordRewrite)
 	}
 	return nil
 }
