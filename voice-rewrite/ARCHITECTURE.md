@@ -23,10 +23,11 @@ implement a second voice-policy state machine.
 On macOS, physical shortcut events call Go `input.Hold`, task generations and
 provider cancellation call Go `session.Epoch`, and each waveform/spinner/clock
 frame calls Go `indicator` through the in-process ABI. Swift performs the OS
-operations and draws the returned pixels. The same Go `processRequest`
-invokes `speech.Transcribe`, `textedit.ResolveSpokenTask`, and `ux` routing,
-using the same 220-second transcription and 240-second spoken-task deadlines
-as the JSONL entrypoint. `cmd/voicebridge` retains a serial command-line JSONL diagnostic mode for
+operations and draws the returned pixels. The macOS bridge's `processRequest` calls the shared `voice.Run`
+production pipeline also used by Windows. `voice.Run` owns PCM admission,
+transcription, selected-text rewriting and result routing. The bridge retains
+the 220-second transcription and 240-second spoken-task deadlines
+for its JSONL and in-process entrypoints. `cmd/voicebridge` retains a serial command-line JSONL diagnostic mode for
 independent tests, without a second task registry or in-process cancel
 protocol; it is not shipped as a second macOS process.
 
@@ -41,6 +42,7 @@ automatically retried. Only the OS adapter can perform these final checks.
 - `internal/core/audio`: PCM and source framing, Meeting segmentation.
 - `internal/core/provider`: model discovery and private HTTP transport.
 - `internal/core/speech`: ASR request/response and transcript processing.
+- `internal/core/voice`: shared Windows/macOS dictation and rewrite pipeline.
 - `internal/core/textedit`: selected-text intent and model rewriting.
 - `internal/core/input`, `session`: hold lifecycle and cancellable task epoch.
 - `internal/core/indicator`, `ux`, `clipboard`: presentation decisions,
