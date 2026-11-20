@@ -226,7 +226,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var taskID: UInt64 = 0
     private var targetPID: pid_t = 0
     private var targetFocus: FocusIdentity?
-    private var pending = false
+    private var pending: Bool { activeAction == nil && taskID != 0 }
     private var lastResult: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -412,7 +412,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func finish() {
         guard microphone.running, let action = activeAction else { return }
         activeAction = nil
-        pending = true
         pill.processing()
         show(action == .dictation ? config.profile.pill.processingDictation : config.profile.pill.selectionLabel)
         let configValue = config.raw
@@ -437,7 +436,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 }
                 DispatchQueue.main.async {
                     guard let self, VREpochValid(token) == 1 else { return }
-                    self.pending = false
+                    defer { self.clearSession() }
                     switch result {
                     case .failure(let error):
                         self.reset(self.config.profile.pill.errorLabel)
@@ -619,7 +618,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func clearSession() {
         activeAction = nil
         targetFocus = nil
-        pending = false
+        taskID = 0
     }
 }
 

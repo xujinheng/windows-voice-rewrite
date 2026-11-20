@@ -30,10 +30,11 @@ extension HeadlessApp {
         cancelFromPill()
         precondition(VREpochValid(finishedToken) == 1) // Dismissing a result is not cancellation.
         precondition(item.button?.title == "VR")
-        pending = true
         let processingToken = VREpochStart()
+        taskID = processingToken
+        precondition(pending)
         cancelFromPill()
-        precondition(VREpochValid(processingToken) == 0) // In-flight work still cancels.
+        precondition(!pending && taskID == 0 && VREpochValid(processingToken) == 0) // In-flight work still cancels.
         precondition(item.button?.title == "Cancelled")
         NSStatusBar.system.removeStatusItem(item)
     }
