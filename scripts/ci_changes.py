@@ -59,6 +59,9 @@ def classify(paths):
                 scope["windows"] = True
             elif path.endswith(("_darwin.go", "_darwin_test.go", "_macos.go")):
                 scope["macos"] = True
+            elif path.endswith(".go") and "/" not in path[len("voice-rewrite/"):] and not path.endswith("_test.go"):
+                # The repository-root main package is the Windows app, not the linked Mac C archive.
+                scope["windows"] = True
             else:
                 # Shared Go, generated contracts and dependencies affect both hosts.
                 scope.update(core=True, macos=True, windows=True)
