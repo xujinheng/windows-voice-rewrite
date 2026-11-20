@@ -39,4 +39,3 @@ func ClickDismisses(x, y int32, window, editor HitRect, buttons []HitRect) bool 
 	}
 	return true
 }
-
