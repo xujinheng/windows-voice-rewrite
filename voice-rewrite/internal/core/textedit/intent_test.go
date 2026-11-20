@@ -19,25 +19,19 @@ func TestIntentsRouting(t *testing.T) {
 		want                string
 	}{
 		{"改得简洁一点", "edit", "replace"},
-		{"改得简洁一点", "edit", "replace"},
-		{"改得简洁一点", "edit", "replace"},
 		{"这是什么意思？", "answer", "popup"},
 		{"为什么这样写？", "edit", "popup"},
 		{"总结这段话", "summarize", "popup"},
 		{"翻译成中文", "translate", "replace"},
-		{"翻译成中文", "translate", "replace"},
 		{"翻译成中文并替换原文", "edit", "replace"},
 		{"replace this with a shorter version", "edit", "replace"},
 		{"总结这段话", "edit", "popup"},
-		{"请写成英文", "translate", "replace"},
-		{"请写成英文", "translate", "replace"},
 		{"请写成英文", "translate", "replace"},
 		{"翻译成英文", "translate", "replace"},
 		{"英文是什么意思？", "answer", "popup"},
 		{"怎么用英文说？", "translate", "popup"},
 		{"把这句话改成英文", "edit", "replace"},
 		{"解释一下这个术语", "edit", "popup"},
-		// Third-party editors may expose unknown Win32 control classes.
 		{"请写成英文", "translate", "replace"}, // WeChat
 		{"帮我润色一下", "edit", "replace"},     // VS Code
 		{"翻译成中文", "translate", "replace"}, // nonnative editor
@@ -45,7 +39,6 @@ func TestIntentsRouting(t *testing.T) {
 		{"改成英文", "ambiguous", "replace"},
 		{"这是什么意思", "answer", "popup"},
 		{"为什么会出现这个错误", "answer", "popup"},
-		{"总结这段话", "summarize", "popup"},
 		{"帮我润色一下", "ambiguous", "replace"},
 		{"帮我", "edit", "popup"},
 		{"嗯", "translate", "popup"},
