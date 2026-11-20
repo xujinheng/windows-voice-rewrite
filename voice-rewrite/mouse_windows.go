@@ -162,7 +162,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 				mu.Unlock()
 				return 1
 			}
-			if buttons.Role(int(button)) == 0 {
+			if buttons.Role(int(button)) == 0 && buttons.HeldRole(int(button)) == 0 {
 				mu.Unlock()
 				return callNextMouseHook(hook, code, message, data)
 			}
