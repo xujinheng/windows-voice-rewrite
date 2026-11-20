@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"voicerewrite/internal/core/audio"
+	"voicerewrite/internal/core/clipboard"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
@@ -67,6 +68,26 @@ type bridgeOptions struct {
 
 func defaultOptions() bridgeOptions {
 	return bridgeOptions{TranscribeTimeout: speech.TranscribeTimeout, SpokenSelectedTimeout: textedit.SpokenTaskTimeout}
+}
+
+// deliveryReady is the shared decision after native focus/security inspection.
+// Operation 0 protects reading selected text, 1 dictation, 2 replacement.
+func deliveryReady(op int, taskValid, keysReleased, focusOK, sensitive, selectionOK bool) bool {
+	switch op {
+	case 0:
+		return ux.SelectionReadReady(focusOK, func() bool { return sensitive }) == nil
+	case 1:
+		return ux.DictationTargetReady(func() bool { return keysReleased }, func() bool { return taskValid && focusOK }, func() bool { return sensitive }) == nil
+	case 2:
+		return ux.ReplaceInsertReady(func() bool { return taskValid }, func() bool { return keysReleased }, func() bool { return focusOK && selectionOK }, func() bool { return sensitive }) == nil
+	default:
+		return false
+	}
+}
+
+// ClipboardSnapshotFits enforces the same bounded data-lease policy as Windows.
+func clipboardSnapshotFits(size, total int64) bool {
+	return size > 0 && total >= 0 && clipboard.SnapshotFits(uintptr(size), uintptr(total))
 }
 
 // Short clips should not wait for a stalled service as long as a multi-chunk
