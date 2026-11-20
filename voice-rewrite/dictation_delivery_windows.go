@@ -16,7 +16,7 @@ import (
 // backed up safely, use direct Unicode input rather than changing clipboard.
 func insertDictationText(hwnd, target uintptr, text string, valid func() bool) error {
 	windowOK := func() bool { return valid() && isSameForegroundWindow(target) }
-	if err := ux.DictationInsertReady(text, func() bool { return waitKeysReleased(2 * time.Second) }, windowOK, func() bool { return nativePasswordFieldFocused(target) }); err != nil {
+	if err := ux.DictationInsertReady(text, func() bool { return waitKeysReleased(2 * time.Second) }, windowOK); err != nil {
 		return err
 	}
 	backup, err := snapshotClipboard(hwnd)
