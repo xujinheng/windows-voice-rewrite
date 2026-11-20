@@ -3,6 +3,7 @@
 package main
 
 import (
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
 	"os"
 	"runtime"
 	"testing"
