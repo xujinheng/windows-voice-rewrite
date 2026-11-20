@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	meetingcore "voicerewrite/internal/core/meeting"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
 )
 
 func TestMeetingUnreadHistoryDoesNotStealFocus(t *testing.T) {
@@ -145,12 +145,9 @@ func TestMeetingSchedulerCanceledWaiterRemoved(t *testing.T) {
 }
 
 func TestMeetingExpressionRemainsReadableWhileWorking(t *testing.T) {
-	last := meetingLine{kind: "SAY", english: "I would add one more point.", complete: true}
-	if retainedEnglish(last) != last {
-		t.Fatal("the last completed spoken English was lost")
-	}
-	if retainedEnglish(meetingLine{english: "Half a sentence"}).english != "" {
-		t.Fatal("uncommitted English must not survive a failed request")
+	if !meetingcore.KeepFinishedEnglish(true, "I would add one more point.") ||
+		meetingcore.KeepFinishedEnglish(false, "Half a sentence") {
+		t.Fatal("completed English must remain copyable, but not partial English")
 	}
 	if heading := meetingcore.ExpressionHeading("正在识别", true); !strings.Contains(heading, "仍可复制") {
 		t.Fatalf("the interface concealed the last good English: %s", heading)

@@ -1,6 +1,6 @@
 package meeting
 
-import "voicerewrite/internal/core/desktop"
+import "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/desktop"
 
 // Place keeps the meeting window on the work area. A missing size uses the
 // default frame at the top-right of that area.

@@ -19,7 +19,7 @@ func TestSideHoldThresholdDuration(t *testing.T) {
 
 func TestHoldsCrossPlatformExclusiveLifecycle(t *testing.T) {
 	var s Core
-	s.Bind(1, 2)
+	s.Bind([]int{1}, []int{2})
 	if s.Press(0, false) != 0 || s.Press(-1, false) != 0 || s.Down(-1) {
 		t.Fatal("invalid native code")
 	}
@@ -75,7 +75,7 @@ func TestHoldsCrossPlatformExclusiveLifecycle(t *testing.T) {
 
 func TestOneCoreCancellationRevokesHoldAndWork(t *testing.T) {
 	var core Core
-	core.Bind(1, 2)
+	core.Bind([]int{1}, []int{2})
 	hold := core.Press(1, false)
 	if hold == 0 || !core.Activate(1, hold) {
 		t.Fatal("physical hold did not enter the shared core")
@@ -93,12 +93,12 @@ func TestOneCoreCancellationRevokesHoldAndWork(t *testing.T) {
 
 func TestCorePhysicalRemapCannotReusePendingToken(t *testing.T) {
 	var core Core
-	core.Bind(103, 104)
+	core.Bind([]int{103}, []int{104})
 	old := core.Press(103, false) // Quartz Mouse4
 	if core.Release(103) != ReleaseShort || core.Down(103) {
 		t.Fatal("old binding did not release")
 	}
-	core.Bind(54, 61)
+	core.Bind([]int{54}, []int{61})
 	next := core.Press(54, false) // Quartz right Command
 	if next == old || core.Activate(54, old) || !core.Activate(54, next) {
 		t.Fatal("a stale timer from a remapped physical key activated the next input")
@@ -107,7 +107,7 @@ func TestCorePhysicalRemapCannotReusePendingToken(t *testing.T) {
 
 func TestCoreRoleRemainsStableWhenShortcutsReload(t *testing.T) {
 	var core Core
-	core.Bind(103, 104)
+	core.Bind([]int{103}, []int{104})
 	if core.Role(103) != 1 || core.Role(104) != 2 {
 		t.Fatal("incorrect bound roles")
 	}
@@ -115,7 +115,7 @@ func TestCoreRoleRemainsStableWhenShortcutsReload(t *testing.T) {
 	if hold == 0 || core.HeldRole(103) != 1 {
 		t.Fatal("dictation mode was not captured at key-down")
 	}
-	core.Bind(54, 61)
+	core.Bind([]int{54}, []int{61})
 	if core.Role(103) != 0 || core.HeldRole(103) != 1 {
 		t.Fatal("hotkey reload silently changed in-flight task")
 	}
@@ -135,11 +135,30 @@ func TestCoreRejectsUnboundPhysicalInput(t *testing.T) {
 	if core.Press(1, false) != 0 {
 		t.Fatal("an unconfigured client input must not begin a voice task")
 	}
-	core.Bind(54, 61)
+	core.Bind([]int{54}, []int{61})
 	if core.Press(103, false) != 0 || core.Armed() {
 		t.Fatal("an unbound native key was accepted")
 	}
 	if core.Press(54, false) == 0 {
 		t.Fatal("configured shortcut was refused")
+	}
+}
+
+func TestCoreWindowsMouseAndKeyboardShareOneInputOwner(t *testing.T) {
+	var c Core
+	c.Bind([]int{1, 256 + 11}, []int{2, 256 + 12})
+	key := 256 + 11
+	if c.Role(1) != 1 || c.Role(key) != 1 || c.Role(2) != 2 || c.Role(256+12) != 2 {
+		t.Fatal("a host must bind both physical keyboard and mouse to the same intent")
+	}
+	token := c.Press(key, false)
+	if token == 0 || !c.Activate(key, token) || c.HeldRole(key) != 1 {
+		t.Fatal("keyboard hold bypassed the Go Core")
+	}
+	if c.Press(2, false) != 0 || c.Press(1, false) != 0 {
+		t.Fatal("another physical input was accepted while keyboard owns the voice task")
+	}
+	if c.Release(key) != ReleaseActive || c.HeldRole(key) != 0 {
+		t.Fatal("keyboard key release failed to clear Go Core ownership")
 	}
 }

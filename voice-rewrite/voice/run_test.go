@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	coreconfig "voicerewrite/internal/core/config"
-	"voicerewrite/internal/core/ux"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
 )
 
 func TestRunSpokenTaskCancelsBeforeLLM(t *testing.T) {

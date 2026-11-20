@@ -27,7 +27,7 @@ def main():
             break
         obj, read = decoder.raw_decode(process.stdout[idx:])
         idx += read
-        if (obj.get("Module") or {}).get("Path") == "voicerewrite":
+        if (obj.get("Module") or {}).get("Path") == "github.com/xujinheng/windows-voice-rewrite/voice-rewrite":
             imports.add(obj["ImportPath"])
             paths.update(Path(obj["Dir"]) / f for f in obj.get("GoFiles", []) + obj.get("CgoFiles", []))
     swift_files = sorted((ROOT / "macos/Headless").glob("*.swift"))
@@ -43,10 +43,10 @@ def main():
     if not go_lines or not swift_lines or len(swift_files) != 2:
         raise SystemExit("missing linked Go or two native Swift sources")
     required = {
-        "voicerewrite/internal/core/config",
-        "voicerewrite/internal/core/speech",
-        "voicerewrite/internal/core/textedit",
-        "voicerewrite/internal/core/provider",
+        "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config",
+        "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/speech",
+        "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/textedit",
+        "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/provider",
     }
     if "-buildmode=c-archive" not in build_script or "VoiceCore.h" not in build_script:
         raise SystemExit("macOS must link in-process Go Core, not spawn a helper")
@@ -65,7 +65,7 @@ def main():
         raise SystemExit("macOS retains a separate Go bridge subprocess")
     if not required.issubset(imports):
         raise SystemExit("macOS Go bridge lost a shared ASR/LLM/config dependency")
-    if "voicerewrite/internal/core/meeting" in imports:
+    if "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting" in imports:
         raise SystemExit("removed macOS Meeting must not stay linked just to inflate Go LOC")
     bridge = " ".join((ROOT / "voice-rewrite/cmd/voicebridge" / p).read_text(encoding="utf-8")
                       for p in ("main.go", "native_darwin.go"))
@@ -79,7 +79,7 @@ def main():
     # Provider-level calls alone could still leave two independent pipelines.
     if any(token in bridge for token in ("func serve(", "func dispatch(", "func readFrame(", "PCMBase64", "req.Op")):
         raise SystemExit("unshipped JSONL bridge reintroduced a second desktop transport")
-    if "voicerewrite/voice" not in imports or any(
+    if "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice" not in imports or any(
         ".Execute(" not in host for host in (bridge, windows)
     ):
         raise SystemExit("both hosts must invoke the same Go voice task")
@@ -92,8 +92,8 @@ def main():
         if path.name.endswith("_test.go") or (path.parent == desktop and path.name.startswith("meeting")):
             continue
         source = path.read_text(encoding="utf-8")
-        if ('"voicerewrite/internal/core/speech"' in source or
-            path != desktop / "windows.go" and '"voicerewrite/internal/core/textedit"' in source or
+        if ('"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/speech"' in source or
+            path != desktop / "windows.go" and '"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/textedit"' in source or
             any(token in source for token in forbidden)):
             raise SystemExit(f"desktop host duplicates voice policy: {path.relative_to(ROOT)}")
     if any(token in swift for token in ("URLSession", "URLRequest", "/v1/chat/completions",

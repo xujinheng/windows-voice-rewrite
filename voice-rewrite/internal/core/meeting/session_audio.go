@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"voicerewrite/internal/core/audio"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
 )
 
 // AudioEvent describes an input frame and any speech snapshot produced by it.

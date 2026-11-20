@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"voicerewrite/internal/core/audio"
-	coreconfig "voicerewrite/internal/core/config"
-	meetingcore "voicerewrite/internal/core/meeting"
-	"voicerewrite/internal/core/provider"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/provider"
 )
 
 type meetingSession struct {
@@ -54,9 +54,9 @@ func (s *meetingSession) configSnapshot() Config { s.mu.Lock(); defer s.mu.Unloc
 // invalidates its epoch. Presentation never survives a canceled partial task.
 func (s *meetingSession) resetViewLocked() {
 	s.view.reply.ResetWork()
-	clear, status := meetingcore.CancelPresentation(s.view.expression.complete, s.view.expressionStatus)
+	clear, status := meetingcore.CancelPresentation(s.view.expression.Complete, s.view.expressionStatus)
 	if clear {
-		s.view.expression = meetingLine{}
+		s.view.expression = meetingcore.Line{}
 	}
 	s.view.expressionStatus = status
 	s.view.captions = meetingcore.KeepCompletedCaptions(s.view.captions)
@@ -137,7 +137,7 @@ func (s *meetingSession) updateCaption(epoch, id uint64, source, chinese string)
 		meetingcore.ApplyCaptionTranslation(s.view.captions, id, source, chinese)
 	})
 }
-func (s *meetingSession) complete(ctx context.Context, priority int, query meetingcore.Query, emit func(meetingLine)) error {
+func (s *meetingSession) complete(ctx context.Context, priority int, query meetingcore.Query, emit func(meetingcore.Line)) error {
 	cfg := s.configSnapshot()
 	stage := meetingcore.InferenceStage(query.Mode, priority == meetingcore.PriorityExpress)
 	return s.runInference(ctx, priority, stage, func(active context.Context) error {
@@ -154,7 +154,7 @@ func (s *meetingSession) complete(ctx context.Context, priority int, query meeti
 		s.modelMu.Unlock()
 		return meetingcore.Complete(active, cfg, query, func(line meetingcore.Line) {
 			if active.Err() == nil {
-				emit(meetingLine{kind: line.Kind, english: line.English, chinese: line.Chinese, complete: line.Complete})
+				emit(line)
 			}
 		})
 	})
@@ -177,8 +177,8 @@ func (s *meetingSession) queueReplies(job meetingcore.CaptionTask) {
 	go func() {
 		defer cancel()
 		batch := meetingcore.ReplyBatch{Source: job.Latest}
-		err := s.complete(ctx, meetingcore.PriorityReply, meetingcore.Query{Mode: "replies", Latest: job.Latest, Prior: job.Prior}, func(line meetingLine) {
-			if !batch.Apply(meetingcore.Line{Kind: line.kind, English: line.english, Chinese: line.chinese, Complete: line.complete}) {
+		err := s.complete(ctx, meetingcore.PriorityReply, meetingcore.Query{Mode: "replies", Latest: job.Latest, Prior: job.Prior}, func(line meetingcore.Line) {
+			if !batch.Apply(line) {
 				return
 			}
 			// Epoch, generation, and context are checked under the session
@@ -238,14 +238,14 @@ func (s *meetingSession) refineReply(index int, instruction string) {
 	s.mu.Unlock()
 	go func() {
 		defer cancel()
-		err := s.complete(ctx, meetingcore.PriorityExpress, meetingcore.Query{Mode: "refine", SelectedReply: selected, UserPoints: instruction}, func(line meetingLine) {
+		err := s.complete(ctx, meetingcore.PriorityExpress, meetingcore.Query{Mode: "refine", SelectedReply: selected, UserPoints: instruction}, func(line meetingcore.Line) {
 			s.applyExpression(epoch, serial, func() { s.view.expression = line; s.view.expressionStatus = "" })
 		})
 		if err != nil && ctx.Err() == nil {
 			s.applyExpression(epoch, serial, func() {
 				s.view.expressionStatus = meetingcore.RefineFailed
-				if !s.view.expression.complete {
-					s.view.expression = meetingLine{}
+				if !s.view.expression.Complete {
+					s.view.expression = meetingcore.Line{}
 				}
 			})
 		}
@@ -277,9 +277,9 @@ func (s *meetingSession) start(source audio.FrameSource) {
 			return latest, err
 		},
 		Translate: func(ctx context.Context, job meetingcore.CaptionTask, emit func(string)) error {
-			return s.complete(ctx, meetingcore.PriorityCaption, meetingcore.Query{Mode: "caption", Prior: job.Prior, Latest: job.Latest}, func(line meetingLine) {
-				if line.kind == "ZH" {
-					emit(line.chinese)
+			return s.complete(ctx, meetingcore.PriorityCaption, meetingcore.Query{Mode: "caption", Prior: job.Prior, Latest: job.Latest}, func(line meetingcore.Line) {
+				if line.Kind == "ZH" {
+					emit(line.Chinese)
 				}
 			})
 		},

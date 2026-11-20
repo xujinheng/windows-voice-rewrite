@@ -1,6 +1,6 @@
 # VoiceRewrite architecture
 
-VoiceRewrite is **one Go business core with two native desktop hosts**. Windows
+VoiceRewrite is **one importable Go Core (`github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice`) with native desktop adapters**. Windows
 owns the established Win32 feature set. macOS is a deliberately small headless
 status-bar app for dictation and selected-text rewrite, not a second application
 stack. `oneclick/` is an independent standalone ASR-server bootstrapper with its
@@ -35,7 +35,7 @@ automatically retried. Only the OS adapter can perform these final checks.
 
 ## Package ownership
 
-- `internal/core/config`: durable configuration and validation.
+- `config`: public, durable configuration and validation, importable alongside `voice` from `github.com/xujinheng/windows-voice-rewrite/voice-rewrite`.
 - `internal/core/audio`: PCM and source framing, Meeting segmentation.
 - `internal/core/provider`: model discovery and private HTTP transport.
 - `internal/core/speech`: ASR request/response and transcript processing.

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	coreconfig "voicerewrite/internal/core/config"
-	"voicerewrite/internal/core/serviceprobe"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/serviceprobe"
 )
 
 func TestModelProbeStatuses(t *testing.T) {

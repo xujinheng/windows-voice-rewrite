@@ -7,7 +7,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"voicerewrite/internal/core/update"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/update"
 )
 
 func askViewUpdate(version string) bool {

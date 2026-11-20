@@ -11,8 +11,8 @@ import (
 	"time"
 	"unsafe"
 
-	"voicerewrite/internal/core/desktop"
-	meetingcore "voicerewrite/internal/core/meeting"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/desktop"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
 )
 
 type meetingHUD struct {
@@ -457,7 +457,7 @@ func updateMeetingHUD(view meetingView) {
 	p.displayedReplies, p.displayedTip = view.reply.Displayed.Lines, view.reply.Displayed.Tip
 	p.renderReply()
 	now = time.Now()
-	copy, captionsOnly, expanded, freshEnglish, paintExpression := meetingcore.ExpressionStep(view.expression.complete, view.expression.english, p.copyExpression, p.captionsOnly, p.expressionExpanded, p.lastExpression, now)
+	copy, captionsOnly, expanded, freshEnglish, paintExpression := meetingcore.ExpressionStep(view.expression.Complete, view.expression.English, p.copyExpression, p.captionsOnly, p.expressionExpanded, p.lastExpression, now)
 	if captionsOnly != p.captionsOnly || expanded != p.expressionExpanded {
 		p.captionsOnly, p.expressionExpanded = captionsOnly, expanded
 		p.layout()
@@ -465,9 +465,9 @@ func updateMeetingHUD(view meetingView) {
 	// Show the last successful utterance while recognition or generation is
 	// underway. Transient status belongs below the result, not in its place.
 	p.copyExpression = copy
-	p.setText(p.labels[2], meetingcore.ExpressionHeading(view.expressionStatus, view.expression.complete), false)
+	p.setText(p.labels[2], meetingcore.ExpressionHeading(view.expressionStatus, view.expression.Complete), false)
 	if paintExpression {
-		p.setText(p.expression, meetingcore.ExpressionShown(view.expression.english), true)
+		p.setText(p.expression, meetingcore.ExpressionShown(view.expression.English), true)
 		if freshEnglish {
 			procSendMessage.Call(p.expression, 0x0115, 6, 0) // WM_VSCROLL / SB_TOP
 		}
@@ -725,6 +725,6 @@ func demoMeeting() meetingView {
 		status: demo.Status, sourceName: demo.SourceName, asrMode: demo.ASRMode, level: demo.Level,
 		metrics:  meetingMetrics{Stage: demo.Stage, ASRFirstMS: demo.ASRFirstMS, ASRDoneMS: demo.ASRDoneMS, TranslationFirstMS: demo.TranslationFirstMS, TranslationDoneMS: demo.TranslationDoneMS},
 		captions: demo.Captions, reply: demo.Reply,
-		expression: meetingLine{kind: demo.Expression.Kind, english: demo.Expression.English, chinese: demo.Expression.Chinese, complete: demo.Expression.Complete},
+		expression: meetingcore.Line{Kind: demo.Expression.Kind, English: demo.Expression.English, Chinese: demo.Expression.Chinese, Complete: demo.Expression.Complete},
 	}
 }

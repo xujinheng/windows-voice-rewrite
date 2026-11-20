@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	coreconfig "voicerewrite/internal/core/config"
-	"voicerewrite/internal/core/provider"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/provider"
 )
 
 // AssistantResult contains the generated result and its model-classified intent.

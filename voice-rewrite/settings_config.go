@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	coreconfig "voicerewrite/internal/core/config"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
 )
 
 // Recording duration is user-controlled on both hosts. It is applied on the

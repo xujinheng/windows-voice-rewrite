@@ -6,7 +6,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"voicerewrite/internal/core/popup"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/popup"
 )
 
 // WH_MOUSE_LL observes mouse-downs outside VoiceRewrite's HWND without taking

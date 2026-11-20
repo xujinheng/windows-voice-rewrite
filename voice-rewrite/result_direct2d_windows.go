@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"voicerewrite/internal/core/settingsform"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/settingsform"
 )
 
 // resultD2D renders the actual AI result window with Windows Direct2D and

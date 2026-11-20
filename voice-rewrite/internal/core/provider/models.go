@@ -12,7 +12,7 @@ import (
 	"time"
 	"unicode"
 
-	coreconfig "voicerewrite/internal/core/config"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
 )
 
 type modelItem struct {

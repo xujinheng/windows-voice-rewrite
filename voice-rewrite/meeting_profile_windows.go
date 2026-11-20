@@ -7,8 +7,8 @@ import (
 	"syscall"
 	"unsafe"
 
-	"voicerewrite/internal/core/config"
-	meetingcore "voicerewrite/internal/core/meeting"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
 )
 
 func (p *meetingHUD) openProfile() {

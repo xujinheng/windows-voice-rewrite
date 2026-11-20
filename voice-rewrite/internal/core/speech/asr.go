@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"voicerewrite/asrtext"
-	"voicerewrite/internal/core/audio"
-	coreconfig "voicerewrite/internal/core/config"
-	"voicerewrite/internal/core/provider"
-	"voicerewrite/internal/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/asrtext"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/provider"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
 )
 
 // OneClick and some llama.cpp/faster-whisper endpoints return JSON, while

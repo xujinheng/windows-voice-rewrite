@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	coreconfig "voicerewrite/internal/core/config"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
 )
 
 // Windows DPAPI: secrets are tied to the current Windows user, not to an

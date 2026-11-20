@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	coreconfig "voicerewrite/internal/core/config"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
 )
 
 func TestRewriteSendsPromptAndReturnsText(t *testing.T) {

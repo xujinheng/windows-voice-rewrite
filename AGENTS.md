@@ -13,7 +13,7 @@ This file describes the **current product**, not its history. Read `voice-rewrit
 
 ## Cross-platform product principles
 
-- **One Go Core, N native clients.** Windows is the established behavior benchmark; never weaken it for macOS parity. All clients invoke the same Go-owned portable input, task, result and delivery policy. macOS currently has a smaller native UI, but a missing UI feature is not permission for a second business engine.
+- **One Go Core, N native clients.** The Go module is `github.com/xujinheng/windows-voice-rewrite/voice-rewrite`, and `voice` + `config` form a public reusable core; do not require imports from `internal` or the Windows `main` package. Windows is the established behavior benchmark; never weaken it for macOS parity. All clients invoke the same Go-owned portable input, task, result and delivery policy. macOS currently has a smaller native UI, but a missing UI feature is not permission for a second business engine.
 - **Change once, improve both.** Go Core or generated contracts own portable audio/ASR/LLM, text routing, task/delivery rules, configuration, UI copy, layout and state transitions. A typical business/UI change needs one shared edit.
 - **Split only at OS boundaries.** Windows owns Win32/UIA/WASAPI, hooks, DPAPI and rendering; macOS owns the single Swift AppKit/AVAudioEngine/AX/Quartz/pasteboard adapter and reads a JSON config; no second business model or Keychain settings screen. Native adapters execute OS calls, not portable algorithms.
 - **Prevent drift and regressions.** Keep both macOS native Swift adapter files thin; do not introduce parallel rules or synchronous per-frame IPC. Test both adapters and Go Core; protect working Windows behavior.

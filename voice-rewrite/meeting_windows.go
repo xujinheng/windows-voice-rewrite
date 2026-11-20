@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"unsafe"
 
-	"voicerewrite/internal/core/audio"
-	"voicerewrite/internal/core/indicator"
-	meetingcore "voicerewrite/internal/core/meeting"
-	"voicerewrite/internal/core/speech"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/speech"
 )
 
 const (
@@ -126,7 +126,9 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 	s.applyExpression(epoch, serial, func() {
 		// Keep the previous completed English available to read and copy
 		// while the next recognition/model request is running.
-		s.view.expression = retainedEnglish(s.view.expression)
+		if !meetingcore.KeepFinishedEnglish(s.view.expression.Complete, s.view.expression.English) {
+			s.view.expression = meetingcore.Line{}
+		}
 		s.view.expressionSource = ""
 		s.view.expressionStatus = label
 	})
@@ -172,8 +174,8 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 		s.mu.Unlock()
 	}
 	app.logger.Printf("meeting expression mode=%s recognized_chars=%d", mode, len([]rune(points)))
-	err = s.complete(ctx, meetingcore.PriorityExpress, meetingcore.Query{Mode: mode, Prior: prior, UserPoints: points}, func(line meetingLine) {
-		if !app.core.Valid(generation) || line.kind != "SAY" {
+	err = s.complete(ctx, meetingcore.PriorityExpress, meetingcore.Query{Mode: mode, Prior: prior, UserPoints: points}, func(line meetingcore.Line) {
+		if !app.core.Valid(generation) || line.Kind != "SAY" {
 			return
 		}
 		s.applyExpression(epoch, serial, func() {
@@ -199,7 +201,9 @@ func (s *meetingSession) expressionFailed(app *appState, generation, epoch, seri
 	message := label + "：" + cause.Error()
 	s.applyExpression(epoch, serial, func() {
 		s.view.expressionStatus = message
-		s.view.expression = retainedEnglish(s.view.expression)
+		if !meetingcore.KeepFinishedEnglish(s.view.expression.Complete, s.view.expression.English) {
+			s.view.expression = meetingcore.Line{}
+		}
 	})
 	app.fail(fmt.Errorf("%s: %w", label, cause))
 	app.postHandyPhase(indicator.Error, generation)

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	coreconfig "voicerewrite/internal/core/config"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
 )
 
 func TestMeetingStream(t *testing.T) {

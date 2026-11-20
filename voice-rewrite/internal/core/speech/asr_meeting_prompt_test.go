@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	coreconfig "voicerewrite/internal/core/config"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
 )
 
 func TestMultipartMeetingPromptIsOptionalAndDoesNotAffectDictation(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"voicerewrite/internal/core/config"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
 )
 
 func TestSampleMeetingStaysADemo(t *testing.T) {

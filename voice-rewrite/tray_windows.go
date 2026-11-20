@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"unsafe"
 
-	"voicerewrite/internal/core/history"
-	"voicerewrite/internal/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/history"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
 )
 
 // Windows notification-area (system tray) indicator. The icon is painted in

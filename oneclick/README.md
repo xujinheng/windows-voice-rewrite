@@ -1,6 +1,6 @@
 # Qwen3-ASR OneClick
 
-Standalone Windows x64 Go launcher/proxy for `llama-server`, providing Qwen3-ASR and OpenAI-compatible endpoints. ASR marker normalization is shared with VoiceRewrite through the local `voicerewrite/asrtext` Go module; builds require `oneclick/` and `voice-rewrite/` in the same source checkout. The macOS VoiceRewrite host is a separate minimal menu-bar app that connects to a configured ASR server; it does not ship an old SwiftUI OneClick launcher.
+Standalone Windows x64 Go launcher/proxy for `llama-server`, providing Qwen3-ASR and OpenAI-compatible endpoints. ASR marker normalization is shared with VoiceRewrite through the local `github.com/xujinheng/windows-voice-rewrite/voice-rewrite/asrtext` Go module; builds require `oneclick/` and `voice-rewrite/` in the same source checkout. The macOS VoiceRewrite host is a separate minimal menu-bar app that connects to a configured ASR server; it does not ship an old SwiftUI OneClick launcher.
 
 ## Windows: double-click to install and start
 

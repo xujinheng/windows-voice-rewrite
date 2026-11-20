@@ -17,7 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"voicerewrite/asrtext"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/asrtext"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
 )
 
 func TestCleanTranscriptAllLanguages(t *testing.T) {
@@ -383,5 +385,17 @@ func TestOneClickGoBuildsForBothMacArchitectures(t *testing.T) {
 				t.Fatalf("macOS %s Go binary missing/empty: %v", arch, err)
 			}
 		})
+	}
+}
+
+func TestStandaloneClientCanImportPublicVoiceAndConfig(t *testing.T) {
+	cfg := coreconfig.Defaults()
+	if cfg.ASRBaseURL == "" {
+		t.Fatal("public config API was not reachable from the OneClick module")
+	}
+	var core voice.Core
+	core.Bind([]int{103}, []int{104})
+	if core.Role(103) != 1 || core.Role(104) != 2 {
+		t.Fatal("independent Go module cannot use the shared voice runtime")
 	}
 }

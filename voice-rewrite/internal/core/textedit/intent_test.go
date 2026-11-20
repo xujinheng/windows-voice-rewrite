@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	coreconfig "voicerewrite/internal/core/config"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
 )
 
 func TestIntentsRouting(t *testing.T) {

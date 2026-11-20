@@ -10,9 +10,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"voicerewrite/internal/core/audio"
-	"voicerewrite/internal/core/indicator"
-	"voicerewrite/internal/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
 )
 
 // A recorder may reach its hardware duration limit before the held key or
