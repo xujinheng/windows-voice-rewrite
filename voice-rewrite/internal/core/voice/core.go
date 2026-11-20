@@ -13,7 +13,7 @@ import (
 // cancellation, inference and output routing.
 type Core struct {
 	mu        sync.Mutex
-	keys      []keyState
+	keys      [105]keyState
 	owner     int
 	currentID uint64
 	closed    bool
@@ -24,10 +24,6 @@ type keyState struct {
 	down, active bool
 	token        uint64
 }
-
-// NewCore reserves native physical-key slots. A zero-value Core is valid for
-// clients without a physical-key listener.
-func NewCore(slots int) *Core { return &Core{keys: make([]keyState, slots)} }
 
 const (
 	NoTargetWindow		= "没有可用的目标窗口"
