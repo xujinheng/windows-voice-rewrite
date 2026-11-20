@@ -71,3 +71,20 @@ func TestHoldsCrossPlatformExclusiveLifecycle(t *testing.T) {
 		t.Fatal("cancel left live key")
 	}
 }
+
+func TestOneCoreCancellationRevokesHoldAndWork(t *testing.T) {
+	var core Core
+	hold := core.Press(54, false)
+	if hold == 0 || !core.Activate(54, hold) {
+		t.Fatal("physical hold did not enter the shared core")
+	}
+	task := core.Start()
+	ctx := core.ContextFor(task)
+	core.Cancel()
+	if core.Valid(task) || core.Armed() || core.Down(54) || core.Activate(54, hold) || ctx.Err() == nil {
+		t.Fatal("one core cancel must revoke task, provider request and physical hold together")
+	}
+	if next := core.Start(); next == 0 || next == task || !core.Valid(next) {
+		t.Fatal("core failed to admit the next task")
+	}
+}
