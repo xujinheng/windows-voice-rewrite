@@ -33,11 +33,11 @@ const (
 // OS adapters handle hooks and timers, never another business hold state.
 type keyState struct {
 	down, active bool
-	token uint64
+	token        uint64
 }
 
 type Holds struct {
-	keys []keyState
+	keys  []keyState
 	owner int
 }
 
@@ -97,7 +97,7 @@ func (s *Holds) Release(code int) (held, active, primary bool) {
 	return true, active, primary
 }
 
-func (s *Holds) Abandon() { s.owner = 0 }
+func (s *Holds) Abandon()    { s.owner = 0 }
 func (s *Holds) Armed() bool { return s.owner != 0 }
 
 // Cancel invalidates every late timer without resetting its generation.
