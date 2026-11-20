@@ -30,7 +30,7 @@ func TestRunSpokenTaskCancelsBeforeLLM(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	callbacks := 0
-	_, err := Run(ctx, cfg, make([]byte, 3200), "原文", true, true, func(instruction string) {
+	_, err := Run(ctx, cfg, make([]byte, 3200), "原文", true, func(instruction string) {
 		callbacks++
 		if instruction != "翻译成英文" {
 			t.Errorf("unexpected transcript: %q", instruction)
@@ -46,7 +46,7 @@ func TestRunRejectsSelectionBeforeASR(t *testing.T) {
 	cfg := coreconfig.Defaults()
 	cfg.ASRBaseURL = "http://127.0.0.1:1/v1"
 	for _, selected := range []string{"", "   ", strings.Repeat("字", cfg.MaxSelectedRunes+1)} {
-		_, err := Run(context.Background(), cfg, make([]byte, 3200), selected, true, true, nil)
+		_, err := Run(context.Background(), cfg, make([]byte, 3200), selected, true, nil)
 		if err == nil || (strings.TrimSpace(selected) == "" && err.Error() != ux.EmptySelection) {
 			t.Fatalf("invalid selection reached ASR: selected_length=%d err=%v", len(selected), err)
 		}

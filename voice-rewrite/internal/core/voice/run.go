@@ -30,7 +30,7 @@ func (e *PCMError) Error() string { return e.message }
 // Run is the shared production task path for Windows workers and macOS C ABI.
 // A result route states the desired action; native focus/selection checks can
 // still prevent delivery, and a paste event is never proof of insertion.
-func Run(ctx context.Context, cfg coreconfig.Config, pcm []byte, selected string, rewrite, canInsert bool, onTranscribed func(string)) (Result, error) {
+func Run(ctx context.Context, cfg coreconfig.Config, pcm []byte, selected string, rewrite bool, onTranscribed func(string)) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
@@ -50,11 +50,7 @@ func Run(ctx context.Context, cfg coreconfig.Config, pcm []byte, selected string
 		if err != nil {
 			return Result{}, err
 		}
-		route := "preview"
-		if canInsert {
-			route = "insert"
-		}
-		return Result{Text: text, Route: route}, nil
+		return Result{Text: text, Route: "insert"}, nil
 	}
 	if strings.TrimSpace(selected) == "" {
 		return Result{}, errors.New(ux.EmptySelection)

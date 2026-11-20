@@ -180,7 +180,7 @@ func VRRun(config, operation *C.char, audio *C.uchar, length C.int, selection *C
 	}
 	req := request{
 		ID: "native", Config: json.RawMessage(C.GoString(config)), Op: C.GoString(operation),
-		CanInsert: true, NativePCM: C.GoBytes(unsafe.Pointer(audio), length),
+		NativePCM: C.GoBytes(unsafe.Pointer(audio), length),
 	}
 	if selection != nil {
 		req.SelectedText = C.GoString(selection)

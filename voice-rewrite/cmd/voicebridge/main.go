@@ -43,7 +43,6 @@ type request struct {
 	Config       json.RawMessage `json:"config"`
 	PCMBase64    string          `json:"pcm_base64"`
 	SelectedText string          `json:"selected_text"`
-	CanInsert    bool            `json:"can_insert"`
 	Instruction  string          `json:"instruction"`
 	NativePCM    []byte          `json:"-"`
 }
@@ -240,7 +239,7 @@ func processRequest(ctx context.Context, req request) response {
 		if len(pcm) > maxPCMBytes {
 			return failure(req.ID, "invalid_pcm", "PCM exceeds size limit")
 		}
-		outcome, err := voice.Run(ctx, cfg, pcm, req.SelectedText, rewrite, req.CanInsert, nil)
+		outcome, err := voice.Run(ctx, cfg, pcm, req.SelectedText, rewrite, nil)
 		if err != nil {
 			var capture *voice.PCMError
 			if errors.As(err, &capture) {

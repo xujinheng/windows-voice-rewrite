@@ -124,7 +124,7 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), speech.TranscribeTimeout)
 	defer cancel()
 	start := time.Now()
-	outcome, err := voice.Run(ctx, app.cfg, r.pcm, "", false, true, nil)
+	outcome, err := voice.Run(ctx, app.cfg, r.pcm, "", false, nil)
 	if !app.epoch.Valid(generation) {
 		return
 	}
@@ -230,7 +230,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), textedit.SpokenTaskTimeout)
 	defer cancel()
 	started := time.Now()
-	answer, e := voice.Run(ctx, app.cfg, r.pcm, sel.Text, true, true, func(text string) {
+	answer, e := voice.Run(ctx, app.cfg, r.pcm, sel.Text, true, func(text string) {
 		if !app.epoch.Valid(generation) {
 			return
 		}
