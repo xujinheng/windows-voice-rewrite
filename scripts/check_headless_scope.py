@@ -57,9 +57,12 @@ def main():
     bridge = (ROOT / "voice-rewrite/cmd/voicebridge/main.go").read_text(encoding="utf-8")
     windows = (ROOT / "voice-rewrite/task_worker_windows.go").read_text(encoding="utf-8")
     meeting = (ROOT / "voice-rewrite/meeting_session.go").read_text(encoding="utf-8")
-    for call in ("speech.Transcribe(", "textedit.ResolveSpokenTask("):
-        if call not in bridge or call not in windows:
-            raise SystemExit(f"both hosts must call the same Go operation: {call}")
+    # Both *production entrypoints* must pass through the same task owner.
+    # Provider-level calls alone could still leave two independent pipelines.
+    if "voicerewrite/internal/core/voice" not in imports or any(
+        "voice.Run(" not in host for host in (bridge, windows)
+    ):
+        raise SystemExit("both hosts must invoke the same Go voice task")
     if "meetingcore.NewSessionRuntime()" not in meeting:
         raise SystemExit("Windows Meeting Core is not preserved")
     if any(token in bridge for token in ("meeting_start", "meeting_feed", "meeting_replies")):
