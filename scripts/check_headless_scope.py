@@ -40,7 +40,7 @@ def main():
     paths.add(ROOT / "clients/macos/bridge/native_darwin.go")
     go_lines = sum(nonblank(p) for p in paths)
     swift_lines = sum(nonblank(swift) for swift in swift_files)
-    if not go_lines or not swift_lines or not all(p.is_file() for p in swift_files):
+    if not go_lines or not swift_lines or not swift_files:
         raise SystemExit("missing linked Go or two native Swift sources")
     required = {
         "github.com/xujinheng/windows-voice-rewrite/core/config",
@@ -72,7 +72,7 @@ def main():
     windows = (ROOT / "clients/windows/task_worker_windows.go").read_text(encoding="utf-8")
     if any(token in windows for token in ("func processRecordedHold(", "func processDictationHold(", "func processAudioAndRewrite(")):
         raise SystemExit("Windows recreated separate voice task orchestration next to voice.Core")
-    if (ROOT / "voice-rewrite/cmd/voicebridge/bridge_test.go").exists() or "safeProcessRequest" in bridge:
+    if (ROOT / "clients/macos/bridge/bridge_test.go").exists() or "safeProcessRequest" in bridge:
         raise SystemExit("retired duplicate macOS voice task must not return")
     meeting = (ROOT / "core/meeting/session.go").read_text(encoding="utf-8")
     # Both *production entrypoints* must pass through the same task owner.

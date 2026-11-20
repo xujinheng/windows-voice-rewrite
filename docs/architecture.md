@@ -1,88 +1,47 @@
-# VoiceRewrite architecture
+# Architecture: one Go Core, N native clients
 
-VoiceRewrite is **one importable Go Core (`github.com/xujinheng/windows-voice-rewrite/core/voice`) with native desktop adapters**. Windows
-owns the established Win32 feature set. macOS is a deliberately small headless
-status-bar app for dictation and selected-text rewrite, not a second application
-stack. `oneclick/` is an independent standalone ASR-server bootstrapper with its
-own Go module; it must not be coupled to the desktop host just for reuse.
+This repository contains **one independent Go business core** and three peer clients. The folder structure is the dependency diagram:
 
-## Runtime boundaries
+```text
+core/  <--- clients/windows/
+       <--- clients/macos/bridge/ <--- clients/macos/app/ (Swift)
+       <--- clients/cli/
 
-Windows (`clients/windows/*.go` and `*_windows.go`) owns Win32 messages, UIA,
-WASAPI/WinMM, hooks, clipboard handles, native windows and Meeting HUD pixels.
-Keep physical side effects and their thread/OS lifetime here; shared portable
-decisions belong to the public `voice` and `meeting` Go packages and private dependencies.
+oneclick/ ---> core/asrtext/ (shared transcript normalization only)
+```
 
-macOS (`clients/macos/app/main.swift`, `RecordingPill.swift`) owns Quartz events,
-AVAudioEngine/AVAudioConverter, AX focus/selection, NSPasteboard leases,
-AppKit panel and status-menu drawing. It links Go `cmd/voicebridge` as a Darwin
-**C archive in the same process**, exposing a small explicit C ABI through
-`VoiceCore.h`. It does not start a Go helper, exchange audio-frame IPC, or
-implement a second voice-policy state machine.
+## Ownership
 
-## One public lifecycle contract
+- `core/` is the Go module `github.com/xujinheng/windows-voice-rewrite/core`. It builds without GUI, Windows, or Swift. Only Core owns portable task transitions, physical input roles, cancellation, ASR, rewrite, result routing, and meeting session decisions.
+- `core/voice/` owns the unified `Core.Apply(Command)`, `Core.Snapshot(code, token)`, and `Core.Execute(...)` contract, emitting shared `Event` and `Result` values. Windows, macOS and CLI call this same engine.
+- `core/meeting/` owns portable meeting session state and inference scheduling. The Windows client supplies the native audio source and HUD; macOS has not implemented a Meeting UI.
+- `core/config/` is the public configuration model. `core/internal/speech/` is private ASR implementation; only code in Core may import it.
+- Other shared public packages (`audio`, `provider`, `textedit`, `indicator`, `shortcut`, `contract`, `ux` and focused UI-model packages) are real reusable capabilities currently imported by native clients. Do not expose private packages through new forwarding wrappers.
+- `clients/windows/` owns Win32, UIA, keyboard/mouse hooks, microphone capture, clipboard/editor effects, tray and UI windows, and the Windows build entrypoint. It is a `package main` inside the `clients/` Go module.
+- `clients/macos/app/` owns AppKit/Quartz, accessibility, AVAudioEngine, clipboard and native drawing. `clients/macos/bridge/` is only the in-process Darwin Go/C ABI for the same Go Core; no separate voice pipeline or JSONL helper.
+- `clients/cli/` is a **separately importable Go module** and executable contract witness; it must build without native dependencies or CGO.
+- `oneclick/` is a separate local ASR runtime/bootstrapper, not a voice client. It reuses `core/asrtext` only.
 
-All clients import the same Go Core and submit `voice.Command` values to
-`Core.Apply`. The returned `voice.Event` is a typed command receipt, not
-a separate host decision. `Core.Snapshot(physicalCode, generation)` returns
-one atomic `voice.State` view (bound role, frozen held role, hold/activation,
-task generation validity, phase and shutdown). This replaces the old public
-`Press`, `Release`, `Activate`, `Start`, `Cancel`, `Role`, `HeldRole`,
-`Down`, `Valid` and related getters; do not add forwarding aliases.
+## Dependency rules
 
-`Core.Execute` consumes OS-captured PCM/selection and produces the existing
-`voice.Result` route. Its optional callback emits the **same**
-`voice.Event` vocabulary for transcription, completion and failure. Clients
-own capture, editor revalidation and OS side effects, not business event
-classification. The macOS in-process bridge exports only `VRCommand` and
-`VRSnapshot` for lifecycle input/state, and `VRRun` for task inference;
-the Windows adapter invokes the same Go methods directly. CLI exercises
-those public methods in an independent Go module.
+1. Core never imports clients, Swift, GUI frameworks, Win32 packages, or a Windows `main` package.
+2. Clients may only import **public** Core packages; `core/internal/` is enforced by Go's `internal` visibility rules.
+3. macOS's C ABI translates physical facts and typed events and does not implement a second task engine.
+4. No compatibility copy of the retired `voice-rewrite/`, `macos/Headless/`, or `cli/` source tree is permitted.
+5. Move portable rules to their existing business owner; do not add Managers, Coordinators, or forwarding APIs just to preserve old layout.
 
-On macOS, physical shortcut events, task generations, cancellation and voice
-execution all call Go `voice.Core` (including task-role snapshots across shortcut rebinds); each waveform/spinner/clock frame calls Go
-`indicator` through the in-process ABI. Swift performs the OS
-operations and draws the returned pixels. The native macOS C ABI and the single Windows recording worker call `voice.Core.Execute` directly,
-which owns PCM admission, `speech.Transcribe`, `textedit.ResolveSelectedTask`
-and result routing. The Go task owns the shared transcription and spoken-task deadlines.
-`cmd/voicebridge` is a C archive, not a JSONL server or helper process.
+## Go modules and builds
 
-**Delivery is not equivalent to text insertion.** Native hosts verify current
-window/selection and clipboard ownership before attempting one paste; a sent
-input event does not prove editor acceptance, and uncertain pastes are never
-automatically retried. Only the OS adapter can perform these final checks.
+```text
+core/go.mod           reusable business module
+clients/go.mod        Windows native executable and macOS Go/C bridge
+clients/cli/go.mod    independent headless CLI client
+oneclick/go.mod       independent ASR runtime utility
+go.work                local multi-module development
+```
 
-## Package ownership
+From the repository root, use `cd core && go test ./...`, `cd clients && go test ./windows ./macos/bridge`, `cd clients/cli && go test ./...`, and `cd oneclick && go test ./...`. Build macOS with `scripts/build-macos-headless.sh`. The native platforms must still pass physical microphone, hotkey, focus, clipboard and insertion acceptance testing: Go contract equality is not evidence of OS-level parity.
 
-- `config`: public, durable configuration and validation, importable alongside `voice` from `github.com/xujinheng/windows-voice-rewrite/core`.
-- `internal/core/audio`: PCM and source framing, Meeting segmentation.
-- `internal/core/provider`: model discovery and private HTTP transport.
-- `internal/core/speech`: ASR request/response and transcript processing.
-- `internal/core/textedit`: selected-text intent and model rewriting.
-- `voice`: public client-facing Go Core package; owns holds, task generations, cancellation, results and voice execution.
-- `internal/core/indicator`, `ux`, `clipboard`: presentation decisions,
-  delivery policies and clipboard guards. Native hosts own the system APIs.
-- `meeting`: public Go Meeting engine, independent of any native desktop host. Its
-  `SessionRuntime` owns pause/epochs; `Pipeline` owns ASR/translation queues;
-  `Scheduler` owns single-GPU inference priority; `ReplyState` owns
-  displayed/pending reply generation. They are distinct concerns, not four
-  competing authorities for the same voice task.
-- `internal/contract`, `settingsform`, `popup`, `shortcut`: shared native
-  UI commands, geometry and shortcut rules; no parallel settings app on macOS.
+## Review and maintenance
 
-## Verification and maintenance
-
-Before changing behavior, follow its Windows production entrypoint through
-the Go owner and into the native OS adapter. Remove superseded decisions and
-dead state along with the change; **do not create standalone state holders
-that are only called by their own tests**. Do not split a native file merely
-because it is long if doing so scatters the same platform lifecycle.
-
-The CI gate runs Go unit/race tests, Windows builds/UI and native Swift + Go
-C-archive builds for both macOS architectures. The macOS ABI smoke test calls
-the linked Go exports and benchmarks their direct overhead.
-`scripts/check_headless_scope.py` audits only compiled linked Go sources and
-the two Swift host files; source ratios are not runtime-coverage or UX
-measurements. Physical microphone, mouse side buttons, Accessibility,
-clipboard ownership, network performance and third-party editor insertion
-still require real-device acceptance.
+Prefer a direct call over a new package or wrapper. Judge changes by clear ownership, simpler dependencies, fewer mutable states, fewer indirections, and unchanged behavior—not by matching file counts or an artificial percent of Go lines. The CI checks Core source portability, shared entrypoints and native builds. See `docs/CI.md` and `tests/acceptance/` for verification.

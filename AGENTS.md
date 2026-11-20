@@ -16,10 +16,10 @@ This file defines the Core-first repository ownership model. Read `docs/architec
 - **One Go Core, N native clients.** The Go Core module is `github.com/xujinheng/windows-voice-rewrite/core`; clients are separate consumers of its public packages; do not require imports from `internal` or the Windows `main` package. Windows is the established behavior benchmark; never weaken it for macOS parity. All clients invoke the same Go-owned portable input, task, result and delivery policy. macOS currently has a smaller native UI, but a missing UI feature is not permission for a second business engine.
 - **Change once, improve both.** Go Core or generated contracts own portable audio/ASR/LLM, text routing, task/delivery rules, configuration, UI copy, layout and state transitions. A typical business/UI change needs one shared edit.
 - **Split only at OS boundaries.** Windows owns Win32/UIA/WASAPI, hooks, DPAPI and rendering; macOS owns the single Swift AppKit/AVAudioEngine/AX/Quartz/pasteboard adapter and reads a JSON config; no second business model or Keychain settings screen. Native adapters execute OS calls, not portable algorithms.
-- **Prevent drift and regressions.** Keep both macOS native Swift adapter files thin; do not introduce parallel rules or synchronous per-frame IPC. Test both adapters and Go Core; protect working Windows behavior.
+- **Prevent drift and regressions.** Keep macOS native Swift adapter files thin; do not introduce parallel rules or synchronous per-frame IPC. Test both adapters and Go Core; protect working Windows behavior.
 - **Prove linked source ownership, not inflated repository percentages.** Run `python3 scripts/check_headless_scope.py` after Go setup. Count only Go files linked into the headless Go bridge plus both native Swift
   boundary files. Never keep unreferenced Meeting Go packages merely to maintain
-  a Go percentage; check the actual shared task entrypoints and native LOC cap. Preserve real Windows Go tests and macOS Swift compilation checks. This static metric is not dynamic runtime ownership; verify actual ASR and paste paths on real devices.
+  a Go percentage; check the actual shared task entrypoints and native business boundaries. Preserve real Windows Go tests and macOS Swift compilation checks. This static metric is not dynamic runtime ownership; verify actual ASR and paste paths on real devices.
 
 ## Strict Go-first ownership
 

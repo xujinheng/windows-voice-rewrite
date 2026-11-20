@@ -48,21 +48,21 @@ Captions are translated from the latest recognized segment only, using a dedicat
 
 In an active meeting, hold the **dictation shortcut** (Mouse4 by default), speak a Chinese sentence, then release to get a faithful, speakable English translation in **我的英文表达**. Hold the **rewrite/voice-command shortcut** (Mouse5 by default) for a general-purpose spoken-English assistant: ask a spontaneous question, state your opinion, proactively respond even if nobody explicitly asked you, request an explanation, or ask the model for a specific factual answer you need to say aloud. For example, “问他这两个方案的 schedule” produces a question to other participants; “有多少印度人会说英语，我要告诉大家” requests a concrete English answer rather than a question back to you. The model infers the task from your speech instead of matching a fixed list of command phrases. Only explicit references to earlier discussion include recent meeting context; unrelated questions are not pushed toward project topics. Knowledge answers are based on the configured LLM and are not live web-verified; historical statistics should include their date and appropriate uncertainty. These two meeting shortcuts do not require selecting text or automatically paste into other applications. A new complete English result **automatically expands** its reading area and temporarily hides the reply tools; choose **收起英文** to restore the usual view, or **放大英文** to reopen it at any time. Long English responses can be scrolled and copied without truncation, while the original recognized Chinese speech stays in a separate compact area for verification. While another speech request runs, the last completed English expression stays readable and copyable. A request error appears alongside the recognized source and never destroys the last usable English. A completed voice request also opens the expression view when you are using **专注字幕**. If the LLM fails, the panel shows the specific error; use Settings to check the configured text-model endpoint. Outside meeting mode, Mouse4 retains normal raw ASR insertion and Mouse5 retains selection-based rewriting. **冻结画面** keeps the current captions and suggestions in place while processing continues; **暂停采集** releases meeting capture and cancels its outstanding work. Close the window to stop the session. **专注字幕**, **A− / A+**, individually dragged section sizes, and the normal window position/size are remembered in `%APPDATA%\VoiceRewrite\meeting-ui.json`.
 
-Choose **查看会议模式演示** or run `VoiceRewrite.exe --meeting-demo` for offline sample data. Live mode uses only the configured endpoints. Browser capture can include multiple tabs in the selected app's process tree. See [privacy](../PRIVACY.md).
+Choose **查看会议模式演示** or run `VoiceRewrite.exe --meeting-demo` for offline sample data. Live mode uses only the configured endpoints. Browser capture can include multiple tabs in the selected app's process tree. See [privacy](../../PRIVACY.md).
 
 ## Build
 
 Requires Go 1.23 or newer. On Windows:
 
 ```powershell
-cd voice-rewrite
+cd clients/windows
 go test ./...
 go vet -unsafeptr=false ./...
 go build -trimpath -ldflags="-H windowsgui -s -w" -o VoiceRewrite.exe .
 ```
 
-See [architecture](ARCHITECTURE.md), [Windows testing](TESTING.md), [privacy](../PRIVACY.md) and [installer instructions](../installer/README.md).
+See [architecture](../../docs/architecture.md), [Windows testing](../../docs/testing.md), [privacy](../../PRIVACY.md) and [installer instructions](../../installer/README.md).
 
 ## License
 
-VoiceRewrite is distributed under the [BSD 3-Clause License](../LICENSE). The [third-party notices](THIRD_PARTY_NOTICES.md) remain in effect.
+VoiceRewrite is distributed under the [BSD 3-Clause License](../../LICENSE). The [third-party notices](../../docs/third-party-notices.md) remain in effect.

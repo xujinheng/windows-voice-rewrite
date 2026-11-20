@@ -31,12 +31,12 @@ def classify(paths):
             "clients/windows/result_direct2d_windows.go",
             "clients/windows/appearance_windows.go", "clients/windows/visual_skin_windows.go",
             "clients/windows/popup_windows.go", "clients/windows/popup_dismiss_windows.go",
-            "clients/windows/popup_layout.go", "clients/windows/popup_layout_test.go",
+            "core/popup/layout.go", "core/popup/layout_test.go",
             "clients/windows/answer_visual_preview_windows.go",
             "clients/windows/visual_preview_windows.go",
             "clients/windows/desktop_geometry.go", "clients/windows/desktop_monitor_windows.go",
             "clients/windows/result_history.go", "clients/windows/window_windows.go",
-            "clients/windows/windows.go", "clients/windows/go.mod", "clients/windows/go.sum",
+            "clients/windows/windows.go", "clients/go.mod", "go.work",
         )):
             scope["direct2d"] = True
         # CI governance and reusable action changes must validate the whole matrix.
