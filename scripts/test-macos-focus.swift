@@ -16,6 +16,14 @@ extension HeadlessApp {
         precondition(VRDown(Int32(code)) == 0 && VRArmed() == 0)
     }
 
+    func verifyPressTargetSurvivesDelayedActivation() {
+        item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        targetPID = pid_t.max // The original editor vanished or lost focus during the hold threshold.
+        begin(.dictation)
+        precondition(!microphone.running && item.button?.title == "Focus changed")
+        NSStatusBar.system.removeStatusItem(item)
+    }
+
     func verifyPillCancelLifecycle() {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let finishedToken = VREpochStart()
@@ -94,5 +102,6 @@ MainActor.assumeIsolated {
     hostApp.verifyReboundRelease(code: 54, name: "RightCommand", before: host(original),
                                  after: host(mouseBound), modifier: true)
     hostApp.verifyPillCancelLifecycle()
-    print("AX focus, selection, Unicode, shortcut rebind and pill cancel smoke passed")
+    hostApp.verifyPressTargetSurvivesDelayedActivation()
+    print("AX focus, selection, Unicode, shortcut rebind, pill cancel and press-target smoke passed")
 }
