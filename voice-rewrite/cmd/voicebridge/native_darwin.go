@@ -31,7 +31,7 @@ var nativeConfig atomic.Pointer[coreconfig.Config]
 
 // Physical state lives in the same Go owner used by Windows' mouse hook.
 // Quartz callbacks are serial; Epoch is shared with the worker thread.
-var nativeCore = voice.NewCore(105)
+var nativeCore voice.Core
 var nativeRole [105]uint8
 
 //export VRAction
