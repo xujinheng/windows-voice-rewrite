@@ -295,10 +295,11 @@ func processRequest(ctx context.Context, req request) response {
 		if err != nil {
 			return providerFailure(req.ID, "asr_failed", "speech transcription failed", err)
 		}
-		return success(req.ID, map[string]any{
-			"text":  text,
-			"route": ux.RouteDictationTranscript(text, req.CanInsert),
-		})
+		route := "preview"
+		if req.CanInsert {
+			route = "insert"
+		}
+		return success(req.ID, map[string]any{"text": text, "route": route})
 	case "selected_voice_task":
 		if len(req.SelectedText) == 0 || len(req.SelectedText) > maxSelectedBytes ||
 			!utf8.ValidString(req.SelectedText) || req.Instruction != "" {
