@@ -302,7 +302,7 @@ func (p *meetingHUD) resizeText(delta int32) {
 	body := meetingUIFont(p.px(bodyFace.Size), bodyFace.Weight)
 	english := popupFont(-p.px(englishFace.Size), englishFace.Weight)
 	chinese := meetingUIFont(p.px(chineseFace.Size), chineseFace.Weight)
-	if !meetingcore.ReplaceReadingFonts(body, english, chinese) {
+	if body == 0 || english == 0 || chinese == 0 {
 		for _, font := range []uintptr{body, english, chinese} {
 			if font != 0 {
 				procDeleteObject.Call(font)
@@ -596,7 +596,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				return 0
 			}
 		case 0x0202: // WM_LBUTTONUP
-			if meetingcore.MeetingDragEnd(p.dragDivider >= 0, true) == meetingcore.DragEndCommit {
+			if p.dragDivider >= 0 {
 				p.dragSplitterTo(int32(int16(uint16(lParam >> 16))))
 				p.dragDivider = -1
 				meetingReleaseCapture.Call()
@@ -604,7 +604,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				return 0
 			}
 		case 0x0215: // WM_CAPTURECHANGED
-			if meetingcore.MeetingDragEnd(p.dragDivider >= 0, false) == meetingcore.DragEndCancel {
+			if p.dragDivider >= 0 {
 				p.dragDivider = -1
 			}
 		case WM_COMMAND:
