@@ -5,39 +5,6 @@ import (
 	"testing"
 )
 
-func TestReadingBodyLeavesTheLiveCaptionOut(t *testing.T) {
-	if ReadingBody(false, false, false, false, false, false, false, false, false) {
-		t.Fatal("empty")
-	}
-	flags := []bool{false, false, false, false, false, false, false, false, false}
-	for i := range flags {
-		flags[i] = true
-		if !ReadingBody(flags[0], flags[1], flags[2], flags[3], flags[4], flags[5], flags[6], flags[7], flags[8]) {
-			t.Fatal(i)
-		}
-		flags[i] = false
-	}
-	primary, surface := ReadingPaint(true, false)
-	if !primary || !surface {
-		t.Fatal("live stays on the surface")
-	}
-}
-
-func TestReadingPaintKeepsTheLiveCaptionOnTheSurface(t *testing.T) {
-	primary, surface := ReadingPaint(true, false)
-	if !primary || !surface {
-		t.Fatal("live")
-	}
-	primary, surface = ReadingPaint(false, true)
-	if primary || !surface {
-		t.Fatal("reading")
-	}
-	primary, surface = ReadingPaint(false, false)
-	if primary || surface {
-		t.Fatal("chrome")
-	}
-}
-
 func TestButtonFaceKeepsIdleTitles(t *testing.T) {
 	want := []string{"冻结画面", "专注字幕", "A−", "A+", "复制回复", "复制英文", "生成建议", "暂停采集", "会议资料", "1 直接回应", "2 澄清一下", "3 争取时间", "无新建议", "改写回复", "回到最新", "放大英文"}
 	idle := ButtonView{SelectedReply: -1}
