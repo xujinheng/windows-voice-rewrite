@@ -61,7 +61,8 @@ def main():
         raise SystemExit("macOS Go bridge lost a shared ASR/LLM/config dependency")
     if "voicerewrite/internal/core/meeting" in imports:
         raise SystemExit("removed macOS Meeting must not stay linked just to inflate Go LOC")
-    bridge = (ROOT / "voice-rewrite/cmd/voicebridge/main.go").read_text(encoding="utf-8")
+    bridge = " ".join((ROOT / "voice-rewrite/cmd/voicebridge" / p).read_text(encoding="utf-8")
+                      for p in ("main.go", "native_darwin.go"))
     windows = (ROOT / "voice-rewrite/task_worker_windows.go").read_text(encoding="utf-8")
     if any(token in windows for token in ("func processRecordedHold(", "func processDictationHold(", "func processAudioAndRewrite(")):
         raise SystemExit("Windows recreated separate voice task orchestration next to voice.Run")
