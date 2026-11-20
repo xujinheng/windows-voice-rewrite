@@ -148,37 +148,10 @@ func MeetingTextFace(text MeetingText) ReadingFace {
 	}
 }
 
-// ReplaceReadingFonts reports that all three new fonts exist.
-// A missing font discards every new font and leaves the previous size in place.
-func ReplaceReadingFonts(body, english, chinese uintptr) bool {
-	return body != 0 && english != 0 && chinese != 0
-}
-
 // ReadingFonts is the body, English, and Chinese face for one meeting text size.
 // English is one point larger. Chinese is six points larger and heavier.
 func ReadingFonts(size int32) (body, english, chinese FontFace) {
 	return FontFace{size, 400}, FontFace{size + 1, 450}, FontFace{size + 6, 600}
-}
-
-// DragEnd is how a meeting divider drag stops.
-type DragEnd int
-
-const (
-	DragEndIgnore DragEnd = iota
-	DragEndCommit
-	DragEndCancel
-)
-
-// MeetingDragEnd commits a button release while a divider is dragged.
-// Losing capture drops the drag without saving. A mouse-up with no drag is ignored.
-func MeetingDragEnd(dragging, buttonUp bool) DragEnd {
-	if !dragging {
-		return DragEndIgnore
-	}
-	if buttonUp {
-		return DragEndCommit
-	}
-	return DragEndCancel
 }
 
 // SplitterRails is the two one-pixel marks on a meeting divider.
