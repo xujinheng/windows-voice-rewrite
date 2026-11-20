@@ -148,7 +148,7 @@ func TestMeetingWindowsE2E(t *testing.T) {
 	}
 
 	longEnglish := strings.Repeat("This is a complete, speakable English answer for the meeting. ", 15)
-	view.expression = meetingLine{kind: "SAY", english: longEnglish, complete: true}
+	view.expression = meetingcore.Line{Kind: "SAY", English: longEnglish, Complete: true}
 	view.expressionSource = "请告诉大家一个详细的回答"
 	updateMeetingHUD(view)
 	if !p.expressionExpanded || p.copyExpression != longEnglish || uxWinText(p.expression) != longEnglish {
@@ -175,10 +175,10 @@ func TestMeetingWindowsE2E(t *testing.T) {
 		t.Fatal("native collapse-English action failed")
 	}
 	procSendMessage.Call(p.window, 0x0111, meetingcore.ButtonCaptions, 0)
-	view.expression = meetingLine{kind: "SAY", english: "A newly completed answer.", complete: true}
+	view.expression = meetingcore.Line{Kind: "SAY", English: "A newly completed answer.", Complete: true}
 	view.expressionStatus = ""
 	updateMeetingHUD(view)
-	if p.captionsOnly || !p.expressionExpanded || p.copyExpression != view.expression.english {
+	if p.captionsOnly || !p.expressionExpanded || p.copyExpression != view.expression.English {
 		t.Fatal("new voice answer did not appear while reading captions only")
 	}
 	if p.splitterVisible[3] || !p.splitterVisible[2] || !p.splitterVisible[4] {

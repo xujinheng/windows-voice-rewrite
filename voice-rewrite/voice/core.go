@@ -14,17 +14,16 @@ import (
 // facts, audio and final OS effects; the core owns holds, task generations,
 // cancellation, inference and output routing.
 type Core struct {
-	History      history.Store
-	mu           sync.Mutex
-	keys         map[int]*keyState
-	owner        int
-	dictationKey int
-	rewriteKey   int
-	nextToken    uint64
-	currentID    uint64
-	closed       bool
-	ctx          context.Context
-	cancel       context.CancelFunc
+	History   history.Store
+	mu        sync.Mutex
+	keys      map[int]*keyState
+	owner     int
+	roles     map[int]int
+	nextToken uint64
+	currentID uint64
+	closed    bool
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 type keyState struct {
 	down, active bool
@@ -65,26 +64,26 @@ func (c *Core) key(code int) *keyState {
 	return c.keys[code]
 }
 
-// Bind replaces the physical input mapping without changing the role of a
-// key already held. Both native hosts pass OS key IDs to the same runtime.
-func (c *Core) Bind(dictationKey, rewriteKey int) {
+// Bind replaces the physical input mapping without changing an in-flight
+// key's role. Keyboard and mouse can both trigger the same voice operation.
+func (c *Core) Bind(dictation, rewrite []int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.dictationKey, c.rewriteKey = dictationKey, rewriteKey
+	roles := make(map[int]int, len(dictation)+len(rewrite))
+	for _, code := range dictation {
+		if code > 0 {
+			roles[code] = 1
+		}
+	}
+	for _, code := range rewrite {
+		if code > 0 {
+			roles[code] = 2
+		}
+	}
+	c.roles = roles
 }
 
-func (c *Core) role(code int) int {
-	if code <= 0 {
-		return 0
-	}
-	if code == c.dictationKey {
-		return 1
-	}
-	if code == c.rewriteKey {
-		return 2
-	}
-	return 0
-}
+func (c *Core) role(code int) int { return c.roles[code] }
 
 func (c *Core) Role(code int) int {
 	c.mu.Lock()

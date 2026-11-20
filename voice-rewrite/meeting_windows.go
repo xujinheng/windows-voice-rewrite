@@ -126,7 +126,9 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 	s.applyExpression(epoch, serial, func() {
 		// Keep the previous completed English available to read and copy
 		// while the next recognition/model request is running.
-		s.view.expression = retainedEnglish(s.view.expression)
+		if !meetingcore.KeepFinishedEnglish(s.view.expression.Complete, s.view.expression.English) {
+			s.view.expression = meetingcore.Line{}
+		}
 		s.view.expressionSource = ""
 		s.view.expressionStatus = label
 	})
@@ -172,8 +174,8 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 		s.mu.Unlock()
 	}
 	app.logger.Printf("meeting expression mode=%s recognized_chars=%d", mode, len([]rune(points)))
-	err = s.complete(ctx, meetingcore.PriorityExpress, meetingcore.Query{Mode: mode, Prior: prior, UserPoints: points}, func(line meetingLine) {
-		if !app.core.Valid(generation) || line.kind != "SAY" {
+	err = s.Complete(ctx, meetingcore.PriorityExpress, meetingcore.Query{Mode: mode, Prior: prior, UserPoints: points}, func(line meetingcore.Line) {
+		if !app.core.Valid(generation) || line.Kind != "SAY" {
 			return
 		}
 		s.applyExpression(epoch, serial, func() {

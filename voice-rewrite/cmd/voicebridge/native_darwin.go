@@ -158,7 +158,7 @@ func VRProfile(config *C.char) *C.char {
 	if reply.OK {
 		nativeConfig.Store(&reply.cfg)
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
-		nativeCore.Bind(macKeyCode(profile["dictation"].(string)), macKeyCode(profile["rewrite"].(string)))
+		nativeCore.Bind([]int{macKeyCode(profile["dictation"].(string))}, []int{macKeyCode(profile["rewrite"].(string))})
 	}
 	return nativeJSON(reply)
 }

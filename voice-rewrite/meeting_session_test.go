@@ -153,9 +153,9 @@ func TestMeetingCancellationDiscardsUnfinishedLines(t *testing.T) {
 	defer s.runtime.Stop()
 	s.view.reply.Displayed.Lines[0] = meetingcore.Line{English: "I would"}
 	s.view.reply.Displayed.Lines[1] = meetingcore.Line{English: "Could you clarify?", Chinese: "能解释吗", Complete: true}
-	s.view.expression = meetingLine{english: "Partial"}
+	s.view.expression = meetingcore.Line{English: "Partial"}
 	s.setCapturePaused(true)
-	if s.view.reply.Displayed.Lines[0].English != "" || s.view.reply.Displayed.Lines[1].English == "" || s.view.expression.english != "" {
+	if s.view.reply.Displayed.Lines[0].English != "" || s.view.reply.Displayed.Lines[1].English == "" || s.view.expression.English != "" {
 		t.Fatal("unfinished output retained")
 	}
 }

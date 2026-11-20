@@ -352,6 +352,18 @@ func runApp() {
 	dictationMods, dictationVK := uintptr(ready.DictationMods), uintptr(ready.DictationVK)
 	recordMods, recordVK := uintptr(ready.RewriteMods), uintptr(ready.RewriteVK)
 	exitMods, exitVK := uintptr(ready.ExitMods), uintptr(ready.ExitVK)
+	// WM_HOTKEY ids live outside XBUTTON1/2; all physical hold actions use
+	// the same Go Core input owner, regardless of native event source.
+	const keyDictation, keyRewrite = 256 + HOTKEY_DICTATION, 256 + HOTKEY_RECORD
+	dictationInputs := []int{int(dictationButton)}
+	rewriteInputs := []int{int(selectedMouseButton)}
+	if !dictationMouse {
+		dictationInputs = append(dictationInputs, keyDictation)
+	}
+	if !usingMouse {
+		rewriteInputs = append(rewriteInputs, keyRewrite)
+	}
+	app.core.Bind(dictationInputs, rewriteInputs)
 	if !usingMouse {
 		recordVirtualKey = recordVK
 		if rv, _, _ := procRegisterHotKey.Call(0, HOTKEY_RECORD, recordMods, recordVK); rv == 0 {
@@ -439,6 +451,13 @@ func runApp() {
 		}
 		if cfg.RecordMode == "hold" {
 			stopHoldWatch()
+			if holdButton == 0 {
+				if holdIsDictation {
+					app.core.Release(keyDictation)
+				} else {
+					app.core.Release(keyRewrite)
+				}
+			}
 		}
 		rec := active
 		active = nil
@@ -519,7 +538,7 @@ func runApp() {
 		l.Printf("recording active, flow=%s button=%d", map[bool]string{true: "dictation", false: "rewrite"}[dictation], button)
 	}
 
-	startHold := func(dictation bool, button uint16) {
+	startHold := func(dictation bool) {
 		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil ||
 			uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
 			return
@@ -534,7 +553,19 @@ func runApp() {
 			app.fail(err)
 			return
 		}
-		activateHold(rec, dictation, button, win)
+		key := keyRewrite
+		if dictation {
+			key = keyDictation
+		}
+		hold := app.core.Press(key, false)
+		if hold == 0 || !app.core.Activate(key, hold) {
+			if hold != 0 {
+				app.core.Release(key)
+			}
+			rec.Stop()
+			return
+		}
+		activateHold(rec, dictation, 0, win)
 	}
 
 	armSide := func(button uint16) {
@@ -633,6 +664,13 @@ func runApp() {
 					app.core.Start() // cancel either Mouse4 or Mouse5 before paste
 					if active != nil {
 						stopHoldWatch()
+						if holdButton == 0 && cfg.RecordMode == "hold" {
+							if holdIsDictation {
+								app.core.Release(keyDictation)
+							} else {
+								app.core.Release(keyRewrite)
+							}
+						}
 						rec := active
 						active = nil
 						rec.Stop()
@@ -914,7 +952,7 @@ func runApp() {
 		switch msg.WParam {
 		case HOTKEY_DICTATION:
 			if !app.paused.Load() {
-				startHold(true, 0)
+				startHold(true)
 			}
 			continue
 		case HOTKEY_RECORD:
@@ -930,7 +968,7 @@ func runApp() {
 			if cfg.RecordMode == "hold" {
 				// Hold mode records immediately and does NOT touch the clipboard
 				// while the hotkey is physically held. Capture is performed on release.
-				startHold(false, selectedMouseButton)
+				startHold(false)
 				continue
 			}
 			// Legacy toggle mode also prepares its selection on a worker.

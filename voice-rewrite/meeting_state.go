@@ -2,13 +2,6 @@ package main
 
 import meetingcore "voicerewrite/internal/core/meeting"
 
-// meetingLine is the native HUD view record; the core model's Line is its
-// protocol result and is converted at the session boundary.
-type meetingLine struct {
-	kind, english, chinese string
-	complete               bool
-}
-
 type meetingMetrics struct {
 	Stage                                                        string
 	Pending, Dropped                                             int
@@ -20,19 +13,10 @@ type meetingView struct {
 	captions                           []meetingcore.Caption
 	reply                              meetingcore.ReplyState
 	expressionStatus, expressionSource string
-	expression                         meetingLine
+	expression                         meetingcore.Line
 	sourceName, asrMode                string
 	level                              int
 	capturePaused                      bool
 	metrics                            meetingMetrics
 }
 
-// A finished voice request must be visible even if the user is listening in
-// captions-only mode. A background update never steals the user's view.
-// Keep progress/error details subordinate to the last copyable English.
-func retainedEnglish(previous meetingLine) meetingLine {
-	if meetingcore.KeepFinishedEnglish(previous.complete, previous.english) {
-		return previous
-	}
-	return meetingLine{}
-}
