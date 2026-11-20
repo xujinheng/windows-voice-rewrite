@@ -11,8 +11,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/desktop"
-	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/meeting"
+	"github.com/xujinheng/windows-voice-rewrite/core/desktop"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/core/meeting"
 )
 
 type meetingHUD struct {

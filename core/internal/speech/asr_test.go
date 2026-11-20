@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
+	"github.com/xujinheng/windows-voice-rewrite/core/audio"
 )
 
 func TestASRChunksMergeAndRespectCancel(t *testing.T) {

@@ -14,9 +14,9 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/desktop"
-	corepopup "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/popup"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/core/desktop"
+	corepopup "github.com/xujinheng/windows-voice-rewrite/core/popup"
+	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 )
 
 // The result card is an ordinary HWND with a complete Win32 message pump.

@@ -13,7 +13,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
+	"github.com/xujinheng/windows-voice-rewrite/core/audio"
 )
 
 var (

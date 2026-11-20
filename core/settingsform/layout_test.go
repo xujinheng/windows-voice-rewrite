@@ -3,7 +3,7 @@ package settingsform
 import (
 	"testing"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/contract"
+	"github.com/xujinheng/windows-voice-rewrite/core/internal/contract"
 )
 
 func TestSettingsPageSwitchStopsCaptureOnlyWhenLeaving(t *testing.T) {

@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
-	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/meeting"
+	"github.com/xujinheng/windows-voice-rewrite/core/audio"
+	"github.com/xujinheng/windows-voice-rewrite/core/indicator"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/core/meeting"
 )
 
 const (

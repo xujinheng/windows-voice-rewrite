@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/provider"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/speech"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
+	"github.com/xujinheng/windows-voice-rewrite/core/audio"
+	"github.com/xujinheng/windows-voice-rewrite/core/provider"
+	"github.com/xujinheng/windows-voice-rewrite/core/internal/speech"
 )
 
 type Metrics struct {

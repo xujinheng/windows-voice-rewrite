@@ -11,7 +11,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
+	"github.com/xujinheng/windows-voice-rewrite/core/audio"
 )
 
 func TestMeetingCaptureCancelledBeforeOpeningWASAPI(t *testing.T) {

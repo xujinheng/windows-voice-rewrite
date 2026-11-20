@@ -3,7 +3,7 @@ package meeting
 import (
 	"testing"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/desktop"
+	"github.com/xujinheng/windows-voice-rewrite/core/desktop"
 )
 
 func TestPlaceClampsRemovedMonitor(t *testing.T) {

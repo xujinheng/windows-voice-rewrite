@@ -27,12 +27,12 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/clipboard"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
+	"github.com/xujinheng/windows-voice-rewrite/core/audio"
+	"github.com/xujinheng/windows-voice-rewrite/core/clipboard"
+	"github.com/xujinheng/windows-voice-rewrite/core/indicator"
+	"github.com/xujinheng/windows-voice-rewrite/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 )
 
 var nativeConfig atomic.Pointer[coreconfig.Config]

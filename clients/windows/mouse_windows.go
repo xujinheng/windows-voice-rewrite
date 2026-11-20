@@ -13,7 +13,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
+	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 )
 
 // Mouse4/Mouse5 are XBUTTON1/XBUTTON2. A low-level hook MUST run on a dedicated

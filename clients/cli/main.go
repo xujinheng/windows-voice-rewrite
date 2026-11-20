@@ -10,8 +10,8 @@ import (
 	"io"
 	"os"
 
-	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
+	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 )
 
 func execute(args []string, output io.Writer) error {

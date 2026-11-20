@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	"github.com/xujinheng/windows-voice-rewrite/core/config"
 )
 
 func TestSampleMeetingStaysADemo(t *testing.T) {

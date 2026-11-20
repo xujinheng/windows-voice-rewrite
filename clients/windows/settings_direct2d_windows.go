@@ -5,8 +5,8 @@ package main
 import (
 	"unsafe"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/contract"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/settingsform"
+	"github.com/xujinheng/windows-voice-rewrite/core/internal/contract"
+	"github.com/xujinheng/windows-voice-rewrite/core/settingsform"
 )
 
 // These are deliberately *not* raised cards. A quiet left navigation rail,

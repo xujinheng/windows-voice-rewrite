@@ -3,7 +3,7 @@
 package main
 
 import (
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
+	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 	"io"
 	"log"
 	"runtime"

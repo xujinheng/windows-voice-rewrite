@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 )
 
 // The native host owns the configuration location, disk writes, and credential

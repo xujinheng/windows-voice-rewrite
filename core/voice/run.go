@@ -7,11 +7,11 @@ import (
 	"errors"
 	"strings"
 
-	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/speech"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/textedit"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
+	"github.com/xujinheng/windows-voice-rewrite/core/audio"
+	"github.com/xujinheng/windows-voice-rewrite/core/internal/speech"
+	"github.com/xujinheng/windows-voice-rewrite/core/textedit"
+	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 )
 
 type Result struct {

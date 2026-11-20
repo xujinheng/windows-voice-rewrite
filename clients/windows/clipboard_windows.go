@@ -10,8 +10,8 @@ import (
 	"unicode/utf16"
 	"unsafe"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/clipboard"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/core/clipboard"
+	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 )
 
 func waitKeysReleased(max time.Duration) bool {

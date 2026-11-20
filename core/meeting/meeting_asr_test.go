@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 )
 
 func TestMeetingASRStreamsAndRollsBackExactTokens(t *testing.T) {

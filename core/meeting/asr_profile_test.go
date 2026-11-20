@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 )
 
 func TestMeetingASRProfileHintUsesBoundedBackgroundAndTerms(t *testing.T) {

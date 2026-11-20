@@ -9,7 +9,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
+	"github.com/xujinheng/windows-voice-rewrite/core/indicator"
 )
 
 // Run only on an interactive Windows desktop. Validates the native window

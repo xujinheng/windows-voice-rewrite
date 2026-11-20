@@ -11,11 +11,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/asrtext"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/provider"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/shortcut"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/speech"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/textedit"
+	"github.com/xujinheng/windows-voice-rewrite/core/asrtext"
+	"github.com/xujinheng/windows-voice-rewrite/core/provider"
+	"github.com/xujinheng/windows-voice-rewrite/core/shortcut"
+	"github.com/xujinheng/windows-voice-rewrite/core/internal/speech"
+	"github.com/xujinheng/windows-voice-rewrite/core/textedit"
 )
 
 func TestCleanASR(t *testing.T) {

@@ -2,7 +2,7 @@
 // Hosts scale it to the monitor DPI when creating native controls.
 package settingsform
 
-import "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/contract"
+import "github.com/xujinheng/windows-voice-rewrite/core/internal/contract"
 
 const (
 	DesignWidth   int32 = 816

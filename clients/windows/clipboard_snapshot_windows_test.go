@@ -5,7 +5,7 @@ package main
 import (
 	"testing"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/clipboard"
+	"github.com/xujinheng/windows-voice-rewrite/core/clipboard"
 )
 
 func TestClipboardGDIHandlesNotCopiedAsHGlobal(t *testing.T) {

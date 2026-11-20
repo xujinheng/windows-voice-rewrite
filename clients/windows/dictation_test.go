@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/speech"
+	"github.com/xujinheng/windows-voice-rewrite/core/internal/speech"
 )
 
 func TestDictationTranscribesWithoutLLM(t *testing.T) {

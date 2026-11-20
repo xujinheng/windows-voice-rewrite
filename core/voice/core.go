@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/history"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
+	"github.com/xujinheng/windows-voice-rewrite/core/history"
+	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 )
 
 // Core is the only portable voice runtime. A client supplies physical device

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/clipboard"
+	"github.com/xujinheng/windows-voice-rewrite/core/clipboard"
 )
 
 // clipboardSnapshot is an in-memory copy of the clipboard formats whose data

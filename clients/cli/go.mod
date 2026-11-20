@@ -1,7 +1,7 @@
-module github.com/xujinheng/windows-voice-rewrite/cli
+module github.com/xujinheng/windows-voice-rewrite/clients/cli
 
 go 1.23
 
-require github.com/xujinheng/windows-voice-rewrite/voice-rewrite v0.0.0
+require github.com/xujinheng/windows-voice-rewrite/core v0.0.0
 
-replace github.com/xujinheng/windows-voice-rewrite/voice-rewrite => ../voice-rewrite
+replace github.com/xujinheng/windows-voice-rewrite/core => ../../core

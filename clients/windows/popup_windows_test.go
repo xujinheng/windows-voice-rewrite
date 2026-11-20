@@ -3,14 +3,14 @@
 package main
 
 import (
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
+	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 	"os"
 	"runtime"
 	"testing"
 	"time"
 	"unsafe"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 )
 
 var (

@@ -17,15 +17,15 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/history"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/logfile"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/shortcut"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/textedit"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/update"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
-	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/meeting"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
+	"github.com/xujinheng/windows-voice-rewrite/core/history"
+	"github.com/xujinheng/windows-voice-rewrite/core/indicator"
+	"github.com/xujinheng/windows-voice-rewrite/core/logfile"
+	"github.com/xujinheng/windows-voice-rewrite/core/shortcut"
+	"github.com/xujinheng/windows-voice-rewrite/core/textedit"
+	"github.com/xujinheng/windows-voice-rewrite/core/update"
+	"github.com/xujinheng/windows-voice-rewrite/core/ux"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/core/meeting"
+	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 )
 
 var buildID = "0.29.0-dev" // overwritten by -ldflags -X at build time

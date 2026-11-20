@@ -10,10 +10,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
+	"github.com/xujinheng/windows-voice-rewrite/core/audio"
+	"github.com/xujinheng/windows-voice-rewrite/core/indicator"
+	"github.com/xujinheng/windows-voice-rewrite/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 )
 
 // A recorder may reach its hardware duration limit before the held key or

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/asrtext"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/serviceprobe"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/speech"
+	"github.com/xujinheng/windows-voice-rewrite/core/asrtext"
+	"github.com/xujinheng/windows-voice-rewrite/core/serviceprobe"
+	"github.com/xujinheng/windows-voice-rewrite/core/internal/speech"
 )
 
 func TestOneClickLanguagePrefixAllLanguages(t *testing.T) {
