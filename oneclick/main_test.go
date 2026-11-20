@@ -17,10 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/asrtext"
-	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/meeting"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
+	"github.com/xujinheng/windows-voice-rewrite/core/asrtext"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
+	"github.com/xujinheng/windows-voice-rewrite/core/meeting"
+	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 )
 
 func TestCleanTranscriptAllLanguages(t *testing.T) {
@@ -390,7 +390,7 @@ func TestOneClickGoBuildsForBothMacArchitectures(t *testing.T) {
 }
 
 // A distinct module can provide a Meeting audio source without importing
-// voice-rewrite/internal or holding any platform-specific native handle.
+// clients/windows/internal or holding any platform-specific native handle.
 type externalMeetingSource struct{}
 
 func (externalMeetingSource) Stream(ctx context.Context, started func(), push func([]byte)) error {

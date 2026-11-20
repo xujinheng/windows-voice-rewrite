@@ -28,9 +28,9 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
-          cache-dependency-path: voice-rewrite/go.mod
+          cache-dependency-path: clients/go.mod
       - name: Repeat shared Go tests with race detection
-        working-directory: voice-rewrite
+        working-directory: clients/windows
         run: go test -race -count=3 -timeout 20m ./...
       - name: Validate portable Go Core boundaries
         run: |
@@ -53,13 +53,13 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
-          cache-dependency-path: voice-rewrite/go.mod
+          cache-dependency-path: clients/go.mod
       - name: Native Go/Swift headless build
         run: |
           test "$(uname -m)" = '${{ matrix.arch }}'
           bash scripts/build-macos-headless.sh '${{ matrix.arch }}' "$RUNNER_TEMP/headless"
       - name: Go bridge regression tests on macOS
-        working-directory: voice-rewrite
+        working-directory: clients/windows
         run: go test -race -count=1 ./cmd/voicebridge ./internal/core/...
   native-windows:
     runs-on: windows-latest
@@ -71,9 +71,9 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
-          cache-dependency-path: voice-rewrite/go.mod
+          cache-dependency-path: clients/go.mod
       - name: Windows Go tests and vet
-        working-directory: voice-rewrite
+        working-directory: clients/windows
         shell: pwsh
         run: |
           go test -count=2 ./...
@@ -81,7 +81,7 @@ jobs:
           go vet -unsafeptr=false ./...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Native Meeting and result-card controls
-        working-directory: voice-rewrite
+        working-directory: clients/windows
         shell: pwsh
         env:
           VOICEREWRITE_MEETING_E2E: '1'

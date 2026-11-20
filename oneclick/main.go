@@ -25,7 +25,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/asrtext"
+	"github.com/xujinheng/windows-voice-rewrite/core/asrtext"
 )
 
 func cleanResponse(body []byte, contentType string) ([]byte, bool) {

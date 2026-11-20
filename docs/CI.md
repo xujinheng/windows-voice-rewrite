@@ -9,7 +9,7 @@ protection. Do **not** make path-filtered visual workflows required checks.
 | PR change | Selected platform checks |
 | --- | --- |
 | Docs/README only | classifier and CI Gate |
-| Portable/shared `voice-rewrite/` Go | Linux race, Windows, macOS ARM and Intel |
+| Portable/shared `clients/windows/` Go | Linux race, Windows, macOS ARM and Intel |
 | Native `*_windows.go` only | Windows tests and GUI compile |
 | `macos/` only | macOS ARM and Intel |
 | `cmd/voicebridge/` only | Linux race and macOS ARM/Intel |

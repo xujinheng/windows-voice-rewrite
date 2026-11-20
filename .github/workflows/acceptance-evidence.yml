@@ -23,20 +23,20 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
-          cache-dependency-path: voice-rewrite/go.mod
+          cache-dependency-path: clients/go.mod
       - name: Test native Meeting and popup Win32 E2E exactly once
-        working-directory: voice-rewrite
+        working-directory: clients/windows
         shell: pwsh
         env:
           VOICEREWRITE_MEETING_E2E: '1'
           VOICE_REWRITE_NATIVE_POPUP_TEST: '1'
         run: |
-          New-Item -Force -ItemType Directory ../acceptance-output/logs | Out-Null
+          New-Item -Force -ItemType Directory ../../acceptance-output/logs | Out-Null
           go test -count=1 -timeout 4m -run '^(TestMeetingWindowsE2E|TestNativePopupPaintAndClose)$' -v . *>&1 |
-            Tee-Object ../acceptance-output/logs/windows-meeting-tests.txt
+            Tee-Object ../../acceptance-output/logs/windows-meeting-tests.txt
           if ($LASTEXITCODE -ne 0) { throw 'native Meeting or popup E2E failed' }
       - name: Build production Windows GUI
-        working-directory: voice-rewrite
+        working-directory: clients/windows
         shell: pwsh
         run: |
           go build -trimpath -ldflags '-H=windowsgui' -o VoiceRewrite.exe .
@@ -47,6 +47,7 @@ jobs:
       - name: Native Meeting demo buttons and screenshot E2E
         shell: pwsh
         run: |
+          New-Item -Force -ItemType Directory acceptance-output/logs | Out-Null
           ./scripts/test-meeting-ui.ps1 *>&1 |
             Tee-Object acceptance-output/logs/windows-meeting-capture.txt
           if (-not (Test-Path 'meeting-e2e/diagnostics.json')) { throw 'Meeting capture failed' }

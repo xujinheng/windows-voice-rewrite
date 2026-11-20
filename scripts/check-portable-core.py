@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-MODULE = Path(__file__).resolve().parents[1] / "voice-rewrite"
+MODULE = Path(__file__).resolve().parents[1] / "core"
 TARGETS = ("linux", "darwin", "windows")
 SOURCE_FIELDS = ("GoFiles", "CgoFiles", "TestGoFiles", "XTestGoFiles")
 IMPORT_FIELDS = ("Imports", "TestImports", "XTestImports")
@@ -18,7 +18,7 @@ def packages_for(goos):
     env = os.environ.copy()
     env.update(GOOS=goos, GOARCH="amd64", CGO_ENABLED="0")
     result = subprocess.run(
-        ["go", "list", "-json", "./config", "./voice", "./meeting", "./internal/core/..."],
+        ["go", "list", "-json", "./..."],
         cwd=MODULE, env=env, capture_output=True, text=True, check=False,
     )
     if result.returncode:
@@ -46,7 +46,7 @@ def packages_for(goos):
             raise RuntimeError(f"{goos}: {name} imports platform APIs: {forbidden}")
         packages[name] = source
     if not packages:
-        raise RuntimeError(f"{goos}: no internal/core packages discovered")
+        raise RuntimeError(f"{goos}: no portable core packages discovered")
     return packages
 
 

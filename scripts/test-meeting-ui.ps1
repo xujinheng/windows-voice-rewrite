@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repo = Split-Path -Parent $PSScriptRoot
-$exe = Join-Path $repo 'voice-rewrite/VoiceRewrite.exe'
+$exe = Join-Path $repo 'clients/windows/VoiceRewrite.exe'
 $out = Join-Path $repo 'meeting-e2e'
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 if (-not (Test-Path -LiteralPath $exe)) { throw "Missing compiled Windows app: $exe" }

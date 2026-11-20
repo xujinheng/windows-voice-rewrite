@@ -1,0 +1,52 @@
+//go:build windows
+
+package main
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/xujinheng/windows-voice-rewrite/core/clipboard"
+	"github.com/xujinheng/windows-voice-rewrite/core/ux"
+)
+
+// Native Windows delivery uses the same user-visible Mouse4 behavior.
+// Dictation preserves multi-format clipboard contents. If a format cannot be
+// backed up safely, use direct Unicode input rather than changing clipboard.
+func insertDictationText(hwnd, target uintptr, text string, valid func() bool) error {
+	windowOK := func() bool { return valid() && isSameForegroundWindow(target) }
+	if strings.TrimSpace(text) == "" {
+		return errors.New(ux.DictationEmpty)
+	}
+	if !waitKeysReleased(2 * time.Second) {
+		return errors.New(ux.DictationReleaseKeys)
+	}
+	if !windowOK() {
+		return errors.New(ux.DictationWindowChanged)
+	}
+	backup, err := snapshotClipboard(hwnd)
+	if err != nil {
+		// High-quality clipboard support must never destroy a bitmap, virtual
+		// file, or an application's private object merely to paste text.
+		return sendUnicodeText(text, windowOK)
+	}
+	sequence, err := setClipboardText(hwnd, text)
+	if err != nil {
+		return err
+	}
+	backup.markOwned(sequence)
+	defer backup.restoreIfOwned(hwnd)
+	if !windowOK() {
+		return errors.New(ux.DictationWindowChanged)
+	}
+	if err = sendCombo('V'); err != nil {
+		return err
+	}
+	time.Sleep(clipboard.WindowsPasteWaitMilliseconds * time.Millisecond)
+	if err = backup.restoreIfOwned(hwnd); err != nil {
+		return fmt.Errorf("%s: %w", ux.DictationRestoreFailed, err)
+	}
+	return nil // SendInput accepted; insertion cannot be proven in all editors.
+}

@@ -7,7 +7,7 @@ The current product has two distinct native hosts: Windows Win32 UI (including M
 Windows, on an interactive Windows desktop with Go and PowerShell:
 
 ```powershell
-cd voice-rewrite
+cd clients/windows
 go build -trimpath -ldflags '-H=windowsgui' -o VoiceRewrite.exe .
 cd ..
 pwsh -File scripts/capture-acceptance-windows.ps1

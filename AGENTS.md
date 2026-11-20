@@ -1,6 +1,6 @@
 # Repository instructions for coding agents
 
-This file describes the **current product**, not its history. Read `voice-rewrite/ARCHITECTURE.md` and inspect latest `main`, open PRs, CI and issues before editing.
+This file defines the Core-first repository ownership model. Read `docs/architecture.md` and inspect latest `main`, open PRs, CI and issues before editing.
 
 ## Product priorities
 
@@ -13,13 +13,13 @@ This file describes the **current product**, not its history. Read `voice-rewrit
 
 ## Cross-platform product principles
 
-- **One Go Core, N native clients.** The Go module is `github.com/xujinheng/windows-voice-rewrite/voice-rewrite`, and `voice` + `config` form a public reusable core; do not require imports from `internal` or the Windows `main` package. Windows is the established behavior benchmark; never weaken it for macOS parity. All clients invoke the same Go-owned portable input, task, result and delivery policy. macOS currently has a smaller native UI, but a missing UI feature is not permission for a second business engine.
+- **One Go Core, N native clients.** The Go Core module is `github.com/xujinheng/windows-voice-rewrite/core`; clients are separate consumers of its public packages; do not require imports from `internal` or the Windows `main` package. Windows is the established behavior benchmark; never weaken it for macOS parity. All clients invoke the same Go-owned portable input, task, result and delivery policy. macOS currently has a smaller native UI, but a missing UI feature is not permission for a second business engine.
 - **Change once, improve both.** Go Core or generated contracts own portable audio/ASR/LLM, text routing, task/delivery rules, configuration, UI copy, layout and state transitions. A typical business/UI change needs one shared edit.
 - **Split only at OS boundaries.** Windows owns Win32/UIA/WASAPI, hooks, DPAPI and rendering; macOS owns the single Swift AppKit/AVAudioEngine/AX/Quartz/pasteboard adapter and reads a JSON config; no second business model or Keychain settings screen. Native adapters execute OS calls, not portable algorithms.
-- **Prevent drift and regressions.** Keep both macOS native Swift adapter files thin; do not introduce parallel rules or synchronous per-frame IPC. Test both adapters and Go Core; protect working Windows behavior.
+- **Prevent drift and regressions.** Keep macOS native Swift adapter files thin; do not introduce parallel rules or synchronous per-frame IPC. Test both adapters and Go Core; protect working Windows behavior.
 - **Prove linked source ownership, not inflated repository percentages.** Run `python3 scripts/check_headless_scope.py` after Go setup. Count only Go files linked into the headless Go bridge plus both native Swift
   boundary files. Never keep unreferenced Meeting Go packages merely to maintain
-  a Go percentage; check the actual shared task entrypoints and native LOC cap. Preserve real Windows Go tests and macOS Swift compilation checks. This static metric is not dynamic runtime ownership; verify actual ASR and paste paths on real devices.
+  a Go percentage; check the actual shared task entrypoints and native business boundaries. Preserve real Windows Go tests and macOS Swift compilation checks. This static metric is not dynamic runtime ownership; verify actual ASR and paste paths on real devices.
 
 ## Strict Go-first ownership
 
@@ -56,3 +56,11 @@ This file describes the **current product**, not its history. Read `voice-rewrit
 - Close completed/superseded issues and consolidate unfinished scope without claiming delivery. Report PR, merge SHA, CI and blockers concisely in the conversation, not source documents.
 
 Do not weaken credential security or cancellation to mask broken input; remove needless dictation gates rather than normalizing manual copying.
+
+## Repository structure
+
+- `core/` is the **only** portable business owner; `core/internal/` is private to Core.
+- `clients/windows/`, `clients/macos/`, and `clients/cli/` are peer adapters; all call public Core contracts.
+- `clients/macos/bridge/` is a native C ABI adapter only, never another business engine.
+- `oneclick/` is a separate deployment utility, not a voice client.
+- Never reintroduce `voice-rewrite/`, `macos/Headless/`, or `cli/` as compatibility copies.
