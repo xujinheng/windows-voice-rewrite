@@ -24,16 +24,6 @@ func HoldModeLabel(dictation, meeting bool) string {
 	}
 }
 
-// RewriteHotkey is what the rewrite shortcut does. Dictation does not finish an in-progress toggle.
-type RewriteHotkey int
-
-const (
-	RewriteIgnore RewriteHotkey = iota
-	RewriteFinishToggle
-	RewriteStartHold
-	RewritePrepareToggle
-)
-
 // RecordingFinish is where a stopped recording goes. A meeting wins over dictation.
 type RecordingFinish int
 
@@ -55,22 +45,6 @@ func FinishRecording(holdMode, dictation, meeting bool) RecordingFinish {
 		return FinishDictation
 	}
 	return FinishSpokenRewrite
-}
-
-func RewriteHotkeyAction(paused, busy, recording, holdMode bool) RewriteHotkey {
-	if paused || busy {
-		return RewriteIgnore
-	}
-	if recording {
-		if holdMode {
-			return RewriteIgnore
-		}
-		return RewriteFinishToggle
-	}
-	if holdMode {
-		return RewriteStartHold
-	}
-	return RewritePrepareToggle
 }
 
 const (
