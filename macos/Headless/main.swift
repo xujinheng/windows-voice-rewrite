@@ -412,7 +412,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func finish() {
         guard microphone.running, let action = activeAction else { return }
         activeAction = nil
-        pill.working(.processing)
+        pill.working(action == .dictation ? .processing : .selection)
         show(action == .dictation ? config.profile.pill.processingDictation : config.profile.pill.selectionLabel)
         let configValue = config.raw
         let pid = targetPID
@@ -427,7 +427,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             }
             let selectedValue = action == .rewrite ? selectionFromAX() : nil
             if action == .rewrite && selectedValue == nil { reset("Select text"); return }
-            if action == .rewrite { show(config.profile.pill.processingRewrite) }
+            if action == .rewrite { pill.working(.processing); show(config.profile.pill.processingRewrite) }
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let result = Result {
                     try GoCore.request(config: configValue,
