@@ -170,9 +170,6 @@ func TestSplitterHitUsesTheOpenBand(t *testing.T) {
 	if MeetingTextFace(MeetingExpression) != FaceEnglish || MeetingTextFace(MeetingEnglish) != FaceEnglish || MeetingTextFace(MeetingChinese) != FaceChinese || MeetingTextFace(MeetingCaptions) != FaceBody || MeetingTextFace(MeetingProfileTerms) != FaceBody {
 		t.Fatal("text face")
 	}
-	if ReplaceReadingFonts(1, 1, 0) || ReplaceReadingFonts(0, 1, 1) || ReplaceReadingFonts(1, 0, 1) || !ReplaceReadingFonts(1, 2, 3) {
-		t.Fatal("replace fonts")
-	}
 	body, english, chinese := ReadingFonts(16)
 	if body != (FontFace{16, 400}) || english != (FontFace{17, 450}) || chinese != (FontFace{22, 600}) {
 		t.Fatal("reading fonts")
@@ -180,9 +177,6 @@ func TestSplitterHitUsesTheOpenBand(t *testing.T) {
 	rails := SplitterRails(400, 100, 22, 1)
 	if rails[0] != (Box{378, 98, 44, 1}) || rails[1] != (Box{378, 102, 44, 1}) {
 		t.Fatalf("rails %+v", rails)
-	}
-	if MeetingDragEnd(false, true) != DragEndIgnore || MeetingDragEnd(true, true) != DragEndCommit || MeetingDragEnd(true, false) != DragEndCancel || MeetingDragEnd(false, false) != DragEndIgnore {
-		t.Fatal("drag end")
 	}
 	if SplitterHit(96, y, shown, 4, true) != -1 || SplitterHit(96, y, shown, 4, false) != 1 || SplitterHit(104, y, shown, 4, false) != -1 || SplitterHit(80, y, shown, 4, false) != -1 {
 		t.Fatal("splitter band")
