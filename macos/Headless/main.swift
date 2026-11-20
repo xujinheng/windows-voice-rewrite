@@ -537,10 +537,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let stamp = board.changeCount
         let originals = board.pasteboardItems
         if originals == nil && board.types?.isEmpty == false { pasteUnicode(text); return }
-        // NSPasteboardItem is not NSCopying; preserve each advertised data type.
         var saved: [NSPasteboardItem] = []
         var totalBytes = 0
         for item in originals ?? [] {
+            if item.types.contains(.tiff) || item.types.contains(.pdf) { pasteUnicode(text); return }
             let copy = NSPasteboardItem()
             for type in item.types {
                 guard let data = item.data(forType: type),
