@@ -419,12 +419,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let token = taskID
         do {
             let pcm = try microphone.stop()
-            if action == .rewrite {
-                let window = focusedWindow()
-                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
-                      targetFocus?.matches(window: window, element: focusedElement(),
-                                           title: window.flatMap(windowTitle)) == true else { reset("Focus changed"); return }
-            }
+            if action == .rewrite && !targetStillValid() { reset("Focus changed"); return }
             let selectedValue = action == .rewrite ? selectionFromAX() : nil
             if action == .rewrite && selectedValue == nil { reset("Select text"); return }
             if action == .rewrite { pill.working(.processing); show(config.profile.pill.processingRewrite) }
