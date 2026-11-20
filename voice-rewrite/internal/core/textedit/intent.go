@@ -11,6 +11,7 @@ import (
 
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
+	"voicerewrite/internal/core/ux"
 )
 
 // AssistantResult contains the generated result and its model-classified intent.
@@ -103,8 +104,17 @@ func parseAssistantResult(text string) (AssistantResult, error) {
 // CompleteSelectedTask makes one inference call for classification and output.
 // Malformed nonempty output is returned as a preview rather than an edit.
 func CompleteSelectedTask(ctx context.Context, cfg coreconfig.Config, selected, instruction string) (AssistantResult, error) {
-	if err := validateRequest(ctx, cfg, selected, instruction); err != nil {
+	if err := ctx.Err(); err != nil {
 		return AssistantResult{}, err
+	}
+	if strings.TrimSpace(selected) == "" {
+		return AssistantResult{}, errors.New(ux.EmptySelection)
+	}
+	if err := SelectedLengthError(cfg.MaxSelectedRunes, selected); err != nil {
+		return AssistantResult{}, err
+	}
+	if strings.TrimSpace(instruction) == "" {
+		return AssistantResult{}, errors.New(ux.EmptyInstruction)
 	}
 	system := strings.TrimSpace(cfg.SystemPrompt)
 	if system == "" {
