@@ -19,7 +19,7 @@ func TestCanceledRewriteHoldReleasesBusy(t *testing.T) {
 	app.epoch.Start()    // dismissing the active pill cancels that task
 	rec := &audioRecorder{done: make(chan struct{})}
 
-	processRecordedHold(app, rec, 0, trayPoint{}, generation)
+	processRecording(app, rec, recordingTask{target: 0}, generation)
 
 	if app.busy.Load() {
 		t.Fatal("canceled hold kept the app busy and blocked the next recording")

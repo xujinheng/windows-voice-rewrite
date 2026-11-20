@@ -459,7 +459,7 @@ func runApp() {
 		case cfg.RecordMode != "hold":
 			sel := selected
 			sel.Anchor = currentCursorPoint()
-			go processRecorded(app, rec, sel, activeGeneration)
+			go processRecording(app, rec, recordingTask{selection: &sel}, activeGeneration)
 		case holdMeeting != nil:
 			if holdMeeting.runtime.Context().Err() != nil {
 				// The single buffered recorder result needs no drain worker.
@@ -471,9 +471,9 @@ func runApp() {
 			}
 			holdMeeting = nil
 		case holdIsDictation:
-			go processDictationHold(app, rec, holdTargetWindow, activeGeneration)
+			go processRecording(app, rec, recordingTask{dictation: true, target: holdTargetWindow}, activeGeneration)
 		default:
-			go processRecordedHold(app, rec, holdTargetWindow, currentCursorPoint(), activeGeneration)
+			go processRecording(app, rec, recordingTask{target: holdTargetWindow, anchor: currentCursorPoint()}, activeGeneration)
 		}
 	}
 

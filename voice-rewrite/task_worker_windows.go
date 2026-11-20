@@ -97,166 +97,137 @@ func watchHoldRelease(hwnd, vk, mods, session uintptr, canceled <-chan struct{},
 	}
 }
 
-// Mouse4 never performs Ctrl+C or model-based intent routing. Handy-style
-// dictation inserts raw ASR output at the captured window's current caret.
-func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uintptr, generation uint64) {
+// A native recording supplies either a caret target (dictation) or selected
+// text (rewrite). Both use one worker and the same portable voice.Run.
+type recordingTask struct {
+	dictation bool
+	target uintptr
+	anchor trayPoint
+	selection *selectedText // set by toggle mode; hold mode reads on release
+}
+
+func processRecording(app *appState, rec *audioRecorder, task recordingTask, generation uint64) {
 	defer app.busy.Store(false)
 	defer func() {
 		if x := recover(); x != nil {
-			app.logger.Printf("dictation panic: %v", x)
-			app.fail(fmt.Errorf("听写处理失败: %v", x))
+			app.logger.Printf("voice worker panic: %v\\n%s", x, debug.Stack())
+			app.fail(fmt.Errorf("录音处理线程发生错误：%v", x))
 			app.postHandyPhase(indicator.Error, generation)
 		}
 	}()
-	r := <-rec.result
-	if !app.epoch.Valid(generation) {
-		return
-	}
-
-	if r.err != nil {
-		app.fail(r.err)
-		app.postHandyPhase(indicator.Error, generation)
-		return
-	}
-	ctx := app.epoch.ContextFor(generation)
-	start := time.Now()
-	outcome, err := voice.Run(ctx, app.cfg, r.pcm, "", false, nil)
-	if !app.epoch.Valid(generation) {
-		return
-	}
-	app.logger.Printf("stage=asr flow=dictation ms=%d", time.Since(start).Milliseconds())
-	if err != nil {
-		app.fail(err)
-		app.postHandyPhase(indicator.Error, generation)
-		return
-	}
-	text := outcome.Text
-	if !app.epoch.Valid(generation) {
-		return
-	}
-	// ASR Core rejects empty speech. The native target owns focus at delivery.
-	app.history.Remember(ux.DictationHistoryTitle, text)
-	if !isSameForegroundWindow(expectedWindow) {
-		app.showAnswer(ux.DictationNotInserted, text, currentCursorPoint(), nil, false, generation)
-		app.postHandyPhase(indicator.Fallback, generation)
-		return
-	}
-	start = time.Now()
-	err = insertDictationText(app.Window, expectedWindow, text, func() bool { return app.epoch.Valid(generation) })
-	if err != nil {
-		app.fail(err)
-		app.showAnswer(ux.DictationCopyManually, text, currentCursorPoint(), nil, false, generation)
-		app.postHandyPhase(indicator.Fallback, generation)
-		return
-	}
-	app.logger.Printf("stage=paste flow=dictation ms=%d chars=%d status=unverified", time.Since(start).Milliseconds(), utf8.RuneCountInString(text))
-	app.setStatus(traySuccess)
-	app.postHandyPhase(indicator.Success, generation)
-}
-
-// The selection must be copied AFTER releasing the held shortcut. This function
-// runs off the UI and low-level mouse-hook threads, and enforces a small time budget.
-func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintptr, anchor trayPoint, generation uint64) {
-	defer app.busy.Store(false)
-	started := time.Now()
 	if !app.epoch.Valid(generation) {
 		rec.Stop()
 		return
 	}
-	defer func() {
-		if reason := recover(); reason != nil {
-			app.logger.Printf("hold worker panic: %v\n%s", reason, debug.Stack())
-			app.fail(fmt.Errorf("录音处理线程发生错误：%v", reason))
+	var sel selectedText
+	if !task.dictation {
+		if task.selection != nil {
+			sel = *task.selection
+		} else {
+			started := time.Now()
+			// The physical shortcut must be released before native selection
+			// capture; a changed window is not a different edit target.
+			if !isSameForegroundWindow(task.target) {
+				rec.Stop()
+				app.fail(errors.New(ux.HoldWindowChanged))
+				return
+			}
+			var err error
+			sel, err = captureSelection(app.Window, app.cfg)
+			sel.Anchor = task.anchor
+			if err == nil && sel.TargetWindow != task.target {
+				err = errors.New(ux.HoldSelectionMoved)
+			}
+			if err != nil {
+				sel.ClipboardBackup.restoreIfOwned(app.Window)
+				app.fail(err)
+				return
+			}
+			app.logger.Printf("stage=selection mode=hold ms=%d chars=%d",
+				time.Since(started).Milliseconds(), utf8.RuneCountInString(sel.Text))
+			app.postHandyPhase(indicator.Processing, generation)
 		}
-	}()
-	if !isSameForegroundWindow(expectedWindow) {
-		rec.Stop()
-		app.fail(errors.New(ux.HoldWindowChanged))
-		return
+		defer sel.ClipboardBackup.restoreIfOwned(app.Window)
 	}
-	sel, err := captureSelection(app.Window, app.cfg)
-	sel.Anchor = anchor
-	defer sel.ClipboardBackup.restoreIfOwned(app.Window)
-	app.logger.Printf("stage=selection mode=hold ms=%d", time.Since(started).Milliseconds())
-	if err == nil && sel.TargetWindow != expectedWindow {
-		err = errors.New(ux.HoldSelectionMoved)
-	}
-	if err != nil {
-		app.fail(err)
-		return
-	}
-	app.logger.Printf("selection captured; chars=%d", utf8.RuneCountInString(sel.Text))
-	app.postHandyPhase(indicator.Processing, generation)
-	// We already own the busy flag and error recovery: avoid a second outer worker.
-	processAudioAndRewrite(app, rec, sel, generation)
-}
 
-func processRecorded(app *appState, rec *audioRecorder, sel selectedText, generation uint64) {
-	defer app.busy.Store(false)
-	defer sel.ClipboardBackup.restoreIfOwned(app.Window)
-	defer func() {
-		if reason := recover(); reason != nil {
-			app.logger.Printf("worker panic: %v\n%s", reason, debug.Stack())
-			app.fail(fmt.Errorf("录音处理线程发生错误：%v", reason))
-		}
-	}()
-	processAudioAndRewrite(app, rec, sel, generation)
-}
-
-func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText, generation uint64) {
-	if !app.epoch.Valid(generation) {
-		return
-	}
 	app.logger.Print("worker: waiting for recording buffer")
 	r := <-rec.result
 	if !app.epoch.Valid(generation) {
 		return
 	}
-
 	if r.err != nil {
 		app.fail(r.err)
+		if task.dictation { app.postHandyPhase(indicator.Error, generation) }
 		return
 	}
 	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/audio.PCMBytesPerSecond)
-	ctx := app.epoch.ContextFor(generation)
 	started := time.Now()
-	answer, e := voice.Run(ctx, app.cfg, r.pcm, sel.Text, true, func(text string) {
-		if !app.epoch.Valid(generation) {
-			return
+	var afterASR func(string)
+	if !task.dictation {
+		afterASR = func(text string) {
+			if !app.epoch.Valid(generation) { return }
+			app.logger.Printf("stage=asr ms=%d", time.Since(started).Milliseconds())
+			app.setStatus(trayRewriting)
+			app.postHandyPhase(indicator.Rewriting, generation)
+			app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(text))
 		}
-		app.logger.Printf("stage=asr ms=%d", time.Since(started).Milliseconds())
-		app.setStatus(trayRewriting)
-		app.postHandyPhase(indicator.Rewriting, generation)
-		app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(text))
-	})
+	}
+	answer, err := voice.Run(app.epoch.ContextFor(generation), app.cfg, r.pcm, sel.Text, !task.dictation, afterASR)
 	if !app.epoch.Valid(generation) {
 		return
 	}
-	app.logger.Printf("stage=spoken_selection ms=%d intent=%s", time.Since(started).Milliseconds(), answer.Intent)
-	if e != nil {
-		app.fail(e)
+	if err != nil {
+		app.fail(err)
+		if task.dictation { app.postHandyPhase(indicator.Error, generation) }
 		return
 	}
-	app.logger.Printf("route=%s intent=%s", answer.Route, answer.Intent)
+
+	if task.dictation {
+		app.logger.Printf("stage=asr flow=dictation ms=%d", time.Since(started).Milliseconds())
+		text := answer.Text
+		app.history.Remember(ux.DictationHistoryTitle, text)
+		if !isSameForegroundWindow(task.target) {
+			app.showAnswer(ux.DictationNotInserted, text, currentCursorPoint(), nil, false, generation)
+			app.postHandyPhase(indicator.Fallback, generation)
+			return
+		}
+		started = time.Now()
+		err = insertDictationText(app.Window, task.target, text, func() bool { return app.epoch.Valid(generation) })
+		if err != nil {
+			app.fail(err)
+			app.showAnswer(ux.DictationCopyManually, text, currentCursorPoint(), nil, false, generation)
+			app.postHandyPhase(indicator.Fallback, generation)
+			return
+		}
+		app.logger.Printf("stage=paste flow=dictation ms=%d chars=%d status=unverified",
+			time.Since(started).Milliseconds(), utf8.RuneCountInString(text))
+		app.setStatus(traySuccess)
+		app.postHandyPhase(indicator.Success, generation)
+		return
+	}
+
+	app.logger.Printf("stage=spoken_selection ms=%d intent=%s route=%s",
+		time.Since(started).Milliseconds(), answer.Intent, answer.Route)
 	app.history.Remember(ux.HistoryTitle(answer.Intent), answer.Text)
 	if answer.Route == "replace" {
 		app.postHandyPhase(indicator.Applying, generation)
-		startedPaste := time.Now()
+		started = time.Now()
 		// Native editability determines whether to verify the pasted selection.
-		e = replaceSelectionWithGuard(app.Window, sel, answer.Text, app.cfg, !isSafelyEditableControl(sel.TargetWindow), func() bool { return app.epoch.Valid(generation) })
-		app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
-		if e == nil {
+		err = replaceSelectionWithGuard(app.Window, sel, answer.Text, app.cfg,
+			!isSafelyEditableControl(sel.TargetWindow), func() bool { return app.epoch.Valid(generation) })
+		app.logger.Printf("stage=paste ms=%d", time.Since(started).Milliseconds())
+		if err == nil {
 			app.setStatus(traySuccess)
 			app.postHandyPhase(indicator.Success, generation)
-			// Completion is indicated by the non-blocking status bar; no sound.
-			app.logger.Printf("paste_status=unverified intent=%s result_chars=%d (SendInput accepted, editor insertion not provable)", answer.Intent, utf8.RuneCountInString(answer.Text))
+			app.logger.Printf("paste_status=unverified intent=%s result_chars=%d",
+				answer.Intent, utf8.RuneCountInString(answer.Text))
 			return
 		}
-		app.logger.Printf("auto replacement failed; preview instead: %v", e)
+		app.logger.Printf("auto replacement failed; preview instead: %v", err)
 	}
-	title := ux.ResultCardTitle(answer.Intent)
 	selectionCopy := sel
-	app.showAnswer(title, answer.Text, sel.Anchor, &selectionCopy, answer.Route == "replace", generation)
+	app.showAnswer(ux.ResultCardTitle(answer.Intent), answer.Text, sel.Anchor,
+		&selectionCopy, answer.Route == "replace", generation)
 	app.setStatus(traySuccess)
 	app.logger.Printf("popup result queued; chars=%d", utf8.RuneCountInString(answer.Text))
 }
