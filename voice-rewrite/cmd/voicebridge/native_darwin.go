@@ -23,18 +23,15 @@ import (
 	"voicerewrite/internal/core/clipboard"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/indicator"
-	"voicerewrite/internal/core/input"
-	"voicerewrite/internal/core/session"
 	"voicerewrite/internal/core/ux"
 	"voicerewrite/internal/core/voice"
 )
 
-var nativeEpoch session.Epoch
 var nativeConfig atomic.Pointer[coreconfig.Config]
 
 // Physical state lives in the same Go owner used by Windows' mouse hook.
 // Quartz callbacks are serial; Epoch is shared with the worker thread.
-var nativeHolds = input.NewHolds(105)
+var nativeCore voice.Core
 var nativeRole [105]uint8
 
 //export VRAction
@@ -47,7 +44,7 @@ func VRAction(code C.int) C.int {
 
 //export VRDown
 func VRDown(code C.int) C.int {
-	if nativeHolds.Down(int(code)) {
+	if nativeCore.Down(int(code)) {
 		return 1
 	}
 	return 0
@@ -58,12 +55,12 @@ func VRPress(code C.int, busy C.int) C.ulonglong {
 	if VRAction(code) == 0 {
 		return 0
 	}
-	return C.ulonglong(nativeHolds.Press(int(code), busy != 0))
+	return C.ulonglong(nativeCore.Press(int(code), busy != 0))
 }
 
 //export VRActivate
 func VRActivate(code C.int, token C.ulonglong) C.int {
-	if nativeHolds.Activate(int(code), uint64(token)) {
+	if nativeCore.Activate(int(code), uint64(token)) {
 		return 1
 	}
 	return 0
@@ -71,28 +68,28 @@ func VRActivate(code C.int, token C.ulonglong) C.int {
 
 //export VRRelease
 func VRRelease(code C.int) C.int {
-	return C.int(nativeHolds.Release(int(code)))
+	return C.int(nativeCore.Release(int(code)))
 }
 
 //export VRAbandon
 func VRAbandon() {
-	nativeHolds.Abandon() // retain key-up after recording timeout
+	nativeCore.Abandon() // retain key-up after recording timeout
 }
 
 //export VRArmed
 func VRArmed() C.int {
-	if nativeHolds.Armed() {
+	if nativeCore.Armed() {
 		return 1
 	}
 	return 0
 }
 
 //export VREpochStart
-func VREpochStart() C.ulonglong { return C.ulonglong(nativeEpoch.Start()) }
+func VREpochStart() C.ulonglong { return C.ulonglong(nativeCore.Start()) }
 
 //export VREpochValid
 func VREpochValid(token C.ulonglong) C.int {
-	if nativeEpoch.Valid(uint64(token)) {
+	if nativeCore.Valid(uint64(token)) {
 		return 1
 	}
 	return 0
@@ -100,9 +97,7 @@ func VREpochValid(token C.ulonglong) C.int {
 
 //export VREpochCancel
 func VREpochCancel() {
-	nativeEpoch.Start()
-	// Disabled event tap: release every hold and obsolete timer.
-	nativeHolds.Cancel()
+	nativeCore.Cancel()
 }
 
 //export VRClipboardSnapshotFits
@@ -189,7 +184,7 @@ func VRRun(rewrite C.int, audio *C.uchar, length C.int, selection *C.char, token
 	if onTranscribed != nil {
 		afterASR = func(string) { C.vrReportTranscribed(onTranscribed, C.ulonglong(token)) }
 	}
-	ctx := nativeEpoch.ContextFor(uint64(token))
+	ctx := nativeCore.ContextFor(uint64(token))
 	// Native ABI errors and stale task results cannot escape into Swift.
 	defer func() {
 		if recover() != nil {
@@ -203,7 +198,7 @@ func VRRun(rewrite C.int, audio *C.uchar, length C.int, selection *C.char, token
 			}
 		}
 	}()
-	outcome, err := voice.Run(ctx, *cfg, C.GoBytes(unsafe.Pointer(audio), length), selected, rewrite != 0, afterASR)
+	outcome, err := nativeCore.Execute(uint64(token), *cfg, C.GoBytes(unsafe.Pointer(audio), length), selected, rewrite != 0, afterASR)
 	if err == nil {
 		return nativeJSON(success(outcome))
 	}

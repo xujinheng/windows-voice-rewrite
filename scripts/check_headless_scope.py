@@ -71,7 +71,7 @@ def main():
                       for p in ("main.go", "native_darwin.go"))
     windows = (ROOT / "voice-rewrite/task_worker_windows.go").read_text(encoding="utf-8")
     if any(token in windows for token in ("func processRecordedHold(", "func processDictationHold(", "func processAudioAndRewrite(")):
-        raise SystemExit("Windows recreated separate voice task orchestration next to voice.Run")
+        raise SystemExit("Windows recreated separate voice task orchestration next to voice.Core")
     if (ROOT / "voice-rewrite/cmd/voicebridge/bridge_test.go").exists() or "safeProcessRequest" in bridge:
         raise SystemExit("retired duplicate macOS voice task must not return")
     meeting = (ROOT / "voice-rewrite/meeting_session.go").read_text(encoding="utf-8")
@@ -80,7 +80,7 @@ def main():
     if any(token in bridge for token in ("func serve(", "func dispatch(", "func readFrame(", "PCMBase64", "req.Op")):
         raise SystemExit("unshipped JSONL bridge reintroduced a second desktop transport")
     if "voicerewrite/internal/core/voice" not in imports or any(
-        "voice.Run(" not in host for host in (bridge, windows)
+        ".Execute(" not in host for host in (bridge, windows)
     ):
         raise SystemExit("both hosts must invoke the same Go voice task")
     # Scan every Windows desktop host and the shipped Go bridge, not just the

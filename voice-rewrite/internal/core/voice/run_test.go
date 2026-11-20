@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"voicerewrite/internal/core/session"
-
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/ux"
 )
@@ -33,7 +31,7 @@ func TestRunSpokenTaskCancelsBeforeLLM(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	callbacks := 0
-	_, err := Run(ctx, cfg, make([]byte, 3200), "原文", true, func(instruction string) {
+	_, err := run(ctx, cfg, make([]byte, 3200), "原文", true, func(instruction string) {
 		callbacks++
 		if instruction != "翻译成英文" {
 			t.Errorf("unexpected transcript: %q", instruction)
@@ -49,7 +47,7 @@ func TestRunRejectsSelectionBeforeASR(t *testing.T) {
 	cfg := coreconfig.Defaults()
 	cfg.ASRBaseURL = "http://127.0.0.1:1/v1"
 	for _, selected := range []string{"", "   ", strings.Repeat("字", cfg.MaxSelectedRunes+1)} {
-		_, err := Run(context.Background(), cfg, make([]byte, 3200), selected, true, nil)
+		_, err := run(context.Background(), cfg, make([]byte, 3200), selected, true, nil)
 		if err == nil || (strings.TrimSpace(selected) == "" && err.Error() != ux.EmptySelection) {
 			t.Fatalf("invalid selection reached ASR: selected_length=%d err=%v", len(selected), err)
 		}
@@ -61,7 +59,7 @@ func TestPortablePCMAdmission(t *testing.T) {
 	cfg.MaxRecordSeconds = 30
 	cfg.ASRBaseURL = "http://127.0.0.1:1/v1"
 	for _, size := range []int{0, 1, 3198, 3201, 30*32000 + 2} {
-		_, err := Run(context.Background(), cfg, make([]byte, size), "", false, nil)
+		_, err := run(context.Background(), cfg, make([]byte, size), "", false, nil)
 		var pcm *PCMError
 		if !errors.As(err, &pcm) {
 			t.Fatalf("PCM size %d was admitted: %v", size, err)
@@ -69,7 +67,7 @@ func TestPortablePCMAdmission(t *testing.T) {
 	}
 }
 
-// One public Go Core function handles cancellation for both native hosts.
+// Core.Execute handles cancellation for both native hosts.
 func TestPortableEpochCancellationDisconnectsProvider(t *testing.T) {
 	for _, rewrite := range []bool{false, true} {
 		t.Run(map[bool]string{false: "dictation", true: "rewrite"}[rewrite], func(t *testing.T) {
@@ -93,12 +91,12 @@ func TestPortableEpochCancellationDisconnectsProvider(t *testing.T) {
 			cfg := coreconfig.Defaults()
 			cfg.ASRBaseURL, cfg.LLMBaseURL = server.URL+"/v1", server.URL+"/v1"
 			cfg.TextModel = "test-model"
-			var epoch session.Epoch
+			var epoch Core
 			defer epoch.Shutdown()
 			token := epoch.Start()
 			done := make(chan error, 1)
 			go func() {
-				_, err := Run(epoch.ContextFor(token), cfg, make([]byte, 3200), "selected text", rewrite, nil)
+				_, err := epoch.Execute(token, cfg, make([]byte, 3200), "selected text", rewrite, nil)
 				done <- err
 			}()
 			select {

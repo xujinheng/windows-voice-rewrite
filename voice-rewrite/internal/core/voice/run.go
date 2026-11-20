@@ -27,10 +27,10 @@ type PCMError struct{ message string }
 
 func (e *PCMError) Error() string { return e.message }
 
-// Run is the shared production task path for Windows workers and macOS C ABI.
+// run is the private portable pipeline. Core.Execute is the client task API.
 // A result route states the desired action; native focus/selection checks can
 // still prevent delivery, and a paste event is never proof of insertion.
-func Run(ctx context.Context, cfg coreconfig.Config, pcm []byte, selected string, rewrite bool, onTranscribed func(string)) (Result, error) {
+func run(ctx context.Context, cfg coreconfig.Config, pcm []byte, selected string, rewrite bool, onTranscribed func(string)) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}

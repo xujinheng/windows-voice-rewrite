@@ -13,7 +13,7 @@ import (
 	"time"
 	"unsafe"
 
-	"voicerewrite/internal/core/input"
+	"voicerewrite/internal/core/voice"
 )
 
 // Mouse4/Mouse5 are XBUTTON1/XBUTTON2. A low-level hook MUST run on a dedicated
@@ -103,7 +103,7 @@ func replaySideClick(button uint16) error {
 	return nil
 }
 
-func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, paused *atomic.Bool) (*sideMouseHook, error) {
+func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, paused *atomic.Bool, buttons *voice.Core) (*sideMouseHook, error) {
 	if hwnd == 0 || (rewriteButton != 0 && rewriteButton == dictationButton) {
 		return nil, errors.New("鼠标侧键钩子参数无效")
 	}
@@ -115,7 +115,6 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 		defer close(done)
 		tid, _, _ := procGetCurrentThreadID.Call()
 		var mu sync.Mutex
-		buttons := input.NewHolds(3)
 		var capturedDown [3]bool
 		var timers [3]*time.Timer
 		closed := false
@@ -188,7 +187,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 					mu.Unlock()
 					return callNextMouseHook(hook, code, message, data)
 				}
-				timers[button] = time.AfterFunc(input.WindowsSideHold, func() {
+				timers[button] = time.AfterFunc(voice.SideHoldThreshold, func() {
 					mu.Lock()
 					defer mu.Unlock()
 					if closed || (paused != nil && paused.Load()) || !buttons.CanActivate(int(button), token) {
@@ -204,7 +203,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 			// A matching press was intercepted. Either finish the recording
 			// or replay the navigation click, never both.
 			action := buttons.Release(int(button))
-			if action == input.ReleaseIgnored {
+			if action == voice.ReleaseIgnored {
 				mu.Unlock()
 				return callNextMouseHook(hook, code, message, data)
 			}
@@ -212,7 +211,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 				timers[button].Stop()
 				timers[button] = nil
 			}
-			if action == input.ReleaseActive {
+			if action == voice.ReleaseActive {
 				procPostMessage.Call(hwnd, WM_SIDE_UP, uintptr(button), 0)
 			} else {
 				// A short click must stop its provisional recording before

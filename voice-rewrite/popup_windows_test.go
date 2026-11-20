@@ -73,8 +73,8 @@ func TestClosedEditorApplyPostsCardIdentity(t *testing.T) {
 	}
 	defer procDestroyWindow.Call(hwnd)
 	app := &appState{Window: hwnd}
-	generation := app.epoch.Start()
-	defer app.epoch.Shutdown()
+	generation := app.core.Start()
+	defer app.core.Shutdown()
 	card := &answerPopup{app: app, window: hwnd, generation: generation, allowApply: true, selection: &selectedText{}}
 	card.apply()
 	if app.busy.Load() {

@@ -1,7 +1,7 @@
 # VoiceRewrite macOS: Go-first headless host
 
 This is a **minimal menu-bar host**, not a second SwiftUI business application.
-The existing Go `cmd/voicebridge` is linked into the native executable as a C archive. Swift directly calls Go `input.Hold`, `session.Epoch`, `indicator` and the same Go ASR/LLM routing used on Windows. No helper process or per-frame IPC is needed.
+The existing Go `cmd/voicebridge` is linked into the native executable as a C archive. Swift directly calls Go `voice.Core` (key holds, task generations, cancellation, transcription and routing) and `indicator`, shared with Windows. No helper process or per-frame IPC is needed.
 Swift contains only Quartz keyboard/side-button input, AVAudioEngine capture,
 Accessibility selection, focus-checked paste, a native NSStatusItem menu icon and
 a non-activating AppKit recording pill (232×50, expanding to 252×50).

@@ -1,11 +1,11 @@
-package session
+package voice
 
 import (
 	"testing"
 )
 
-func TestEpochRejectsOldTask(t *testing.T) {
-	var g Epoch
+func TestCoreRejectsOldTask(t *testing.T) {
+	var g Core
 	first := g.Start()
 	if !g.Valid(first) {
 		t.Fatal("first task should be current")
@@ -20,8 +20,8 @@ func TestEpochRejectsOldTask(t *testing.T) {
 	}
 }
 
-func TestEpochCancelsPriorRequests(t *testing.T) {
-	var g Epoch
+func TestCoreCancelsPriorRequests(t *testing.T) {
+	var g Core
 	first := g.Start()
 	previous := g.ContextFor(first)
 	select {
