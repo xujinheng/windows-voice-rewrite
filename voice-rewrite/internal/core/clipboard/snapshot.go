@@ -47,24 +47,6 @@ func UnsafeFormat(id uint32) bool {
 	return false
 }
 
-// SnapshotFormatReady stops at the first reason a format cannot be snapshotted.
-// Later callbacks are not called.
-func SnapshotFormatReady(id uint32, handleOK, sizeOK, lockOK func() bool) error {
-	if UnsafeFormat(id) {
-		return fmt.Errorf("剪贴板包含图像或系统对象（格式 %d），为避免丢失数据已取消自动操作", id)
-	}
-	if !handleOK() {
-		return fmt.Errorf("剪贴板格式 %d 无法复制，已取消自动操作", id)
-	}
-	if !sizeOK() {
-		return fmt.Errorf("剪贴板格式 %d 不是可安全复制的内存数据，已取消自动操作", id)
-	}
-	if !lockOK() {
-		return fmt.Errorf("无法锁定剪贴板格式 %d，已取消自动操作", id)
-	}
-	return nil
-}
-
 func RestorePartial(failed int) error {
 	return fmt.Errorf("剪贴板恢复部分失败：%d 个格式未能写回", failed)
 }

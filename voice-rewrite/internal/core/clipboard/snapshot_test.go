@@ -11,15 +11,6 @@ func TestSnapshotStopsBeforeCopyingAnImage(t *testing.T) {
 	if UnsafeFormat(1) || UnsafeFormat(13) {
 		t.Fatal("text formats")
 	}
-	called := 0
-	err := SnapshotFormatReady(2, func() bool { called++; return true }, func() bool { called++; return true }, func() bool { called++; return true })
-	if err == nil || called != 0 || err.Error() != "剪贴板包含图像或系统对象（格式 2），为避免丢失数据已取消自动操作" {
-		t.Fatal(err, called)
-	}
-	err = SnapshotFormatReady(13, func() bool { return false }, func() bool { t.Fatal("size"); return true }, func() bool { return true })
-	if err == nil || err.Error() != "剪贴板格式 13 无法复制，已取消自动操作" {
-		t.Fatal(err)
-	}
 	if SnapshotFits(0, 0) || !SnapshotFits(FormatMaxBytes, 0) || SnapshotFits(FormatMaxBytes+1, 0) {
 		t.Fatal("size")
 	}

@@ -4,6 +4,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"unsafe"
 
@@ -42,18 +43,20 @@ func snapshotClipboard(hwnd uintptr) (*clipboardSnapshot, error) {
 			break
 		}
 		previous = id
-		var h, size, p uintptr
-		if err := clipboard.SnapshotFormatReady(uint32(id), func() bool {
-			h, _, _ = procGetClipboardData.Call(id)
-			return h != 0
-		}, func() bool {
-			size, _, _ = procGlobalSize.Call(h)
-			return clipboard.SnapshotFits(size, total)
-		}, func() bool {
-			p, _, _ = procGlobalLock.Call(h)
-			return p != 0
-		}); err != nil {
-			return nil, err
+		if clipboard.UnsafeFormat(uint32(id)) {
+			return nil, fmt.Errorf("剪贴板包含图像或系统对象（格式 %d），为避免丢失数据已取消自动操作", id)
+		}
+		h, _, _ := procGetClipboardData.Call(id)
+		if h == 0 {
+			return nil, fmt.Errorf("剪贴板格式 %d 无法复制，已取消自动操作", id)
+		}
+		size, _, _ := procGlobalSize.Call(h)
+		if !clipboard.SnapshotFits(size, total) {
+			return nil, fmt.Errorf("剪贴板格式 %d 不是可安全复制的内存数据，已取消自动操作", id)
+		}
+		p, _, _ := procGlobalLock.Call(h)
+		if p == 0 {
+			return nil, fmt.Errorf("无法锁定剪贴板格式 %d，已取消自动操作", id)
 		}
 		buf := make([]byte, size)
 		copy(buf, unsafe.Slice((*byte)(unsafe.Pointer(p)), int(size)))
