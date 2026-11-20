@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"unsafe"
 
-	"voicerewrite/internal/core/indicator"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
 )
 
 // runRecordingVisualPreview displays the real GDI+ layered recording overlay

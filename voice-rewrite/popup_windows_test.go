@@ -9,7 +9,7 @@ import (
 	"time"
 	"unsafe"
 
-	"voicerewrite/internal/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
 )
 
 var (

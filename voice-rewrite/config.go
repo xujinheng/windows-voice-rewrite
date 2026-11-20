@@ -1,6 +1,6 @@
 package main
 
-import coreconfig "voicerewrite/internal/core/config"
+import coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
 
 // Config is the portable application configuration model.
 type Config = coreconfig.Config

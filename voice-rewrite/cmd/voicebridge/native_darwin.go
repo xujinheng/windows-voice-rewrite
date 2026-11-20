@@ -19,12 +19,12 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"voicerewrite/internal/core/audio"
-	"voicerewrite/internal/core/clipboard"
-	coreconfig "voicerewrite/internal/core/config"
-	"voicerewrite/internal/core/indicator"
-	"voicerewrite/internal/core/ux"
-	"voicerewrite/voice"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/clipboard"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
 )
 
 var nativeConfig atomic.Pointer[coreconfig.Config]

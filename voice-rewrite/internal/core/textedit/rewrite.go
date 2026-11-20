@@ -12,9 +12,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	coreconfig "voicerewrite/internal/core/config"
-	"voicerewrite/internal/core/provider"
-	"voicerewrite/internal/core/ux"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/provider"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
 )
 
 // validateRequest protects both direct rewrite and combined intent tasks.

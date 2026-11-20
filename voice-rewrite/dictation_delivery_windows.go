@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"voicerewrite/internal/core/clipboard"
-	"voicerewrite/internal/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/clipboard"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
 )
 
 // Native Windows delivery uses the same user-visible Mouse4 behavior.

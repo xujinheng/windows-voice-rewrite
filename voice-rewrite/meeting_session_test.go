@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	meetingcore "voicerewrite/internal/core/meeting"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
 )
 
 func newTestMeetingCore() *meetingSession {

@@ -5,7 +5,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	coreconfig "voicerewrite/internal/core/config"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
 )
 
 const (

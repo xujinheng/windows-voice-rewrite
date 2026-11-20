@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"voicerewrite/internal/contract"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/contract"
 )
 
 func TestWindowsRecordingDurationValidation(t *testing.T) {

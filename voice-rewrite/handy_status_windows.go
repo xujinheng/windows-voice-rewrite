@@ -12,8 +12,8 @@ import (
 	"time"
 	"unsafe"
 
-	"voicerewrite/internal/core/desktop"
-	"voicerewrite/internal/core/indicator"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/desktop"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
 )
 
 // GDI+ recording status overlay.

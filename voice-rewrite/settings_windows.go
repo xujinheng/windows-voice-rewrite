@@ -15,13 +15,13 @@ import (
 	"time"
 	"unsafe"
 
-	"voicerewrite/internal/contract"
-	"voicerewrite/internal/core/desktop"
-	"voicerewrite/internal/core/provider"
-	"voicerewrite/internal/core/serviceprobe"
-	"voicerewrite/internal/core/settingsform"
-	"voicerewrite/internal/core/shortcut"
-	"voicerewrite/internal/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/contract"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/desktop"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/provider"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/serviceprobe"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/settingsform"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/shortcut"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
 )
 
 // A small, native settings surface; it does not host a browser or intercept

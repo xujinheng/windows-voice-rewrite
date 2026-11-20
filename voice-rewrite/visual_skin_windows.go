@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"unsafe"
 
-	"voicerewrite/internal/contract"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/contract"
 )
 
 // Paint a native GDI card with a single fill, outline and radius.

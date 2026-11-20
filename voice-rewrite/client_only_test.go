@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"voicerewrite/internal/core/serviceprobe"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/serviceprobe"
 )
 
 func TestClientOnlyConfigHasNoServerManagement(t *testing.T) {

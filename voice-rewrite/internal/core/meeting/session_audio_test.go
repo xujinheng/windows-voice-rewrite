@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"voicerewrite/internal/core/audio"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
 )
 
 type framesForMeetingTest struct {

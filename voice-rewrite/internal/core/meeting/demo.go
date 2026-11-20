@@ -1,6 +1,6 @@
 package meeting
 
-import "voicerewrite/internal/core/config"
+import "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
 
 // Demo is the meeting sample shown when no audio source is connected.
 type Demo struct {

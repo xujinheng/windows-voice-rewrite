@@ -1,6 +1,6 @@
 package main
 
-import meetingcore "voicerewrite/internal/core/meeting"
+import meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
 
 type meetingMetrics struct {
 	Stage                                                        string

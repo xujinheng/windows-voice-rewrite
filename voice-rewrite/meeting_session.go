@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"voicerewrite/internal/core/audio"
-	coreconfig "voicerewrite/internal/core/config"
-	meetingcore "voicerewrite/internal/core/meeting"
-	"voicerewrite/internal/core/provider"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/provider"
 )
 
 type meetingSession struct {

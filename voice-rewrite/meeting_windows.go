@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"unsafe"
 
-	"voicerewrite/internal/core/audio"
-	"voicerewrite/internal/core/indicator"
-	meetingcore "voicerewrite/internal/core/meeting"
-	"voicerewrite/internal/core/speech"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/speech"
 )
 
 const (

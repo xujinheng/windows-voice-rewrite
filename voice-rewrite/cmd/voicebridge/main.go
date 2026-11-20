@@ -4,11 +4,11 @@ package main
 import (
 	"encoding/json"
 	"time"
-	coreconfig "voicerewrite/internal/core/config"
-	"voicerewrite/internal/core/indicator"
-	"voicerewrite/internal/core/shortcut"
-	"voicerewrite/internal/core/ux"
-	"voicerewrite/voice"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/shortcut"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
 )
 
 const (

@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"voicerewrite/asrtext"
-	coreconfig "voicerewrite/internal/core/config"
-	"voicerewrite/internal/core/provider"
-	"voicerewrite/internal/core/speech"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/asrtext"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/provider"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/speech"
 )
 
 type ASRState struct{ raw, fixed string }

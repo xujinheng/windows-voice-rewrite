@@ -5,7 +5,7 @@ package main
 import (
 	"unsafe"
 
-	"voicerewrite/internal/core/desktop"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/desktop"
 )
 
 func uxMonitorForPoint(pt trayPoint) uintptr {
