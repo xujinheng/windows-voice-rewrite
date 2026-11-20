@@ -435,14 +435,6 @@ func runApp() {
 	var holdButton uint16
 	var holdMeeting *meetingcore.Session
 	var activeGeneration uint64
-	var holdWatch chan struct{}
-	stopHoldWatch := func() {
-		if holdWatch != nil {
-			close(holdWatch)
-			holdWatch = nil
-		}
-	}
-	defer stopHoldWatch()
 	// The UI thread is the sole owner of native recorder shutdown, including
 	// keyboard-release receipts and watcher cancellation.
 	stopActive := func() *audioRecorder {
@@ -451,7 +443,6 @@ func runApp() {
 			return nil
 		}
 		active = nil
-		stopHoldWatch()
 		if cfg.RecordMode == "hold" && holdButton == 0 {
 			key := keyRewrite
 			if task.dictation {
@@ -510,10 +501,9 @@ func runApp() {
 		active = rec
 		watchRecordingLimit(hwnd, rec, activeGeneration, l)
 		app.setStatus(trayRecording)
-		holdWatch = make(chan struct{})
 		watchLimit := time.Duration(cfg.MaxRecordSeconds+2) * time.Second
 		if button != 0 {
-			go watchMouseHoldTimeout(hwnd, uintptr(activeGeneration), holdWatch, watchLimit, l)
+			go watchMouseHoldTimeout(hwnd, uintptr(activeGeneration), rec.done, watchLimit, l)
 		} else {
 			vk := recordVK
 			if dictation {
@@ -523,7 +513,7 @@ func runApp() {
 			if dictation {
 				mods = dictationMods
 			}
-			go watchHoldRelease(hwnd, vk, mods, uintptr(activeGeneration), holdWatch, watchLimit, l)
+			go watchHoldRelease(hwnd, vk, mods, uintptr(activeGeneration), rec.done, watchLimit, l)
 		}
 		statusMode := voice.HoldModeLabel(dictation, holdMeeting != nil)
 		// Promote the immediate mouse-down preview without recreating its HWND.
