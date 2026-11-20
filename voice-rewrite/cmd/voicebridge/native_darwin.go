@@ -39,14 +39,6 @@ func VRAction(code C.int) C.int { return C.int(nativeCore.Role(int(code))) }
 //export VRHeldRole
 func VRHeldRole(code C.int) C.int { return C.int(nativeCore.HeldRole(int(code))) }
 
-//export VRDelivery
-func VRDelivery(route *C.char, target, selection C.int) C.int {
-	if route == nil {
-		return C.int(voice.Preview)
-	}
-	return C.int(voice.Delivery(C.GoString(route), target != 0, selection != 0))
-}
-
 //export VRDown
 func VRDown(code C.int) C.int {
 	if nativeCore.Down(int(code)) {

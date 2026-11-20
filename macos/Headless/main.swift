@@ -435,15 +435,14 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                         fputs("VoiceRewrite: \(error)\n", stderr)
                     case .success(let value):
                         guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
-                        let targetReady = self.targetStillValid()
-                        let selectionReady = !rewrite || selectedValue?.matches(self.selectionFromAX()) == true
-                        let delivery = (value.route ?? "").withCString {
-                            VRDelivery($0, targetReady ? 1 : 0, selectionReady ? 1 : 0)
-                        }
-                        guard delivery != 0 else {
+                        guard value.route == "replace" || value.route == "insert" else {
                             self.reset(self.config.pill.fallbackLabel, phase: .fallback); return
                         }
-                        if delivery == 2 { self.pill.working(.applying); self.show(self.config.pill.applyingLabel) }
+                        guard self.targetStillValid() else { self.reset("Focus changed"); return }
+                        if rewrite && selectedValue?.matches(self.selectionFromAX()) != true {
+                            self.reset("Selection changed"); return
+                        }
+                        if value.route == "replace" { self.pill.working(.applying); self.show(self.config.pill.applyingLabel) }
                         self.paste(text)
                     }
                 }

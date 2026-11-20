@@ -14,34 +14,6 @@ import (
 	"voicerewrite/internal/core/ux"
 )
 
-// DeliveryAction is a portable result decision. Native adapters carry out
-// OS focus checks and paste side effects, never reclassify result routes.
-type DeliveryAction uint8
-
-const (
-	Preview DeliveryAction = iota
-	Insert
-	Replace
-)
-
-// Delivery is the only decision point for whether a result should be
-// inserted, replace selected text, or remain available for manual copying.
-// A focus change never authorizes a paste; a selection change never replaces.
-func Delivery(route string, targetValid, selectionValid bool) DeliveryAction {
-	if !targetValid {
-		return Preview
-	}
-	switch route {
-	case "insert":
-		return Insert
-	case "replace":
-		if selectionValid {
-			return Replace
-		}
-	}
-	return Preview
-}
-
 type Result struct {
 	Text        string `json:"text"`
 	Intent      string `json:"intent,omitempty"`

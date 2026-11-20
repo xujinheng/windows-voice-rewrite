@@ -90,13 +90,6 @@ MainActor.assumeIsolated {
     let noAX = FocusIdentity(window: nil, element: nil, title: nil)
     precondition(noAX.matches(window: nil, element: nil, title: nil))
     precondition(noAX.matches(window: nil, element: nil, title: "Other"))
-    "insert".withCString { route in
-        precondition(VRDelivery(route, 1, 0) == 1 && VRDelivery(route, 0, 1) == 0)
-    }
-    "replace".withCString { route in
-        precondition(VRDelivery(route, 1, 1) == 2 && VRDelivery(route, 1, 0) == 0)
-    }
-    "preview".withCString { route in precondition(VRDelivery(route, 1, 1) == 0) }
     // Exercise the actual native C ABI over the Go clipboard ownership budget.
     precondition(VRClipboardSnapshotFits(1, 0) == 1)
     precondition(VRClipboardSnapshotFits(16 << 20, 32 << 20) == 1)

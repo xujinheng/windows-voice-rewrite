@@ -13,7 +13,6 @@ import (
 	"voicerewrite/internal/core/audio"
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/ux"
-	"voicerewrite/voice"
 )
 
 // A recorder may reach its hardware duration limit before the held key or
@@ -191,7 +190,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 	if task.dictation {
 		app.logger.Printf("stage=asr flow=dictation ms=%d", time.Since(started).Milliseconds())
 		text := answer.Text
-		if voice.Delivery(answer.Route, isSameForegroundWindow(task.target), true) != voice.Insert {
+		if !isSameForegroundWindow(task.target) {
 			app.showAnswer(ux.DictationNotInserted, text, currentCursorPoint(), nil, false, generation)
 			app.postHandyPhase(indicator.Fallback, generation)
 			return
@@ -213,8 +212,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 
 	app.logger.Printf("stage=spoken_selection ms=%d intent=%s route=%s",
 		time.Since(started).Milliseconds(), answer.Intent, answer.Route)
-	delivery := voice.Delivery(answer.Route, isSameForegroundWindow(sel.TargetWindow), true)
-	if delivery == voice.Replace {
+	if answer.Route == "replace" {
 		app.postHandyPhase(indicator.Applying, generation)
 		started = time.Now()
 		// Native editability determines whether to verify the pasted selection.
@@ -232,7 +230,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 	}
 	selectionCopy := sel
 	app.showAnswer(ux.ResultCardTitle(answer.Intent), answer.Text, sel.Anchor,
-		&selectionCopy, delivery == voice.Replace, generation)
+		&selectionCopy, answer.Route == "replace", generation)
 	app.setStatus(traySuccess)
 	app.logger.Printf("popup result queued; chars=%d", utf8.RuneCountInString(answer.Text))
 }
