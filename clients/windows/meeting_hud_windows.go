@@ -302,7 +302,7 @@ func (p *meetingHUD) resizeText(delta int32) {
 	body := meetingUIFont(p.px(bodyFace.Size), bodyFace.Weight)
 	english := popupFont(-p.px(englishFace.Size), englishFace.Weight)
 	chinese := meetingUIFont(p.px(chineseFace.Size), chineseFace.Weight)
-	if !meetingcore.ReplaceReadingFonts(body, english, chinese) {
+	if body == 0 || english == 0 || chinese == 0 {
 		for _, font := range []uintptr{body, english, chinese} {
 			if font != 0 {
 				procDeleteObject.Call(font)
@@ -596,7 +596,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				return 0
 			}
 		case 0x0202: // WM_LBUTTONUP
-			if meetingcore.MeetingDragEnd(p.dragDivider >= 0, true) == meetingcore.DragEndCommit {
+			if p.dragDivider >= 0 {
 				p.dragSplitterTo(int32(int16(uint16(lParam >> 16))))
 				p.dragDivider = -1
 				meetingReleaseCapture.Call()
@@ -604,7 +604,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				return 0
 			}
 		case 0x0215: // WM_CAPTURECHANGED
-			if meetingcore.MeetingDragEnd(p.dragDivider >= 0, false) == meetingcore.DragEndCancel {
+			if p.dragDivider >= 0 {
 				p.dragDivider = -1
 			}
 		case WM_COMMAND:
@@ -684,14 +684,14 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			}
 			return 0
 		case WM_CTLCOLOREDIT, WM_CTLCOLORSTATIC:
-			reading := meetingcore.ReadingBody(lParam == p.captions, lParam == p.currentEnglish, lParam == p.currentChinese, lParam == p.responses, lParam == p.expression, lParam == p.expressionSource, lParam == p.instruction, lParam == p.profileBackground, lParam == p.profileTerms)
-			primary, surface := meetingcore.ReadingPaint(lParam == p.live, reading)
-			if primary {
+			if lParam == p.live {
 				procSetTextColor.Call(wParam, p.palette.color(p.palette.primary))
 			} else {
 				procSetTextColor.Call(wParam, p.palette.color(p.palette.text))
 			}
-			if surface {
+			switch lParam {
+			case p.live, p.captions, p.currentEnglish, p.currentChinese, p.responses,
+				p.expression, p.expressionSource, p.instruction, p.profileBackground, p.profileTerms:
 				procSetBkColor.Call(wParam, p.palette.color(p.palette.surface))
 				return p.surface
 			}
