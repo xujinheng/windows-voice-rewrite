@@ -159,7 +159,7 @@ func (s *clipboardSnapshot) restoreIfOwned(hwnd uintptr) error {
 	}
 	freeSnapshotHandles(handles)
 	if failed > 0 {
-		return clipboard.RestorePartial(failed)
+		return fmt.Errorf("剪贴板恢复部分失败：%d 个格式未能写回", failed)
 	}
 	return nil
 }
