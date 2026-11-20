@@ -15,6 +15,20 @@ extension HeadlessApp {
         }
         precondition(VRDown(Int32(code)) == 0 && VRArmed() == 0)
     }
+
+    func verifyPillCancelLifecycle() {
+        item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        let finishedToken = VREpochStart()
+        cancelFromPill()
+        precondition(VREpochValid(finishedToken) == 1) // Dismissing a result is not cancellation.
+        precondition(item.button?.title == "VR")
+        pending = true
+        let processingToken = VREpochStart()
+        cancelFromPill()
+        precondition(VREpochValid(processingToken) == 0) // In-flight work still cancels.
+        precondition(item.button?.title == "Cancelled")
+        NSStatusBar.system.removeStatusItem(item)
+    }
 }
 MainActor.assumeIsolated {
     let window = AXUIElementCreateApplication(90001)
@@ -79,5 +93,6 @@ MainActor.assumeIsolated {
                                  after: host(original), modifier: false)
     hostApp.verifyReboundRelease(code: 54, name: "RightCommand", before: host(original),
                                  after: host(mouseBound), modifier: true)
-    print("AX focus, selection, Unicode and shortcut rebind smoke passed")
+    hostApp.verifyPillCancelLifecycle()
+    print("AX focus, selection, Unicode, shortcut rebind and pill cancel smoke passed")
 }
