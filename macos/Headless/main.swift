@@ -400,7 +400,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard targetPID > 0 else { reset("No target"); return }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { reset("Focus changed"); return }
         let window = targetFocus?.window ?? focusedWindow(), element = action == .rewrite ? focusedElement() : nil
-        if targetFocus?.window != nil, let current = focusedWindow(), targetFocus?.matches(window: current, element: nil, title: nil) == false { reset("Focus changed"); return }
+        if targetFocus?.window != nil && targetFocus?.matches(window: focusedWindow(), element: nil, title: nil) != true { reset("Focus changed"); return }
         guard action == .dictation || (window != nil && element != nil) else { reset("Target unavailable"); return }
         targetFocus = FocusIdentity(window: window, element: element,
                                     title: action == .rewrite ? window.flatMap(windowTitle) : nil)
