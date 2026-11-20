@@ -25,7 +25,7 @@ extension HeadlessApp {
     func verifyPressTargetSurvivesDelayedActivation() {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         targetPID = pid_t.max // The original editor vanished or lost focus during the hold threshold.
-        begin()
+        begin(rewrite: false)
         precondition(!microphone.running && item.button?.title == "Focus changed")
         NSStatusBar.system.removeStatusItem(item)
     }
