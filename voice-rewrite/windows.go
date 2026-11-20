@@ -397,7 +397,7 @@ func runApp() {
 	{
 		// Even keyboard-only bindings need the hook while Settings captures
 		// Mouse4/Mouse5. Unassigned buttons still pass through untouched.
-		mouseHook, hookErr := installSideMouseHook(hwnd, selectedMouseButton, dictationButton, &app.paused)
+		mouseHook, hookErr := installSideMouseHook(hwnd, selectedMouseButton, dictationButton, &app.paused, &app.core)
 		if hookErr != nil {
 			winErr(hookErr.Error())
 			return
