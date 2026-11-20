@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
 	"unicode/utf8"
 
 	"voicerewrite/internal/core/audio"
@@ -20,8 +19,6 @@ import (
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/jsonl"
 	"voicerewrite/internal/core/shortcut"
-	"voicerewrite/internal/core/speech"
-	"voicerewrite/internal/core/textedit"
 	"voicerewrite/internal/core/ux"
 	"voicerewrite/internal/core/voice"
 )
@@ -60,24 +57,6 @@ type response struct {
 	OK      bool         `json:"ok"`
 	Result  any          `json:"result,omitempty"`
 	Error   *bridgeError `json:"error,omitempty"`
-}
-
-type bridgeOptions struct {
-	TranscribeTimeout     time.Duration
-	SpokenSelectedTimeout time.Duration
-}
-
-func defaultOptions() bridgeOptions {
-	return bridgeOptions{TranscribeTimeout: speech.TranscribeTimeout, SpokenSelectedTimeout: textedit.SpokenTaskTimeout}
-}
-
-// Dictation uses speech.TranscribeTimeout on both desktop hosts.
-// The request's audio length does not determine the provider's response time.
-func (o bridgeOptions) timeoutFor(req request) time.Duration {
-	if req.Op == "selected_voice_task" {
-		return o.SpokenSelectedTimeout
-	}
-	return o.TranscribeTimeout
 }
 
 // Both the JSONL service and in-process macOS C ABI use this boundary.
@@ -138,7 +117,7 @@ func readFrame(r *bufio.Reader) ([]byte, error) {
 // The shipped macOS app calls Go in-process. The optional JSONL command is
 // deliberately serial; it does not need an active-task map or a second cancel
 // protocol. Timeouts still bound every ASR/LLM operation.
-func dispatch(frame []byte, options bridgeOptions) response {
+func dispatch(frame []byte) response {
 	var req request
 	if !utf8.Valid(frame) || json.Unmarshal(frame, &req) != nil {
 		return failure("", "invalid_json", "invalid request JSON")
@@ -155,9 +134,7 @@ func dispatch(frame []byte, options bridgeOptions) response {
 	case "host_profile":
 		return headlessProfile(req)
 	case "transcribe", "selected_voice_task":
-		ctx, cancel := context.WithTimeout(context.Background(), options.timeoutFor(req))
-		defer cancel()
-		return safeProcessRequest(ctx, req)
+		return safeProcessRequest(context.Background(), req)
 	default:
 		return failure(req.ID, "unsupported_op", msgUnsupported)
 	}
@@ -275,13 +252,10 @@ func contextFailure(id string, err error) response {
 	return failure(id, "canceled", msgCanceled)
 }
 
-// serveWithOptions is a serial diagnostic endpoint. Its one-request-then-EOF
+// serve is a serial diagnostic endpoint. Its one-request-then-EOF
 // lifecycle is tested, but production macOS calls safeProcessRequest directly
 // through the C ABI rather than spawning this command.
-func serveWithOptions(input io.Reader, output io.Writer, options bridgeOptions) error {
-	if options.TranscribeTimeout <= 0 || options.SpokenSelectedTimeout <= 0 {
-		return errors.New("invalid bridge options")
-	}
+func serve(input io.Reader, output io.Writer) error {
 	reader := bufio.NewReaderSize(input, 64<<10)
 	encoder := json.NewEncoder(output)
 	for {
@@ -296,16 +270,12 @@ func serveWithOptions(input io.Reader, output io.Writer, options bridgeOptions) 
 		case err != nil:
 			return err
 		default:
-			reply = dispatch(frame, options)
+			reply = dispatch(frame)
 		}
 		if err := encoder.Encode(reply); err != nil {
 			return err
 		}
 	}
-}
-
-func serve(input io.Reader, output io.Writer) error {
-	return serveWithOptions(input, output, defaultOptions())
 }
 
 func main() {
