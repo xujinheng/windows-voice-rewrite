@@ -115,7 +115,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 			app.postHandyPhase(indicator.Error, generation)
 		}
 	}()
-	if !app.core.Valid(generation) {
+	if !app.core.Snapshot(0, generation).Valid {
 		rec.Stop()
 		return
 	}
@@ -152,7 +152,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 
 	app.logger.Print("worker: waiting for recording buffer")
 	r := <-rec.result
-	if !app.core.Valid(generation) {
+	if !app.core.Snapshot(0, generation).Valid {
 		return
 	}
 	if r.err != nil {
@@ -164,20 +164,23 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 	}
 	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/audio.PCMBytesPerSecond)
 	started := time.Now()
-	var afterASR func(string)
+	var afterASR func(voice.Event)
 	if !task.dictation {
-		afterASR = func(text string) {
-			if !app.core.Valid(generation) {
+		afterASR = func(event voice.Event) {
+			if event.Kind != voice.EventTranscribed {
+				return
+			}
+			if !app.core.Snapshot(0, generation).Valid {
 				return
 			}
 			app.logger.Printf("stage=asr ms=%d", time.Since(started).Milliseconds())
 			app.setStatus(trayRewriting)
 			app.postHandyPhase(indicator.Rewriting, generation)
-			app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(text))
+			app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(event.Text))
 		}
 	}
 	answer, err := app.core.Execute(generation, app.cfg, r.pcm, sel.Text, !task.dictation, afterASR)
-	if !app.core.Valid(generation) {
+	if !app.core.Snapshot(0, generation).Valid {
 		return
 	}
 	if err != nil {
@@ -197,7 +200,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 			return
 		}
 		started = time.Now()
-		err = insertDictationText(app.Window, task.target, text, func() bool { return app.core.Valid(generation) })
+		err = insertDictationText(app.Window, task.target, text, func() bool { return app.core.Snapshot(0, generation).Valid })
 		if err != nil {
 			app.fail(err)
 			app.showAnswer(ux.DictationCopyManually, text, currentCursorPoint(), nil, false, generation)
@@ -218,7 +221,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 		started = time.Now()
 		// Native editability determines whether to verify the pasted selection.
 		err = replaceSelectionWithGuard(app.Window, sel, answer.Text, app.cfg,
-			!isSafelyEditableControl(sel.TargetWindow), func() bool { return app.core.Valid(generation) })
+			!isSafelyEditableControl(sel.TargetWindow), func() bool { return app.core.Snapshot(0, generation).Valid })
 		app.logger.Printf("stage=paste ms=%d", time.Since(started).Milliseconds())
 		if err == nil {
 			app.setStatus(traySuccess)

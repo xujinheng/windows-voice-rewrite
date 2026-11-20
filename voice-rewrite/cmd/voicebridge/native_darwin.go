@@ -5,8 +5,16 @@ package main
 /*
 #include <stdint.h>
 #include <stdlib.h>
-typedef void (*VRTranscribedCallback)(unsigned long long);
-static inline void vrReportTranscribed(VRTranscribedCallback fn, unsigned long long token) { fn(token); }
+// Only the C ABI shapes are duplicated here for cgo; Core rules are in Go.
+// cgo exports non-const pointers, while the Swift header accepts const inputs.
+typedef struct { int kind; uint64_t token; int role; int release; } VRCommandEvent;
+typedef struct {
+    int role, held_role, down, armed, can_activate, valid;
+    uint64_t current;
+    int phase, closed;
+} VRCoreState;
+typedef void (*VREventCallback)(int kind, uint64_t token);
+static inline void vrReportEvent(VREventCallback fn, int kind, uint64_t token) { fn(kind, token); }
 */
 import "C"
 
@@ -29,69 +37,39 @@ import (
 
 var nativeConfig atomic.Pointer[coreconfig.Config]
 
-// Physical state lives in the same Go owner used by Windows' mouse hook.
-// Quartz callbacks are serial; Epoch is shared with the worker thread.
+// Quartz and Win32 both use the same command receipt and immutable Core state.
 var nativeCore voice.Core
 
-//export VRAction
-func VRAction(code C.int) C.int { return C.int(nativeCore.Role(int(code))) }
+//export VRCommand
+func VRCommand(kind, code C.int, token C.uint64_t, busy C.int) C.VRCommandEvent {
+	e := nativeCore.Apply(voice.Command{
+		Kind: voice.CommandKind(kind), Code: int(code), Token: uint64(token), Busy: busy != 0,
+	})
+	return C.VRCommandEvent{kind: C.int(e.Kind), token: C.uint64_t(e.Token),
+		role: C.int(e.Role), release: C.int(e.Release)}
+}
 
-//export VRHeldRole
-func VRHeldRole(code C.int) C.int { return C.int(nativeCore.HeldRole(int(code))) }
-
-//export VRDown
-func VRDown(code C.int) C.int {
-	if nativeCore.Down(int(code)) {
-		return 1
+//export VRSnapshot
+func VRSnapshot(code C.int, token C.uint64_t) C.VRCoreState {
+	s := nativeCore.Snapshot(int(code), uint64(token))
+	r := C.VRCoreState{role: C.int(s.Role), held_role: C.int(s.HeldRole),
+		current: C.uint64_t(s.Current), phase: C.int(s.Phase)}
+	if s.Down {
+		r.down = 1
 	}
-	return 0
-}
-
-//export VRPress
-func VRPress(code C.int, busy C.int) C.ulonglong {
-	return C.ulonglong(nativeCore.Press(int(code), busy != 0))
-}
-
-//export VRActivate
-func VRActivate(code C.int, token C.ulonglong) C.int {
-	if nativeCore.Activate(int(code), uint64(token)) {
-		return 1
+	if s.Armed {
+		r.armed = 1
 	}
-	return 0
-}
-
-//export VRRelease
-func VRRelease(code C.int) C.int {
-	return C.int(nativeCore.Release(int(code)))
-}
-
-//export VRAbandon
-func VRAbandon() {
-	nativeCore.Abandon() // retain key-up after recording timeout
-}
-
-//export VRArmed
-func VRArmed() C.int {
-	if nativeCore.Armed() {
-		return 1
+	if s.CanActivate {
+		r.can_activate = 1
 	}
-	return 0
-}
-
-//export VREpochStart
-func VREpochStart() C.ulonglong { return C.ulonglong(nativeCore.Start()) }
-
-//export VREpochValid
-func VREpochValid(token C.ulonglong) C.int {
-	if nativeCore.Valid(uint64(token)) {
-		return 1
+	if s.Valid {
+		r.valid = 1
 	}
-	return 0
-}
-
-//export VREpochCancel
-func VREpochCancel() {
-	nativeCore.Cancel()
+	if s.Closed {
+		r.closed = 1
+	}
+	return r
 }
 
 //export VRClipboardSnapshotFits
@@ -158,7 +136,7 @@ func VRProfile(config *C.char) *C.char {
 	if reply.OK {
 		nativeConfig.Store(&reply.cfg)
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
-		nativeCore.Bind([]int{macKeyCode(profile["dictation"].(string))}, []int{macKeyCode(profile["rewrite"].(string))})
+		nativeCore.Apply(voice.Command{Kind: voice.CommandBind, Dictation: []int{macKeyCode(profile["dictation"].(string))}, Rewrite: []int{macKeyCode(profile["rewrite"].(string))}})
 	}
 	return nativeJSON(reply)
 }
@@ -166,7 +144,7 @@ func VRProfile(config *C.char) *C.char {
 const maxPCMBytes = audio.PCMBytesPerSecond * coreconfig.RecordSecondsMax
 
 //export VRRun
-func VRRun(rewrite C.int, audio *C.uchar, length C.int, selection *C.char, token C.ulonglong, onTranscribed C.VRTranscribedCallback) (result *C.char) {
+func VRRun(rewrite C.int, audio *C.uchar, length C.int, selection *C.char, token C.ulonglong, onEvent C.VREventCallback) (result *C.char) {
 	if length < 0 || length > C.int(maxPCMBytes) || (length > 0 && audio == nil) {
 		return nil
 	}
@@ -181,9 +159,11 @@ func VRRun(rewrite C.int, audio *C.uchar, length C.int, selection *C.char, token
 	if rewrite != 0 && (len(selected) > 1<<20 || !utf8.ValidString(selected)) {
 		return nativeJSON(failure("invalid_request", "selected text exceeds limits"))
 	}
-	var afterASR func(string)
-	if onTranscribed != nil {
-		afterASR = func(string) { C.vrReportTranscribed(onTranscribed, C.ulonglong(token)) }
+	var emit func(voice.Event)
+	if onEvent != nil {
+		emit = func(event voice.Event) {
+			C.vrReportEvent(onEvent, C.int(event.Kind), C.uint64_t(event.Token))
+		}
 	}
 	ctx := nativeCore.ContextFor(uint64(token))
 	// Native ABI errors and stale task results cannot escape into Swift.
@@ -199,7 +179,7 @@ func VRRun(rewrite C.int, audio *C.uchar, length C.int, selection *C.char, token
 			}
 		}
 	}()
-	outcome, err := nativeCore.Execute(uint64(token), *cfg, C.GoBytes(unsafe.Pointer(audio), length), selected, rewrite != 0, afterASR)
+	outcome, err := nativeCore.Execute(uint64(token), *cfg, C.GoBytes(unsafe.Pointer(audio), length), selected, rewrite != 0, emit)
 	if err == nil {
 		return nativeJSON(success(outcome))
 	}

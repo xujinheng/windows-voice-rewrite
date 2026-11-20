@@ -19,146 +19,146 @@ func TestSideHoldThresholdDuration(t *testing.T) {
 
 func TestHoldsCrossPlatformExclusiveLifecycle(t *testing.T) {
 	var s Core
-	s.Bind([]int{1}, []int{2})
-	if s.Press(0, false) != 0 || s.Press(-1, false) != 0 || s.Down(-1) {
+	s.Apply(Command{Kind: CommandBind, Dictation: []int{1}, Rewrite: []int{2}})
+	if s.Apply(Command{Kind: CommandPress, Code: 0, Busy: false}).Token != 0 || s.Apply(Command{Kind: CommandPress, Code: -1, Busy: false}).Token != 0 || s.Snapshot(-1, 0).Down {
 		t.Fatal("invalid native code")
 	}
-	if s.Press(1, true) != 0 || s.Down(1) {
+	if s.Apply(Command{Kind: CommandPress, Code: 1, Busy: true}).Token != 0 || s.Snapshot(1, 0).Down {
 		t.Fatal("busy event created phantom hold")
 	}
-	a := s.Press(1, false)
-	if a == 0 || !s.Armed() || !s.Down(1) {
+	a := s.Apply(Command{Kind: CommandPress, Code: 1, Busy: false}).Token
+	if a == 0 || !s.Snapshot(0, 0).Armed || !s.Snapshot(1, 0).Down {
 		t.Fatal("owner was not armed")
 	}
-	if s.Press(2, false) != 0 || s.Down(2) {
+	if s.Apply(Command{Kind: CommandPress, Code: 2, Busy: false}).Token != 0 || s.Snapshot(2, 0).Down {
 		t.Fatal("second key should pass through")
 	}
-	if s.CanActivate(2, a) {
+	if s.Snapshot(2, a).CanActivate {
 		t.Fatal("wrong activation owner")
 	}
-	if action := s.Release(1); action != ReleaseShort {
+	if action := s.Apply(Command{Kind: CommandRelease, Code: 1}).Release; action != ReleaseShort {
 		t.Fatal("short click activated a task")
 	}
-	if s.Activate(1, a) {
+	if (s.Apply(Command{Kind: CommandActivate, Code: 1, Token: a}).Kind == EventActivated) {
 		t.Fatal("late timer activated a short click")
 	}
-	a = s.Press(1, false)
-	if a == 0 || !s.Activate(1, a) || s.Activate(1, a) {
+	a = s.Apply(Command{Kind: CommandPress, Code: 1, Busy: false}).Token
+	if a == 0 || !(s.Apply(Command{Kind: CommandActivate, Code: 1, Token: a}).Kind == EventActivated) || (s.Apply(Command{Kind: CommandActivate, Code: 1, Token: a}).Kind == EventActivated) {
 		t.Fatal("long press must activate exactly once")
 	}
-	if action := s.Release(2); action != ReleaseIgnored {
+	if action := s.Apply(Command{Kind: CommandRelease, Code: 2}).Release; action != ReleaseIgnored {
 		t.Fatal("phantom release")
 	}
-	if action := s.Release(1); action != ReleaseActive || s.Armed() {
+	if action := s.Apply(Command{Kind: CommandRelease, Code: 1}).Release; action != ReleaseActive || s.Snapshot(0, 0).Armed {
 		t.Fatal("owner release")
 	}
-	b := s.Press(1, false)
-	if b == 0 || b == a || s.Activate(1, a) {
+	b := s.Apply(Command{Kind: CommandPress, Code: 1, Busy: false}).Token
+	if b == 0 || b == a || (s.Apply(Command{Kind: CommandActivate, Code: 1, Token: a}).Kind == EventActivated) {
 		t.Fatal("stale timer replay")
 	}
-	s.Abandon()
-	if s.Armed() || !s.Down(1) {
+	s.Apply(Command{Kind: CommandAbandon})
+	if s.Snapshot(0, 0).Armed || !s.Snapshot(1, 0).Down {
 		t.Fatal("abandoned press lost physical release")
 	}
-	if action := s.Release(1); action != ReleaseOther {
+	if action := s.Apply(Command{Kind: CommandRelease, Code: 1}).Release; action != ReleaseOther {
 		t.Fatal("abandoned key created task")
 	}
-	c := s.Press(1, false)
+	c := s.Apply(Command{Kind: CommandPress, Code: 1, Busy: false}).Token
 	if c == 0 {
 		t.Fatal("cannot start after abandon")
 	}
-	s.Cancel()
-	if s.Down(1) || s.Armed() || s.Activate(1, c) {
+	s.Apply(Command{Kind: CommandCancel})
+	if s.Snapshot(1, 0).Down || s.Snapshot(0, 0).Armed || (s.Apply(Command{Kind: CommandActivate, Code: 1, Token: c}).Kind == EventActivated) {
 		t.Fatal("cancel left live key")
 	}
 }
 
 func TestOneCoreCancellationRevokesHoldAndWork(t *testing.T) {
 	var core Core
-	core.Bind([]int{1}, []int{2})
-	hold := core.Press(1, false)
-	if hold == 0 || !core.Activate(1, hold) {
+	core.Apply(Command{Kind: CommandBind, Dictation: []int{1}, Rewrite: []int{2}})
+	hold := core.Apply(Command{Kind: CommandPress, Code: 1, Busy: false}).Token
+	if hold == 0 || !(core.Apply(Command{Kind: CommandActivate, Code: 1, Token: hold}).Kind == EventActivated) {
 		t.Fatal("physical hold did not enter the shared core")
 	}
-	task := core.Start()
+	task := core.Apply(Command{Kind: CommandStart}).Token
 	ctx := core.ContextFor(task)
-	core.Cancel()
-	if core.Valid(task) || core.Armed() || core.Down(1) || core.Activate(1, hold) || ctx.Err() == nil {
+	core.Apply(Command{Kind: CommandCancel})
+	if core.Snapshot(0, task).Valid || core.Snapshot(0, 0).Armed || core.Snapshot(1, 0).Down || (core.Apply(Command{Kind: CommandActivate, Code: 1, Token: hold}).Kind == EventActivated) || ctx.Err() == nil {
 		t.Fatal("one core cancel must revoke task, provider request and physical hold together")
 	}
-	if next := core.Start(); next == 0 || next == task || !core.Valid(next) {
+	if next := core.Apply(Command{Kind: CommandStart}).Token; next == 0 || next == task || !core.Snapshot(0, next).Valid {
 		t.Fatal("core failed to admit the next task")
 	}
 }
 
 func TestCorePhysicalRemapCannotReusePendingToken(t *testing.T) {
 	var core Core
-	core.Bind([]int{103}, []int{104})
-	old := core.Press(103, false) // Quartz Mouse4
-	if core.Release(103) != ReleaseShort || core.Down(103) {
+	core.Apply(Command{Kind: CommandBind, Dictation: []int{103}, Rewrite: []int{104}})
+	old := core.Apply(Command{Kind: CommandPress, Code: 103, Busy: false}).Token // Quartz Mouse4
+	if core.Apply(Command{Kind: CommandRelease, Code: 103}).Release != ReleaseShort || core.Snapshot(103, 0).Down {
 		t.Fatal("old binding did not release")
 	}
-	core.Bind([]int{54}, []int{61})
-	next := core.Press(54, false) // Quartz right Command
-	if next == old || core.Activate(54, old) || !core.Activate(54, next) {
+	core.Apply(Command{Kind: CommandBind, Dictation: []int{54}, Rewrite: []int{61}})
+	next := core.Apply(Command{Kind: CommandPress, Code: 54, Busy: false}).Token // Quartz right Command
+	if next == old || (core.Apply(Command{Kind: CommandActivate, Code: 54, Token: old}).Kind == EventActivated) || !(core.Apply(Command{Kind: CommandActivate, Code: 54, Token: next}).Kind == EventActivated) {
 		t.Fatal("a stale timer from a remapped physical key activated the next input")
 	}
 }
 
 func TestCoreRoleRemainsStableWhenShortcutsReload(t *testing.T) {
 	var core Core
-	core.Bind([]int{103}, []int{104})
-	if core.Role(103) != 1 || core.Role(104) != 2 {
+	core.Apply(Command{Kind: CommandBind, Dictation: []int{103}, Rewrite: []int{104}})
+	if core.Snapshot(103, 0).Role != 1 || core.Snapshot(104, 0).Role != 2 {
 		t.Fatal("incorrect bound roles")
 	}
-	hold := core.Press(103, false)
-	if hold == 0 || core.HeldRole(103) != 1 {
+	hold := core.Apply(Command{Kind: CommandPress, Code: 103, Busy: false}).Token
+	if hold == 0 || core.Snapshot(103, 0).HeldRole != 1 {
 		t.Fatal("dictation mode was not captured at key-down")
 	}
-	core.Bind([]int{54}, []int{61})
-	if core.Role(103) != 0 || core.HeldRole(103) != 1 {
+	core.Apply(Command{Kind: CommandBind, Dictation: []int{54}, Rewrite: []int{61}})
+	if core.Snapshot(103, 0).Role != 0 || core.Snapshot(103, 0).HeldRole != 1 {
 		t.Fatal("hotkey reload silently changed in-flight task")
 	}
-	if !core.Activate(103, hold) || core.HeldRole(103) != 1 {
+	if !(core.Apply(Command{Kind: CommandActivate, Code: 103, Token: hold}).Kind == EventActivated) || core.Snapshot(103, 0).HeldRole != 1 {
 		t.Fatal("late activation lost original task role")
 	}
-	if core.Release(103) != ReleaseActive || core.HeldRole(103) != 0 {
+	if core.Apply(Command{Kind: CommandRelease, Code: 103}).Release != ReleaseActive || core.Snapshot(103, 0).HeldRole != 0 {
 		t.Fatal("released key retained a task role")
 	}
-	if core.Role(54) != 1 || core.Role(61) != 2 {
+	if core.Snapshot(54, 0).Role != 1 || core.Snapshot(61, 0).Role != 2 {
 		t.Fatal("new bindings did not become active")
 	}
 }
 
 func TestCoreRejectsUnboundPhysicalInput(t *testing.T) {
 	var core Core
-	if core.Press(1, false) != 0 {
+	if core.Apply(Command{Kind: CommandPress, Code: 1, Busy: false}).Token != 0 {
 		t.Fatal("an unconfigured client input must not begin a voice task")
 	}
-	core.Bind([]int{54}, []int{61})
-	if core.Press(103, false) != 0 || core.Armed() {
+	core.Apply(Command{Kind: CommandBind, Dictation: []int{54}, Rewrite: []int{61}})
+	if core.Apply(Command{Kind: CommandPress, Code: 103, Busy: false}).Token != 0 || core.Snapshot(0, 0).Armed {
 		t.Fatal("an unbound native key was accepted")
 	}
-	if core.Press(54, false) == 0 {
+	if core.Apply(Command{Kind: CommandPress, Code: 54, Busy: false}).Token == 0 {
 		t.Fatal("configured shortcut was refused")
 	}
 }
 
 func TestCoreWindowsMouseAndKeyboardShareOneInputOwner(t *testing.T) {
 	var c Core
-	c.Bind([]int{1, 256 + 11}, []int{2, 256 + 12})
+	c.Apply(Command{Kind: CommandBind, Dictation: []int{1, 256 + 11}, Rewrite: []int{2, 256 + 12}})
 	key := 256 + 11
-	if c.Role(1) != 1 || c.Role(key) != 1 || c.Role(2) != 2 || c.Role(256+12) != 2 {
+	if c.Snapshot(1, 0).Role != 1 || c.Snapshot(key, 0).Role != 1 || c.Snapshot(2, 0).Role != 2 || c.Snapshot(256+12, 0).Role != 2 {
 		t.Fatal("a host must bind both physical keyboard and mouse to the same intent")
 	}
-	token := c.Press(key, false)
-	if token == 0 || !c.Activate(key, token) || c.HeldRole(key) != 1 {
+	token := c.Apply(Command{Kind: CommandPress, Code: key, Busy: false}).Token
+	if token == 0 || !(c.Apply(Command{Kind: CommandActivate, Code: key, Token: token}).Kind == EventActivated) || c.Snapshot(key, 0).HeldRole != 1 {
 		t.Fatal("keyboard hold bypassed the Go Core")
 	}
-	if c.Press(2, false) != 0 || c.Press(1, false) != 0 {
+	if c.Apply(Command{Kind: CommandPress, Code: 2, Busy: false}).Token != 0 || c.Apply(Command{Kind: CommandPress, Code: 1, Busy: false}).Token != 0 {
 		t.Fatal("another physical input was accepted while keyboard owns the voice task")
 	}
-	if c.Release(key) != ReleaseActive || c.HeldRole(key) != 0 {
+	if c.Apply(Command{Kind: CommandRelease, Code: key}).Release != ReleaseActive || c.Snapshot(key, 0).HeldRole != 0 {
 		t.Fatal("keyboard key release failed to clear Go Core ownership")
 	}
 }
@@ -177,22 +177,22 @@ func TestDifferentNativeEventsHaveIdenticalGoLifecycle(t *testing.T) {
 	} {
 		t.Run(native.name, func(t *testing.T) {
 			var core Core
-			core.Bind([]int{native.dictation}, []int{native.edit})
-			if core.Role(native.dictation) != 1 || core.Role(native.edit) != 2 {
+			core.Apply(Command{Kind: CommandBind, Dictation: []int{native.dictation}, Rewrite: []int{native.edit}})
+			if core.Snapshot(native.dictation, 0).Role != 1 || core.Snapshot(native.edit, 0).Role != 2 {
 				t.Fatal("role drift")
 			}
-			token := core.Press(native.dictation, false)
-			if token == 0 || !core.Activate(native.dictation, token) || core.Release(native.dictation) != ReleaseActive {
+			token := core.Apply(Command{Kind: CommandPress, Code: native.dictation, Busy: false}).Token
+			if token == 0 || !(core.Apply(Command{Kind: CommandActivate, Code: native.dictation, Token: token}).Kind == EventActivated) || core.Apply(Command{Kind: CommandRelease, Code: native.dictation}).Release != ReleaseActive {
 				t.Fatal("active hold drift")
 			}
-			short := core.Press(native.edit, false)
-			if short == 0 || core.Release(native.edit) != ReleaseShort || core.Activate(native.edit, short) {
+			short := core.Apply(Command{Kind: CommandPress, Code: native.edit, Busy: false}).Token
+			if short == 0 || core.Apply(Command{Kind: CommandRelease, Code: native.edit}).Release != ReleaseShort || (core.Apply(Command{Kind: CommandActivate, Code: native.edit, Token: short}).Kind == EventActivated) {
 				t.Fatal("short-press drift")
 			}
-			generation := core.Start()
+			generation := core.Apply(Command{Kind: CommandStart}).Token
 			ctx := core.ContextFor(generation)
-			core.Cancel()
-			if core.Valid(generation) || ctx.Err() == nil || core.Armed() {
+			core.Apply(Command{Kind: CommandCancel})
+			if core.Snapshot(0, generation).Valid || ctx.Err() == nil || core.Snapshot(0, 0).Armed {
 				t.Fatal("cancellation drift")
 			}
 		})

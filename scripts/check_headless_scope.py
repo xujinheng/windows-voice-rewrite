@@ -51,7 +51,7 @@ def main():
     if "-buildmode=c-archive" not in build_script or "VoiceCore.h" not in build_script:
         raise SystemExit("macOS must link in-process Go Core, not spawn a helper")
     swift = " ".join(p.read_text(encoding="utf-8") for p in swift_files)
-    for sym in ("VRAction(", "VRPress(", "VRActivate(", "VRRelease(", "VREpochValid(", "VRWave(", "VRSpinner(", "VRLevel(", "VRDuration(", "VRRun(", "VRHeldRole("):
+    for sym in ("VRCommand(", "VRSnapshot(", "VRWave(", "VRSpinner(", "VRLevel(", "VRDuration(", "VRRun("):
         if sym not in swift:
             raise SystemExit(f"native Swift host does not call Go Core directly: {sym}")
     if any(token in swift for token in ("RightCommand", "RightOption", "Mouse4", "Mouse5",

@@ -198,13 +198,13 @@ func (a *appState) setStatus(s trayState) {
 // Worker threads never mutate native windows. All phase updates are owned by
 // the UI message pump and tagged with the recording epoch to discard late events.
 func (a *appState) postHandyPhase(phase indicator.Phase, generation uint64) {
-	if a.core.Valid(generation) {
+	if a.core.Snapshot(0, generation).Valid {
 		procPostMessage.Call(a.Window, WM_STATUS_UPDATE, uintptr(phase), uintptr(generation))
 	}
 }
 
 func (a *appState) showAnswer(title, body string, anchor trayPoint, selection *selectedText, allowApply bool, generation uint64) {
-	if !a.core.Valid(generation) {
+	if !a.core.Snapshot(0, generation).Valid {
 		return
 	}
 	msg := popupMessage{title: title, body: body, anchor: anchor, app: a, selection: selection, allowApply: allowApply, generation: generation}
@@ -334,7 +334,7 @@ func runApp() {
 	}
 	defer procDestroyWindow.Call(hwnd)
 	app := &appState{Window: hwnd, logger: l, cfg: cfg, popups: make(chan popupMessage, 4), updateReady: make(chan update.Notice, 1)}
-	defer app.core.Shutdown()
+	defer app.core.Apply(voice.Command{Kind: voice.CommandShutdown})
 	defer app.closeMeeting()
 	defer closeActiveAnswer()
 	defer closeNativeSettings()
@@ -363,7 +363,7 @@ func runApp() {
 	if !usingMouse {
 		rewriteInputs = append(rewriteInputs, keyRewrite)
 	}
-	app.core.Bind(dictationInputs, rewriteInputs)
+	app.core.Apply(voice.Command{Kind: voice.CommandBind, Dictation: dictationInputs, Rewrite: rewriteInputs})
 	if !usingMouse {
 		recordVirtualKey = recordVK
 		if rv, _, _ := procRegisterHotKey.Call(0, HOTKEY_RECORD, recordMods, recordVK); rv == 0 {
@@ -453,9 +453,9 @@ func runApp() {
 			stopHoldWatch()
 			if holdButton == 0 {
 				if holdIsDictation {
-					app.core.Release(keyDictation)
+					app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyDictation})
 				} else {
-					app.core.Release(keyRewrite)
+					app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyRewrite})
 				}
 			}
 		}
@@ -504,7 +504,7 @@ func runApp() {
 		if app.meeting != nil && !app.meeting.Demo() {
 			holdMeeting = app.meeting
 		}
-		activeGeneration = app.core.Start()
+		activeGeneration = app.core.Apply(voice.Command{Kind: voice.CommandStart}).Token
 		active = rec
 		watchRecordingLimit(hwnd, rec, activeGeneration, l)
 		app.setStatus(trayRecording)
@@ -557,10 +557,10 @@ func runApp() {
 		if dictation {
 			key = keyDictation
 		}
-		hold := app.core.Press(key, false)
-		if hold == 0 || !app.core.Activate(key, hold) {
+		hold := app.core.Apply(voice.Command{Kind: voice.CommandPress, Code: key, Busy: false}).Token
+		if hold == 0 || !(app.core.Apply(voice.Command{Kind: voice.CommandActivate, Code: key, Token: hold}).Kind == voice.EventActivated) {
 			if hold != 0 {
-				app.core.Release(key)
+				app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: key})
 			}
 			rec.Stop()
 			return
@@ -570,7 +570,7 @@ func runApp() {
 
 	armSide := func(button uint16) {
 		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil ||
-			app.core.HeldRole(int(button)) == 0 {
+			app.core.Snapshot(int(button), 0).HeldRole == 0 {
 			return
 		}
 		if uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
@@ -583,7 +583,7 @@ func runApp() {
 		// Paint the provisional status immediately. Recording starts at
 		// physical mouse-down, but only a 250ms hold activates voice mode.
 		// A short click closes this preview and replays browser navigation.
-		mode := voice.HoldModeLabel(app.core.HeldRole(int(button)) == 1, false)
+		mode := voice.HoldModeLabel(app.core.Snapshot(int(button), 0).HeldRole == 1, false)
 		showPendingHandyStatus(mode)
 		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
 		pendingSide = &sideCapture{button: button, targetWindow: win, recorder: rec, err: err}
@@ -595,7 +595,7 @@ func runApp() {
 		}
 		held := pendingSide
 		if app.paused.Load() || app.busy.Load() || active != nil ||
-			app.core.HeldRole(int(button)) == 0 ||
+			app.core.Snapshot(int(button), 0).HeldRole == 0 ||
 			held.targetWindow == 0 || !isSameForegroundWindow(held.targetWindow) {
 			discardPendingSide()
 			return
@@ -609,7 +609,7 @@ func runApp() {
 			return
 		}
 		// Leave the provisional pill alive: activateHold promotes it in-place.
-		activateHold(held.recorder, app.core.HeldRole(int(button)) == 1, button, held.targetWindow)
+		activateHold(held.recorder, app.core.Snapshot(int(button), 0).HeldRole == 1, button, held.targetWindow)
 	}
 
 	for {
@@ -649,7 +649,7 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_STATUS_UPDATE {
-			if app.core.Valid(uint64(msg.LParam)) && activeHandyStatus != nil && activeHandyStatus.owner == uint64(msg.LParam) {
+			if app.core.Snapshot(0, uint64(msg.LParam)).Valid && activeHandyStatus != nil && activeHandyStatus.owner == uint64(msg.LParam) {
 				updateHandyStatus(indicator.Phase(msg.WParam))
 			}
 			continue
@@ -658,18 +658,18 @@ func runApp() {
 			status := activeHandyStatus
 			if status != nil && status.pending && msg.WParam == 0 {
 				discardPendingSide()
-			} else if status != nil && app.core.Valid(uint64(msg.WParam)) && status.owner == uint64(msg.WParam) {
+			} else if status != nil && app.core.Snapshot(0, uint64(msg.WParam)).Valid && status.owner == uint64(msg.WParam) {
 				if indicator.Terminal(status.phase) {
 					closeHandyStatus() // close a completed status, not the answer card
 				} else {
-					app.core.Start() // cancel either Mouse4 or Mouse5 before paste
+					app.core.Apply(voice.Command{Kind: voice.CommandStart}) // cancel either Mouse4 or Mouse5 before paste
 					if active != nil {
 						stopHoldWatch()
 						if holdButton == 0 && cfg.RecordMode == "hold" {
 							if holdIsDictation {
-								app.core.Release(keyDictation)
+								app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyDictation})
 							} else {
-								app.core.Release(keyRewrite)
+								app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyRewrite})
 							}
 						}
 						rec := active
@@ -704,7 +704,7 @@ func runApp() {
 		if msg.Message == WM_SHOW_ANSWER {
 			select {
 			case answer := <-app.popups:
-				if !app.core.Valid(answer.generation) {
+				if !app.core.Snapshot(0, answer.generation).Valid {
 					l.Print("discarded stale popup result")
 					continue
 				}
@@ -721,7 +721,7 @@ func runApp() {
 		}
 		if msg.Message == WM_TOGGLE_READY {
 			result := <-toggleResult
-			if !app.core.Valid(result.generation) {
+			if !app.core.Snapshot(0, result.generation).Valid {
 				// Canceled while the worker's ready message was queued:
 				// restore only our clipboard lease and release its busy flag.
 				finishTogglePrepare(app, hwnd, result.sel, result.rec, true, nil)
@@ -738,7 +738,7 @@ func runApp() {
 		}
 		if msg.Message == WM_TRAY_UPDATE {
 			state := trayState(app.status.Load())
-			if state == trayError && activeHandyStatus != nil && !indicator.Terminal(activeHandyStatus.phase) && app.core.Valid(activeHandyStatus.owner) {
+			if state == trayError && activeHandyStatus != nil && !indicator.Terminal(activeHandyStatus.phase) && app.core.Snapshot(0, activeHandyStatus.owner).Valid {
 				updateHandyStatus(indicator.Error)
 			}
 			// Always run Shell_NotifyIconW on the thread that owns the tray window.
@@ -837,13 +837,13 @@ func runApp() {
 			if len(recent) == 0 {
 				winErr(history.EmptySession)
 			} else {
-				app.showAnswer(ux.HistoryRestoreTitle(recent[0].Title), recent[0].Text, currentCursorPoint(), nil, false, app.core.Current())
+				app.showAnswer(ux.HistoryRestoreTitle(recent[0].Title), recent[0].Text, currentCursorPoint(), nil, false, app.core.Snapshot(0, 0).Current)
 			}
 			continue
 		}
 		if msg.Message == WM_TRAY_HISTORY_ITEM {
 			if entry, ok := app.core.History.Get(uint64(msg.WParam)); ok {
-				app.showAnswer(ux.HistoryRestoreTitle(entry.Title), entry.Text, currentCursorPoint(), nil, false, app.core.Current())
+				app.showAnswer(ux.HistoryRestoreTitle(entry.Title), entry.Text, currentCursorPoint(), nil, false, app.core.Snapshot(0, 0).Current)
 			} else {
 				winErr(history.Cleared)
 			}
@@ -973,7 +973,7 @@ func runApp() {
 				continue
 			}
 			// Legacy toggle mode also prepares its selection on a worker.
-			generation := app.core.Start()
+			generation := app.core.Apply(voice.Command{Kind: voice.CommandStart}).Token
 			app.busy.Store(true)
 			app.setStatus(trayTranscribing)
 			go func() {
@@ -996,7 +996,7 @@ func runApp() {
 					finishTogglePrepare(app, hwnd, sel, nil, true, err)
 					return
 				}
-				if !app.core.Valid(generation) {
+				if !app.core.Snapshot(0, generation).Valid {
 					finishTogglePrepare(app, hwnd, sel, rec, true, nil)
 					return
 				}

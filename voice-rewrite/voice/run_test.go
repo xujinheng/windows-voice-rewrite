@@ -92,8 +92,8 @@ func TestPortableEpochCancellationDisconnectsProvider(t *testing.T) {
 			cfg.ASRBaseURL, cfg.LLMBaseURL = server.URL+"/v1", server.URL+"/v1"
 			cfg.TextModel = "test-model"
 			var epoch Core
-			defer epoch.Shutdown()
-			token := epoch.Start()
+			defer epoch.Apply(Command{Kind: CommandShutdown})
+			token := epoch.Apply(Command{Kind: CommandStart}).Token
 			done := make(chan error, 1)
 			go func() {
 				_, err := epoch.Execute(token, cfg, make([]byte, 3200), "selected text", rewrite, nil)
@@ -104,7 +104,7 @@ func TestPortableEpochCancellationDisconnectsProvider(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				t.Fatal("provider was never contacted")
 			}
-			epoch.Start()
+			epoch.Apply(Command{Kind: CommandStart})
 			select {
 			case <-disconnected:
 			case <-time.After(5 * time.Second):
@@ -133,7 +133,7 @@ func TestCoreRetainsCompletedResultWithoutHostState(t *testing.T) {
 	cfg := coreconfig.Defaults()
 	cfg.ASRBaseURL = server.URL + "/v1"
 	var core Core
-	token := core.Start()
+	token := core.Apply(Command{Kind: CommandStart}).Token
 	out, err := core.Execute(token, cfg, make([]byte, 3200), "", false, nil)
 	if err != nil || out.Text != "shared transcript" {
 		t.Fatalf("execute result: %+v, %v", out, err)

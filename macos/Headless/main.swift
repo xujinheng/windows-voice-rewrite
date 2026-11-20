@@ -185,8 +185,8 @@ private struct BridgeReply: Decodable {
 }
 
 // In-process Go Core. Event/animation calculations never cross IPC.
-private let onASRTranscribed: @convention(c) (UInt64) -> Void = { token in
-    DispatchQueue.main.async { MainActor.assumeIsolated { (NSApp.delegate as? HeadlessApp)?.reportTranscribed(token) } }
+private let onCoreEvent: @convention(c) (Int32, UInt64) -> Void = { kind, token in
+    DispatchQueue.main.async { MainActor.assumeIsolated { (NSApp.delegate as? HeadlessApp)?.reportCoreEvent(kind, token) } }
 }
 
 private enum GoCore {
@@ -197,7 +197,7 @@ private enum GoCore {
             result = (selection ?? "").withCString { selected in
                 audio.withUnsafeBytes { pcm in
                     VRRun(rewrite ? 1 : 0, pcm.bindMemory(to: UInt8.self).baseAddress,
-                          Int32(audio.count), selected, token, onASRTranscribed)
+                          Int32(audio.count), selected, token, onCoreEvent)
                 }
             }
         } else {
@@ -225,7 +225,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var taskID: UInt64 = 0
     private var targetPID: pid_t = 0
     private var targetFocus: FocusIdentity?
-    private var pending: Bool { VRArmed() == 0 && taskID != 0 }
+    private var pending: Bool { VRSnapshot(0, 0).armed == 0 && taskID != 0 }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -258,7 +258,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func reload() {
-        guard VRArmed() == 0 && !pending else { show("Reload after current task"); return }
+        guard VRSnapshot(0, 0).armed == 0 && !pending else { show("Reload after current task"); return }
         do {
             let json = try String(contentsOf: configURL, encoding: .utf8)
             guard let profile = try GoCore.request(config: json,
@@ -278,9 +278,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         NSPasteboard.general.clearContents()
         show(NSPasteboard.general.setString(String(cString: result), forType: .string) ? "Copied" : "Copy failed")
     }
-    @objc private func quit() { VREpochCancel(); NSApp.terminate(nil) }
+    @objc private func quit() { VRCommand(Int32(VR_COMMAND_CANCEL), 0, 0, 0); NSApp.terminate(nil) }
     private func show(_ text: String) { item.button?.title = text }
-    fileprivate func reportTranscribed(_ token: UInt64) { if pending && taskID == token && VREpochValid(token) == 1 { pill.working(.rewriting); show(config.pill.rewritingLabel) } }
+    fileprivate func reportCoreEvent(_ kind: Int32, _ token: UInt64) { if kind == Int32(VR_EVENT_TRANSCRIBED) && pending && taskID == token && VRSnapshot(0, token).valid == 1 { pill.working(.rewriting); show(config.pill.rewritingLabel) } }
 
     private func startEventTap() {
         guard tap == nil else { return }
@@ -294,10 +294,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
                 // A lost key-up must not leave Go's physical Hold armed or
                 // allow an old inference response to paste into the editor.
-                if app.microphone.running || app.pending || VRArmed() != 0 {
+                if app.microphone.running || app.pending || VRSnapshot(0, 0).armed != 0 {
                     app.cancelFromPill()
                 } else {
-                    VREpochCancel()
+                    VRCommand(Int32(VR_COMMAND_CANCEL), 0, 0, 0)
                 }
                 if let tap = app.tap { CGEvent.tapEnable(tap: tap, enable: true) }
                 return Unmanaged.passUnretained(event)
@@ -307,8 +307,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             if type == .flagsChanged {
                 app.handleModifier(code: code, flags: event.flags)
             } else if type == .keyDown {
-                if VRArmed() != 0 && app.taskID == 0 {
-                    VRAbandon()
+                if VRSnapshot(0, 0).armed != 0 && app.taskID == 0 {
+                    VRCommand(Int32(VR_COMMAND_ABANDON), 0, 0, 0)
                     if app.microphone.running { _ = try? app.microphone.stop(discard: true) }
                 }
             } else if type == .otherMouseDown || type == .otherMouseUp {
@@ -316,8 +316,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     return Unmanaged.passUnretained(event)
                 }
                 if mouse == 3 || mouse == 4 {
-                    if (type == .otherMouseDown && VRAction(Int32(100 + mouse)) != 0) ||
-                        (type == .otherMouseUp && VRDown(Int32(100 + mouse)) != 0) {
+                    if (type == .otherMouseDown && VRSnapshot(Int32(100 + mouse), 0).role != 0) ||
+                        (type == .otherMouseUp && VRSnapshot(Int32(100 + mouse), 0).down != 0) {
                         if app.updatePress(code: 100 + mouse,
                                            down: type == .otherMouseDown,
                                            delay: Double(app.config.mouseDelayMS) / 1000,
@@ -347,9 +347,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         case 61: family = .maskAlternate
         default: return
         }
-        guard VRAction(Int32(code)) != 0 || VRDown(Int32(code)) != 0 else { return }
+        let state = VRSnapshot(Int32(code), 0)
+        guard state.role != 0 || state.down != 0 else { return }
         updatePress(code: code,
-                    down: VRDown(Int32(code)) == 0 && flags.contains(family),
+                    down: state.down == 0 && flags.contains(family),
                     delay: Double(config.modifierDelayMS) / 1000)
     }
     @discardableResult
@@ -357,20 +358,21 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                              cursor: CGPoint? = nil) -> Bool {
         let key = Int32(code)
         if down {
-            let token = VRPress(key, pending ? 1 : 0)
+            let token = VRCommand(Int32(VR_COMMAND_PRESS), key, 0, pending ? 1 : 0).token
             guard token != 0 else { return false }
             targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
             targetFocus = FocusIdentity(window: focusedWindow(), element: nil, title: nil)
             taskID = 0
             do { try microphone.start(maximumSeconds: config.maximumSeconds) }
-            catch { VRAbandon(); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return true }
+            catch { VRCommand(Int32(VR_COMMAND_ABANDON), 0, 0, 0); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return true }
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                guard let self, VRActivate(key, token) == 1 else { return }
-                self.begin(rewrite: VRHeldRole(key) == 2)
+                guard let self, VRCommand(Int32(VR_COMMAND_ACTIVATE), key, token, 0).kind == Int32(VR_EVENT_ACTIVATED) else { return }
+                self.begin(rewrite: VRSnapshot(key, 0).held_role == 2)
             }
         } else {
-            let rewrite = VRHeldRole(key) == 2
-            let outcome = VRRelease(key)
+            let event = VRCommand(Int32(VR_COMMAND_RELEASE), key, 0, 0)
+            let rewrite = event.role == 2
+            let outcome = event.release
             guard outcome != 0 else { return false }
             if outcome == 2 && microphone.running { finish(rewrite: rewrite) }
             else if outcome == 2 || outcome == 3 {
@@ -399,18 +401,18 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         targetFocus = FocusIdentity(window: window, element: element,
                                     title: rewrite ? window.flatMap(windowTitle) : nil)
         guard microphone.running else { reset("Mic error"); return }
-        taskID = VREpochStart()
+        taskID = VRCommand(Int32(VR_COMMAND_START), 0, 0, 0).token
         pill.recording(rewrite: rewrite, started: Date(),
                        meter: { [weak self] in self?.microphone.meterLevel ?? 0 })
         let token = taskID
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.maximumSeconds)) { [weak self] in
-            guard let self, VREpochValid(token) == 1, self.microphone.running else { return }
+            guard let self, VRSnapshot(0, token).valid == 1, self.microphone.running else { return }
             self.finish(rewrite: rewrite)
         }
     }
     private func finish(rewrite: Bool) {
         guard microphone.running, taskID != 0 else { return }
-        VRAbandon() // timeout also releases Go's primary key; the physical hold remains
+        VRCommand(Int32(VR_COMMAND_ABANDON), 0, 0, 0) // timeout also releases Go's primary key; the physical hold remains
         pill.working(rewrite ? .selection : .processing)
         show(rewrite ? config.pill.selectionLabel : config.pill.processingDictation)
         let token = taskID
@@ -427,7 +429,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                              audio: pcm, selection: selectedValue?.text, token: token)
                 }
                 DispatchQueue.main.async {
-                    guard let self, VREpochValid(token) == 1 else { return }
+                    guard let self, VRSnapshot(0, token).valid == 1 else { return }
                     defer { self.clearSession() }
                     switch result {
                     case .failure(let error):
@@ -507,7 +509,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func targetStillValid() -> Bool {
-        guard VREpochValid(taskID) == 1,
+        guard VRSnapshot(0, taskID).valid == 1,
               NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID,
               let targetFocus else { return false }
         let window = targetFocus.window == nil ? nil : focusedWindow()
@@ -594,8 +596,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func cancelFromPill() {
-        if VRArmed() == 0 && !pending && !microphone.running { pill.dismiss(); show("VR"); return }
-        VREpochCancel()
+        if VRSnapshot(0, 0).armed == 0 && !pending && !microphone.running { pill.dismiss(); show("VR"); return }
+        VRCommand(Int32(VR_COMMAND_CANCEL), 0, 0, 0)
         if microphone.running { _ = try? microphone.stop(discard: true) }
         clearSession()
         pill.dismiss()
@@ -610,7 +612,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func clearSession() {
-        VRAbandon()
+        VRCommand(Int32(VR_COMMAND_ABANDON), 0, 0, 0)
         targetFocus = nil
         taskID = 0
     }
