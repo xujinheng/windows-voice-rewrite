@@ -1,7 +1,7 @@
 # VoiceRewrite macOS: Go-first headless host
 
 This is a **minimal menu-bar host**, not a second SwiftUI business application.
-The existing Go `cmd/voicebridge` is linked into the native executable as a C archive. Swift directly calls Go `voice.Core` (key holds, task generations, cancellation, transcription and routing) and `indicator`, shared with Windows. No helper process or per-frame IPC is needed.
+The thin Go/C bridge in `clients/macos/bridge/` is linked into the native executable as a C archive. Swift directly calls Go `voice.Core` (key holds, task generations, cancellation, transcription and routing) and `indicator`, shared with Windows. No helper process or per-frame IPC is needed.
 Swift contains only Quartz keyboard/side-button input, AVAudioEngine capture,
 Accessibility selection, focus-checked paste, a native NSStatusItem menu icon and
 a non-activating AppKit recording pill (232×50, expanding to 252×50).
@@ -38,7 +38,7 @@ sent, **not** confirmed insertion.
 ## Scope and validation
 
 No settings GUI, Meeting, history panel or result cards. This host reuses the
-Go `host_profile`, `transcribe` and `selected_voice_task` operations via native C calls; it does not introduce
+Go `VRCommand`, `VRSnapshot`, and `VRRun` operations via native C calls; it does not introduce
 another Go task reducer or duplicate portable ASR/LLM logic.
 
 CI compilation is not physical end-to-end acceptance. Validate both modifier
