@@ -59,8 +59,8 @@ func VRDown(code C.int) C.int {
 
 //export VRPress
 func VRPress(code C.int, busy C.int) C.ulonglong {
-	if nativeKey != 0 || busy != 0 {
-		return 0 // rejected input does not acquire a phantom physical hold
+	if VRAction(code) == 0 || nativeKey != 0 || busy != 0 {
+		return 0 // unbound or busy input does not acquire a physical hold
 	}
 	h := nativeHold(int(code))
 	token, ok := h.Press()
