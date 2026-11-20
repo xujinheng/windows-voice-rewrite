@@ -165,9 +165,7 @@ func (c *Core) Current() uint64 {
 }
 
 // Cancel stops a task and drops any held key ownership, including late timers.
-func (c *Core) Cancel() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *Core) cancelLocked() {
 	c.currentID++
 	if c.cancel != nil {
 		c.cancel()
@@ -182,11 +180,16 @@ func (c *Core) Cancel() {
 		}
 	}
 }
+func (c *Core) Cancel() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cancelLocked()
+}
 func (c *Core) Shutdown() {
-	c.Cancel()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.closed = true
+	c.cancelLocked()
 }
 
 // Execute is the platform-independent task entrypoint. No client can execute
