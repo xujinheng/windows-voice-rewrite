@@ -443,23 +443,30 @@ func runApp() {
 		}
 	}
 	defer stopHoldWatch()
+	// The UI thread is the sole owner of native recorder shutdown, including
+	// keyboard-release receipts and watcher cancellation.
+	stopActive := func() *audioRecorder {
+		rec := active
+		if rec == nil {
+			return nil
+		}
+		active = nil
+		stopHoldWatch()
+		if cfg.RecordMode == "hold" && holdButton == 0 {
+			key := keyRewrite
+			if task.dictation {
+				key = keyDictation
+			}
+			app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: key})
+		}
+		rec.Stop()
+		return rec
+	}
 	finish := func() {
-		if active == nil {
+		rec := stopActive()
+		if rec == nil {
 			return
 		}
-		if cfg.RecordMode == "hold" {
-			stopHoldWatch()
-			if holdButton == 0 {
-				key := keyRewrite
-				if task.dictation {
-					key = keyDictation
-				}
-				app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: key})
-			}
-		}
-		rec := active
-		active = nil
-		rec.Stop()
 		app.busy.Store(true) // no second operation until the worker is finished
 		app.setStatus(trayTranscribing)
 		l.Print("recording stop requested; selection/model processing moved to worker")
@@ -658,19 +665,7 @@ func runApp() {
 					closeHandyStatus() // close a completed status, not the answer card
 				} else {
 					app.core.Apply(voice.Command{Kind: voice.CommandStart}) // cancel either Mouse4 or Mouse5 before paste
-					if active != nil {
-						stopHoldWatch()
-						if holdButton == 0 && cfg.RecordMode == "hold" {
-							key := keyRewrite
-							if task.dictation {
-								key = keyDictation
-							}
-							app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: key})
-						}
-						rec := active
-						active = nil
-						rec.Stop()
-					}
+					stopActive()
 					closeHandyStatus()
 					app.setStatus(trayIdle)
 				}
@@ -881,10 +876,7 @@ func runApp() {
 		if msg.Message == WM_TRAY_EXIT || (msg.Message == WM_HOTKEY && msg.WParam == HOTKEY_EXIT) {
 			discardPendingSide()
 			closeHandyStatus()
-			if active != nil {
-				stopHoldWatch()
-				active.Stop()
-			}
+			stopActive()
 			l.Print("stopped via exit action")
 			return
 		}
