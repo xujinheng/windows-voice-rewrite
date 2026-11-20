@@ -221,11 +221,6 @@ func HostSpec() map[string]any {
 	}
 }
 
-// PhaseUpdateApplies reports that a posted phase still belongs to the visible pill.
-func PhaseUpdateApplies(epochValid, hasPill, ownerMatches bool) bool {
-	return epochValid && hasPill && ownerMatches
-}
-
 // CancelChoice is the pill cancel. A pending preview wins, a stale message is ignored,
 // and a finished phase only closes the pill.
 func CancelChoice(pending, current, terminal bool) int {
