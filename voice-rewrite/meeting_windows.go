@@ -112,13 +112,13 @@ func newMeetingSession(app *appState, demo bool) *meetingSession {
 func (s *meetingSession) express(app *appState, rec *audioRecorder, generation uint64, mode string) {
 	defer app.busy.Store(false)
 	result := <-rec.result
-	if !app.epoch.Valid(generation) || s.runtime.Context().Err() != nil {
+	if !app.core.Valid(generation) || s.runtime.Context().Err() != nil {
 		return
 	}
 	s.mu.Lock()
 	ctx, cancel, epoch, serial := s.runtime.NewExpression(meetingcore.ExpressionTimeout)
 	s.mu.Unlock()
-	stop := context.AfterFunc(app.epoch.ContextFor(generation), cancel)
+	stop := context.AfterFunc(app.core.ContextFor(generation), cancel)
 	defer stop()
 	defer cancel()
 
@@ -146,7 +146,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 		points, e = speech.Transcribe(active, cfg, result.pcm)
 		return e
 	})
-	if !app.epoch.Valid(generation) || ctx.Err() != nil {
+	if !app.core.Valid(generation) || ctx.Err() != nil {
 		return
 	}
 	var detail string
@@ -173,7 +173,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 	}
 	app.logger.Printf("meeting expression mode=%s recognized_chars=%d", mode, len([]rune(points)))
 	err = s.complete(ctx, meetingcore.PriorityExpress, meetingcore.Query{Mode: mode, Prior: prior, UserPoints: points}, func(line meetingLine) {
-		if !app.epoch.Valid(generation) || line.kind != "SAY" {
+		if !app.core.Valid(generation) || line.kind != "SAY" {
 			return
 		}
 		s.applyExpression(epoch, serial, func() {
@@ -181,7 +181,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 			s.view.expressionStatus = ""
 		})
 	})
-	if !app.epoch.Valid(generation) || ctx.Err() != nil || s.runtime.Context().Err() != nil {
+	if !app.core.Valid(generation) || ctx.Err() != nil || s.runtime.Context().Err() != nil {
 		return
 	}
 	if err != nil {
@@ -193,7 +193,7 @@ func (s *meetingSession) express(app *appState, rec *audioRecorder, generation u
 }
 
 func (s *meetingSession) expressionFailed(app *appState, generation, epoch, serial uint64, label string, cause error) {
-	if !app.epoch.Valid(generation) || s.runtime.Context().Err() != nil {
+	if !app.core.Valid(generation) || s.runtime.Context().Err() != nil {
 		return
 	}
 	message := label + "：" + cause.Error()
