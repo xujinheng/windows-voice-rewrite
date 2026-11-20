@@ -13,6 +13,8 @@ int VRArmed(void);
 unsigned long long VREpochStart(void);
 int VREpochValid(unsigned long long token);
 void VREpochCancel(void);
+int VRReady(int operation, unsigned long long token, int focusOK, int sensitive, int selectionOK);
+int VRClipboardFits(long long size, long long total);
 double VRLevel(double previous, double raw);
 int VRWave(int index, double level, unsigned int tick);
 unsigned int VRSpinner(int index, unsigned int tick);
