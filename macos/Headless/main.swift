@@ -27,12 +27,8 @@ struct FocusIdentity {
     let title: String?
 
     func matches(window: AXUIElement?, element: AXUIElement?, title: String?) -> Bool {
-        if let saved = self.window {
-            guard let window, CFEqual(saved, window) else { return false }
-        }
-        if let saved = self.element {
-            guard let element, CFEqual(saved, element) else { return false }
-        }
+        if let saved = self.window, window.map({ CFEqual(saved, $0) }) != true { return false }
+        if let saved = self.element, element.map({ CFEqual(saved, $0) }) != true { return false }
         return self.title == nil || self.title == title
     }
 }
@@ -87,7 +83,6 @@ private final class Microphone {
         return rms
     }
     private(set) var running = false
-    private(set) var startedAt = Date()
 
     func start(maximumSeconds: Int) throws {
         guard !running else { throw HostError.microphone("already recording") }
@@ -124,7 +119,6 @@ private final class Microphone {
         do {
             engine.prepare()
             try engine.start()
-            startedAt = Date()
             running = true
         } catch {
             input.removeTap(onBus: 0)
@@ -394,16 +388,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             activeAction = name == config.profile.dictation ? .dictation : .rewrite
             targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
             taskID = 0
-            // Capture from physical down. A short click discards these samples
-            // and replays the native side-button action; a hold keeps pre-roll.
-            do {
-                try microphone.start(maximumSeconds: config.profile.maximumSeconds)
-            } catch {
-                VRAbandon()
-                reset("Mic error")
-                fputs("Microphone: \(error)\n", stderr)
-                return
-            }
+            // Pre-roll starts on physical down; a short click discards it.
+            do { try microphone.start(maximumSeconds: config.profile.maximumSeconds) }
+            catch { VRAbandon(); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return }
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, VRActivate(key, token) == 1,
                       let action = self.activeAction else { return }
@@ -412,11 +399,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         } else {
             let outcome = VRRelease(key)
             if outcome == 2 && microphone.running { finish() }
-            else if outcome == 3 {
-                // Short side-button click must not leave the audio engine running.
+            else if outcome == 2 || outcome == 3 {
                 if microphone.running { _ = try? microphone.stop(discard: true) }
                 activeAction = nil
-            } else if outcome == 2 { activeAction = nil }
+            }
             if (outcome == 1 || outcome == 3), let cursor {
                 replayClick(button: code - 100, cursor: cursor)
             }
@@ -440,14 +426,11 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard action == .dictation || (window != nil && element != nil) else { reset("Target unavailable"); return }
         targetFocus = FocusIdentity(window: window, element: element,
                                     title: window.flatMap(windowTitle))
-        selected = nil
-        if action == .rewrite {
-            guard let snapshot = selectionFromAX() else { reset("Select text"); return }
-            selected = snapshot
-        }
+        selected = action == .rewrite ? selectionFromAX() : nil
+        if action == .rewrite && selected == nil { reset("Select text"); return }
         guard microphone.running else { reset("Mic error"); return }
         taskID = VREpochStart()
-        pill.recording(rewrite: action == .rewrite, started: microphone.startedAt,
+        pill.recording(rewrite: action == .rewrite, started: Date(),
                        meter: { [weak self] in self?.microphone.meterLevel ?? 0 })
         let token = taskID
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.profile.maximumSeconds)) { [weak self] in
