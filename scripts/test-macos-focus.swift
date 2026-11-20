@@ -47,5 +47,18 @@ MainActor.assumeIsolated {
         precondition(String(decoding: buffer.prefix(size), as: UTF16.self) == String(character))
     }
     precondition(unicodeKeyEvents(String(repeating: "\u{0301}", count: 21)) == nil)
+    // Exercise the compiled C ABI, not only the JSONL diagnostic bridge.
+    let token = VREpochStart()
+    precondition(VRReady(0, 0, 1, 0, 1) == 1)
+    precondition(VRReady(0, 0, 1, 1, 1) == 0)
+    precondition(VRReady(1, token, 1, 0, 1) == 1)
+    precondition(VRReady(1, token, 1, 1, 1) == 0)
+    precondition(VRReady(2, token, 1, 0, 0) == 0)
+    precondition(VRReady(2, token, 1, 0, 1) == 1)
+    precondition(VRClipboardFits(16 * 1024 * 1024, 0) == 1)
+    precondition(VRClipboardFits(16 * 1024 * 1024 + 1, 0) == 0)
+    precondition(VRClipboardFits(1, 48 * 1024 * 1024) == 0)
+    VREpochCancel()
+    precondition(VRReady(1, token, 1, 0, 1) == 0)
     print("AX focus, selection and Unicode event smoke passed")
 }
