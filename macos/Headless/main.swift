@@ -363,11 +363,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             let token = VRPress(key, pending ? 1 : 0)
             guard token != 0 else { return false }
             targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
+            targetFocus = FocusIdentity(window: focusedWindow(), element: nil, title: nil)
             taskID = 0
             do { try microphone.start(maximumSeconds: config.profile.maximumSeconds) }
             catch { VRAbandon(); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return }
-            // Capture the native target at physical press, as Windows does.
-            targetFocus = FocusIdentity(window: focusedWindow(), element: nil, title: nil)
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, VRActivate(key, token) == 1 else { return }
                 self.begin(rewrite: VRAction(key) == 2)
