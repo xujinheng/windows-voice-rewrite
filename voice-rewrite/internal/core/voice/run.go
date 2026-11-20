@@ -45,22 +45,20 @@ func Run(ctx context.Context, cfg coreconfig.Config, pcm []byte, selected string
 		}
 		return Result{}, &PCMError{ux.DictationTooShort}
 	}
-	if !rewrite {
-		text, err := speech.Transcribe(ctx, cfg, pcm)
-		if err != nil {
+	if rewrite {
+		if strings.TrimSpace(selected) == "" {
+			return Result{}, errors.New(ux.EmptySelection)
+		}
+		if err := textedit.SelectedLengthError(cfg.MaxSelectedRunes, selected); err != nil {
 			return Result{}, err
 		}
-		return Result{Text: text, Route: "insert"}, nil
-	}
-	if strings.TrimSpace(selected) == "" {
-		return Result{}, errors.New(ux.EmptySelection)
-	}
-	if err := textedit.SelectedLengthError(cfg.MaxSelectedRunes, selected); err != nil {
-		return Result{}, err
 	}
 	instruction, err := speech.Transcribe(ctx, cfg, pcm)
 	if err != nil {
 		return Result{}, err
+	}
+	if !rewrite {
+		return Result{Text: instruction, Route: "insert"}, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return Result{}, err

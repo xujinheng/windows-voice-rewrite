@@ -250,13 +250,11 @@ func processRequest(ctx context.Context, req request) response {
 			}
 			return providerFailure(req.ID, "asr_failed", "speech transcription failed", err)
 		}
-		if !rewrite {
-			return success(req.ID, map[string]any{"text": outcome.Text, "route": outcome.Route})
+		result := map[string]any{"text": outcome.Text, "route": outcome.Route}
+		if rewrite {
+			result["intent"], result["instruction"] = outcome.Intent, outcome.Instruction
 		}
-		return success(req.ID, map[string]any{
-			"intent": outcome.Intent, "text": outcome.Text,
-			"route": outcome.Route, "instruction": outcome.Instruction,
-		})
+		return success(req.ID, result)
 	}
 	return failure(req.ID, "unsupported_op", msgUnsupported)
 }
