@@ -13,8 +13,9 @@ import (
 // cancellation, inference and output routing.
 type Core struct {
 	mu        sync.Mutex
-	keys      [105]keyState
+	keys      [3]keyState
 	owner     int
+	nextToken uint64
 	currentID uint64
 	closed    bool
 	ctx       context.Context
@@ -70,7 +71,8 @@ func (c *Core) Press(code int, busy bool) uint64 {
 	if c.closed || h == nil || h.down || busy || c.owner != 0 {
 		return 0
 	}
-	h.token++
+	c.nextToken++
+	h.token = c.nextToken
 	h.down, h.active = true, false
 	c.owner = code
 	return h.token
