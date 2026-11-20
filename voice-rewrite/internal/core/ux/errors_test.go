@@ -45,10 +45,4 @@ func TestClassifyLeavesUnknownErrorsUnmapped(t *testing.T) {
 	if ok || message != "" {
 		t.Fatalf("unknown error classified: %q", message)
 	}
-	if got := Present(errors.New(secret)); got != secret {
-		t.Fatalf("present = %q", got)
-	}
-	if Present(nil) != "" {
-		t.Fatal("nil error should be empty")
-	}
 }

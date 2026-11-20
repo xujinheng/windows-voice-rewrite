@@ -9,8 +9,6 @@ const (
 	DictationNotInserted = "听写结果 · 未自动插入"
 	// DictationCopyManually is the result card when insertion was attempted and failed.
 	DictationCopyManually = "听写结果 · 请手动复制"
-	// DictationWriteUnconfirmed is for an attempted native write whose result cannot be verified.
-	DictationWriteUnconfirmed = "听写结果 · 请确认是否已输入"
 	// CopyAction is the result-card button that puts the text on the clipboard.
 	CopyAction = "复制结果"
 	// ApplyAction is the Windows result-card button that writes the text back.
@@ -54,8 +52,6 @@ const (
 	DictationTooShort = "语音太短，无法转写"
 	// RewriteTooShort is shown when a spoken rewrite buffer is under 0.1s.
 	RewriteTooShort = "录音太短（至少约 0.1 秒）；请再试一次"
-	// SpokenCaptureInvalid is shown when spoken audio is short or not whole PCM16 samples.
-	SpokenCaptureInvalid = "录音太短（至少约 0.1 秒）或 PCM 格式无效"
 )
 
 // ResultCardTitle is the floating-card heading for a selected-text result.
