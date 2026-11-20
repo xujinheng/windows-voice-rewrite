@@ -22,6 +22,12 @@ class ClassifyTests(unittest.TestCase):
             "core": False, "macos": False, "windows": True,
             "oneclick": False, "ui": False, "direct2d": False})
 
+    def test_windows_host_without_filename_suffix(self):
+        selected = classify(["voice-rewrite/windows.go"])
+        self.assertEqual(selected, {
+            "core": False, "macos": False, "windows": True,
+            "oneclick": False, "ui": False, "direct2d": True})
+
     def test_voicebridge_only(self):
         selected = classify(["voice-rewrite/cmd/voicebridge/main.go"])
         self.assertEqual(selected, {
