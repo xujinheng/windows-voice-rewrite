@@ -444,7 +444,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     case .success(let value):
                         guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
                         self.lastResult = text
-                        guard value.route == "replace" || (action == .dictation && value.route == "insert") else {
+                        guard value.route == "replace" || value.route == "insert" else {
                             self.reset(self.config.profile.pill.fallbackLabel, phase: .fallback); return
                         }
                         let currentWindow = self.focusedWindow()
