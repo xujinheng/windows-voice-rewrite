@@ -537,7 +537,7 @@ func runApp() {
 
 	armSide := func(button uint16) {
 		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil ||
-			input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "ignore" {
+			(button == 0 || button != selectedMouseButton && button != dictationButton) {
 			return
 		}
 		if uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
@@ -550,7 +550,7 @@ func runApp() {
 		// Paint the provisional status immediately. Recording starts at
 		// physical mouse-down, but only a 250ms hold activates voice mode.
 		// A short click closes this preview and replays browser navigation.
-		mode := input.HoldModeLabel(input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation", false)
+		mode := input.HoldModeLabel(button == dictationButton, false)
 		showPendingHandyStatus(mode)
 		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
 		pendingSide = &sideCapture{button: button, targetWindow: win, recorder: rec, err: err}
@@ -575,7 +575,7 @@ func runApp() {
 			return
 		}
 		// Leave the provisional pill alive: activateHold promotes it in-place.
-		activateHold(held.recorder, input.SideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation", button, held.targetWindow)
+		activateHold(held.recorder, button == dictationButton, button, held.targetWindow)
 	}
 
 	for {
@@ -615,8 +615,7 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_STATUS_UPDATE {
-			hasPill := activeHandyStatus != nil
-			if indicator.PhaseUpdateApplies(app.epoch.Valid(uint64(msg.LParam)), hasPill, hasPill && activeHandyStatus.owner == uint64(msg.LParam)) {
+			if app.epoch.Valid(uint64(msg.LParam)) && activeHandyStatus != nil && activeHandyStatus.owner == uint64(msg.LParam) {
 				updateHandyStatus(indicator.Phase(msg.WParam))
 			}
 			continue
