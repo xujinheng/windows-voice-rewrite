@@ -26,28 +26,6 @@ const (
 	CopyFailed        = "复制失败: "
 )
 
-// ProfileSaveStep is the next profile-panel action.
-// A text failure does not try the recognition mode. A mode failure leaves the panel open.
-type ProfileSaveStep struct {
-	TryMode      bool
-	Close        bool
-	StatusPrefix string
-}
-
-func AfterProfileText(failed bool) ProfileSaveStep {
-	if failed {
-		return ProfileSaveStep{StatusPrefix: ProfileSaveFailed}
-	}
-	return ProfileSaveStep{TryMode: true}
-}
-
-func AfterProfileMode(failed bool) ProfileSaveStep {
-	if failed {
-		return ProfileSaveStep{StatusPrefix: ProfileModeFailed}
-	}
-	return ProfileSaveStep{Close: true}
-}
-
 // ButtonView is the meeting state that changes a button's label.
 // SelectedReply < 0 leaves every reply button unmarked.
 type ButtonView struct {
@@ -117,21 +95,6 @@ func ButtonFace(id int, view ButtonView) string {
 	default:
 		return ""
 	}
-}
-
-// ReadingBody is a caption, translation, reply, expression, instruction, or profile field.
-// The live caption is not one of these fields.
-func ReadingBody(captions, english, chinese, responses, expression, source, instruction, background, terms bool) bool {
-	return captions || english || chinese || responses || expression || source || instruction || background || terms
-}
-
-// ReadingPaint uses the primary ink for the live caption and the surface for every reading control.
-// The live caption stays on the surface even when the caller does not repeat that.
-func ReadingPaint(live, reading bool) (primaryText, surface bool) {
-	if live {
-		return true, true
-	}
-	return false, reading
 }
 
 func LiveCaption(hint string) string {
