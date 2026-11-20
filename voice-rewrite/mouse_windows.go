@@ -107,6 +107,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 	if hwnd == 0 || (rewriteButton != 0 && rewriteButton == dictationButton) {
 		return nil, errors.New("鼠标侧键钩子参数无效")
 	}
+	buttons.Bind(int(dictationButton), int(rewriteButton))
 	ready := make(chan mouseHookReady, 1)
 	done := make(chan struct{})
 	go func() {
@@ -162,7 +163,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 				mu.Unlock()
 				return 1
 			}
-			if button != rewriteButton && button != dictationButton {
+			if buttons.Role(int(button)) == 0 {
 				mu.Unlock()
 				return callNextMouseHook(hook, code, message, data)
 			}

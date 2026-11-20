@@ -552,7 +552,7 @@ func runApp() {
 		// Paint the provisional status immediately. Recording starts at
 		// physical mouse-down, but only a 250ms hold activates voice mode.
 		// A short click closes this preview and replays browser navigation.
-		mode := voice.HoldModeLabel(button == dictationButton, false)
+		mode := voice.HoldModeLabel(app.core.Role(int(button)) == 1, false)
 		showPendingHandyStatus(mode)
 		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
 		pendingSide = &sideCapture{button: button, targetWindow: win, recorder: rec, err: err}
@@ -577,7 +577,7 @@ func runApp() {
 			return
 		}
 		// Leave the provisional pill alive: activateHold promotes it in-place.
-		activateHold(held.recorder, button == dictationButton, button, held.targetWindow)
+		activateHold(held.recorder, app.core.Role(int(button)) == 1, button, held.targetWindow)
 	}
 
 	for {

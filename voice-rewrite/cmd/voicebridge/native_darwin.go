@@ -32,15 +32,12 @@ var nativeConfig atomic.Pointer[coreconfig.Config]
 // Physical state lives in the same Go owner used by Windows' mouse hook.
 // Quartz callbacks are serial; Epoch is shared with the worker thread.
 var nativeCore voice.Core
-var nativeRole [105]uint8
 
 //export VRAction
-func VRAction(code C.int) C.int {
-	if code < 0 || int(code) >= len(nativeRole) {
-		return 0
-	}
-	return C.int(nativeRole[int(code)])
-}
+func VRAction(code C.int) C.int { return C.int(nativeCore.Role(int(code))) }
+
+//export VRHeldRole
+func VRHeldRole(code C.int) C.int { return C.int(nativeCore.HeldRole(int(code))) }
 
 //export VRDown
 func VRDown(code C.int) C.int {
@@ -52,9 +49,6 @@ func VRDown(code C.int) C.int {
 
 //export VRPress
 func VRPress(code C.int, busy C.int) C.ulonglong {
-	if VRAction(code) == 0 {
-		return 0
-	}
 	return C.ulonglong(nativeCore.Press(int(code), busy != 0))
 }
 
@@ -164,9 +158,7 @@ func VRProfile(config *C.char) *C.char {
 	if reply.OK {
 		nativeConfig.Store(&reply.cfg)
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
-		nativeRole = [105]uint8{}
-		nativeRole[macKeyCode(profile["dictation"].(string))] = 1
-		nativeRole[macKeyCode(profile["rewrite"].(string))] = 2
+		nativeCore.Bind(macKeyCode(profile["dictation"].(string)), macKeyCode(profile["rewrite"].(string)))
 	}
 	return nativeJSON(reply)
 }

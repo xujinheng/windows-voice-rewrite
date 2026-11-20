@@ -5,6 +5,7 @@
 #include <stddef.h>
 
 int VRAction(int code);
+int VRHeldRole(int code);
 int VRDown(int code);
 unsigned long long VRPress(int code, int busy);
 int VRActivate(int code, unsigned long long token);

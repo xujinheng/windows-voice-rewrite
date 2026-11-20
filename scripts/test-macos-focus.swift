@@ -9,15 +9,17 @@ extension HeadlessApp {
         precondition(VRAction(Int32(code)) != 0)
         updatePress(code: code, down: true, delay: 3600)
         precondition(VRDown(Int32(code)) == 1 && VRArmed() == 1)
+        let heldRole = VRHeldRole(Int32(code))
+        precondition(heldRole != 0)
         let rebound = try! GoCore.request(config: after, audio: Data(), selection: nil)
         config = rebound.profile!
-        precondition(VRAction(Int32(code)) == 0)
+        precondition(VRAction(Int32(code)) == 0 && VRHeldRole(Int32(code)) == heldRole)
         if modifier {
             handleModifier(code: code, flags: [])
         } else {
             updatePress(code: code, down: false, delay: 0)
         }
-        precondition(VRDown(Int32(code)) == 0 && VRArmed() == 0)
+        precondition(VRDown(Int32(code)) == 0 && VRArmed() == 0 && VRHeldRole(Int32(code)) == 0)
     }
 
     func verifyPressTargetSurvivesDelayedActivation() {

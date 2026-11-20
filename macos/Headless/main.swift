@@ -366,12 +366,13 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             catch { VRAbandon(); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return true }
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, VRActivate(key, token) == 1 else { return }
-                self.begin(rewrite: VRAction(key) == 2)
+                self.begin(rewrite: VRHeldRole(key) == 2)
             }
         } else {
+            let rewrite = VRHeldRole(key) == 2
             let outcome = VRRelease(key)
             guard outcome != 0 else { return false }
-            if outcome == 2 && microphone.running { finish(rewrite: VRAction(key) == 2) }
+            if outcome == 2 && microphone.running { finish(rewrite: rewrite) }
             else if outcome == 2 || outcome == 3 {
                 if microphone.running { _ = try? microphone.stop(discard: true) }
             }

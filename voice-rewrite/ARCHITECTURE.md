@@ -21,7 +21,7 @@ AppKit panel and status-menu drawing. It links Go `cmd/voicebridge` as a Darwin
 implement a second voice-policy state machine.
 
 On macOS, physical shortcut events, task generations, cancellation and voice
-execution all call Go `voice.Core`; each waveform/spinner/clock frame calls Go
+execution all call Go `voice.Core` (including task-role snapshots across shortcut rebinds); each waveform/spinner/clock frame calls Go
 `indicator` through the in-process ABI. Swift performs the OS
 operations and draws the returned pixels. The native macOS C ABI and the single Windows recording worker call `voice.Core.Execute` directly,
 which owns PCM admission, `speech.Transcribe`, `textedit.ResolveSelectedTask`
