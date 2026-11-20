@@ -54,12 +54,11 @@ private struct HostProfile: Decodable {
 }
 
 private struct HostConfig {
-    let raw: [String: Any]
+    let raw: String
     let profile: HostProfile
 
     static func load(_ url: URL) throws -> HostConfig {
-        guard let json = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
-        else { throw HostError.config("config.json must be a JSON object") }
+        let json = try String(contentsOf: url, encoding: .utf8)
         guard let profile = try GoCore.request(config: json, operation: "host_profile",
                                                audio: Data(), selection: nil).profile
         else { throw HostError.config("missing Go host profile") }
@@ -196,11 +195,9 @@ private struct BridgeReply: Decodable {
 
 // In-process Go Core. Event/animation calculations never cross IPC.
 private enum GoCore {
-    static func request(config: [String: Any], operation: String, audio: Data,
+    static func request(config: String, operation: String, audio: Data,
                         selection: String?, token: UInt64 = 0) throws -> BridgeReply.Output {
-        let data = try JSONSerialization.data(withJSONObject: config)
-        let json = String(decoding: data, as: UTF8.self)
-        let result = json.withCString { cfg in
+        let result = config.withCString { cfg in
             if operation == "host_profile" { return VRProfile(cfg) }
             return operation.withCString { op in
                 (selection ?? "").withCString { selected in
