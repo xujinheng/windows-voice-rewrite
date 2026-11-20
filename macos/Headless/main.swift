@@ -302,8 +302,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             guard let info else { return Unmanaged.passUnretained(event) }
             let app = Unmanaged<HeadlessApp>.fromOpaque(info).takeUnretainedValue()
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-                // A lost key-up must not leave Go's physical Hold armed or
-                // allow an old inference response to paste into the editor.
                 if app.microphone.running || app.pending || VRArmed() != 0 {
                     app.cancelFromPill()
                 } else {
@@ -536,7 +534,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func paste(_ text: String) {
-        // Prebuild the single paste event; a sent event is not confirmed insertion.
         let source = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {
@@ -567,7 +564,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         board.clearContents()
         let cleared = board.changeCount
         guard board.setString(text, forType: .string) else {
-            // Failed writes must not erase a newer clipboard owner.
             if board.changeCount == cleared && !saved.isEmpty { _ = board.writeObjects(saved) }
             reset("Paste failed")
             return
@@ -576,11 +572,15 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         down.flags = .maskCommand
         up.flags = .maskCommand
         guard board.changeCount == lease else { reset("Clipboard changed"); return }
+        let selectionOK = selected?.matches(selectionFromAX()) ?? true
+        guard sameTarget(), VRReady(selected == nil ? 1 : 2, taskID, 1,
+                                     sensitiveFocus() ? 1 : 0, selectionOK ? 1 : 0) == 1 else {
+            reset("Focus changed"); return
+        }
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
         show(config.profile.pill.sentLabel)
         pill.result(.sent)
-        // Only changeCount, not matching text, fences clipboard ownership.
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.profile.pasteRestoreMS) / 1000) {
             guard board.changeCount == lease else { return }
             board.clearContents()
