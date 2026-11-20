@@ -569,12 +569,18 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             return
         }
         let lease = board.changeCount
+        let restoreIfOwned = {
+            guard board.changeCount == lease else { return }
+            board.clearContents()
+            if !saved.isEmpty { _ = board.writeObjects(saved) }
+        }
         down.flags = .maskCommand
         up.flags = .maskCommand
         guard board.changeCount == lease else { reset("Clipboard changed"); return }
         let selectionOK = selected?.matches(selectionFromAX()) ?? true
         guard sameTarget(), VRReady(selected == nil ? 1 : 2, taskID, 1,
                                      sensitiveFocus() ? 1 : 0, selectionOK ? 1 : 0) == 1 else {
+            restoreIfOwned()
             reset("Focus changed"); return
         }
         down.post(tap: .cghidEventTap)
@@ -582,9 +588,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         show(config.profile.pill.sentLabel)
         pill.result(.sent)
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.profile.pasteRestoreMS) / 1000) {
-            guard board.changeCount == lease else { return }
-            board.clearContents()
-            if !saved.isEmpty { _ = board.writeObjects(saved) }
+            restoreIfOwned()
         }
     }
     private func pasteUnicode(_ text: String) {
