@@ -582,20 +582,20 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
     private func pasteUnicode(_ text: String) {
         let source = CGEventSource(stateID: .hidSystemState)
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: false)
+        else { reset("Paste unavailable"); return }
         let units = Array(text.utf16)
         var start = 0
         while start < units.count {
             let window = focusedWindow()
             guard VREpochValid(taskID) == 1,
                   NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID,
-                  targetFocus?.matches(window: window, element: focusedElement(),
-                                       title: window.flatMap(windowTitle)) == true
+                  targetFocus?.matches(window: window, element: focusedElement(), title: window.flatMap(windowTitle)) == true
             else { reset("Focus changed"); return }
             var end = min(start + 20, units.count)
             if end < units.count && (0xD800...0xDBFF).contains(units[end - 1]) { end -= 1 }
-            for down in [true, false] {
-                guard let event = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: down)
-                else { reset("Paste unavailable"); return }
+            for event in [down, up] {
                 units[start..<end].withUnsafeBufferPointer {
                     event.keyboardSetUnicodeString(stringLength: $0.count, unicodeString: $0.baseAddress)
                 }
