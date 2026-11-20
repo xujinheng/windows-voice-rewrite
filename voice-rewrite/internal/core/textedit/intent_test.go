@@ -33,7 +33,7 @@ func TestIntentsRouting(t *testing.T) {
 		{"把这句话改成英文", "edit", "replace"},
 		{"解释一下这个术语", "edit", "popup"},
 		{"帮我润色一下", "edit", "replace"},
-		{"请写成英文", "answer", "replace"},    // conflicting model intent
+		{"请写成英文", "answer", "replace"}, // conflicting model intent
 		{"改成英文", "ambiguous", "replace"},
 		{"这是什么意思", "answer", "popup"},
 		{"为什么会出现这个错误", "answer", "popup"},
