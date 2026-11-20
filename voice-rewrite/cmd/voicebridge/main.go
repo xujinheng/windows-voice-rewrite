@@ -212,9 +212,7 @@ func headlessProfile(req request) response {
 		return s == "RightCommand" || s == "RightOption" || s == "Mouse4" || s == "Mouse5"
 	}
 	if !allowed(cfg.DictationHotkey) || !allowed(cfg.HotkeyRecord) ||
-		cfg.DictationHotkey == cfg.HotkeyRecord ||
-		cfg.MaxRecordSeconds < coreconfig.RecordSecondsMin ||
-		cfg.MaxRecordSeconds > coreconfig.RecordSecondsMax {
+		cfg.DictationHotkey == cfg.HotkeyRecord {
 		return failure(req.ID, "invalid_config", msgInvalidConfig)
 	}
 	cfg, err = coreconfig.Normalize(cfg)
