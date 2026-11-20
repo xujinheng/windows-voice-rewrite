@@ -20,6 +20,7 @@ import (
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/jsonl"
 	"voicerewrite/internal/core/speech"
+	"voicerewrite/internal/core/shortcut"
 	"voicerewrite/internal/core/textedit"
 	"voicerewrite/internal/core/ux"
 	"voicerewrite/internal/core/voice"
@@ -182,10 +183,12 @@ func headlessProfile(req request) response {
 	allowed := func(s string) bool {
 		return s == "RightCommand" || s == "RightOption" || s == "Mouse4" || s == "Mouse5"
 	}
-	if !allowed(cfg.DictationHotkey) || !allowed(cfg.HotkeyRecord) ||
-		cfg.DictationHotkey == cfg.HotkeyRecord {
+	dictation, _, _, _, errDictation := shortcut.Parse(cfg.DictationHotkey)
+	rewrite, _, _, _, errRewrite := shortcut.Parse(cfg.HotkeyRecord)
+	if errDictation != nil || errRewrite != nil || !allowed(dictation) || !allowed(rewrite) || dictation == rewrite {
 		return failure(req.ID, "invalid_config", msgInvalidConfig)
 	}
+	cfg.DictationHotkey, cfg.HotkeyRecord = dictation, rewrite
 	cfg, err = coreconfig.Normalize(cfg)
 	if err != nil || cfg.RecordMode != "hold" || cfg.AudioDeviceID != -1 {
 		return failure(req.ID, "invalid_config", msgInvalidConfig)
