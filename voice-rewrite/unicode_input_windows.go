@@ -21,10 +21,7 @@ func sendUnicodeText(text string, stillValid func() bool) error {
 		if stillValid != nil && !stillValid() {
 			return fmt.Errorf("录入中焦点改变，已停止键盘输入（已输入 %d/%d 个 UTF-16 单元）", pos, len(units))
 		}
-		end := pos + 32
-		if end > len(units) {
-			end = len(units)
-		}
+		end := min(pos+32, len(units))
 		keys := make([]winINPUT, 0, (end-pos)*2)
 		for _, ch := range units[pos:end] {
 			keys = append(keys,

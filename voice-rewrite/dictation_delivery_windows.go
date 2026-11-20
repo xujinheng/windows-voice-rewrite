@@ -30,7 +30,7 @@ func insertDictationText(hwnd, target uintptr, text string, valid func() bool) e
 	if err != nil {
 		// High-quality clipboard support must never destroy a bitmap, virtual
 		// file, or an application's private object merely to paste text.
-		return sendUnicodeText(text, func() bool { return valid() && isSameForegroundWindow(target) })
+		return sendUnicodeText(text, windowOK)
 	}
 	sequence, err := setClipboardText(hwnd, text)
 	if err != nil {
