@@ -1,9 +1,6 @@
 package clipboard
 
-import (
-	"fmt"
-	"time"
-)
+import "time"
 
 const (
 	// TextReadMax is the largest Unicode clipboard block a selection read accepts.
@@ -45,8 +42,4 @@ func UnsafeFormat(id uint32) bool {
 		return true
 	}
 	return false
-}
-
-func RestorePartial(failed int) error {
-	return fmt.Errorf("剪贴板恢复部分失败：%d 个格式未能写回", failed)
 }
