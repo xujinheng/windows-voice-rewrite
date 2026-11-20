@@ -167,7 +167,7 @@ type selectedText struct {
 	Anchor          trayPoint
 }
 type appState struct {
-	meeting     *meetingSession // owned by the UI thread
+	meeting     *meetingcore.Session // owned by the UI thread
 	Window      uintptr
 	logger      *log.Logger
 	cfg         Config
@@ -435,7 +435,7 @@ func runApp() {
 	var holdTargetWindow uintptr
 	var holdButton uint16
 	var holdIsDictation bool
-	var holdMeeting *meetingSession
+	var holdMeeting *meetingcore.Session
 	var activeGeneration uint64
 	var holdWatch chan struct{}
 	stopHoldWatch := func() {

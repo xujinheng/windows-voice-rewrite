@@ -57,7 +57,7 @@ func TestMeetingWindowsE2E(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	view := meetingView{SourceName: "Meeting E2E", Captions: meetingE2EHistory(65)}
+	view := meetingcore.View{SourceName: "Meeting E2E", Captions: meetingE2EHistory(65)}
 	if err := showMeetingHUD(0, view); err != nil {
 		t.Fatalf("open native Meeting HUD: %v", err)
 	}

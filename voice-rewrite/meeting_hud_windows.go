@@ -37,7 +37,7 @@ type meetingHUD struct {
 	dragDivider                                                 int
 	dragY                                                       int32
 	paused, captionsOnly, profileOpen, expressionExpanded       bool
-	latest                                                      meetingView
+	latest                                                      meetingcore.View
 	displayedReplies                                            [3]meetingcore.Line
 	displayedTip, copyExpression                                string
 	selectedReply                                               int
@@ -86,7 +86,7 @@ func runMeetingDemo() {
 	}
 }
 
-func showMeetingHUD(owner uintptr, view meetingView) error {
+func showMeetingHUD(owner uintptr, view meetingcore.View) error {
 	restoreDPI := handyAwareWindowThread()
 	defer restoreDPI()
 	className, _ := syscall.UTF16PtrFromString("VoiceRewrite.Meeting")
@@ -405,7 +405,7 @@ func (p *meetingHUD) setText(control uintptr, value string, preserve bool) {
 	meetingInvalidateRect.Call(control, 0, 1)
 }
 
-func updateMeetingHUD(view meetingView) {
+func updateMeetingHUD(view meetingcore.View) {
 	p := activeMeetingHUD
 	if p == nil {
 		return
@@ -500,7 +500,7 @@ func (p *meetingHUD) renderReply() {
 	meetingEnableWindow.Call(p.buttons[13], meetingBool(meetingcore.RefineButtonEnabled(p.owner != 0, reply.Complete, reply.English, p.paused)))
 }
 
-func (p *meetingHUD) session() *meetingSession {
+func (p *meetingHUD) session() *meetingcore.Session {
 	if p == nil || p.app == nil {
 		return nil
 	}
@@ -719,11 +719,11 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	return result
 }
 
-func demoMeeting() meetingView {
+func demoMeeting() meetingcore.View {
 	demo := meetingcore.Sample()
-	return meetingView{
+	return meetingcore.View{
 		Status: demo.Status, SourceName: demo.SourceName, ASRMode: demo.ASRMode, Level: demo.Level,
-		Metrics:  meetingMetrics{Stage: demo.Stage, ASRFirstMS: demo.ASRFirstMS, ASRDoneMS: demo.ASRDoneMS, TranslationFirstMS: demo.TranslationFirstMS, TranslationDoneMS: demo.TranslationDoneMS},
+		Metrics:  meetingcore.Metrics{Stage: demo.Stage, ASRFirstMS: demo.ASRFirstMS, ASRDoneMS: demo.ASRDoneMS, TranslationFirstMS: demo.TranslationFirstMS, TranslationDoneMS: demo.TranslationDoneMS},
 		Captions: demo.Captions, Reply: demo.Reply,
 		Expression: meetingcore.Line{Kind: demo.Expression.Kind, English: demo.Expression.English, Chinese: demo.Expression.Chinese, Complete: demo.Expression.Complete},
 	}
