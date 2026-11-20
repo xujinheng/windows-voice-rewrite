@@ -875,9 +875,12 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_SETTINGS_CAPTURE_MOUSE {
-			if p := uxActiveSettings; p != nil {
-				if name := input.SettingsMouseCapture(p.capturingShortcut, msg.LParam, msg.WParam); name != "" {
-					p.acceptShortcut(name)
+			if p := uxActiveSettings; p != nil && p.capturingShortcut == msg.LParam {
+				switch msg.WParam {
+				case 1:
+					p.acceptShortcut("Mouse4")
+				case 2:
+					p.acceptShortcut("Mouse5")
 				}
 			}
 			continue

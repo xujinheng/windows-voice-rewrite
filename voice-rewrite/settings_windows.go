@@ -368,20 +368,20 @@ func uxSettingsKeyMessage(msg winMSG) bool {
 			return false
 		}
 	}
-	switch shortcut.SettingsKeyAction(p.capturingShortcut != 0, msg.Message, uint32(msg.WParam)) {
-	case shortcut.SettingsKeyCancel:
-		p.stopShortcutCapture()
-		uxSetText(p.hint, shortcut.CaptureCanceledMessage)
+	if p.capturingShortcut != 0 && (msg.Message == WM_KEYDOWN || msg.Message == 0x0104) { // WM_SYSKEYDOWN
+		if msg.WParam == VK_ESCAPE {
+			p.stopShortcutCapture()
+			uxSetText(p.hint, shortcut.CaptureCanceledMessage)
+		} else {
+			p.acceptShortcutKey(uint32(msg.WParam), uxCurrentShortcutModifiers())
+		}
 		return true
-	case shortcut.SettingsKeyAccept:
-		p.acceptShortcutKey(uint32(msg.WParam), uxCurrentShortcutModifiers())
-		return true
-	case shortcut.SettingsKeyClose:
+	}
+	if msg.Message == WM_KEYDOWN && msg.WParam == VK_ESCAPE {
 		procDestroyWindow.Call(p.window)
 		return true
-	default:
-		return false
 	}
+	return false
 }
 
 func (p *uxSettings) refreshTheme() {
