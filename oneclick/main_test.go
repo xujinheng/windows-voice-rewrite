@@ -413,8 +413,8 @@ func TestStandaloneClientCanImportPublicVoiceAndConfig(t *testing.T) {
 		t.Fatal("public config API was not reachable from the OneClick module")
 	}
 	var core voice.Core
-	core.Bind([]int{103}, []int{104})
-	if core.Role(103) != 1 || core.Role(104) != 2 {
+	core.Apply(voice.Command{Kind: voice.CommandBind, Dictation: []int{103}, Rewrite: []int{104}})
+	if core.Snapshot(103, 0).Role != 1 || core.Snapshot(104, 0).Role != 2 {
 		t.Fatal("independent Go module cannot use the shared voice runtime")
 	}
 }
