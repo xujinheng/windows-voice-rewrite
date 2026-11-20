@@ -638,7 +638,7 @@ func TestBridgeSpokenSelectionRejectsBadPCMAndEmptySelection(t *testing.T) {
 		message  string
 	}{
 		{"text", make([]byte, 100), "invalid_pcm", ux.RewriteTooShort},
-		{"", make([]byte, 3200), "invalid_request", ""},
+		{"", make([]byte, 3200), "textedit_failed", ux.EmptySelection},
 		{"text", make([]byte, 3201), "invalid_pcm", ""},
 	} {
 		id := fmt.Sprintf("invalid-spoken-%d", i)
