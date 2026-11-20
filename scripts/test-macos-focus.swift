@@ -84,9 +84,11 @@ MainActor.assumeIsolated {
     var mouseBound = original
     mouseBound["dictation_hotkey"] = "Mouse4"
     func host(_ raw: [String: Any]) -> HostConfig {
-        let output = try! GoCore.request(config: raw, operation: "host_profile",
+        let data = try! JSONSerialization.data(withJSONObject: raw)
+        let json = String(decoding: data, as: UTF8.self)
+        let output = try! GoCore.request(config: json, operation: "host_profile",
                                          audio: Data(), selection: nil)
-        return HostConfig(raw: raw, profile: output.profile!)
+        return HostConfig(raw: json, profile: output.profile!)
     }
     let hostApp = HeadlessApp()
     hostApp.verifyReboundRelease(code: 103, name: "Mouse4", before: host(mouseBound),
