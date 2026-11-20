@@ -74,12 +74,12 @@ const (
 )
 
 type Command struct {
-	Kind CommandKind
-	Code int
-	Token uint64
-	Busy bool
+	Kind      CommandKind
+	Code      int
+	Token     uint64
+	Busy      bool
 	Dictation []int
-	Rewrite []int
+	Rewrite   []int
 }
 
 type EventKind uint8
@@ -103,27 +103,27 @@ const (
 // Event is the command receipt and asynchronous task progress vocabulary.
 // Release contains the shared short-click/active-hold disposition.
 type Event struct {
-	Kind EventKind `json:"kind"`
-	Token uint64 `json:"token,omitempty"`
-	Role int `json:"role,omitempty"`
-	Release int `json:"release,omitempty"`
-	Text string `json:"text,omitempty"`
-	Result Result `json:"result,omitempty"`
-	Error string `json:"error,omitempty"`
+	Kind    EventKind `json:"kind"`
+	Token   uint64    `json:"token,omitempty"`
+	Role    int       `json:"role,omitempty"`
+	Release int       `json:"release,omitempty"`
+	Text    string    `json:"text,omitempty"`
+	Result  Result    `json:"result,omitempty"`
+	Error   string    `json:"error,omitempty"`
 }
 
 // State is an immutable snapshot of one physical input and one task generation.
 // Zero key/token ask for global state; snapshots never mutate Core.
 type State struct {
-	Role int `json:"role"`
-	HeldRole int `json:"heldRole"`
-	Down bool `json:"down"`
-	Armed bool `json:"armed"`
-	CanActivate bool `json:"canActivate"`
-	Valid bool `json:"valid"`
-	Current uint64 `json:"current"`
-	Phase EventKind `json:"phase"`
-	Closed bool `json:"closed"`
+	Role        int       `json:"role"`
+	HeldRole    int       `json:"heldRole"`
+	Down        bool      `json:"down"`
+	Armed       bool      `json:"armed"`
+	CanActivate bool      `json:"canActivate"`
+	Valid       bool      `json:"valid"`
+	Current     uint64    `json:"current"`
+	Phase       EventKind `json:"phase"`
+	Closed      bool      `json:"closed"`
 }
 
 func (c *Core) key(code int) *keyState {
@@ -145,13 +145,15 @@ func (c *Core) Snapshot(code int, token uint64) State {
 	defer c.mu.Unlock()
 	s := State{
 		Role: c.roles[code], Armed: c.owner != 0,
-		Valid: token != 0 && !c.closed && c.currentID == token && c.ctx != nil,
+		Valid:       token != 0 && !c.closed && c.currentID == token && c.ctx != nil,
 		CanActivate: !c.closed && c.canActivate(code, token),
-		Current: c.currentID, Phase: c.phase, Closed: c.closed,
+		Current:     c.currentID, Phase: c.phase, Closed: c.closed,
 	}
 	if h := c.key(code); h != nil {
 		s.Down = h.down
-		if h.down { s.HeldRole = h.role }
+		if h.down {
+			s.HeldRole = h.role
+		}
 	}
 	return s
 }
@@ -161,20 +163,34 @@ func (c *Core) Snapshot(code int, token uint64) State {
 func (c *Core) Apply(cmd Command) Event {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.closed { return Event{Kind: EventRejected} }
+	if c.closed {
+		return Event{Kind: EventRejected}
+	}
 	switch cmd.Kind {
 	case CommandBind:
 		roles := make(map[int]int, len(cmd.Dictation)+len(cmd.Rewrite))
-		for _, code := range cmd.Dictation { if code > 0 { roles[code] = 1 } }
-		for _, code := range cmd.Rewrite { if code > 0 { roles[code] = 2 } }
+		for _, code := range cmd.Dictation {
+			if code > 0 {
+				roles[code] = 1
+			}
+		}
+		for _, code := range cmd.Rewrite {
+			if code > 0 {
+				roles[code] = 2
+			}
+		}
 		c.roles = roles
 		return Event{Kind: EventBound}
 	case CommandPress:
 		h := c.key(cmd.Code)
 		role := c.roles[cmd.Code]
-		if cmd.Code <= 0 || role == 0 || h != nil && h.down || cmd.Busy || c.owner != 0 { break }
+		if cmd.Code <= 0 || role == 0 || h != nil && h.down || cmd.Busy || c.owner != 0 {
+			break
+		}
 		if h == nil {
-			if c.keys == nil { c.keys = make(map[int]*keyState) }
+			if c.keys == nil {
+				c.keys = make(map[int]*keyState)
+			}
 			h = &keyState{}
 			c.keys[cmd.Code] = h
 		}
@@ -184,25 +200,37 @@ func (c *Core) Apply(cmd Command) Event {
 		c.owner = cmd.Code
 		return Event{Kind: EventPressed, Token: h.token, Role: role}
 	case CommandActivate:
-		if !c.canActivate(cmd.Code, cmd.Token) { break }
+		if !c.canActivate(cmd.Code, cmd.Token) {
+			break
+		}
 		c.keys[cmd.Code].active = true
 		return Event{Kind: EventActivated, Token: cmd.Token, Role: c.keys[cmd.Code].role}
 	case CommandRelease:
 		h := c.key(cmd.Code)
-		if h == nil || !h.down { return Event{Kind: EventReleased, Release: ReleaseIgnored} }
+		if h == nil || !h.down {
+			return Event{Kind: EventReleased, Release: ReleaseIgnored}
+		}
 		primary := c.owner == cmd.Code
-		if primary { c.owner = 0 }
+		if primary {
+			c.owner = 0
+		}
 		active, role := h.active, h.role
 		h.down, h.active = false, false
 		h.token++
 		action := ReleaseOther
-		if active { action = ReleaseActive } else if primary { action = ReleaseShort }
+		if active {
+			action = ReleaseActive
+		} else if primary {
+			action = ReleaseShort
+		}
 		return Event{Kind: EventReleased, Role: role, Release: action}
 	case CommandAbandon:
 		c.owner = 0 // Retain physical key-up for native click replay.
 		return Event{Kind: EventAbandoned}
 	case CommandStart:
-		if c.cancel != nil { c.cancel() }
+		if c.cancel != nil {
+			c.cancel()
+		}
 		c.currentID++
 		c.ctx, c.cancel = context.WithCancel(context.Background())
 		c.phase = EventStarted
@@ -232,6 +260,7 @@ func (c *Core) ContextFor(id uint64) context.Context {
 	cancel()
 	return ctx
 }
+
 // Cancel stops a task and drops any held key ownership, including late timers.
 func (c *Core) cancelLocked() {
 	c.currentID++
@@ -248,31 +277,48 @@ func (c *Core) cancelLocked() {
 		}
 	}
 }
+
 // Execute is the platform-independent task entrypoint. No client can execute
 // an expired task or circumvent the shared model deadlines and result routes.
 func (c *Core) Execute(token uint64, cfg coreconfig.Config, pcm []byte, selected string, rewrite bool, emit func(Event)) (Result, error) {
 	c.mu.Lock()
-	if token != 0 && c.currentID == token && c.ctx != nil && !c.closed { c.phase = EventProcessing }
+	if token != 0 && c.currentID == token && c.ctx != nil && !c.closed {
+		c.phase = EventProcessing
+	}
 	c.mu.Unlock()
 	result, err := run(c.ContextFor(token), cfg, pcm, selected, rewrite, func(text string) {
 		c.mu.Lock()
 		valid := token != 0 && c.currentID == token && !c.closed && c.ctx != nil
-		if valid { c.phase = EventTranscribed }
+		if valid {
+			c.phase = EventTranscribed
+		}
 		c.mu.Unlock()
-		if valid && emit != nil { emit(Event{Kind: EventTranscribed, Token: token, Text: text}) }
+		if valid && emit != nil {
+			emit(Event{Kind: EventTranscribed, Token: token, Text: text})
+		}
 	})
 	c.mu.Lock()
 	valid := token != 0 && c.currentID == token && !c.closed && c.ctx != nil
 	if valid {
-		if err == nil { c.phase = EventFinished } else { c.phase = EventFailed }
+		if err == nil {
+			c.phase = EventFinished
+		} else {
+			c.phase = EventFailed
+		}
 	}
 	c.mu.Unlock()
-	if !valid { return result, err }
+	if !valid {
+		return result, err
+	}
 	if err == nil {
 		title := ux.DictationHistoryTitle
-		if rewrite { title = ux.HistoryTitle(result.Intent) }
+		if rewrite {
+			title = ux.HistoryTitle(result.Intent)
+		}
 		c.History.Remember(title, result.Text)
-		if emit != nil { emit(Event{Kind: EventFinished, Token: token, Result: result}) }
+		if emit != nil {
+			emit(Event{Kind: EventFinished, Token: token, Result: result})
+		}
 	} else if emit != nil {
 		emit(Event{Kind: EventFailed, Token: token, Error: err.Error()})
 	}
