@@ -27,21 +27,20 @@ class WorkflowEventOwnership(unittest.TestCase):
         self.assertIn("needs.changes.outputs.direct2d == 'true' && !startsWith(github.ref, 'refs/tags/')", main)
         self.assertIn("uses: ./.github/workflows/direct2d-result.yml", main)
 
-    def test_demo_renderer_changes_have_one_automatic_owner(self):
+    def test_media_capture_is_read_only_and_not_a_recursive_publish_chain(self):
         demo = events("demo-video.yml")
-        # Keep direct screenshot authoring, but never push-render the video
-        # when its own workflow or renderer changes; screenshot completion owns that.
         image_push = demo.split("  push:\n", 1)[1].split("  workflow_dispatch:", 1)[0]
         self.assertIn("'docs/ui/*.png'", image_push)
-        self.assertNotIn("scripts/render-demo-video.py", image_push)
-        self.assertNotIn(".github/workflows/demo-video.yml", image_push)
-        self.assertIn("  workflow_run:", demo)
-        self.assertIn("workflows: ['Windows UI screenshots']", demo)
         self.assertIn("  workflow_dispatch:", demo)
+        self.assertNotIn("  workflow_run:", demo)
         screenshot = events("visual-matrix.yml")
-        self.assertIn("'scripts/render-demo-video.py'", screenshot)
-        self.assertIn("'.github/workflows/demo-video.yml'", screenshot)
         self.assertIn("    branches: [main]", screenshot)
+        self.assertNotIn("'scripts/render-demo-video.py'", screenshot)
+        self.assertNotIn("'.github/workflows/demo-video.yml'", screenshot)
+        for name in ("visual-matrix.yml", "demo-video.yml"):
+            content = workflow(name)
+            self.assertIn("contents: read", content)
+            self.assertNotIn("git push", content)
 
     def test_nightly_verifies_its_own_workflow_on_main_only(self):
         nightly = events("nightly.yml")
