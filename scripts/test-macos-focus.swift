@@ -39,6 +39,8 @@ extension HeadlessApp {
     }
 }
 MainActor.assumeIsolated {
+    // The shipped status-bar app creates NSApplication before querying AppKit/Quartz.
+    _ = NSApplication.shared
     let window = AXUIElementCreateApplication(90001)
     let otherWindow = AXUIElementCreateApplication(90002)
     let editor = AXUIElementCreateApplication(90003)
