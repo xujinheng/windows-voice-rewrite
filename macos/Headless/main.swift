@@ -231,7 +231,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var taskID: UInt64 = 0
     private var targetPID: pid_t = 0
     private var targetFocus: FocusIdentity?
-    private var selected: AXSelection?
     private var pending = false
     private var lastResult: String?
 
@@ -400,8 +399,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard action == .dictation || (window != nil && element != nil) else { reset("Target unavailable"); return }
         targetFocus = FocusIdentity(window: window, element: element,
                                     title: window.flatMap(windowTitle))
-        selected = action == .rewrite ? selectionFromAX() : nil
-        if action == .rewrite && selected == nil { reset("Select text"); return }
         guard microphone.running else { reset("Mic error"); return }
         taskID = VREpochStart()
         pill.recording(rewrite: action == .rewrite, started: Date(),
@@ -419,11 +416,18 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         pill.processing()
         show(action == .dictation ? config.profile.pill.processingDictation : config.profile.pill.processingRewrite)
         let configValue = config.raw
-        let selectedValue = selected
         let pid = targetPID
         let token = taskID
         do {
             let pcm = try microphone.stop()
+            if action == .rewrite {
+                let window = focusedWindow()
+                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+                      targetFocus?.matches(window: window, element: focusedElement(),
+                                           title: window.flatMap(windowTitle)) == true else { reset("Focus changed"); return }
+            }
+            let selectedValue = action == .rewrite ? selectionFromAX() : nil
+            if action == .rewrite && selectedValue == nil { reset("Select text"); return }
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let result = Result {
                     try GoCore.request(config: configValue,
@@ -613,7 +617,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
 
     private func clearSession() {
         activeAction = nil
-        selected = nil
         targetFocus = nil
         pending = false
     }
