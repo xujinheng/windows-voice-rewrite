@@ -74,7 +74,7 @@ func TestExecuteEmitsPublicProgressAndResult(t *testing.T) {
 		case "/v1/audio/transcriptions":
 			fmt.Fprint(w, `{"text":"explain this"}`)
 		case "/v1/chat/completions":
-			fmt.Fprint(w, `{"choices":[{"message":{"content":"{\\"intent\\":\\"answer\\",\\"result\\":\\"Explanation\\"}"}}]}`)
+			fmt.Fprintf(w, `{"choices":[{"message":{"content":%q}}]}`, `{"intent":"answer","result":"Explanation"}`)
 		default:
 			t.Errorf("unexpected service path %s", r.URL.Path)
 		}
