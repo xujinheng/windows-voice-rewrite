@@ -171,6 +171,23 @@ func TestResolveSelectedTaskCorrectsMisclassifiedEdit(t *testing.T) {
 	}
 }
 
+func TestResolveSelectedTaskKeepsMalformedOutputAsPreview(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"unstructured model output"}}]}`)
+	}))
+	defer server.Close()
+	cfg := coreconfig.Defaults()
+	cfg.TextModel = "test-model"
+	cfg.LLMBaseURL = server.URL
+	got, err := ResolveSelectedTask(context.Background(), cfg, "Original", "润色一下")
+	if err != nil || calls != 1 || !got.PreviewOnly || got.Result != "unstructured model output" ||
+		RouteTask(got, "润色一下") != "preview" {
+		t.Fatalf("malformed answer was retried/authorized: result=%+v err=%v calls=%d", got, err, calls)
+	}
+}
+
 func TestSelectionValidationAndCancelBeforeNetwork(t *testing.T) {
 	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
