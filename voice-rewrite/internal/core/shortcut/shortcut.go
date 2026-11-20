@@ -133,20 +133,9 @@ func FromKey(vk, modifiers uint32) (string, error) {
 
 // WindowsSideButton maps a stored shortcut to the XBUTTON id used by the mouse hook.
 // Mouse4 is XBUTTON1 (1) and Mouse5 is XBUTTON2 (2).
-// MacKeyCode maps validated voice hotkeys to Quartz physical event codes.
-// Zero means the Mac headless host cannot register this shortcut.
+// MacKeyCode is the single mapping of macOS voice shortcuts to Quartz codes.
 func MacKeyCode(s string) int {
-	switch s {
-	case MacDictation:
-		return 54
-	case MacRewrite:
-		return 61
-	case "Mouse4":
-		return 103
-	case "Mouse5":
-		return 104
-	}
-	return 0
+	return map[string]int{MacDictation: 54, MacRewrite: 61, "Mouse4": 103, "Mouse5": 104}[s]
 }
 
 func WindowsSideButton(s string) (uint16, bool) {
