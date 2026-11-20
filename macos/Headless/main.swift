@@ -58,14 +58,11 @@ private struct HostConfig {
     let profile: HostProfile
 
     static func load(_ url: URL) throws -> HostConfig {
-        let data = try Data(contentsOf: url)
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw HostError.config("config.json must be a JSON object")
-        }
+        guard let json = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        else { throw HostError.config("config.json must be a JSON object") }
         guard let profile = try GoCore.request(config: json, operation: "host_profile",
-                                               audio: Data(), selection: nil).profile else {
-            throw HostError.config("missing Go host profile")
-        }
+                                               audio: Data(), selection: nil).profile
+        else { throw HostError.config("missing Go host profile") }
         return HostConfig(raw: json, profile: profile)
     }
 }
@@ -388,18 +385,15 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 activeAction = nil
             }
             if (outcome == 1 || outcome == 3), let cursor {
-                replayClick(button: code - 100, cursor: cursor)
+                let source = CGEventSource(stateID: .hidSystemState)
+                for kind in [CGEventType.otherMouseDown, .otherMouseUp] {
+                    guard let event = CGEvent(mouseEventSource: source, mouseType: kind,
+                                              mouseCursorPosition: cursor, mouseButton: .center) else { return }
+                    event.setIntegerValueField(.mouseEventButtonNumber, value: code - 100)
+                    event.setIntegerValueField(.eventSourceUserData, value: 0x56525842)
+                    event.post(tap: .cghidEventTap)
+                }
             }
-        }
-    }
-    private func replayClick(button: Int64, cursor: CGPoint) {
-        let source = CGEventSource(stateID: .hidSystemState)
-        for kind in [CGEventType.otherMouseDown, .otherMouseUp] {
-            guard let event = CGEvent(mouseEventSource: source, mouseType: kind,
-                                      mouseCursorPosition: cursor, mouseButton: .center) else { return }
-            event.setIntegerValueField(.mouseEventButtonNumber, value: button)
-            event.setIntegerValueField(.eventSourceUserData, value: 0x56525842)
-            event.post(tap: .cghidEventTap)
         }
     }
 
@@ -537,9 +531,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let board = NSPasteboard.general
         let stamp = board.changeCount
         let originals = board.pasteboardItems
-        guard originals != nil || board.types?.isEmpty != false else {
-            pasteUnicode(text); return
-        }
+        if originals == nil && board.types?.isEmpty == false { pasteUnicode(text); return }
         // NSPasteboardItem is not NSCopying; preserve each advertised data type.
         var saved: [NSPasteboardItem] = []
         var totalBytes = 0
