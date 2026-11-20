@@ -182,7 +182,7 @@ func VRProfile(config *C.char) *C.char {
 	if config == nil {
 		return nil
 	}
-	reply := headlessProfile(request{ID: "host", Config: json.RawMessage(C.GoString(config))})
+	reply := headlessProfile(request{Config: json.RawMessage(C.GoString(config))})
 	if reply.OK {
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
 		codes := map[string]int{"RightCommand": 54, "RightOption": 61, "Mouse4": 103, "Mouse5": 104}
@@ -194,12 +194,12 @@ func VRProfile(config *C.char) *C.char {
 }
 
 //export VRRun
-func VRRun(config, operation *C.char, audio *C.uchar, length C.int, selection *C.char, token C.ulonglong, onTranscribed C.VRTranscribedCallback) *C.char {
-	if config == nil || operation == nil || length < 0 || length > C.int(maxPCMBytes) || (length > 0 && audio == nil) {
+func VRRun(config *C.char, rewrite C.int, audio *C.uchar, length C.int, selection *C.char, token C.ulonglong, onTranscribed C.VRTranscribedCallback) *C.char {
+	if config == nil || length < 0 || length > C.int(maxPCMBytes) || (length > 0 && audio == nil) {
 		return nil
 	}
 	req := request{
-		ID: "native", Config: json.RawMessage(C.GoString(config)), Op: C.GoString(operation),
+		Config: json.RawMessage(C.GoString(config)), Rewrite: rewrite != 0,
 		NativePCM: C.GoBytes(unsafe.Pointer(audio), length),
 	}
 	if selection != nil {

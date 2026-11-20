@@ -21,15 +21,13 @@ import (
 const (
 	maxPCMBytes      = audio.PCMBytesPerSecond * coreconfig.RecordSecondsMax
 	maxSelectedBytes = 1 << 20
-	msgUnsupported   = "unsupported operation"
 	msgCanceled      = "request canceled"
 	msgTimedOut      = "request timed out"
 	msgInvalidConfig = "invalid configuration"
 )
 
 type request struct {
-	ID           string
-	Op           string
+	Rewrite      bool
 	Config       json.RawMessage
 	SelectedText string
 	NativePCM    []byte
@@ -42,7 +40,6 @@ type bridgeError struct {
 }
 
 type response struct {
-	ID     string       `json:"id,omitempty"`
 	OK     bool         `json:"ok"`
 	Result any          `json:"result,omitempty"`
 	Error  *bridgeError `json:"error,omitempty"`
@@ -52,21 +49,21 @@ type response struct {
 // It owns the final cancellation result so ASR and rewrite do not each
 // duplicate context checks; private provider errors and panics stay contained.
 func safeProcessRequest(ctx context.Context, req request) (reply response) {
-	reply = failure(req.ID, "internal_error", "request failed")
+	reply = failure("internal_error", "request failed")
 	defer func() { _ = recover() }()
 	reply = processRequest(ctx, req)
 	if err := ctx.Err(); err != nil {
-		return contextFailure(req.ID, err)
+		return contextFailure(err)
 	}
 	return reply
 }
 
-func failure(id, code, message string) response {
-	return response{ID: id, Error: &bridgeError{Code: code, Message: message}}
+func failure(code, message string) response {
+	return response{Error: &bridgeError{Code: code, Message: message}}
 }
 
-func success(id string, value any) response {
-	return response{ID: id, OK: true, Result: value}
+func success(value any) response {
+	return response{OK: true, Result: value}
 }
 
 // headlessProfile shares the existing config normalizer and indicator with
@@ -74,11 +71,11 @@ func success(id string, value any) response {
 func headlessProfile(req request) response {
 	var provided map[string]json.RawMessage
 	if len(req.Config) == 0 || json.Unmarshal(req.Config, &provided) != nil || provided == nil {
-		return failure(req.ID, "invalid_config", msgInvalidConfig)
+		return failure("invalid_config", msgInvalidConfig)
 	}
 	cfg, err := coreconfig.Parse(req.Config)
 	if err != nil {
-		return failure(req.ID, "invalid_config", msgInvalidConfig)
+		return failure("invalid_config", msgInvalidConfig)
 	}
 	if _, ok := provided["dictation_hotkey"]; !ok {
 		cfg.DictationHotkey = "RightCommand"
@@ -92,14 +89,14 @@ func headlessProfile(req request) response {
 	dictation, _, _, _, errDictation := shortcut.Parse(cfg.DictationHotkey)
 	rewrite, _, _, _, errRewrite := shortcut.Parse(cfg.HotkeyRecord)
 	if errDictation != nil || errRewrite != nil || !allowed(dictation) || !allowed(rewrite) || dictation == rewrite {
-		return failure(req.ID, "invalid_config", msgInvalidConfig)
+		return failure("invalid_config", msgInvalidConfig)
 	}
 	cfg.DictationHotkey, cfg.HotkeyRecord = dictation, rewrite
 	cfg, err = coreconfig.Normalize(cfg)
 	if err != nil || cfg.RecordMode != "hold" || cfg.AudioDeviceID != -1 {
-		return failure(req.ID, "invalid_config", msgInvalidConfig)
+		return failure("invalid_config", msgInvalidConfig)
 	}
-	return success(req.ID, map[string]any{"profile": map[string]any{
+	return success(map[string]any{"profile": map[string]any{
 		"dictation": cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
 		"maximumSeconds": cfg.MaxRecordSeconds, "modifierDelayMS": 200,
 		"pasteRestoreMS": ux.PasteReceiptMinimumMilliseconds,
@@ -111,55 +108,50 @@ func headlessProfile(req request) response {
 func processRequest(ctx context.Context, req request) response {
 	trimmed := bytes.TrimSpace(req.Config)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
-		return failure(req.ID, "invalid_config", "config object is required")
+		return failure("invalid_config", "config object is required")
 	}
 	if trimmed[0] != '{' {
-		return failure(req.ID, "invalid_config", "config must be an object")
+		return failure("invalid_config", "config must be an object")
 	}
 	cfg, err := coreconfig.Parse(req.Config)
 	if err != nil {
-		return failure(req.ID, "invalid_config", msgInvalidConfig)
+		return failure("invalid_config", msgInvalidConfig)
 	}
 	cfg, err = coreconfig.Normalize(cfg)
 	if err != nil {
-		return failure(req.ID, "invalid_config", msgInvalidConfig)
+		return failure("invalid_config", msgInvalidConfig)
 	}
 	if err := ctx.Err(); err != nil {
-		return contextFailure(req.ID, err)
+		return contextFailure(err)
 	}
 
-	switch req.Op {
-	case "transcribe", "selected_voice_task":
-		rewrite := req.Op == "selected_voice_task"
-		if rewrite && (len(req.SelectedText) > maxSelectedBytes ||
-			!utf8.ValidString(req.SelectedText)) {
-			return failure(req.ID, "invalid_request", "selected text or instruction exceeds limits")
-		}
-		outcome, err := voice.Run(ctx, cfg, req.NativePCM, req.SelectedText, rewrite, req.AfterASR)
-		if err != nil {
-			var capture *voice.PCMError
-			if errors.As(err, &capture) {
-				return failure(req.ID, "invalid_pcm", capture.Error())
-			}
-			code, message := "asr_failed", "speech transcription failed"
-			if rewrite {
-				code, message = "textedit_failed", "selected text processing failed"
-			}
-			if classified, ok := ux.Classify(err); ok {
-				message = classified
-			}
-			return failure(req.ID, code, message)
-		}
-		return success(req.ID, outcome)
+	if req.Rewrite && (len(req.SelectedText) > maxSelectedBytes ||
+		!utf8.ValidString(req.SelectedText)) {
+		return failure("invalid_request", "selected text exceeds limits")
 	}
-	return failure(req.ID, "unsupported_op", msgUnsupported)
+	outcome, err := voice.Run(ctx, cfg, req.NativePCM, req.SelectedText, req.Rewrite, req.AfterASR)
+	if err != nil {
+		var capture *voice.PCMError
+		if errors.As(err, &capture) {
+			return failure("invalid_pcm", capture.Error())
+		}
+		code, message := "asr_failed", "speech transcription failed"
+		if req.Rewrite {
+			code, message = "textedit_failed", "selected text processing failed"
+		}
+		if classified, ok := ux.Classify(err); ok {
+			message = classified
+		}
+		return failure(code, message)
+	}
+	return success(outcome)
 }
 
-func contextFailure(id string, err error) response {
+func contextFailure(err error) response {
 	if errors.Is(err, context.DeadlineExceeded) {
-		return failure(id, "timeout", msgTimedOut)
+		return failure("timeout", msgTimedOut)
 	}
-	return failure(id, "canceled", msgCanceled)
+	return failure("canceled", msgCanceled)
 }
 
 // Required by Go's c-archive build; the native host calls VRRun directly.

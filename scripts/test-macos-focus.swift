@@ -5,13 +5,13 @@ extension HeadlessApp {
     func verifyReboundRelease(code: Int64, before: HostConfig,
                               after: HostConfig, modifier: Bool) {
         config = before
-        _ = try! GoCore.request(config: before.raw, operation: "host_profile",
+        _ = try! GoCore.request(config: before.raw, 
                                audio: Data(), selection: nil)
         precondition(VRAction(Int32(code)) != 0)
         updatePress(code: code, down: true, delay: 3600)
         precondition(VRDown(Int32(code)) == 1 && VRArmed() == 1)
         config = after
-        _ = try! GoCore.request(config: after.raw, operation: "host_profile",
+        _ = try! GoCore.request(config: after.raw, 
                                audio: Data(), selection: nil)
         precondition(VRAction(Int32(code)) == 0)
         if modifier {
@@ -97,7 +97,7 @@ MainActor.assumeIsolated {
     func host(_ raw: [String: Any]) -> HostConfig {
         let data = try! JSONSerialization.data(withJSONObject: raw)
         let json = String(decoding: data, as: UTF8.self)
-        let output = try! GoCore.request(config: json, operation: "host_profile",
+        let output = try! GoCore.request(config: json, 
                                          audio: Data(), selection: nil)
         return HostConfig(raw: json, profile: output.profile!)
     }
