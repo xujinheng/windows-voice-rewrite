@@ -364,7 +364,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             activeAction = name == config.profile.dictation ? .dictation : .rewrite
             targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
             taskID = 0
-            // Pre-roll starts on physical down; a short click discards it.
             do { try microphone.start(maximumSeconds: config.profile.maximumSeconds) }
             catch { VRAbandon(); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return }
             DispatchQueue.main.async { [weak self] in
@@ -526,7 +525,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func paste(_ text: String) {
-        // Prebuild the single paste event; a sent event is not confirmed insertion.
         let source = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {
@@ -565,8 +563,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let lease = board.changeCount
         down.flags = .maskCommand
         up.flags = .maskCommand
-        // Never paste clipboard content replaced by another app.
-        guard board.changeCount == lease else { reset("Clipboard changed"); return }
+        guard board.changeCount == lease, targetStillValid() else {
+            if board.changeCount == lease { board.clearContents(); _ = board.writeObjects(saved) }
+            reset("Focus or clipboard changed"); return
+        }
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
         show(config.profile.pill.sentLabel)
