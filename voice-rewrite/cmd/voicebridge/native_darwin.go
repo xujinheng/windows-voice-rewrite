@@ -54,11 +54,21 @@ func VRSnapshot(code C.int, token C.uint64_t) C.VRCoreState {
 	s := nativeCore.Snapshot(int(code), uint64(token))
 	r := C.VRCoreState{role: C.int(s.Role), held_role: C.int(s.HeldRole),
 		current: C.uint64_t(s.Current), phase: C.int(s.Phase)}
-	if s.Down { r.down = 1 }
-	if s.Armed { r.armed = 1 }
-	if s.CanActivate { r.can_activate = 1 }
-	if s.Valid { r.valid = 1 }
-	if s.Closed { r.closed = 1 }
+	if s.Down {
+		r.down = 1
+	}
+	if s.Armed {
+		r.armed = 1
+	}
+	if s.CanActivate {
+		r.can_activate = 1
+	}
+	if s.Valid {
+		r.valid = 1
+	}
+	if s.Closed {
+		r.closed = 1
+	}
 	return r
 }
 
