@@ -12,16 +12,19 @@ import "C"
 
 import (
 	"encoding/json"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
 	"voicerewrite/internal/core/clipboard"
+	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/session"
 )
 
 var nativeEpoch session.Epoch
+var nativeConfig atomic.Pointer[coreconfig.Config]
 
 // Physical state lives in the same Go owner used by Windows' mouse hook.
 // Quartz callbacks are serial; Epoch is shared with the worker thread.
@@ -157,8 +160,9 @@ func VRProfile(config *C.char) *C.char {
 	if config == nil {
 		return nil
 	}
-	reply := headlessProfile(request{Config: json.RawMessage(C.GoString(config))})
+	reply := headlessProfile(json.RawMessage(C.GoString(config)))
 	if reply.OK {
+		nativeConfig.Store(&reply.cfg)
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
 		nativeRole = [105]uint8{}
 		nativeRole[macKeyCode(profile["dictation"].(string))] = 1
@@ -168,12 +172,16 @@ func VRProfile(config *C.char) *C.char {
 }
 
 //export VRRun
-func VRRun(config *C.char, rewrite C.int, audio *C.uchar, length C.int, selection *C.char, token C.ulonglong, onTranscribed C.VRTranscribedCallback) *C.char {
-	if config == nil || length < 0 || length > C.int(maxPCMBytes) || (length > 0 && audio == nil) {
+func VRRun(rewrite C.int, audio *C.uchar, length C.int, selection *C.char, token C.ulonglong, onTranscribed C.VRTranscribedCallback) *C.char {
+	if length < 0 || length > C.int(maxPCMBytes) || (length > 0 && audio == nil) {
 		return nil
 	}
+	cfg := nativeConfig.Load()
+	if cfg == nil {
+		return nativeJSON(failure("invalid_config", msgInvalidConfig))
+	}
 	req := request{
-		Config: json.RawMessage(C.GoString(config)), Rewrite: rewrite != 0,
+		Rewrite: rewrite != 0,
 		NativePCM: C.GoBytes(unsafe.Pointer(audio), length),
 	}
 	if selection != nil {
@@ -183,5 +191,5 @@ func VRRun(config *C.char, rewrite C.int, audio *C.uchar, length C.int, selectio
 		req.AfterASR = func(string) { C.vrReportTranscribed(onTranscribed, C.ulonglong(token)) }
 	}
 	// The shared voice.Run applies the task deadline; Epoch owns cancellation.
-	return nativeJSON(safeProcessRequest(nativeEpoch.ContextFor(uint64(token)), req))
+	return nativeJSON(safeProcessRequest(nativeEpoch.ContextFor(uint64(token)), *cfg, req))
 }

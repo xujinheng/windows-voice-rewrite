@@ -52,7 +52,6 @@ private struct HostProfile: Decodable {
 }
 
 private struct HostConfig {
-    let raw: String
     let profile: HostProfile
 }
 
@@ -195,16 +194,18 @@ private let onASRTranscribed: @convention(c) (UInt64) -> Void = { token in
 }
 
 private enum GoCore {
-    static func request(config: String, rewrite: Bool? = nil, audio: Data,
+    static func request(config: String? = nil, rewrite: Bool? = nil, audio: Data,
                         selection: String?, token: UInt64 = 0) throws -> BridgeReply.Output {
-        let result = config.withCString { cfg in
-            guard let rewrite else { return VRProfile(cfg) }
-            return (selection ?? "").withCString { selected in
+        let result: UnsafeMutablePointer<CChar>?
+        if let rewrite {
+            result = (selection ?? "").withCString { selected in
                 audio.withUnsafeBytes { pcm in
-                    VRRun(cfg, rewrite ? 1 : 0, pcm.bindMemory(to: UInt8.self).baseAddress,
+                    VRRun(rewrite ? 1 : 0, pcm.bindMemory(to: UInt8.self).baseAddress,
                           Int32(audio.count), selected, token, onASRTranscribed)
                 }
             }
+        } else {
+            result = (config ?? "").withCString { VRProfile($0) }
         }
         guard let result else { throw HostError.bridge("Go Core returned no response") }
         defer { VRFree(result) }
@@ -268,7 +269,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             guard let profile = try GoCore.request(config: json,
                                                    audio: Data(), selection: nil).profile
             else { throw HostError.config("missing Go host profile") }
-            config = HostConfig(raw: json, profile: profile)
+            config = HostConfig(profile: profile)
             pill.configure(profile.pill)
             show("VR")
         } catch {
@@ -415,7 +416,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         VRAbandon() // timeout also releases Go's primary key; the physical hold remains
         pill.working(rewrite ? .selection : .processing)
         show(rewrite ? config.profile.pill.selectionLabel : config.profile.pill.processingDictation)
-        let configValue = config.raw
         let token = taskID
         do {
             let capture = try microphone.stop()
@@ -426,8 +426,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let result = Result {
                     let pcm = try Microphone.pcm(capture)
-                    return try GoCore.request(config: configValue,
-                                             rewrite: rewrite,
+                    return try GoCore.request(rewrite: rewrite,
                                              audio: pcm, selection: selectedValue?.text, token: token)
                 }
                 DispatchQueue.main.async {

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/session"
 )
 
@@ -33,8 +34,7 @@ func TestInProcessRequestDeadlineCancelsASR(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	reply := safeProcessRequest(ctx, request{
-		Config:    cfg,
+	reply := safeProcessRequest(ctx, mustNativeConfig(t, cfg), request{
 		NativePCM: make([]byte, 3200),
 	})
 	if reply.Error == nil || reply.Error.Code != "timeout" {
@@ -92,14 +92,15 @@ func TestInProcessEpochCancellationReachesProvider(t *testing.T) {
 				t.Fatal(err)
 			}
 			req := request{
-				Rewrite: tc.rewrite, Config: raw,
+				Rewrite: tc.rewrite,
 				SelectedText: "你好", NativePCM: make([]byte, 3200),
 			}
+			normalized := mustNativeConfig(t, raw)
 			var epoch session.Epoch
 			defer epoch.Shutdown()
 			token := epoch.Start()
 			done := make(chan response, 1)
-			go func() { done <- safeProcessRequest(epoch.ContextFor(token), req) }()
+			go func() { done <- safeProcessRequest(epoch.ContextFor(token), normalized, req) }()
 
 			select {
 			case <-entered:
@@ -124,7 +125,7 @@ func TestInProcessEpochCancellationReachesProvider(t *testing.T) {
 				t.Fatal("stale generation remains eligible for native delivery")
 			}
 			// A delayed Swift worker must not contact the provider after cancel.
-			reply := safeProcessRequest(epoch.ContextFor(token), req)
+			reply := safeProcessRequest(epoch.ContextFor(token), normalized, req)
 			if reply.OK || reply.Error == nil || reply.Error.Code != "canceled" {
 				t.Fatalf("stale request was processed: %#v", reply)
 			}
@@ -142,9 +143,9 @@ func TestNativePCMAdmissionUsesSharedVoiceCore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	normalized := mustNativeConfig(t, raw)
 	for _, n := range []int{0, 1, 3198, 3201, 30*32000 + 2} {
-		reply := safeProcessRequest(context.Background(), request{
-			Config: raw, NativePCM: make([]byte, n),
+		reply := safeProcessRequest(context.Background(), normalized, request{ NativePCM: make([]byte, n),
 		})
 		if reply.Error == nil || reply.Error.Code != "invalid_pcm" {
 			t.Fatalf("accepted %d invalid PCM bytes: %#v", n, reply)
@@ -179,18 +180,28 @@ func TestBridgeTranscribedStageOnlyOnRewrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := 0
-	req := request{Rewrite: true, Config: raw, NativePCM: make([]byte, 3200),
+	normalized := mustNativeConfig(t, raw)
+	req := request{Rewrite: true, NativePCM: make([]byte, 3200),
 		SelectedText: "Original", AfterASR: func(text string) {
 			if text != "润色一下" {
 				t.Errorf("wrong transcript: %q", text)
 			}
 			calls++
 		}}
-	if reply := safeProcessRequest(context.Background(), req); !reply.OK || calls != 1 {
+	if reply := safeProcessRequest(context.Background(), normalized, req); !reply.OK || calls != 1 {
 		t.Fatalf("rewrite stage not reported once: reply=%+v calls=%d", reply, calls)
 	}
 	req.Rewrite = false
-	if reply := safeProcessRequest(context.Background(), req); !reply.OK || calls != 1 {
+	if reply := safeProcessRequest(context.Background(), normalized, req); !reply.OK || calls != 1 {
 		t.Fatalf("dictation incorrectly reported rewrite stage: reply=%+v calls=%d", reply, calls)
 	}
+}
+
+func mustNativeConfig(t *testing.T, raw []byte) coreconfig.Config {
+	t.Helper()
+	cfg, err := coreconfig.Parse(raw)
+	if err != nil { t.Fatal(err) }
+	cfg, err = coreconfig.Normalize(cfg)
+	if err != nil { t.Fatal(err) }
+	return cfg
 }

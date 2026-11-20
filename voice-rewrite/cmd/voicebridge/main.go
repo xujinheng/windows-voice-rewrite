@@ -2,7 +2,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -30,7 +29,6 @@ const (
 
 type request struct {
 	Rewrite      bool
-	Config       json.RawMessage
 	SelectedText string
 	NativePCM    []byte
 	AfterASR     func(string)
@@ -45,12 +43,13 @@ type response struct {
 	OK     bool         `json:"ok"`
 	Result any          `json:"result,omitempty"`
 	Error  *bridgeError `json:"error,omitempty"`
+	cfg    coreconfig.Config // normalized profile, never sent over the C ABI
 }
 
 // The native C ABI uses this boundary.
 // It owns the final cancellation result so ASR and rewrite do not each
 // duplicate context checks; private provider errors and panics stay contained.
-func safeProcessRequest(ctx context.Context, req request) (reply response) {
+func safeProcessRequest(ctx context.Context, cfg coreconfig.Config, req request) (reply response) {
 	reply = failure("internal_error", "request failed")
 	defer func() {
 		if recover() != nil {
@@ -64,18 +63,6 @@ func safeProcessRequest(ctx context.Context, req request) (reply response) {
 			}
 		}
 	}()
-	trimmed := bytes.TrimSpace(req.Config)
-	if len(trimmed) == 0 || trimmed[0] != '{' {
-		return failure("invalid_config", msgInvalidConfig)
-	}
-	cfg, err := coreconfig.Parse(req.Config)
-	if err != nil {
-		return failure("invalid_config", msgInvalidConfig)
-	}
-	cfg, err = coreconfig.Normalize(cfg)
-	if err != nil {
-		return failure("invalid_config", msgInvalidConfig)
-	}
 	if req.Rewrite && (len(req.SelectedText) > maxSelectedBytes ||
 		!utf8.ValidString(req.SelectedText)) {
 		return failure("invalid_request", "selected text exceeds limits")
@@ -113,12 +100,12 @@ func macKeyCode(s string) int {
 
 // headlessProfile shares the existing config normalizer and indicator with
 // Windows; only physical Mac shortcut identifiers differ.
-func headlessProfile(req request) response {
+func headlessProfile(raw json.RawMessage) response {
 	var provided map[string]json.RawMessage
-	if len(req.Config) == 0 || json.Unmarshal(req.Config, &provided) != nil || provided == nil {
+	if len(raw) == 0 || json.Unmarshal(raw, &provided) != nil || provided == nil {
 		return failure("invalid_config", msgInvalidConfig)
 	}
-	cfg, err := coreconfig.Parse(req.Config)
+	cfg, err := coreconfig.Parse(raw)
 	if err != nil {
 		return failure("invalid_config", msgInvalidConfig)
 	}
@@ -138,13 +125,15 @@ func headlessProfile(req request) response {
 	if err != nil || cfg.RecordMode != "hold" || cfg.AudioDeviceID != -1 {
 		return failure("invalid_config", msgInvalidConfig)
 	}
-	return success(map[string]any{"profile": map[string]any{
+	reply := success(map[string]any{"profile": map[string]any{
 		"dictation": cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
 		"maximumSeconds": cfg.MaxRecordSeconds, "modifierDelayMS": 200,
 		"pasteRestoreMS": ux.PasteReceiptMinimumMilliseconds,
 		"mouseDelayMS":   int(input.WindowsSideHold / time.Millisecond),
 		"pill":           indicator.HostSpec(),
 	}})
+	reply.cfg = cfg
+	return reply
 }
 
 // Required by Go's c-archive build; the native host calls VRRun directly.

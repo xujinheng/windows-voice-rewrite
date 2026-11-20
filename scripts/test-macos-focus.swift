@@ -2,17 +2,15 @@
 // It is never linked into the production app.
 // Same-file extension can exercise private host state without widening production access.
 extension HeadlessApp {
-    func verifyReboundRelease(code: Int64, before: HostConfig,
-                              after: HostConfig, modifier: Bool) {
-        config = before
-        _ = try! GoCore.request(config: before.raw, 
-                               audio: Data(), selection: nil)
+    func verifyReboundRelease(code: Int64, before: String,
+                              after: String, modifier: Bool) {
+        let initial = try! GoCore.request(config: before, audio: Data(), selection: nil)
+        config = HostConfig(profile: initial.profile!)
         precondition(VRAction(Int32(code)) != 0)
         updatePress(code: code, down: true, delay: 3600)
         precondition(VRDown(Int32(code)) == 1 && VRArmed() == 1)
-        config = after
-        _ = try! GoCore.request(config: after.raw, 
-                               audio: Data(), selection: nil)
+        let rebound = try! GoCore.request(config: after, audio: Data(), selection: nil)
+        config = HostConfig(profile: rebound.profile!)
         precondition(VRAction(Int32(code)) == 0)
         if modifier {
             handleModifier(code: code, flags: [])
@@ -105,12 +103,8 @@ MainActor.assumeIsolated {
     let original = try! JSONSerialization.jsonObject(with: configData) as! [String: Any]
     var mouseBound = original
     mouseBound["dictation_hotkey"] = "Mouse4"
-    func host(_ raw: [String: Any]) -> HostConfig {
-        let data = try! JSONSerialization.data(withJSONObject: raw)
-        let json = String(decoding: data, as: UTF8.self)
-        let output = try! GoCore.request(config: json, 
-                                         audio: Data(), selection: nil)
-        return HostConfig(raw: json, profile: output.profile!)
+    func host(_ raw: [String: Any]) -> String {
+        String(decoding: try! JSONSerialization.data(withJSONObject: raw), as: UTF8.self)
     }
     let hostApp = HeadlessApp()
     hostApp.verifyReboundRelease(code: 103, before: host(mouseBound),
