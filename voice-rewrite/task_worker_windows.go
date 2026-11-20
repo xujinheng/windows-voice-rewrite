@@ -16,6 +16,7 @@ import (
 	"voicerewrite/internal/core/speech"
 	"voicerewrite/internal/core/textedit"
 	"voicerewrite/internal/core/ux"
+	"voicerewrite/internal/core/voice"
 )
 
 // A recorder may reach its hardware duration limit before the held key or
@@ -114,19 +115,16 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	if !app.epoch.Valid(generation) {
 		return
 	}
-	captureErr := r.err
-	if captureErr == nil && audio.BelowMinCapture(r.pcm) {
-		captureErr = errors.New(ux.DictationTooShort)
-	}
-	if captureErr != nil {
-		app.fail(captureErr)
+
+	if r.err != nil {
+		app.fail(r.err)
 		app.postHandyPhase(indicator.Error, generation)
 		return
 	}
 	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), speech.TranscribeTimeout)
 	defer cancel()
 	start := time.Now()
-	text, err := speech.Transcribe(ctx, app.cfg, r.pcm)
+	outcome, err := voice.Run(ctx, app.cfg, r.pcm, "", false, true, nil)
 	if !app.epoch.Valid(generation) {
 		return
 	}
@@ -136,6 +134,7 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 		app.postHandyPhase(indicator.Error, generation)
 		return
 	}
+	text := outcome.Text
 	if !app.epoch.Valid(generation) {
 		return
 	}
@@ -225,19 +224,16 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	if !app.epoch.Valid(generation) {
 		return
 	}
-	captureErr := r.err
-	if captureErr == nil && audio.BelowMinCapture(r.pcm) {
-		captureErr = errors.New(ux.RewriteTooShort)
-	}
-	if captureErr != nil {
-		app.fail(captureErr)
+
+	if r.err != nil {
+		app.fail(r.err)
 		return
 	}
 	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/audio.PCMBytesPerSecond)
 	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), textedit.SpokenTaskTimeout)
 	defer cancel()
 	started := time.Now()
-	answer, instruction, e := textedit.ResolveSpokenTask(ctx, app.cfg, sel.Text, r.pcm, func(text string) {
+	answer, e := voice.Run(ctx, app.cfg, r.pcm, sel.Text, true, true, func(text string) {
 		if !app.epoch.Valid(generation) {
 			return
 		}
@@ -254,22 +250,21 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		app.fail(e)
 		return
 	}
-	action := textedit.RouteTask(answer, instruction)
-	app.logger.Printf("route=%s intent=%s", action, answer.Intent)
-	allowApply := action == textedit.Replace
-	app.history.Remember(ux.HistoryTitle(answer.Intent), answer.Result)
+	app.logger.Printf("route=%s intent=%s", answer.Route, answer.Intent)
+	allowApply := answer.Route == "replace"
+	app.history.Remember(ux.HistoryTitle(answer.Intent), answer.Text)
 	if allowApply {
 		app.postHandyPhase(indicator.Applying, generation)
 		startedPaste := time.Now()
 		// Native editability determines whether to verify the pasted selection.
-		e = replaceSelectionWithGuard(app.Window, sel, answer.Result, app.cfg, !isSafelyEditableControl(sel.TargetWindow), func() bool { return app.epoch.Valid(generation) })
+		e = replaceSelectionWithGuard(app.Window, sel, answer.Text, app.cfg, !isSafelyEditableControl(sel.TargetWindow), func() bool { return app.epoch.Valid(generation) })
 		app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
 	}
 	if allowApply && e == nil {
 		app.setStatus(traySuccess)
 		app.postHandyPhase(indicator.Success, generation)
 		// Completion is indicated by the non-blocking status bar; no sound.
-		app.logger.Printf("paste_status=unverified intent=%s result_chars=%d (SendInput accepted, editor insertion not provable)", answer.Intent, utf8.RuneCountInString(answer.Result))
+		app.logger.Printf("paste_status=unverified intent=%s result_chars=%d (SendInput accepted, editor insertion not provable)", answer.Intent, utf8.RuneCountInString(answer.Text))
 		return
 	}
 	if allowApply && e != nil {
@@ -277,9 +272,9 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	}
 	title := ux.ResultCardTitle(answer.Intent)
 	selectionCopy := sel
-	app.showAnswer(title, answer.Result, sel.Anchor, &selectionCopy, allowApply, generation)
+	app.showAnswer(title, answer.Text, sel.Anchor, &selectionCopy, allowApply, generation)
 	app.setStatus(traySuccess)
-	app.logger.Printf("popup result queued; chars=%d", utf8.RuneCountInString(answer.Result))
+	app.logger.Printf("popup result queued; chars=%d", utf8.RuneCountInString(answer.Text))
 }
 
 // Dispatch popup paint, command and close events through the Win32 message loop.

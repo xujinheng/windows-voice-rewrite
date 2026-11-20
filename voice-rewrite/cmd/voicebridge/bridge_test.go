@@ -22,6 +22,7 @@ import (
 	"voicerewrite/internal/core/jsonl"
 	"voicerewrite/internal/core/session"
 	"voicerewrite/internal/core/ux"
+	"voicerewrite/internal/core/voice"
 )
 
 func TestSharedHostTimeouts(t *testing.T) {
@@ -180,12 +181,20 @@ func TestNativePCMUsesIdenticalGoValidation(t *testing.T) {
 	if nativeReason != "" || jsonReason != "" || !bytes.Equal(raw, encoded) {
 		t.Fatalf("native and JSONL capture paths differ: native=%q JSON=%q", nativeReason, jsonReason)
 	}
-	for _, size := range []int{0, 1, 3198, 3201, 30*32000 + 2} {
+	for _, size := range []int{0, 1, 3201, 30*32000 + 2} {
 		pcm := make([]byte, size)
 		_, reason := decodeRequestPCM(request{NativePCM: pcm}, cfg)
 		if reason == "" {
 			t.Errorf("accepted invalid native PCM size %d", size)
 		}
+
+	}
+	// The decoder owns framing and base64 only. Both production hosts use
+	// voice.Run for the 100ms minimum and the final PCM admission decision.
+	_, err := voice.Run(context.Background(), cfg, make([]byte, 3198), "", false, true, nil)
+	var capture *voice.PCMError
+	if !errors.As(err, &capture) || capture.Error() != ux.DictationTooShort {
+		t.Fatalf("shared Go task accepted a short recording: %v", err)
 	}
 }
 
