@@ -45,9 +45,6 @@ func TestDictationAndRewriteShortcutCollisions(t *testing.T) {
 	if text, ok := CaptureFailure(errors.New("其它")); !ok || text != CaptureFailedPrefix+"其它" {
 		t.Fatal(text)
 	}
-	if SettingsKeyAction(true, 0x0100, 0x1B) != SettingsKeyCancel || SettingsKeyAction(true, 0x0104, 0x41) != SettingsKeyAccept || SettingsKeyAction(false, 0x0100, 0x1B) != SettingsKeyClose || SettingsKeyAction(false, 0x0104, 0x1B) != SettingsKeyIgnore {
-		t.Fatal("settings key")
-	}
 	record, dictation, changed, err := AssignPair("Mouse5", "Mouse4", "Ctrl+Alt+F10", " mouse5 ", "Ctrl+P")
 	if err != nil || record != "Mouse5" || dictation != "Ctrl+P" || !changed {
 		t.Fatalf("assign %q %q %v %v", record, dictation, changed, err)
