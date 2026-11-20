@@ -38,7 +38,9 @@ func TestHeadlessProfileValidatesSettingsAndNeverLeaksKeys(t *testing.T) {
 		{`{"dictation_hotkey":"Mouse4","hotkey_record":"Mouse5","max_record_seconds":30}`, `"maximumSeconds":30`, true},
 		{`{"dictation_hotkey":"Mouse4","hotkey_record":"Mouse4"}`, "invalid_config", false},
 		{`{"dictation_hotkey":"LeftCommand"}`, "invalid_config", false},
-		{`{"max_record_seconds":181}`, "invalid_config", false},
+		{`{"max_record_seconds":181}`, "\"maximumSeconds\":180", true},
+		{`{"max_record_seconds":0}`, "\"maximumSeconds\":180", true},
+		{`{"max_record_seconds":-1}`, "\"maximumSeconds\":180", true},
 		{`{"asr_api_key":"` + secret + `"}`, `"pillColor":[32,36,46]`, true},
 	}
 	for _, tt := range tests {
