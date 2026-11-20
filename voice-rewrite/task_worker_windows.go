@@ -135,16 +135,8 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	if !app.epoch.Valid(generation) {
 		return
 	}
-	// Core owns the transcript routing on both hosts. The native editor
-	// continues to revalidate the target immediately before the write.
-	switch ux.RouteDictationTranscript(text, isSameForegroundWindow(expectedWindow)) {
-	case ux.DictationRouteEmpty:
-		app.fail(errors.New(ux.DictationEmpty))
-		app.postHandyPhase(indicator.Error, generation)
-		return
-	case ux.DictationRoutePreview:
-		// A result card preserves the transcript without requiring the user to
-		// guess what happened to their clipboard after a focus change.
+	// ASR Core rejects empty speech. The native target owns focus at delivery.
+	if !isSameForegroundWindow(expectedWindow) {
 		app.history.Remember(ux.DictationHistoryTitle, text)
 		app.showAnswer(ux.DictationNotInserted, text, currentCursorPoint(), nil, false, generation)
 		app.postHandyPhase(indicator.Fallback, generation)
