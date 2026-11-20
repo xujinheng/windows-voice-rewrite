@@ -11,8 +11,7 @@ import (
 )
 
 const (
-	MacDictation = "RightCommand"
-	MacRewrite  = "RightOption"
+	MacDictation, MacRewrite = "RightCommand", "RightOption"
 
 	alt      uint32 = 0x0001
 	ctrl     uint32 = 0x0002
