@@ -6,20 +6,20 @@ extension HeadlessApp {
                               after: String, modifier: Bool) {
         let initial = try! GoCore.request(config: before, audio: Data(), selection: nil)
         config = initial.profile!
-        precondition(VRAction(Int32(code)) != 0)
+        precondition(VRSnapshot(Int32(code), 0).role != 0)
         updatePress(code: code, down: true, delay: 3600)
-        precondition(VRDown(Int32(code)) == 1 && VRArmed() == 1)
-        let heldRole = VRHeldRole(Int32(code))
+        precondition(VRSnapshot(Int32(code), 0).down == 1 && VRSnapshot(0, 0).armed == 1)
+        let heldRole = VRSnapshot(Int32(code), 0).held_role
         precondition(heldRole != 0)
         let rebound = try! GoCore.request(config: after, audio: Data(), selection: nil)
         config = rebound.profile!
-        precondition(VRAction(Int32(code)) == 0 && VRHeldRole(Int32(code)) == heldRole)
+        precondition(VRSnapshot(Int32(code), 0).role == 0 && VRSnapshot(Int32(code), 0).held_role == heldRole)
         if modifier {
             handleModifier(code: code, flags: [])
         } else {
             updatePress(code: code, down: false, delay: 0)
         }
-        precondition(VRDown(Int32(code)) == 0 && VRArmed() == 0 && VRHeldRole(Int32(code)) == 0)
+        precondition(VRSnapshot(Int32(code), 0).down == 0 && VRSnapshot(0, 0).armed == 0 && VRSnapshot(Int32(code), 0).held_role == 0)
     }
 
     func verifyPressTargetSurvivesDelayedActivation() {
@@ -32,22 +32,22 @@ extension HeadlessApp {
 
     func verifyPillCancelLifecycle() {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        let finishedToken = VREpochStart()
+        let finishedToken = VRCommand(VR_COMMAND_START, 0, 0, 0).token
         cancelFromPill()
-        precondition(VREpochValid(finishedToken) == 1) // Dismissing a result is not cancellation.
+        precondition(VRSnapshot(0, finishedToken).valid == 1) // Dismissing a result is not cancellation.
         precondition(item.button?.title == "VR")
         let key: Int32 = 61
-        precondition(VRAction(key) == 2)
-        let held = VRPress(key, 0)
-        precondition(held != 0 && VRActivate(key, held) == 1)
-        let processingToken = VREpochStart()
+        precondition(VRSnapshot(key, 0).role == 2)
+        let held = VRCommand(VR_COMMAND_PRESS, key, 0, 0).token
+        precondition(held != 0 && VRCommand(VR_COMMAND_ACTIVATE, key, held, 0).kind == VR_EVENT_ACTIVATED)
+        let processingToken = VRCommand(VR_COMMAND_START, 0, 0, 0).token
         taskID = processingToken
         precondition(!pending)
-        VRAbandon() // as on timed recording completion
-        precondition(pending && VRArmed() == 0)
-        _ = VRRelease(key)
+        VRCommand(VR_COMMAND_ABANDON, 0, 0, 0) // as on timed recording completion
+        precondition(pending && VRSnapshot(0, 0).armed == 0)
+        _ = VRCommand(VR_COMMAND_RELEASE, key, 0, 0).release
         cancelFromPill()
-        precondition(!pending && taskID == 0 && VREpochValid(processingToken) == 0) // In-flight work still cancels.
+        precondition(!pending && taskID == 0 && VRSnapshot(0, processingToken).valid == 0) // In-flight work still cancels.
         precondition(item.button?.title == "Cancelled")
         NSStatusBar.system.removeStatusItem(item)
     }
