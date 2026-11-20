@@ -9,23 +9,19 @@ import (
 
 func TestDictationInsertStopsAtTheFirstFailure(t *testing.T) {
 	called := 0
-	err := DictationInsertReady("  ", func() bool { called++; return true }, func() bool { called++; return true }, func() bool { called++; return true })
+	err := DictationInsertReady("  ", func() bool { called++; return true }, func() bool { called++; return true })
 	if err == nil || err.Error() != DictationEmpty || called != 0 {
 		t.Fatalf("empty %v %d", err, called)
 	}
-	err = DictationInsertReady("你好", func() bool { return false }, func() bool { t.Fatal("window"); return true }, func() bool { return true })
+	err = DictationInsertReady("你好", func() bool { return false }, func() bool { t.Fatal("window"); return true })
 	if err == nil || err.Error() != DictationReleaseKeys {
 		t.Fatal(err)
 	}
-	err = DictationInsertReady("你好", func() bool { return true }, func() bool { return false }, func() bool { t.Fatal("password"); return true })
+	err = DictationInsertReady("你好", func() bool { return true }, func() bool { return false })
 	if err == nil || err.Error() != DictationWindowChanged {
 		t.Fatal(err)
 	}
-	err = DictationInsertReady("你好", func() bool { return true }, func() bool { return true }, func() bool { return true })
-	if err == nil || err.Error() != PasswordDictation {
-		t.Fatal(err)
-	}
-	if err = DictationInsertReady("你好", func() bool { return true }, func() bool { return true }, func() bool { return false }); err != nil {
+	if err = DictationInsertReady("你好", func() bool { return true }, func() bool { return true }); err != nil {
 		t.Fatal(err)
 	}
 }
