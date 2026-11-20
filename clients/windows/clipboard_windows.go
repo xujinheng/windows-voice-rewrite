@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 	"time"
 	"unicode/utf16"
 	"unsafe"
@@ -63,24 +64,24 @@ func openClipboard(hwnd uintptr) error {
 	}
 	return errors.New(clipboard.OpenFailed)
 }
-func getClipboardText(hwnd uintptr) (string, bool, uintptr, error) {
+func getClipboardText(hwnd uintptr) (string, uintptr, error) {
 	if e := openClipboard(hwnd); e != nil {
-		return "", false, 0, e
+		return "", 0, e
 	}
 	defer procCloseClipboard.Call()
 	h, _, _ := procGetClipboardData.Call(CF_UNICODETEXT)
 	if h == 0 {
-		return "", false, 0, nil
+		return "", 0, nil
 	}
 	p, _, _ := procGlobalLock.Call(h)
 	if p == 0 {
-		return "", false, 0, errors.New(clipboard.ReadFailed)
+		return "", 0, errors.New(clipboard.ReadFailed)
 	}
 	defer procGlobalUnlock.Call(h)
 	// Limit reads to the actual allocation instead of assuming a huge buffer.
 	allocationSize, _, _ := procGlobalSize.Call(h)
 	if !clipboard.TextBlockReadable(allocationSize) {
-		return "", false, 0, errors.New(clipboard.TextLengthRejected)
+		return "", 0, errors.New(clipboard.TextLengthRejected)
 	}
 	data := unsafe.Slice((*uint16)(unsafe.Pointer(p)), int(allocationSize/2))
 	n := 0
@@ -88,10 +89,10 @@ func getClipboardText(hwnd uintptr) (string, bool, uintptr, error) {
 		n++
 	}
 	if n == len(data) {
-		return "", false, 0, errors.New(clipboard.TextLengthRejected)
+		return "", 0, errors.New(clipboard.TextLengthRejected)
 	}
 	text := string(utf16.Decode(data[:n]))
-	return text, true, clipboardSeq(), nil
+	return text, clipboardSeq(), nil
 }
 
 // Return the sequence while the clipboard is still open. A later external
@@ -136,15 +137,18 @@ func clipboardCopy(hwnd uintptr, timeout time.Duration) (string, uintptr, error)
 	for time.Now().Before(deadline) {
 		if clipboardSeq() != old {
 			changed = true
-			s, ok, sequence, e := getClipboardText(hwnd)
-			if clipboard.SelectionReadable(e, ok, s) {
+			s, sequence, e := getClipboardText(hwnd)
+			if e == nil && strings.TrimSpace(s) != "" {
 				return s, sequence, nil
 			}
 		}
 		time.Sleep(clipboard.CopyPoll)
 	}
 	// Do not use the clipboard's previous content as a supposed selection.
-	return "", 0, clipboard.CopyPollMissed(changed)
+	if !changed {
+		return "", 0, errors.New(clipboard.CopyUnchanged)
+	}
+	return "", 0, errors.New(clipboard.CopyEmpty)
 }
 func isSameForegroundWindow(target uintptr) bool {
 	if target == 0 {
@@ -188,23 +192,23 @@ func copySelectionWithRetry(hwnd, target uintptr, cfg Config) (string, uintptr, 
 	}
 	var lastErr error
 	for i := 0; i < cfg.SelectionCopyAttempts; i++ {
-		if err := clipboard.CopyWindowReady(isSameForegroundWindow(target), false); err != nil {
-			return "", 0, err
+		if !isSameForegroundWindow(target) {
+			return "", 0, errors.New(clipboard.CopyWindowBefore)
 		}
 		// Two-attempt default: retry an ignored Ctrl+C sooner, reserving
 		// the remaining budget for a slow clipboard response. No extra
 		// delay on successful copies and no longer overall timeout.
 		timeout := clipboard.AttemptTimeout(time.Duration(cfg.SelectionCopyTimeoutMS)*time.Millisecond, i, cfg.SelectionCopyAttempts)
 		text, sequence, err := clipboardCopy(hwnd, timeout)
-		if windowErr := clipboard.CopyWindowReady(isSameForegroundWindow(target), true); windowErr != nil {
-			return "", 0, windowErr
+		if !isSameForegroundWindow(target) {
+			return "", 0, errors.New(clipboard.CopyWindowDuring)
 		}
-		if clipboard.SelectionReadable(err, true, text) {
+		if err == nil && strings.TrimSpace(text) != "" {
 			return text, sequence, nil
 		}
 		lastErr = err
 		if i+1 < cfg.SelectionCopyAttempts {
-			time.Sleep(clipboard.CopyRetryPause(i))
+			time.Sleep(time.Duration(100*(i+1)) * time.Millisecond)
 		}
 	}
 	return "", 0, fmt.Errorf("复制选中文字失败（已尝试 %d 次）：%w", cfg.SelectionCopyAttempts, lastErr)
