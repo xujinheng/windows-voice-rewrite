@@ -17,6 +17,23 @@ import (
 	"voicerewrite/internal/core/ux"
 )
 
+// validateRequest protects both direct rewrite and combined intent tasks.
+func validateRequest(ctx context.Context, cfg coreconfig.Config, selected, instruction string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(selected) == "" {
+		return errors.New(ux.EmptySelection)
+	}
+	if err := SelectedLengthError(cfg.MaxSelectedRunes, selected); err != nil {
+		return err
+	}
+	if strings.TrimSpace(instruction) == "" {
+		return errors.New(ux.EmptyInstruction)
+	}
+	return nil
+}
+
 // SelectedLengthError reports a selection that exceeds the configured rune limit.
 // An empty selection is allowed; callers that require text check that separately.
 func SelectedLengthError(limit int, selected string) error {
