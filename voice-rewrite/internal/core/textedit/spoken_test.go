@@ -63,7 +63,7 @@ func TestResolveSpokenTaskSharesRealASRAndTextRouter(t *testing.T) {
 	if err != nil || spoken != "改成英文" || result.Intent != "translate" || result.Result != "Original" {
 		t.Fatalf("result=%+v spoken=%q err=%v", result, spoken, err)
 	}
-	if got := RouteTask(result, spoken, false); got != TryReplace {
+	if got := RouteTask(result, spoken); got != Replace {
 		t.Fatalf("guarded replacement denied by shared routing: %s", got)
 	}
 	if callbacks != 1 || asrCalls.Load() != 1 || llmCalls.Load() != 1 {
