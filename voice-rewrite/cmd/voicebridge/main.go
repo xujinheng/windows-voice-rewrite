@@ -69,41 +69,11 @@ func defaultOptions() bridgeOptions {
 	return bridgeOptions{TranscribeTimeout: speech.TranscribeTimeout, SpokenSelectedTimeout: textedit.SpokenTaskTimeout}
 }
 
-// Short clips should not wait for a stalled service as long as a multi-chunk
-// recording. This budget is shared by JSONL and native PCM: 65..220 seconds.
-func transcribeBudget(pcmBytes int) time.Duration {
-	if pcmBytes < 0 {
-		pcmBytes = 0
-	}
-	seconds := (pcmBytes + audio.PCMBytesPerSecond - 1) / audio.PCMBytesPerSecond
-	budget := time.Duration(45+2*seconds) * time.Second
-	if budget < 65*time.Second {
-		return 65 * time.Second
-	}
-	if budget > speech.TranscribeTimeout {
-		return speech.TranscribeTimeout
-	}
-	return budget
-}
-
+// Dictation uses speech.TranscribeTimeout on both desktop hosts.
+// The request's audio length does not determine the provider's response time.
 func (o bridgeOptions) timeoutFor(req request) time.Duration {
 	if req.Op == "selected_voice_task" {
 		return o.SpokenSelectedTimeout
-	}
-	pcmBytes := len(req.NativePCM)
-	if req.NativePCM == nil {
-		// The JSONL protocol carries base64; calculate the original byte
-		// estimate without allocating or decoding a second copy.
-		pcmBytes = len(req.PCMBase64) / 4 * 3
-		if n := len(req.PCMBase64); n > 0 && req.PCMBase64[n-1] == '=' {
-			pcmBytes--
-			if n > 1 && req.PCMBase64[n-2] == '=' {
-				pcmBytes--
-			}
-		}
-	}
-	if budget := transcribeBudget(pcmBytes); budget < o.TranscribeTimeout {
-		return budget
 	}
 	return o.TranscribeTimeout
 }
