@@ -88,3 +88,15 @@ func TestOneCoreCancellationRevokesHoldAndWork(t *testing.T) {
 		t.Fatal("core failed to admit the next task")
 	}
 }
+
+func TestCorePhysicalRemapCannotReusePendingToken(t *testing.T) {
+	var core Core
+	old := core.Press(1, false)
+	if core.Release(1) != ReleaseShort {
+		t.Fatal("expected short press")
+	}
+	next := core.Press(2, false)
+	if next == old || core.Activate(2, old) || !core.Activate(2, next) {
+		t.Fatal("a stale timer from a remapped physical key activated the next input")
+	}
+}
