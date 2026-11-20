@@ -74,19 +74,15 @@ func TranscriptStep(currentID, previousID uint64, historyCount, previousHistory 
 
 func ExpressionStep(complete bool, english, previous string, captionsOnly, expanded bool, last, now time.Time) (copy string, captions, expand, fresh, paint bool) {
 	fresh = complete && english != "" && english != previous
-	captions, expand = ExpressionFocus(complete, fresh, captionsOnly, expanded)
+	captions, expand = captionsOnly, expanded
+	if fresh {
+		captions, expand = false, true
+	}
 	if complete {
 		copy = english
 	}
 	paint = TextDue(last, now, complete)
 	return copy, captions, expand, fresh, paint
-}
-
-func ExpressionFocus(completed, newResult, captionsOnly, expanded bool) (bool, bool) {
-	if !completed || !newResult {
-		return captionsOnly, expanded
-	}
-	return false, true
 }
 
 func VoiceMode(dictation bool) string {
