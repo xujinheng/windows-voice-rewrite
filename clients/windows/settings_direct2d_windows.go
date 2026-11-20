@@ -46,9 +46,9 @@ func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32, focusRow
 	// No decorative footer copy: navigation is the only purpose of the rail.
 	// Main pane. No brand banner, stacked white cards or redundant headings.
 	shown := settingsPage(page)
-	d.text(shown.Title, 220, 35, w-245, 39, 2, 4)
-	d.text(shown.Subtitle, 222, 79, w-244, 23, 0, 5)
-	d.fill(219, 121, w-239, 1, 6)
+	d.text(shown.Title, 220, 35, w - 245, 39, 2, 4)
+	d.text(shown.Subtitle, 222, 79, w - 244, 23, 0, 5)
+	d.fill(219, 121, w - 239, 1, 6)
 	d.text(shown.Section, 224, 132, 235, 26, 3, 4)
 	// Shared geometry puts the real EDIT fully inside the painted rounded
 	// field, including its left edge. Fields are now 34px tall, with a compact
@@ -63,7 +63,7 @@ func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32, focusRow
 		d.round(x, y, float32(frame.W), float32(frame.H), float32(settingsform.DirectFieldRadius), 2)
 		d.outline(x, y, float32(frame.W), float32(frame.H), float32(settingsform.DirectFieldRadius), outline)
 	}
-	d.fill(float32(settingsform.RailWidth), h-77, w-float32(settingsform.RailWidth), 1, 6)
+	d.fill(float32(settingsform.RailWidth), h - 77, w - float32(settingsform.RailWidth), 1, 6)
 	hr := resultCOM(d.target, 49, 0, 0)
 	if uint32(hr) == 0x8899000c {
 		d.disposeTarget()
