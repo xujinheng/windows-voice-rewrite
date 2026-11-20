@@ -6,9 +6,9 @@ import (
 	"time"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/indicator"
-	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/shortcut"
 	"voicerewrite/internal/core/ux"
+	"voicerewrite/internal/core/voice"
 )
 
 const (
@@ -73,7 +73,7 @@ func headlessProfile(raw json.RawMessage) response {
 		"dictation": cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
 		"maximumSeconds": cfg.MaxRecordSeconds, "modifierDelayMS": 200,
 		"pasteRestoreMS": ux.PasteReceiptMinimumMilliseconds,
-		"mouseDelayMS":   int(input.WindowsSideHold / time.Millisecond),
+		"mouseDelayMS":   int(voice.SideHoldThreshold / time.Millisecond),
 		"pill":           indicator.HostSpec(),
 	}})
 	reply.cfg = cfg
