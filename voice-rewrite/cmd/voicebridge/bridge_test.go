@@ -187,7 +187,6 @@ func TestNativePCMUsesIdenticalGoValidation(t *testing.T) {
 		if reason == "" {
 			t.Errorf("accepted invalid native PCM size %d", size)
 		}
-
 	}
 	// The decoder owns framing and base64 only. Both production hosts use
 	// voice.Run for the 100ms minimum and the final PCM admission decision.

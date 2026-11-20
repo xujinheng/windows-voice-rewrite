@@ -22,7 +22,7 @@ func TestSharedVoiceTaskAdmissionAndRouting(t *testing.T) {
 			_, _ = io.WriteString(w, `{"text":"请写成英文"}`)
 		case "/v1/chat/completions":
 			llm.Add(1)
-			_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\\"intent\\":\\"translate\\",\\"result\\":\\"Hello\\"}"}}]}`)
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\"intent\":\"translate\",\"result\":\"Hello\"}"}}]}`)
 		default:
 			t.Errorf("unexpected request: %s", r.URL.Path)
 			w.WriteHeader(404)
@@ -60,7 +60,9 @@ func TestSharedVoiceTaskAdmissionAndRouting(t *testing.T) {
 	calls := 0
 	got, err := Run(context.Background(), cfg, pcm, "你好", true, true, func(text string) {
 		calls++
-		if text != "请写成英文" { t.Errorf("instruction=%q", text) }
+		if text != "请写成英文" {
+			t.Errorf("instruction=%q", text)
+		}
 	})
 	if err != nil || got.Text != "Hello" || got.Instruction != "请写成英文" ||
 		got.Intent != "translate" || got.Route != "replace" || calls != 1 {
