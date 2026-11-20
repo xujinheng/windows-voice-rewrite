@@ -162,3 +162,39 @@ func TestCoreWindowsMouseAndKeyboardShareOneInputOwner(t *testing.T) {
 		t.Fatal("keyboard key release failed to clear Go Core ownership")
 	}
 }
+
+func TestDifferentNativeEventsHaveIdenticalGoLifecycle(t *testing.T) {
+	// The physical key/button numbers belong to the adapters; the business
+	// events and cancellation outcomes must be identical.
+	for _, native := range []struct {
+		name            string
+		dictation, edit int
+	}{
+		{"Windows mouse", 1, 2},
+		{"Windows keyboard", 267, 268},
+		{"macOS mouse", 103, 104},
+		{"macOS keyboard", 54, 61},
+	} {
+		t.Run(native.name, func(t *testing.T) {
+			var core Core
+			core.Bind([]int{native.dictation}, []int{native.edit})
+			if core.Role(native.dictation) != 1 || core.Role(native.edit) != 2 {
+				t.Fatal("role drift")
+			}
+			token := core.Press(native.dictation, false)
+			if token == 0 || !core.Activate(native.dictation, token) || core.Release(native.dictation) != ReleaseActive {
+				t.Fatal("active hold drift")
+			}
+			short := core.Press(native.edit, false)
+			if short == 0 || core.Release(native.edit) != ReleaseShort || core.Activate(native.edit, short) {
+				t.Fatal("short-press drift")
+			}
+			generation := core.Start()
+			ctx := core.ContextFor(generation)
+			core.Cancel()
+			if core.Valid(generation) || ctx.Err() == nil || core.Armed() {
+				t.Fatal("cancellation drift")
+			}
+		})
+	}
+}
