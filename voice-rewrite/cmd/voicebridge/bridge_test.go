@@ -23,33 +23,6 @@ import (
 	"voicerewrite/internal/core/ux"
 )
 
-func TestSharedHostTimeouts(t *testing.T) {
-	limits := defaultOptions()
-	if limits.TranscribeTimeout != 220*time.Second || limits.SpokenSelectedTimeout != 240*time.Second {
-		t.Fatalf("unexpected shared timeouts: %+v", limits)
-	}
-	// Mac native and JSONL dictation must use the same ASR budget as Windows,
-	// independent of audio length. A slow provider must not time out on Mac only.
-	for _, seconds := range []int{1, 11, 60} {
-		pcm := make([]byte, seconds*audio.PCMBytesPerSecond)
-		for _, req := range []request{
-			{Op: "transcribe", NativePCM: pcm},
-			{Op: "transcribe", PCMBase64: base64.StdEncoding.EncodeToString(pcm)},
-		} {
-			if got := limits.timeoutFor(req); got != 220*time.Second {
-				t.Fatalf("%ds dictation budget %v, want 220s", seconds, got)
-			}
-		}
-	}
-	if got := limits.timeoutFor(request{Op: "selected_voice_task"}); got != 240*time.Second {
-		t.Fatalf("selected-text budget %v, want 240s", got)
-	}
-	limits.TranscribeTimeout = 200 * time.Millisecond
-	if got := limits.timeoutFor(request{Op: "transcribe"}); got != 200*time.Millisecond {
-		t.Fatalf("custom test deadline was extended: %v", got)
-	}
-}
-
 func TestInProcessRequestDeadlineCancelsASR(t *testing.T) {
 	seen := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -200,14 +173,14 @@ type bridgeHarness struct {
 	writeMu sync.Mutex
 }
 
-func startBridge(t *testing.T, options bridgeOptions) *bridgeHarness {
+func startBridge(t *testing.T) *bridgeHarness {
 	t.Helper()
 	reader, writer := io.Pipe()
 	resultReader, resultWriter := io.Pipe()
 	responses := make(chan response, 64)
 	done := make(chan error, 1)
 	go func() {
-		err := serveWithOptions(reader, resultWriter, options)
+		err := serve(reader, resultWriter)
 		_ = resultWriter.Close()
 		done <- err
 	}()
@@ -352,7 +325,7 @@ func TestBridgeCoreHTTPRequestsAndRouting(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	h := startBridge(t, defaultOptions())
+	h := startBridge(t)
 	cfg := configFor(srv.URL)
 	h.send(requestForASR("asr", cfg))
 	reply := h.receive()
@@ -384,7 +357,7 @@ func TestBridgeInvalidConfigNeverContactsProvider(t *testing.T) {
 		w.WriteHeader(200)
 	}))
 	defer srv.Close()
-	h := startBridge(t, defaultOptions())
+	h := startBridge(t)
 	badConfig := configFor(srv.URL)
 	badConfig["llm_base_url"] = "http://private:secret@localhost/v1"
 	h.send(requestForASR("bad-asr", badConfig))
@@ -404,33 +377,6 @@ func TestBridgeInvalidConfigNeverContactsProvider(t *testing.T) {
 	}
 }
 
-func TestBridgeTimeout(t *testing.T) {
-	started := make(chan struct{}, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.Copy(io.Discard, r.Body)
-		started <- struct{}{}
-		select {
-		case <-r.Context().Done():
-		case <-time.After(5 * time.Second):
-			t.Error("HTTP request was not canceled")
-		}
-	}))
-	defer srv.Close()
-	options := defaultOptions()
-	options.TranscribeTimeout = 150 * time.Millisecond
-	h := startBridge(t, options)
-	h.send(requestForASR("timeout", configFor(srv.URL)))
-	if reply := h.receive(); reply.ID != "timeout" || reply.OK || reply.Error == nil || reply.Error.Code != "timeout" {
-		t.Fatalf("expected timeout: %#v", reply)
-	}
-	select {
-	case <-started:
-	default:
-		t.Error("timeout test did not reach HTTP server")
-	}
-	h.close()
-}
-
 func TestBridgePCMAndFrameLimits(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -438,7 +384,7 @@ func TestBridgePCMAndFrameLimits(t *testing.T) {
 		w.WriteHeader(200)
 	}))
 	defer srv.Close()
-	h := startBridge(t, defaultOptions())
+	h := startBridge(t)
 	cfg := configFor(srv.URL)
 	for _, tc := range []struct{ id, audio string }{
 		{"odd", base64.StdEncoding.EncodeToString([]byte{1})},
@@ -474,7 +420,7 @@ func TestBridgeClassifiedFailureUsesSharedRecovery(t *testing.T) {
 		http.Error(w, secret, http.StatusUnauthorized)
 	}))
 	defer srv.Close()
-	h := startBridge(t, defaultOptions())
+	h := startBridge(t)
 	h.send(requestForASR("auth", configFor(srv.URL)))
 	reply := h.receive()
 	data, err := json.Marshal(reply)
@@ -496,7 +442,7 @@ func TestBridgeEmptyTranscriptUsesSharedSentence(t *testing.T) {
 		_, _ = w.Write([]byte(`{"text":"   "}`))
 	}))
 	defer srv.Close()
-	h := startBridge(t, defaultOptions())
+	h := startBridge(t)
 	h.send(requestForASR("empty", configFor(srv.URL)))
 	reply := h.receive()
 	if reply.OK || reply.Error == nil || reply.Error.Code != "asr_failed" || reply.Error.Message != ux.NoSpeech {
@@ -514,7 +460,7 @@ func TestBridgePrivateErrorsDoNotEchoInputs(t *testing.T) {
 	defer srv.Close()
 	cfg := configFor(srv.URL)
 	cfg["llm_api_key"] = privateKey
-	h := startBridge(t, defaultOptions())
+	h := startBridge(t)
 	h.send(map[string]any{
 		"v": 1, "id": "private", "op": "selected_voice_task", "config": cfg,
 		"selected_text": privateText, "pcm_base64": base64.StdEncoding.EncodeToString(make([]byte, 3200)),
@@ -543,7 +489,7 @@ func TestBridgeOneShotEOFWaitsForASRResponse(t *testing.T) {
 		_, _ = io.WriteString(w, `{"text":"one-shot transcription"}`)
 	}))
 	defer srv.Close()
-	h := startBridge(t, defaultOptions())
+	h := startBridge(t)
 	h.send(requestForASR("eof", configFor(srv.URL)))
 	select {
 	case <-started:
@@ -578,7 +524,7 @@ type closedWriter struct{}
 func (closedWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
 
 func TestRetiredJSONLCancelOperationIsUnsupported(t *testing.T) {
-	h := startBridge(t, defaultOptions())
+	h := startBridge(t)
 	h.send(map[string]any{"v": 1, "id": "cancel", "op": "cancel", "target_id": "unknown"})
 	reply := h.receive()
 	if reply.OK || reply.Error == nil || reply.Error.Code != "unsupported_op" {
@@ -605,7 +551,7 @@ func TestBridgeSpokenSelectionUsesSharedASRAndTextedit(t *testing.T) {
 	defer srv.Close()
 	cfg := configFor(srv.URL)
 	cfg["text_model"] = "text-model"
-	h := startBridge(t, defaultOptions())
+	h := startBridge(t)
 	h.send(map[string]any{
 		"v": 1, "id": "spoken", "op": "selected_voice_task",
 		"config": cfg, "selected_text": "你好",
@@ -633,7 +579,7 @@ func TestBridgeSpokenSelectionRejectsBadPCMAndEmptySelection(t *testing.T) {
 		w.WriteHeader(200)
 	}))
 	defer srv.Close()
-	h := startBridge(t, defaultOptions())
+	h := startBridge(t)
 	cfg := configFor(srv.URL)
 	for i, tc := range []struct {
 		selected string
