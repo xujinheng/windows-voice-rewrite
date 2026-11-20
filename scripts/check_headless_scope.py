@@ -65,6 +65,8 @@ def main():
     windows = (ROOT / "voice-rewrite/task_worker_windows.go").read_text(encoding="utf-8")
     if any(token in windows for token in ("func processRecordedHold(", "func processDictationHold(", "func processAudioAndRewrite(")):
         raise SystemExit("Windows recreated separate voice task orchestration next to voice.Run")
+    if (ROOT / "voice-rewrite/cmd/voicebridge/bridge_test.go").exists() or "safeProcessRequest" in bridge:
+        raise SystemExit("retired duplicate macOS voice task must not return")
     meeting = (ROOT / "voice-rewrite/meeting_session.go").read_text(encoding="utf-8")
     # Both *production entrypoints* must pass through the same task owner.
     # Provider-level calls alone could still leave two independent pipelines.

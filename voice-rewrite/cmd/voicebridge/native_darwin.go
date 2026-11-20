@@ -11,16 +11,22 @@ static inline void vrReportTranscribed(VRTranscribedCallback fn, unsigned long l
 import "C"
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 	"unsafe"
 
+	"voicerewrite/internal/core/audio"
 	"voicerewrite/internal/core/clipboard"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/session"
+	"voicerewrite/internal/core/ux"
+	"voicerewrite/internal/core/voice"
 )
 
 var nativeEpoch session.Epoch
@@ -171,8 +177,10 @@ func VRProfile(config *C.char) *C.char {
 	return nativeJSON(reply)
 }
 
+const maxPCMBytes = audio.PCMBytesPerSecond * coreconfig.RecordSecondsMax
+
 //export VRRun
-func VRRun(rewrite C.int, audio *C.uchar, length C.int, selection *C.char, token C.ulonglong, onTranscribed C.VRTranscribedCallback) *C.char {
+func VRRun(rewrite C.int, audio *C.uchar, length C.int, selection *C.char, token C.ulonglong, onTranscribed C.VRTranscribedCallback) (result *C.char) {
 	if length < 0 || length > C.int(maxPCMBytes) || (length > 0 && audio == nil) {
 		return nil
 	}
@@ -180,16 +188,45 @@ func VRRun(rewrite C.int, audio *C.uchar, length C.int, selection *C.char, token
 	if cfg == nil {
 		return nativeJSON(failure("invalid_config", msgInvalidConfig))
 	}
-	req := request{
-		Rewrite: rewrite != 0,
-		NativePCM: C.GoBytes(unsafe.Pointer(audio), length),
-	}
+	selected := ""
 	if selection != nil {
-		req.SelectedText = C.GoString(selection)
+		selected = C.GoString(selection)
 	}
+	if rewrite != 0 && (len(selected) > 1<<20 || !utf8.ValidString(selected)) {
+		return nativeJSON(failure("invalid_request", "selected text exceeds limits"))
+	}
+	var afterASR func(string)
 	if onTranscribed != nil {
-		req.AfterASR = func(string) { C.vrReportTranscribed(onTranscribed, C.ulonglong(token)) }
+		afterASR = func(string) { C.vrReportTranscribed(onTranscribed, C.ulonglong(token)) }
 	}
-	// The shared voice.Run applies the task deadline; Epoch owns cancellation.
-	return nativeJSON(safeProcessRequest(nativeEpoch.ContextFor(uint64(token)), *cfg, req))
+	ctx := nativeEpoch.ContextFor(uint64(token))
+	// Native ABI errors and stale task results cannot escape into Swift.
+	defer func() {
+		if recover() != nil {
+			result = nativeJSON(failure("internal_error", "request failed"))
+		}
+		if err := ctx.Err(); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				result = nativeJSON(failure("timeout", "request timed out"))
+			} else {
+				result = nativeJSON(failure("canceled", "request canceled"))
+			}
+		}
+	}()
+	outcome, err := voice.Run(ctx, *cfg, C.GoBytes(unsafe.Pointer(audio), length), selected, rewrite != 0, afterASR)
+	if err == nil {
+		return nativeJSON(success(outcome))
+	}
+	var pcm *voice.PCMError
+	if errors.As(err, &pcm) {
+		return nativeJSON(failure("invalid_pcm", pcm.Error()))
+	}
+	code, message := "asr_failed", "speech transcription failed"
+	if rewrite != 0 {
+		code, message = "textedit_failed", "selected text processing failed"
+	}
+	if classified, ok := ux.Classify(err); ok {
+		message = classified
+	}
+	return nativeJSON(failure(code, message))
 }

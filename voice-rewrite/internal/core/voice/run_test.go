@@ -9,6 +9,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
+
+	"voicerewrite/internal/core/session"
 
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/ux"
@@ -50,5 +53,73 @@ func TestRunRejectsSelectionBeforeASR(t *testing.T) {
 		if err == nil || (strings.TrimSpace(selected) == "" && err.Error() != ux.EmptySelection) {
 			t.Fatalf("invalid selection reached ASR: selected_length=%d err=%v", len(selected), err)
 		}
+	}
+}
+
+func TestPortablePCMAdmission(t *testing.T) {
+	cfg := coreconfig.Defaults()
+	cfg.MaxRecordSeconds = 30
+	cfg.ASRBaseURL = "http://127.0.0.1:1/v1"
+	for _, size := range []int{0, 1, 3198, 3201, 30*32000 + 2} {
+		_, err := Run(context.Background(), cfg, make([]byte, size), "", false, nil)
+		var pcm *PCMError
+		if !errors.As(err, &pcm) {
+			t.Fatalf("PCM size %d was admitted: %v", size, err)
+		}
+	}
+}
+
+// One public Go Core function handles cancellation for both native hosts.
+func TestPortableEpochCancellationDisconnectsProvider(t *testing.T) {
+	for _, rewrite := range []bool{false, true} {
+		t.Run(map[bool]string{false: "dictation", true: "rewrite"}[rewrite], func(t *testing.T) {
+			entered := make(chan struct{}, 1)
+			disconnected := make(chan struct{}, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if rewrite && r.URL.Path == "/v1/audio/transcriptions" {
+					_, _ = io.WriteString(w, `{"text":"rewrite this"}`)
+					return
+				}
+				_, _ = io.Copy(io.Discard, r.Body)
+				entered <- struct{}{}
+				select {
+				case <-r.Context().Done():
+					disconnected <- struct{}{}
+				case <-time.After(3*time.Second):
+					t.Error("provider never disconnected")
+				}
+			}))
+			defer server.Close()
+			cfg := coreconfig.Defaults()
+			cfg.ASRBaseURL, cfg.LLMBaseURL = server.URL+"/v1", server.URL+"/v1"
+			cfg.TextModel = "test-model"
+			var epoch session.Epoch
+			defer epoch.Shutdown()
+			token := epoch.Start()
+			done := make(chan error, 1)
+			go func() {
+				_, err := Run(epoch.ContextFor(token), cfg, make([]byte, 3200), "selected text", rewrite, nil)
+				done <- err
+			}()
+			select {
+			case <-entered:
+			case <-time.After(5*time.Second):
+				t.Fatal("provider was never contacted")
+			}
+			epoch.Start()
+			select {
+			case <-disconnected:
+			case <-time.After(5*time.Second):
+				t.Fatal("provider did not observe cancellation")
+			}
+			select {
+			case err := <-done:
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("portable task returned %v instead of cancellation", err)
+				}
+			case <-time.After(5*time.Second):
+				t.Fatal("canceled task did not return")
+			}
+		})
 	}
 }
