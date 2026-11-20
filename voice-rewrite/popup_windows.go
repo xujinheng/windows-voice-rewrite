@@ -195,7 +195,7 @@ func (p *answerPopup) setNote(s string) {
 }
 func (p *answerPopup) apply() {
 	if p == nil || p.app == nil || p.selection == nil || !p.allowApply ||
-		p.canceled.Load() || !p.app.core.Valid(p.generation) {
+		p.canceled.Load() || !p.app.core.Snapshot(0, p.generation).Valid {
 		return
 	}
 	if !p.app.busy.CompareAndSwap(false, true) {
@@ -219,7 +219,7 @@ func (p *answerPopup) apply() {
 	go func() {
 		defer app.busy.Store(false)
 		time.Sleep(ux.ApplySettle)
-		err := replaceSelectionWithGuard(app.Window, sel, body, app.cfg, !isSafelyEditableControl(sel.TargetWindow), func() bool { return !p.canceled.Load() && app.core.Valid(p.generation) })
+		err := replaceSelectionWithGuard(app.Window, sel, body, app.cfg, !isSafelyEditableControl(sel.TargetWindow), func() bool { return !p.canceled.Load() && app.core.Snapshot(0, p.generation).Valid })
 		if err != nil {
 			app.logger.Printf("manual apply failed: %v", err)
 		} else {
