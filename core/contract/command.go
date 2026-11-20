@@ -51,41 +51,31 @@ func InputIndex(id string) (int, bool) {
 	return 0, false
 }
 
-// ProbeInputs is the URL, key, and model a settings probe reads.
-// The field id is the URL field, which also marks that probe stale.
-func ProbeInputs(kind string) (field, url, key, model string, ok bool) {
+// ProbeInputs identifies the URL, key and model fields for one provider.
+// The URL field is also the probe's stale-state owner.
+func ProbeInputs(kind string) (url, key, model string, ok bool) {
 	switch kind {
 	case "ASR":
-		return "asr_base_url", "asr_base_url", "asr_api_key", "asr_model", true
+		return "asr_base_url", "asr_api_key", "asr_model", true
 	case "LLM":
-		return "llm_base_url", "llm_base_url", "llm_api_key", "text_model", true
+		return "llm_base_url", "llm_api_key", "text_model", true
 	default:
-		return "", "", "", "", false
+		return "", "", "", false
 	}
 }
 
 // ProbeSlot is the connection check cleared when this field changes.
 // Slots follow the first appearance of each stale-probe name in the catalog.
 func ProbeSlot(id string) (int, bool) {
-	control, ok := Find(id)
-	if !ok || control.StaleProbe == "" {
-		return 0, false
-	}
-	seen := []string{}
+	seen := map[string]int{}
 	for _, item := range Controls() {
 		if item.StaleProbe == "" {
 			continue
 		}
-		slot := -1
-		for i, name := range seen {
-			if name == item.StaleProbe {
-				slot = i
-				break
-			}
-		}
-		if slot < 0 {
-			seen = append(seen, item.StaleProbe)
-			slot = len(seen) - 1
+		slot, ok := seen[item.StaleProbe]
+		if !ok {
+			slot = len(seen)
+			seen[item.StaleProbe] = slot
 		}
 		if item.ID == id {
 			return slot, true
