@@ -472,12 +472,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func sensitiveFocus() -> Bool {
         guard let element = focusedElement() else { return true } // Unknown target: fail closed.
         var role: CFTypeRef?, subrole: CFTypeRef?
-        _ = AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
+        guard AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role) == .success else { return true }
         _ = AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subrole)
-        return [role as? String, subrole as? String].contains {
-            ($0 ?? "").localizedCaseInsensitiveContains("secure") ||
-            ($0 ?? "").localizedCaseInsensitiveContains("password")
-        }
+        return [role as? String, subrole as? String].contains { ($0 ?? "").localizedCaseInsensitiveContains("secure") || ($0 ?? "").localizedCaseInsensitiveContains("password") }
     }
 
     private func focusedWindow() -> AXUIElement? {
@@ -577,9 +574,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         down.flags = .maskCommand
         up.flags = .maskCommand
         guard board.changeCount == lease else { reset("Clipboard changed"); return }
-        let selectionOK = selected?.matches(selectionFromAX()) ?? true
         guard sameTarget(), VRReady(selected == nil ? 1 : 2, taskID, 1,
-                                     sensitiveFocus() ? 1 : 0, selectionOK ? 1 : 0) == 1 else {
+                                     sensitiveFocus() ? 1 : 0, selected?.matches(selectionFromAX()) == false ? 0 : 1) == 1 else {
             restoreIfOwned()
             reset("Focus changed"); return
         }
@@ -595,9 +591,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard let events = unicodeKeyEvents(text) else { reset("Paste unavailable"); return }
         for (index, event) in events.enumerated() {
             if index % 64 == 0 {
-                let selectionOK = selected?.matches(selectionFromAX()) ?? true
                 guard sameTarget(), VRReady(selected == nil ? 1 : 2, taskID, 1,
-                                             sensitiveFocus() ? 1 : 0, selectionOK ? 1 : 0) == 1 else {
+                                             sensitiveFocus() ? 1 : 0, selected?.matches(selectionFromAX()) == false ? 0 : 1) == 1 else {
                     reset("Input stopped"); return
                 }
             }
