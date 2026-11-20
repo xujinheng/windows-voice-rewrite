@@ -2,9 +2,9 @@ package voice
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"fmt"
 	"testing"
 
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
@@ -12,7 +12,7 @@ import (
 
 func TestCommandsEventsStatesSharePlatformIndependentSemantics(t *testing.T) {
 	for _, tc := range []struct {
-		name string
+		name               string
 		dictation, rewrite int
 	}{
 		{"Windows mouse", 1, 2},
