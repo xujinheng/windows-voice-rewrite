@@ -4,9 +4,9 @@ import "testing"
 
 func TestDeliveryPolicySharedAcrossNativeClients(t *testing.T) {
 	cases := []struct {
-		route string
+		route             string
 		target, selection bool
-		want DeliveryAction
+		want              DeliveryAction
 	}{
 		{"insert", true, true, Insert},
 		{"insert", true, false, Insert},
