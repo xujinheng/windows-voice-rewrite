@@ -44,7 +44,7 @@ func VRAction(code C.int) C.int {
 
 //export VRDown
 func VRDown(code C.int) C.int {
-	if nativeCore.Down(int(VRAction(code))) {
+	if nativeCore.Down(int(code)) {
 		return 1
 	}
 	return 0
@@ -55,12 +55,12 @@ func VRPress(code C.int, busy C.int) C.ulonglong {
 	if VRAction(code) == 0 {
 		return 0
 	}
-	return C.ulonglong(nativeCore.Press(int(VRAction(code)), busy != 0))
+	return C.ulonglong(nativeCore.Press(int(code), busy != 0))
 }
 
 //export VRActivate
 func VRActivate(code C.int, token C.ulonglong) C.int {
-	if nativeCore.Activate(int(VRAction(code)), uint64(token)) {
+	if nativeCore.Activate(int(code), uint64(token)) {
 		return 1
 	}
 	return 0
@@ -68,7 +68,7 @@ func VRActivate(code C.int, token C.ulonglong) C.int {
 
 //export VRRelease
 func VRRelease(code C.int) C.int {
-	return C.int(nativeCore.Release(int(VRAction(code))))
+	return C.int(nativeCore.Release(int(code)))
 }
 
 //export VRAbandon
@@ -153,11 +153,6 @@ func VRProfile(config *C.char) *C.char {
 	}
 	reply := headlessProfile(json.RawMessage(C.GoString(config)))
 	if reply.OK {
-		// An abandoned hold still owns its physical key-up. Do not remap its
-		// logical slot before Quartz sends that release.
-		if nativeCore.Down(1) || nativeCore.Down(2) {
-			return nativeJSON(failure("busy", "release the shortcut before reloading"))
-		}
 		nativeConfig.Store(&reply.cfg)
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
 		nativeRole = [105]uint8{}
