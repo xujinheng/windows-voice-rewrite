@@ -705,18 +705,19 @@ func runApp() {
 			}
 			procKillTimer.Call(0, TRAY_RESET_TIMER_ID)
 			if state == traySuccess || state == trayError {
-				procSetTimer.Call(0, TRAY_RESET_TIMER_ID, uintptr(ux.TrayResetAfter/time.Millisecond), 0)
+				procSetTimer.Call(0, TRAY_RESET_TIMER_ID, 4500, 0)
 			}
 			continue
 		}
 		if msg.Message == WM_TIMER && msg.WParam == TRAY_RESET_TIMER_ID {
 			procKillTimer.Call(0, TRAY_RESET_TIMER_ID)
 			state := trayState(app.status.Load())
-			switch ux.TrayAfterTimer(state == traySuccess, state == trayError, app.paused.Load()) {
-			case ux.TrayRestPaused:
-				app.setStatus(trayPaused)
-			case ux.TrayRestIdle:
-				app.setStatus(trayIdle)
+			if state == traySuccess || state == trayError {
+				if app.paused.Load() {
+					app.setStatus(trayPaused)
+				} else {
+					app.setStatus(trayIdle)
+				}
 			}
 			continue
 		}
@@ -776,17 +777,16 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_TRAY_TOGGLE_PAUSE {
-			switch ux.ChoosePause(app.busy.Load() || active != nil, app.paused.Load()) {
-			case ux.PauseRefused:
+			if app.busy.Load() || active != nil {
 				winErr(ux.PauseWhileBusy)
-			case ux.PauseOn:
+			} else if app.paused.Load() {
+				app.paused.Store(false)
+				app.setStatus(trayIdle)
+			} else {
 				app.paused.Store(true)
 				app.closeMeeting()
 				discardPendingSide()
 				app.setStatus(trayPaused)
-			case ux.PauseOff:
-				app.paused.Store(false)
-				app.setStatus(trayIdle)
 			}
 			continue
 		}
