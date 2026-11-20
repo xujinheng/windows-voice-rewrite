@@ -227,23 +227,18 @@ func processRequest(ctx context.Context, req request) response {
 			if errors.As(err, &capture) {
 				return failure(req.ID, "invalid_pcm", capture.Error())
 			}
+			code, message := "asr_failed", "speech transcription failed"
 			if rewrite {
-				return providerFailure(req.ID, "textedit_failed", "selected text processing failed", err)
+				code, message = "textedit_failed", "selected text processing failed"
 			}
-			return providerFailure(req.ID, "asr_failed", "speech transcription failed", err)
+			if classified, ok := ux.Classify(err); ok {
+				message = classified
+			}
+			return failure(req.ID, code, message)
 		}
 		return success(req.ID, outcome)
 	}
 	return failure(req.ID, "unsupported_op", msgUnsupported)
-}
-
-// Classified recovery text is a fixed catalog. Anything else stays a constant
-// so provider bodies, keys, and selected text never reach the protocol.
-func providerFailure(id, code, fallback string, err error) response {
-	if message, ok := ux.Classify(err); ok {
-		return failure(id, code, message)
-	}
-	return failure(id, code, fallback)
 }
 
 func contextFailure(id string, err error) response {
