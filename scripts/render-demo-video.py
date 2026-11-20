@@ -197,24 +197,24 @@ def scene(canvas,recording_img,t):
             body_text(d,msg[:n],352,appear=t)
             chip(d,'✓  语音已转成文字，并插入光标位置',TEAL)
     elif t<20:
-        body_header(d,'选中文字，然后说你想怎么改','示例：用一句话要求更正式、更简洁')
+        body_header(d,'选中文字，然后说你想怎么改','示例：将选中的中文改写成英文')
         selected='这个功能做得还行，但速度有点慢。'
         if t<16.2:
             body_text(d,selected,353,highlight=True)
             side_panel(canvas,d,'02 · 选中改写','upper',t>=12.6,'上侧键 Mouse5')
             if t>=12.6:
-                voice_bubble(d,'改得更正式、更简洁。','upper',t)
+                voice_bubble(d,'把这段话改写成英文。','upper',t)
                 overlay(canvas,recording_img,t)
             else:
                 pill(d,(74,478,765,530),'   选中原文 → 按住上侧键 → 说改写指令', '#FFF0F6','#AB3E70')
         elif t<17:
             body_text(d,selected,353,highlight=True)
             side_panel(canvas,d,'02 · 选中改写','upper',False,'松开，执行改写')
-            chip(d,'正在识别指令并生成改写…',ROSE)
+            chip(d,'正在识别指令并生成英文…',ROSE)
         else:
-            body_text(d,'该功能基本满足需求，但仍有性能优化空间。',353)
+            body_text(d,"This feature works fairly well, but it's a little slow.",353)
             side_panel(canvas,d,'02 · 选中改写','upper',False,'确认目标后应用结果')
-            chip(d,'✓  改写结果已替换原选中文字',TEAL)
+            chip(d,'✓  英文改写已替换原选中文字',TEAL)
     else:
         body_header(d,'也能提问，而不改动原文','同一颗上侧键，语音指令决定是改写还是解释')
         selected='模型会缓存最近的计算结果。'
