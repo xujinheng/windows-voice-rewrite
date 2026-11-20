@@ -199,13 +199,13 @@ func (a *appState) setStatus(s trayState) {
 // Worker threads never mutate native windows. All phase updates are owned by
 // the UI message pump and tagged with the recording epoch to discard late events.
 func (a *appState) postHandyPhase(phase indicator.Phase, generation uint64) {
-	if a.epoch.Valid(generation) {
+	if a.core.Valid(generation) {
 		procPostMessage.Call(a.Window, WM_STATUS_UPDATE, uintptr(phase), uintptr(generation))
 	}
 }
 
 func (a *appState) showAnswer(title, body string, anchor trayPoint, selection *selectedText, allowApply bool, generation uint64) {
-	if !a.epoch.Valid(generation) {
+	if !a.core.Valid(generation) {
 		return
 	}
 	msg := popupMessage{title: title, body: body, anchor: anchor, app: a, selection: selection, allowApply: allowApply, generation: generation}
