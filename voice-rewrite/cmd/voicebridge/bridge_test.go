@@ -34,7 +34,7 @@ func TestInProcessRequestDeadlineCancelsASR(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	reply := safeProcessRequest(ctx, request{
-		ID: "native", Op: "transcribe", Config: cfg,
+		Config:    cfg,
 		NativePCM: make([]byte, 3200),
 	})
 	if reply.Error == nil || reply.Error.Code != "timeout" {
@@ -52,11 +52,12 @@ func TestInProcessRequestDeadlineCancelsASR(t *testing.T) {
 // the parent context through the native C ABI's session.Epoch.
 func TestInProcessEpochCancellationReachesProvider(t *testing.T) {
 	for _, tc := range []struct {
-		name, operation, blockedPath string
-		wantCalls                    int32
+		name, blockedPath string
+		rewrite           bool
+		wantCalls         int32
 	}{
-		{"asr", "transcribe", "/v1/audio/transcriptions", 1},
-		{"rewrite_llm", "selected_voice_task", "/v1/chat/completions", 2},
+		{"asr", "/v1/audio/transcriptions", false, 1},
+		{"rewrite_llm", "/v1/chat/completions", true, 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			entered := make(chan struct{}, 1)
@@ -91,7 +92,7 @@ func TestInProcessEpochCancellationReachesProvider(t *testing.T) {
 				t.Fatal(err)
 			}
 			req := request{
-				ID: "native", Op: tc.operation, Config: raw,
+				Rewrite: tc.rewrite, Config: raw,
 				SelectedText: "你好", NativePCM: make([]byte, 3200),
 			}
 			var epoch session.Epoch
@@ -143,7 +144,7 @@ func TestNativePCMAdmissionUsesSharedVoiceCore(t *testing.T) {
 	}
 	for _, n := range []int{0, 1, 3198, 3201, 30*32000 + 2} {
 		reply := safeProcessRequest(context.Background(), request{
-			ID: "native", Op: "transcribe", Config: raw, NativePCM: make([]byte, n),
+			Config: raw, NativePCM: make([]byte, n),
 		})
 		if reply.Error == nil || reply.Error.Code != "invalid_pcm" {
 			t.Fatalf("accepted %d invalid PCM bytes: %#v", n, reply)
@@ -178,7 +179,7 @@ func TestBridgeTranscribedStageOnlyOnRewrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := 0
-	req := request{ID: "stage", Op: "selected_voice_task", Config: raw, NativePCM: make([]byte, 3200),
+	req := request{Rewrite: true, Config: raw, NativePCM: make([]byte, 3200),
 		SelectedText: "Original", AfterASR: func(text string) {
 			if text != "润色一下" {
 				t.Errorf("wrong transcript: %q", text)
@@ -188,7 +189,7 @@ func TestBridgeTranscribedStageOnlyOnRewrite(t *testing.T) {
 	if reply := safeProcessRequest(context.Background(), req); !reply.OK || calls != 1 {
 		t.Fatalf("rewrite stage not reported once: reply=%+v calls=%d", reply, calls)
 	}
-	req.Op = "transcribe"
+	req.Rewrite = false
 	if reply := safeProcessRequest(context.Background(), req); !reply.OK || calls != 1 {
 		t.Fatalf("dictation incorrectly reported rewrite stage: reply=%+v calls=%d", reply, calls)
 	}

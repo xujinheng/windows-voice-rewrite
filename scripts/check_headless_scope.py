@@ -53,6 +53,8 @@ def main():
         raise SystemExit("native host must get shortcut-to-mode decisions from Go")
     if "private enum Action" in swift or "activeAction" in swift:
         raise SystemExit("Swift must not mirror Go-owned task role state")
+    if any(token in swift for token in ('"selected_voice_task"', '"transcribe"', '"host_profile"')):
+        raise SystemExit("Swift must not restore stringly typed task dispatch")
     if "Process()" in swift or "voicebridge" in swift:
         raise SystemExit("macOS retains a separate Go bridge subprocess")
     if not required.issubset(imports):
@@ -64,7 +66,7 @@ def main():
     meeting = (ROOT / "voice-rewrite/meeting_session.go").read_text(encoding="utf-8")
     # Both *production entrypoints* must pass through the same task owner.
     # Provider-level calls alone could still leave two independent pipelines.
-    if any(token in bridge for token in ("func serve(", "func dispatch(", "func readFrame(", "PCMBase64")):
+    if any(token in bridge for token in ("func serve(", "func dispatch(", "func readFrame(", "PCMBase64", "req.Op")):
         raise SystemExit("unshipped JSONL bridge reintroduced a second desktop transport")
     if "voicerewrite/internal/core/voice" not in imports or any(
         "voice.Run(" not in host for host in (bridge, windows)

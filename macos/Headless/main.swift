@@ -188,16 +188,14 @@ private let onASRTranscribed: @convention(c) (UInt64) -> Void = { token in
 }
 
 private enum GoCore {
-    static func request(config: String, operation: String, audio: Data,
+    static func request(config: String, rewrite: Bool? = nil, audio: Data,
                         selection: String?, token: UInt64 = 0) throws -> BridgeReply.Output {
         let result = config.withCString { cfg in
-            if operation == "host_profile" { return VRProfile(cfg) }
-            return operation.withCString { op in
-                (selection ?? "").withCString { selected in
-                    audio.withUnsafeBytes { pcm in
-                        VRRun(cfg, op, pcm.bindMemory(to: UInt8.self).baseAddress,
-                              Int32(audio.count), selected, token, onASRTranscribed)
-                    }
+            guard let rewrite else { return VRProfile(cfg) }
+            return (selection ?? "").withCString { selected in
+                audio.withUnsafeBytes { pcm in
+                    VRRun(cfg, rewrite ? 1 : 0, pcm.bindMemory(to: UInt8.self).baseAddress,
+                          Int32(audio.count), selected, token, onASRTranscribed)
                 }
             }
         }
@@ -261,7 +259,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard activeKey == 0 && !pending else { show("Reload after current task"); return }
         do {
             let json = try String(contentsOf: configURL, encoding: .utf8)
-            guard let profile = try GoCore.request(config: json, operation: "host_profile",
+            guard let profile = try GoCore.request(config: json,
                                                    audio: Data(), selection: nil).profile
             else { throw HostError.config("missing Go host profile") }
             config = HostConfig(raw: json, profile: profile)
@@ -426,7 +424,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let result = Result {
                     try GoCore.request(config: configValue,
-                                      operation: rewrite ? "selected_voice_task" : "transcribe",
+                                      rewrite: rewrite,
                                       audio: pcm, selection: selectedValue?.text, token: token)
                 }
                 DispatchQueue.main.async {
