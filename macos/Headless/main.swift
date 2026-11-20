@@ -617,7 +617,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
 
     private func clearSession() {
         activeAction = nil
-        taskID = 0
         selected = nil
         targetFocus = nil
         pending = false
