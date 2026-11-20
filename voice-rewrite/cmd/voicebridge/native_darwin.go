@@ -57,9 +57,6 @@ func VRDown(code C.int) C.int {
 
 //export VRPress
 func VRPress(code C.int, busy C.int) C.ulonglong {
-	if VRAction(code) == 0 {
-		return 0
-	}
 	return C.ulonglong(nativeCore.Press(int(code), busy != 0))
 }
 
