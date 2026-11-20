@@ -25,7 +25,7 @@ extension HeadlessApp {
     func verifyPressTargetSurvivesDelayedActivation() {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         targetPID = pid_t.max // The original editor vanished or lost focus during the hold threshold.
-        begin()
+        begin(rewrite: false)
         precondition(!microphone.running && item.button?.title == "Focus changed")
         NSStatusBar.system.removeStatusItem(item)
     }
@@ -36,9 +36,16 @@ extension HeadlessApp {
         cancelFromPill()
         precondition(VREpochValid(finishedToken) == 1) // Dismissing a result is not cancellation.
         precondition(item.button?.title == "VR")
+        let key: Int32 = 61
+        precondition(VRAction(key) == 2)
+        let held = VRPress(key, 0)
+        precondition(held != 0 && VRActivate(key, held) == 1)
         let processingToken = VREpochStart()
         taskID = processingToken
-        precondition(pending)
+        precondition(!pending)
+        VRAbandon() // as on timed recording completion
+        precondition(pending && VRArmed() == 0)
+        _ = VRRelease(key)
         cancelFromPill()
         precondition(!pending && taskID == 0 && VREpochValid(processingToken) == 0) // In-flight work still cancels.
         precondition(item.button?.title == "Cancelled")

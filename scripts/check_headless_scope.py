@@ -51,7 +51,7 @@ def main():
     if any(token in swift for token in ("RightCommand", "RightOption", "Mouse4", "Mouse5",
                                            "config.profile.dictation", "config.profile.rewrite")):
         raise SystemExit("native host must get shortcut-to-mode decisions from Go")
-    if "private enum Action" in swift or "activeAction" in swift:
+    if any(token in swift for token in ("private enum Action", "activeAction", "activeKey")):
         raise SystemExit("Swift must not mirror Go-owned task role state")
     if any(token in swift for token in ('"selected_voice_task"', '"transcribe"', '"host_profile"')):
         raise SystemExit("Swift must not restore stringly typed task dispatch")
