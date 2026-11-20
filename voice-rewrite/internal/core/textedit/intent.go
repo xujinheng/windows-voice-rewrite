@@ -156,4 +156,3 @@ func ResolveSelectedTask(ctx context.Context, cfg coreconfig.Config, selected, i
 	}
 	return result, nil
 }
-
