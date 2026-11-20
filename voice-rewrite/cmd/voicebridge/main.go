@@ -50,12 +50,53 @@ type response struct {
 // duplicate context checks; private provider errors and panics stay contained.
 func safeProcessRequest(ctx context.Context, req request) (reply response) {
 	reply = failure("internal_error", "request failed")
-	defer func() { _ = recover() }()
-	reply = processRequest(ctx, req)
+	defer func() {
+		if recover() != nil {
+			return
+		}
+		if err := ctx.Err(); err != nil {
+			reply = contextFailure(err)
+		}
+	}()
+	trimmed := bytes.TrimSpace(req.Config)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return failure("invalid_config", "config object is required")
+	}
+	if trimmed[0] != '{' {
+		return failure("invalid_config", "config must be an object")
+	}
+	cfg, err := coreconfig.Parse(req.Config)
+	if err != nil {
+		return failure("invalid_config", msgInvalidConfig)
+	}
+	cfg, err = coreconfig.Normalize(cfg)
+	if err != nil {
+		return failure("invalid_config", msgInvalidConfig)
+	}
 	if err := ctx.Err(); err != nil {
 		return contextFailure(err)
 	}
-	return reply
+
+	if req.Rewrite && (len(req.SelectedText) > maxSelectedBytes ||
+		!utf8.ValidString(req.SelectedText)) {
+		return failure("invalid_request", "selected text exceeds limits")
+	}
+	outcome, err := voice.Run(ctx, cfg, req.NativePCM, req.SelectedText, req.Rewrite, req.AfterASR)
+	if err != nil {
+		var capture *voice.PCMError
+		if errors.As(err, &capture) {
+			return failure("invalid_pcm", capture.Error())
+		}
+		code, message := "asr_failed", "speech transcription failed"
+		if req.Rewrite {
+			code, message = "textedit_failed", "selected text processing failed"
+		}
+		if classified, ok := ux.Classify(err); ok {
+			message = classified
+		}
+		return failure(code, message)
+	}
+	return success(outcome)
 }
 
 func failure(code, message string) response {
@@ -100,48 +141,6 @@ func headlessProfile(req request) response {
 		"mouseDelayMS":   int(input.WindowsSideHold / time.Millisecond),
 		"pill":           indicator.HostSpec(),
 	}})
-}
-
-func processRequest(ctx context.Context, req request) response {
-	trimmed := bytes.TrimSpace(req.Config)
-	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
-		return failure("invalid_config", "config object is required")
-	}
-	if trimmed[0] != '{' {
-		return failure("invalid_config", "config must be an object")
-	}
-	cfg, err := coreconfig.Parse(req.Config)
-	if err != nil {
-		return failure("invalid_config", msgInvalidConfig)
-	}
-	cfg, err = coreconfig.Normalize(cfg)
-	if err != nil {
-		return failure("invalid_config", msgInvalidConfig)
-	}
-	if err := ctx.Err(); err != nil {
-		return contextFailure(err)
-	}
-
-	if req.Rewrite && (len(req.SelectedText) > maxSelectedBytes ||
-		!utf8.ValidString(req.SelectedText)) {
-		return failure("invalid_request", "selected text exceeds limits")
-	}
-	outcome, err := voice.Run(ctx, cfg, req.NativePCM, req.SelectedText, req.Rewrite, req.AfterASR)
-	if err != nil {
-		var capture *voice.PCMError
-		if errors.As(err, &capture) {
-			return failure("invalid_pcm", capture.Error())
-		}
-		code, message := "asr_failed", "speech transcription failed"
-		if req.Rewrite {
-			code, message = "textedit_failed", "selected text processing failed"
-		}
-		if classified, ok := ux.Classify(err); ok {
-			message = classified
-		}
-		return failure(code, message)
-	}
-	return success(outcome)
 }
 
 func contextFailure(err error) response {
