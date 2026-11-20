@@ -49,10 +49,10 @@ Download and load a chat model in LM Studio, then turn on its local API server (
 
 **Extract the ZIP**, move `VoiceRewrite.app` to Applications, and try launching it. These experimental packages are not signed with an Apple Developer ID or notarized; macOS may block them. Verify their origin and consider the security implications rather than disabling system security protections. The app also requires Microphone, Accessibility, and Input Monitoring permissions.
 
-**Windows OneClick does not run on macOS.** You must separately start a compatible ASR API server and configure `~/.config/voicerewrite/config.json`; the Mac version is **not yet plug-and-play**. Once configured, hold **Right Command** to dictate or **Right Option** to issue a rewrite instruction for selected text. See [macOS setup details](macos/Headless/README.md).
+**Windows OneClick does not run on macOS.** You must separately start a compatible ASR API server and configure `~/.config/voicerewrite/config.json`; the Mac version is **not yet plug-and-play**. Once configured, hold **Right Command** to dictate or **Right Option** to issue a rewrite instruction for selected text. See [macOS setup details](clients/macos/app/README.md).
 
 ## More information
 
-[All v0.1.1 downloads and release notes](https://github.com/xujinheng/windows-voice-rewrite/releases/tag/v0.1.1) · [Advanced Windows guide](voice-rewrite/README.md) · [Privacy](PRIVACY.md) · [Report an issue](https://github.com/xujinheng/windows-voice-rewrite/issues)
+[All v0.1.1 downloads and release notes](https://github.com/xujinheng/windows-voice-rewrite/releases/tag/v0.1.1) · [Advanced Windows guide](clients/windows/README.md) · [Privacy](PRIVACY.md) · [Report an issue](https://github.com/xujinheng/windows-voice-rewrite/issues)
 
-Audio and selected text go to the **local or remote API servers you configure**. Licensed under [BSD 3-Clause](LICENSE); see [third-party notices](voice-rewrite/THIRD_PARTY_NOTICES.md).
+Audio and selected text go to the **local or remote API servers you configure**. Licensed under [BSD 3-Clause](LICENSE); see [third-party notices](docs/third-party-notices.md).

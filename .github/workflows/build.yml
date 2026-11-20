@@ -80,9 +80,9 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
-          cache-dependency-path: voice-rewrite/go.mod
+          cache-dependency-path: core/go.mod
       - name: Go format
-        working-directory: voice-rewrite
+        working-directory: core
         run: |
           files="$(gofmt -l .)"
           if [ -n "$files" ]; then
@@ -90,10 +90,10 @@ jobs:
             exit 1
           fi
       - name: Test core with race detector
-        working-directory: voice-rewrite
+        working-directory: core
         run: go test -race -count=1 ./...
       - name: Test independent Go CLI and cross-build without native adapters
-        working-directory: cli
+        working-directory: clients/cli
         run: |
           go test ./...
           CGO_ENABLED=0 go build ./...
@@ -104,10 +104,10 @@ jobs:
       - name: Audit macOS headless Go source ownership
         run: python3 scripts/check_headless_scope.py
       - name: Compile core on Linux without CGO
-        working-directory: voice-rewrite
+        working-directory: core
         env:
           CGO_ENABLED: '0'
-        run: go build ./internal/core/...
+        run: go build ./...
   build-macos-headless:
     name: macOS headless ${{ matrix.arch }} Go + Swift
     needs: changes
@@ -127,7 +127,7 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
-          cache-dependency-path: voice-rewrite/go.mod
+          cache-dependency-path: clients/go.mod
       - name: Build headless app with in-process Go Core
         shell: bash
         run: |
@@ -153,7 +153,7 @@ jobs:
         run: |
           set -euo pipefail
           swiftc -O -target '${{ matrix.arch }}-apple-macosx13.0' \
-            -import-objc-header macos/Headless/VoiceCore.h \
+            -import-objc-header clients/macos/app/VoiceCore.h \
             -framework Foundation -framework Security -framework CoreFoundation \
             -o "$RUNNER_TEMP/voicecore-bench" scripts/bench-macos-core.swift \
             "$RUNNER_TEMP/headless/libvoicecore.a"
@@ -162,14 +162,14 @@ jobs:
           # replaced by synthetic AX identities; no microphone/UI is needed.
           # Compile the real adapter once more with a CI-only entrypoint,
           # keeping AX smoke assertions out of the two shipped Swift sources.
-          cp macos/Headless/main.swift "$RUNNER_TEMP/main.swift"
+          cp clients/macos/app/main.swift "$RUNNER_TEMP/main.swift"
           cat scripts/test-macos-focus.swift >> "$RUNNER_TEMP/main.swift"
           swiftc -O -D FOCUS_GUARD_TEST -target '${{ matrix.arch }}-apple-macosx13.0' \
-            -import-objc-header macos/Headless/VoiceCore.h \
+            -import-objc-header clients/macos/app/VoiceCore.h \
             -framework AppKit -framework AVFoundation -framework ApplicationServices \
             -framework CoreGraphics -framework Security -framework CoreFoundation \
             -o "$RUNNER_TEMP/voicecore-focus-test" \
-            "$RUNNER_TEMP/main.swift" macos/Headless/RecordingPill.swift \
+            "$RUNNER_TEMP/main.swift" clients/macos/app/RecordingPill.swift \
             "$RUNNER_TEMP/headless/libvoicecore.a"
           "$RUNNER_TEMP/voicecore-focus-test"
       - name: Package explicitly labeled experimental, unnotarized Mac ZIP on tags
@@ -211,24 +211,24 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
-          cache-dependency-path: voice-rewrite/go.mod
+          cache-dependency-path: clients/go.mod
       - name: Test
-        working-directory: voice-rewrite
+        working-directory: clients/windows
         run: go test ./...
       - name: Vet
-        working-directory: voice-rewrite
+        working-directory: clients/windows
         # Win32 callbacks pass OS-owned pointers as uintptr; keep every other vet check.
         run: go vet -unsafeptr=false ./...
       - name: Compile Windows GUI on PRs
         if: github.event_name == 'pull_request'
-        working-directory: voice-rewrite
+        working-directory: clients/windows
         shell: pwsh
         run: |
           go build -trimpath -ldflags '-H=windowsgui' -o "$env:RUNNER_TEMP/VoiceRewrite.exe" .
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build x64 GUI
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        working-directory: voice-rewrite
+        working-directory: clients/windows
         env:
           GOOS: windows
           GOARCH: amd64
@@ -239,15 +239,15 @@ jobs:
           go build -trimpath -ldflags "-H=windowsgui -s -w -X main.buildID=$version" -o VoiceRewrite.exe .
       - name: Package portable Windows release
         if: startsWith(github.ref, 'refs/tags/v')
-        working-directory: voice-rewrite
+        working-directory: clients/windows
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path 'package/VoiceRewrite' -Force | Out-Null
           Copy-Item -LiteralPath 'VoiceRewrite.exe' -Destination 'package/VoiceRewrite/'
           Copy-Item -LiteralPath 'README.md' -Destination 'package/VoiceRewrite/'
           Copy-Item -LiteralPath 'config.example.json' -Destination 'package/VoiceRewrite/'
-          Copy-Item -LiteralPath '../LICENSE' -Destination 'package/VoiceRewrite/LICENSE'
-          Copy-Item -LiteralPath 'THIRD_PARTY_NOTICES.md' -Destination 'package/VoiceRewrite/'
+          Copy-Item -LiteralPath '../../LICENSE' -Destination 'package/VoiceRewrite/LICENSE'
+          Copy-Item -LiteralPath '../../docs/third-party-notices.md' -Destination 'package/VoiceRewrite/THIRD_PARTY_NOTICES.md'
           Compress-Archive -Path 'package/VoiceRewrite' -DestinationPath 'VoiceRewrite-windows-x64.zip' -Force
           $hash = (Get-FileHash -LiteralPath 'VoiceRewrite-windows-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash *VoiceRewrite-windows-x64.zip" | Set-Content -LiteralPath 'SHA256SUMS.txt' -Encoding ascii
@@ -257,15 +257,15 @@ jobs:
         with:
           name: VoiceRewrite-portable-windows-x64
           path: |
-            voice-rewrite/VoiceRewrite-windows-x64.zip
-            voice-rewrite/SHA256SUMS.txt
+            clients/windows/VoiceRewrite-windows-x64.zip
+            clients/windows/SHA256SUMS.txt
           if-no-files-found: error
       - name: Upload standalone EXE
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-windows-x64
-          path: voice-rewrite/VoiceRewrite.exe
+          path: clients/windows/VoiceRewrite.exe
           if-no-files-found: error
       - name: Ensure Inno Setup compiler
         if: startsWith(github.ref, 'refs/tags/v')

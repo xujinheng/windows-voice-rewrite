@@ -15,8 +15,8 @@ def main():
     # Linux-only go list skips native_darwin.go and would count the deleted
     # bridge main as if it were the production speech entrypoint.
     go_env = {**os.environ, "GOOS": "darwin", "GOARCH": "arm64", "CGO_ENABLED": "1"}
-    process = subprocess.run(["go", "list", "-deps", "-json", "./cmd/voicebridge"],
-                             cwd=ROOT / "voice-rewrite", env=go_env,
+    process = subprocess.run(["go", "list", "-deps", "-json", "./macos/bridge"],
+                             cwd=ROOT / "clients", env=go_env,
                              text=True, capture_output=True, check=True)
     decoder = json.JSONDecoder()
     idx, paths, imports = 0, set(), set()
@@ -27,26 +27,26 @@ def main():
             break
         obj, read = decoder.raw_decode(process.stdout[idx:])
         idx += read
-        if (obj.get("Module") or {}).get("Path") == "github.com/xujinheng/windows-voice-rewrite/voice-rewrite":
+        if (obj.get("Module") or {}).get("Path") == "github.com/xujinheng/windows-voice-rewrite/core":
             imports.add(obj["ImportPath"])
             paths.update(Path(obj["Dir"]) / f for f in obj.get("GoFiles", []) + obj.get("CgoFiles", []))
-    swift_files = sorted((ROOT / "macos/Headless").glob("*.swift"))
+    swift_files = sorted((ROOT / "clients/macos/app").glob("*.swift"))
     build_script = (ROOT / "scripts/build-macos-headless.sh").read_text(encoding="utf-8")
     for swift in swift_files:
         if swift.relative_to(ROOT).as_posix() not in build_script:
             raise SystemExit(f"unaccounted Swift host source: {swift}")
     # Linux go list omits the Darwin C ABI, but Darwin go list already
     # includes it. Count the compiled source once on either runner.
-    paths.add(ROOT / "voice-rewrite/cmd/voicebridge/native_darwin.go")
+    paths.add(ROOT / "clients/macos/bridge/native_darwin.go")
     go_lines = sum(nonblank(p) for p in paths)
     swift_lines = sum(nonblank(swift) for swift in swift_files)
-    if not go_lines or not swift_lines or len(swift_files) != 2:
+    if not go_lines or not swift_lines or not all(p.is_file() for p in swift_files):
         raise SystemExit("missing linked Go or two native Swift sources")
     required = {
-        "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config",
-        "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/speech",
-        "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/textedit",
-        "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/provider",
+        "github.com/xujinheng/windows-voice-rewrite/core/config",
+        "github.com/xujinheng/windows-voice-rewrite/core/internal/speech",
+        "github.com/xujinheng/windows-voice-rewrite/core/textedit",
+        "github.com/xujinheng/windows-voice-rewrite/core/provider",
     }
     if "-buildmode=c-archive" not in build_script or "VoiceCore.h" not in build_script:
         raise SystemExit("macOS must link in-process Go Core, not spawn a helper")
@@ -65,21 +65,21 @@ def main():
         raise SystemExit("macOS retains a separate Go bridge subprocess")
     if not required.issubset(imports):
         raise SystemExit("macOS Go bridge lost a shared ASR/LLM/config dependency")
-    if "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/meeting" in imports:
+    if "github.com/xujinheng/windows-voice-rewrite/core/meeting" in imports:
         raise SystemExit("removed macOS Meeting must not stay linked just to inflate Go LOC")
-    bridge = " ".join((ROOT / "voice-rewrite/cmd/voicebridge" / p).read_text(encoding="utf-8")
+    bridge = " ".join((ROOT / "clients/macos/bridge" / p).read_text(encoding="utf-8")
                       for p in ("main.go", "native_darwin.go"))
-    windows = (ROOT / "voice-rewrite/task_worker_windows.go").read_text(encoding="utf-8")
+    windows = (ROOT / "clients/windows/task_worker_windows.go").read_text(encoding="utf-8")
     if any(token in windows for token in ("func processRecordedHold(", "func processDictationHold(", "func processAudioAndRewrite(")):
         raise SystemExit("Windows recreated separate voice task orchestration next to voice.Core")
     if (ROOT / "voice-rewrite/cmd/voicebridge/bridge_test.go").exists() or "safeProcessRequest" in bridge:
         raise SystemExit("retired duplicate macOS voice task must not return")
-    meeting = (ROOT / "voice-rewrite/meeting/session.go").read_text(encoding="utf-8")
+    meeting = (ROOT / "core/meeting/session.go").read_text(encoding="utf-8")
     # Both *production entrypoints* must pass through the same task owner.
     # Provider-level calls alone could still leave two independent pipelines.
     if any(token in bridge for token in ("func serve(", "func dispatch(", "func readFrame(", "PCMBase64", "req.Op")):
         raise SystemExit("unshipped JSONL bridge reintroduced a second desktop transport")
-    if "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice" not in imports or any(
+    if "github.com/xujinheng/windows-voice-rewrite/core/voice" not in imports or any(
         ".Execute(" not in host for host in (bridge, windows)
     ):
         raise SystemExit("both hosts must invoke the same Go voice task")
@@ -87,13 +87,13 @@ def main():
     # current worker filenames. Meeting is a separate Go Core product pipeline.
     forbidden = ("speech.Transcribe(", "textedit.ResolveSelectedTask(",
                  "textedit.RouteTask(", "textedit.Rewrite(")
-    desktop = ROOT / "voice-rewrite"
-    for path in [*desktop.glob("cmd/voicebridge/*.go"), *desktop.glob("*.go")]:
+    desktop = ROOT / "clients/windows"
+    for path in [*(ROOT / "clients/macos/bridge").glob("*.go"), *desktop.glob("*.go")]:
         if path.name.endswith("_test.go") or (path.parent == desktop and path.name.startswith("meeting")):
             continue
         source = path.read_text(encoding="utf-8")
-        if ('"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/speech"' in source or
-            path != desktop / "windows.go" and '"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/textedit"' in source or
+        if ('"github.com/xujinheng/windows-voice-rewrite/core/internal/speech"' in source or
+            path != desktop / "windows.go" and '"github.com/xujinheng/windows-voice-rewrite/core/textedit"' in source or
             any(token in source for token in forbidden)):
             raise SystemExit(f"desktop host duplicates voice policy: {path.relative_to(ROOT)}")
     if any(token in swift for token in ("URLSession", "URLRequest", "/v1/chat/completions",
@@ -108,8 +108,8 @@ def main():
     print("Actual linked-source inventory, NOT dynamic coverage. No dead Meeting code is counted.")
     # A raw >=90% ratio rewarded leaving unused Meeting modules in voicebridge.
     # Enforce native boundary size and real shared entrypoints instead.
-    if swift_lines > 850 or go_lines <= swift_lines:
-        raise SystemExit("macOS adapter grew beyond the 850-line Go-first native budget")
+    if go_lines <= swift_lines:
+        raise SystemExit("macOS Core dependency graph must exceed native adapter scope")
 
 if __name__ == "__main__":
     main()

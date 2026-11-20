@@ -13,7 +13,7 @@ On macOS 13+ with Xcode command line tools and Go 1.23:
 ```sh
 bash scripts/build-macos-headless.sh "$(uname -m)" "$PWD/dist" 0.1.0
 mkdir -p ~/.config/voicerewrite
-cp macos/Headless/config.example.json ~/.config/voicerewrite/config.json
+cp clients/macos/app/config.example.json ~/.config/voicerewrite/config.json
 open dist/VoiceRewrite.app
 ```
 

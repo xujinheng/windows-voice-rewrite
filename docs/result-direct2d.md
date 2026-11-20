@@ -1,7 +1,7 @@
 # Direct2D + DirectWrite: production AI result window
 
 This implementation is **connected to the real VoiceRewrite result path** in
-`voice-rewrite/popup_windows.go`. It is not an isolated mockup or new settings
+`clients/windows/popup_windows.go`. It is not an isolated mockup or new settings
 page. It contains no web engine, Node.js, UI framework, or external Go module.
 
 ## Runtime model

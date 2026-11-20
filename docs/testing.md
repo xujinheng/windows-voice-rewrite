@@ -2,7 +2,7 @@
 
 ## Portable Go Core and Windows host
 ```sh
-cd voice-rewrite
+cd clients/windows
 go test -race -count=1 ./...
 ```
 The main CI continues Windows executable compilation, Windows UI capture and

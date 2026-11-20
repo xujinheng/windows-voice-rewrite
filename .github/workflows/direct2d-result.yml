@@ -21,11 +21,11 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
-          cache-dependency-path: voice-rewrite/go.mod
+          cache-dependency-path: clients/go.mod
       # Unit tests run in build.yml on every main push / PR; this job exercises the real UI.
       - name: Compile integrated Windows UI
         shell: pwsh
-        working-directory: voice-rewrite
+        working-directory: clients/windows
         run: |
           go build -trimpath -ldflags '-H=windowsgui' -o VoiceRewrite.exe .
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
@@ -54,7 +54,7 @@ jobs:
           '@
           $folder='direct2d-result-evidence'
           New-Item -ItemType Directory -Force -Path $folder | Out-Null
-          $exe=Join-Path (Get-Location) 'voice-rewrite/VoiceRewrite.exe'
+          $exe=Join-Path (Get-Location) 'clients/windows/VoiceRewrite.exe'
           $cases=@(
             @{name='rewrite-light';theme='light';apply='1';long='0'},
             @{name='rewrite-dark';theme='dark';apply='1';long='0'},

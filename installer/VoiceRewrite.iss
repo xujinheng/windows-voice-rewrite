@@ -30,11 +30,11 @@ DisableProgramGroupPage=yes
 VersionInfoVersion={#AppVersion}
 
 [Files]
-Source: "..\voice-rewrite\VoiceRewrite.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\voice-rewrite\README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\voice-rewrite\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\clients\windows\VoiceRewrite.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\clients\windows\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\clients\windows\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\voice-rewrite\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\clients\windows\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\VoiceRewrite"; Filename: "{app}\{#AppExe}"

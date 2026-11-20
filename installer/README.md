@@ -4,7 +4,7 @@
 
 User configuration under `%APPDATA%\VoiceRewrite` is preserved during uninstall.
 
-After building `voice-rewrite/VoiceRewrite.exe`, run from the repository root:
+After building `clients/windows/VoiceRewrite.exe`, run from the repository root:
 
 ```powershell
 $version = '0.29.0'

@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $repo = Split-Path -Parent $PSScriptRoot
-$exe = Join-Path $repo 'voice-rewrite/VoiceRewrite.exe'
+$exe = Join-Path $repo 'clients/windows/VoiceRewrite.exe'
 $out = Join-Path $repo 'acceptance-output/windows'
 New-Item -Force -ItemType Directory -Path $out | Out-Null
 if (-not (Test-Path $exe)) { throw "Missing compiled executable $exe" }

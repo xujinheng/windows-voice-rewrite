@@ -23,9 +23,9 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
-          cache-dependency-path: voice-rewrite/go.mod
+          cache-dependency-path: clients/go.mod
       - name: Verify Go formatting
-        working-directory: voice-rewrite
+        working-directory: clients/windows
         shell: pwsh
         run: |
           $unformatted = @(gofmt -l .)
@@ -34,7 +34,7 @@ jobs:
             throw "Go files need formatting: $($unformatted -join ', ')"
           }
       - name: Drive production Win32 Meeting controls with live transcript updates
-        working-directory: voice-rewrite
+        working-directory: clients/windows
         shell: pwsh
         env:
           VOICEREWRITE_MEETING_E2E: '1'
@@ -42,7 +42,7 @@ jobs:
           go test -count=1 -timeout 3m -run '^TestMeetingWindowsE2E$' -v .
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build actual Windows GUI executable
-        working-directory: voice-rewrite
+        working-directory: clients/windows
         shell: pwsh
         run: |
           go build -trimpath -ldflags '-H=windowsgui' -o VoiceRewrite.exe .

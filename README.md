@@ -49,10 +49,10 @@
 
 下载 ZIP 后**双击解压**，将 `VoiceRewrite.app` 拖进「应用程序」，再尝试打开。此实验版未经过 Apple Developer ID 签名及公证；macOS 可能拦截启动，请先核对下载来源，了解安全风险，不要直接关闭系统安全保护。它还需要授予麦克风、辅助功能和输入监控权限。
 
-**注意：Windows OneClick 不能在 Mac 上运行。** macOS 需要自行启动兼容的语音识别 API 服务并配置 `~/.config/voicerewrite/config.json`，**尚不是双击即用**。已配置后按住**右 Command** 听写，按住**右 Option** 对选中文字发出改写指令。详见 [macOS 安装与配置说明](macos/Headless/README.md)。
+**注意：Windows OneClick 不能在 Mac 上运行。** macOS 需要自行启动兼容的语音识别 API 服务并配置 `~/.config/voicerewrite/config.json`，**尚不是双击即用**。已配置后按住**右 Command** 听写，按住**右 Option** 对选中文字发出改写指令。详见 [macOS 安装与配置说明](clients/macos/app/README.md)。
 
 ## 其他
 
-[全部 v0.1.1 下载文件与更新说明](https://github.com/xujinheng/windows-voice-rewrite/releases/tag/v0.1.1) · [Windows 进阶使用说明](voice-rewrite/README.md) · [隐私说明](PRIVACY.md) · [反馈问题](https://github.com/xujinheng/windows-voice-rewrite/issues)
+[全部 v0.1.1 下载文件与更新说明](https://github.com/xujinheng/windows-voice-rewrite/releases/tag/v0.1.1) · [Windows 进阶使用说明](clients/windows/README.md) · [隐私说明](PRIVACY.md) · [反馈问题](https://github.com/xujinheng/windows-voice-rewrite/issues)
 
-语音和选中文字会发送到**你配置的**本地或远程模型服务。项目按 [BSD 3-Clause 许可证](LICENSE) 发布；另见 [第三方许可说明](voice-rewrite/THIRD_PARTY_NOTICES.md)。
+语音和选中文字会发送到**你配置的**本地或远程模型服务。项目按 [BSD 3-Clause 许可证](LICENSE) 发布；另见 [第三方许可说明](docs/third-party-notices.md)。

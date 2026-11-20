@@ -1,6 +1,6 @@
 # VoiceRewrite architecture
 
-VoiceRewrite is **one importable Go Core (`github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice`) with native desktop adapters**. Windows
+VoiceRewrite is **one importable Go Core (`github.com/xujinheng/windows-voice-rewrite/core/voice`) with native desktop adapters**. Windows
 owns the established Win32 feature set. macOS is a deliberately small headless
 status-bar app for dictation and selected-text rewrite, not a second application
 stack. `oneclick/` is an independent standalone ASR-server bootstrapper with its
@@ -8,12 +8,12 @@ own Go module; it must not be coupled to the desktop host just for reuse.
 
 ## Runtime boundaries
 
-Windows (`voice-rewrite/*.go` and `*_windows.go`) owns Win32 messages, UIA,
+Windows (`clients/windows/*.go` and `*_windows.go`) owns Win32 messages, UIA,
 WASAPI/WinMM, hooks, clipboard handles, native windows and Meeting HUD pixels.
 Keep physical side effects and their thread/OS lifetime here; shared portable
 decisions belong to the public `voice` and `meeting` Go packages and private dependencies.
 
-macOS (`macos/Headless/main.swift`, `RecordingPill.swift`) owns Quartz events,
+macOS (`clients/macos/app/main.swift`, `RecordingPill.swift`) owns Quartz events,
 AVAudioEngine/AVAudioConverter, AX focus/selection, NSPasteboard leases,
 AppKit panel and status-menu drawing. It links Go `cmd/voicebridge` as a Darwin
 **C archive in the same process**, exposing a small explicit C ABI through
@@ -54,7 +54,7 @@ automatically retried. Only the OS adapter can perform these final checks.
 
 ## Package ownership
 
-- `config`: public, durable configuration and validation, importable alongside `voice` from `github.com/xujinheng/windows-voice-rewrite/voice-rewrite`.
+- `config`: public, durable configuration and validation, importable alongside `voice` from `github.com/xujinheng/windows-voice-rewrite/core`.
 - `internal/core/audio`: PCM and source framing, Meeting segmentation.
 - `internal/core/provider`: model discovery and private HTTP transport.
 - `internal/core/speech`: ASR request/response and transcript processing.

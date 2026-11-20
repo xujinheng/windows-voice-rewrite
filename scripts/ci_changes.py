@@ -18,25 +18,25 @@ def classify(paths):
             continue
         if any(fnmatch.fnmatchcase(path, pattern) for pattern in (
             "tests/acceptance/**", "scripts/capture-acceptance-windows.ps1",
-            "scripts/test-meeting-ui.ps1", "voice-rewrite/visual_preview_windows.go",
-            "voice-rewrite/meeting_ui_e2e_windows_test.go",
-            "voice-rewrite/settings*.go", "voice-rewrite/handy_status_windows.go",
-            "voice-rewrite/popup_windows.go", "voice-rewrite/meeting*.go",
-            "voice-rewrite/meeting/**",
-            "voice-rewrite/internal/core/indicator/**",
-            "voice-rewrite/internal/core/settingsform/**",
+            "scripts/test-meeting-ui.ps1", "clients/windows/visual_preview_windows.go",
+            "clients/windows/meeting_ui_e2e_windows_test.go",
+            "clients/windows/settings*.go", "clients/windows/handy_status_windows.go",
+            "clients/windows/popup_windows.go", "clients/windows/meeting*.go",
+            "core/meeting/**",
+            "core/indicator/**",
+            "core/settingsform/**",
         )):
             scope["ui"] = True
         if any(fnmatch.fnmatchcase(path, pattern) for pattern in (
-            "voice-rewrite/result_direct2d_windows.go",
-            "voice-rewrite/appearance_windows.go", "voice-rewrite/visual_skin_windows.go",
-            "voice-rewrite/popup_windows.go", "voice-rewrite/popup_dismiss_windows.go",
-            "voice-rewrite/popup_layout.go", "voice-rewrite/popup_layout_test.go",
-            "voice-rewrite/answer_visual_preview_windows.go",
-            "voice-rewrite/visual_preview_windows.go",
-            "voice-rewrite/desktop_geometry.go", "voice-rewrite/desktop_monitor_windows.go",
-            "voice-rewrite/result_history.go", "voice-rewrite/window_windows.go",
-            "voice-rewrite/windows.go", "voice-rewrite/go.mod", "voice-rewrite/go.sum",
+            "clients/windows/result_direct2d_windows.go",
+            "clients/windows/appearance_windows.go", "clients/windows/visual_skin_windows.go",
+            "clients/windows/popup_windows.go", "clients/windows/popup_dismiss_windows.go",
+            "clients/windows/popup_layout.go", "clients/windows/popup_layout_test.go",
+            "clients/windows/answer_visual_preview_windows.go",
+            "clients/windows/visual_preview_windows.go",
+            "clients/windows/desktop_geometry.go", "clients/windows/desktop_monitor_windows.go",
+            "clients/windows/result_history.go", "clients/windows/window_windows.go",
+            "clients/windows/windows.go", "clients/windows/go.mod", "clients/windows/go.sum",
         )):
             scope["direct2d"] = True
         # CI governance and reusable action changes must validate the whole matrix.
@@ -46,26 +46,24 @@ def classify(paths):
                 or path == "scripts/ci_changes.py"
                 or path.startswith("scripts/test_ci_")):
             return dict.fromkeys(scope, True)
-        if path.startswith("voice-rewrite/"):
-            if path.startswith("voice-rewrite/asrtext/"):
-                # OneClick imports this shared package through its local module replacement.
+        if path.startswith("core/"):
+            if path.startswith("core/asrtext/"):
                 scope.update(core=True, macos=True, windows=True, oneclick=True)
-            elif path.startswith("voice-rewrite/cmd/voicebridge/"):
-                scope.update(core=True, macos=True)
-            elif path.startswith("voice-rewrite/meeting/"):
-                # Headless macOS does not link Meeting.
+            elif path.startswith("core/meeting/"):
                 scope.update(core=True, windows=True)
-            elif path == "voice-rewrite/windows.go" or path.endswith(("_windows.go", "_windows_test.go")):
-                scope["windows"] = True
-            elif path.endswith(("_darwin.go", "_darwin_test.go", "_macos.go")):
-                scope["macos"] = True
             else:
-                # Shared Go, generated contracts and dependencies affect both hosts.
                 scope.update(core=True, macos=True, windows=True)
-        elif path.startswith("macos/"):
+        elif path.startswith("clients/macos/bridge/"):
+            scope.update(core=True, macos=True)
+        elif path.startswith("clients/macos/"):
             scope["macos"] = True
-        elif path.startswith("cli/"):
+        elif path.startswith("clients/windows/"):
+            scope["windows"] = True
+        elif path.startswith("clients/cli/"):
             scope["core"] = True
+        elif path in ("go.work", "clients/go.mod") or path.startswith(("voice-rewrite/", "macos/", "cli/")):
+            # Removed legacy paths and module workspace changes affect every host.
+            scope.update(core=True, macos=True, windows=True, oneclick=True)
         elif path.startswith("oneclick/"):
             scope["oneclick"] = True
         elif path.startswith("installer/"):

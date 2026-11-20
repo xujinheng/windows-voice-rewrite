@@ -5,7 +5,7 @@ packages. It does not import Windows `main`, any `internal` package, Swift,
 AppKit or a C archive. Its `replace` directive points to the local Core for
 development; a tagged Core release can replace that directive later.
 
-From `cli/`:
+From `clients/cli/`:
 
 ```sh
 go run . -pcm recorded-16khz-mono-s16le.pcm -config config.json
