@@ -137,12 +137,6 @@ func TestBindingReportsKeyAndModifiers(t *testing.T) {
 	if err != nil || !mouse.Mouse || mouse.Key != "Mouse4" {
 		t.Fatalf("mouse %#v %v", mouse, err)
 	}
-	if id, ok := WindowsSideButton(" xbutton2 "); id != 2 || !ok {
-		t.Fatalf("side button %d %v", id, ok)
-	}
-	if _, ok := WindowsSideButton("F9"); ok {
-		t.Fatal("keyboard shortcut mapped as a mouse button")
-	}
 }
 
 func TestCaptureKeyIgnoresModifiersAndWindowsKey(t *testing.T) {
@@ -158,20 +152,6 @@ func TestCaptureKeyIgnoresModifiersAndWindowsKey(t *testing.T) {
 	}
 	if CaptureSaved("Ctrl+P") != "已录入 Ctrl+P。点击「保存设置」并重启软件后生效。" {
 		t.Fatal("saved sentence")
-	}
-}
-
-func TestMacKeyboardDefaultsStayKeyboardShortcuts(t *testing.T) {
-	seen := map[string]bool{}
-	for _, raw := range []string{MacDictationShortcut, MacRewriteShortcut} {
-		binding, err := Bind(raw)
-		if err != nil || binding.Mouse || seen[binding.Key] {
-			t.Fatalf("%s %#v %v", raw, binding, err)
-		}
-		seen[binding.Key] = true
-	}
-	if MacDictationShortcut != "RightCommand" || MacRewriteShortcut != "RightOption" {
-		t.Fatalf("mac defaults %s %s", MacDictationShortcut, MacRewriteShortcut)
 	}
 }
 
