@@ -85,7 +85,7 @@ func TestPortableEpochCancellationDisconnectsProvider(t *testing.T) {
 				select {
 				case <-r.Context().Done():
 					disconnected <- struct{}{}
-				case <-time.After(3*time.Second):
+				case <-time.After(3 * time.Second):
 					t.Error("provider never disconnected")
 				}
 			}))
@@ -103,13 +103,13 @@ func TestPortableEpochCancellationDisconnectsProvider(t *testing.T) {
 			}()
 			select {
 			case <-entered:
-			case <-time.After(5*time.Second):
+			case <-time.After(5 * time.Second):
 				t.Fatal("provider was never contacted")
 			}
 			epoch.Start()
 			select {
 			case <-disconnected:
-			case <-time.After(5*time.Second):
+			case <-time.After(5 * time.Second):
 				t.Fatal("provider did not observe cancellation")
 			}
 			select {
@@ -117,7 +117,7 @@ func TestPortableEpochCancellationDisconnectsProvider(t *testing.T) {
 				if !errors.Is(err, context.Canceled) {
 					t.Fatalf("portable task returned %v instead of cancellation", err)
 				}
-			case <-time.After(5*time.Second):
+			case <-time.After(5 * time.Second):
 				t.Fatal("canceled task did not return")
 			}
 		})

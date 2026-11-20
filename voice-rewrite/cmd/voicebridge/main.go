@@ -23,9 +23,9 @@ type bridgeError struct {
 }
 
 type response struct {
-	OK     bool         `json:"ok"`
-	Result any          `json:"result,omitempty"`
-	Error  *bridgeError `json:"error,omitempty"`
+	OK     bool              `json:"ok"`
+	Result any               `json:"result,omitempty"`
+	Error  *bridgeError      `json:"error,omitempty"`
 	cfg    coreconfig.Config // normalized profile, never sent over the C ABI
 }
 
