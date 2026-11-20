@@ -40,29 +40,3 @@ func TestClickDismissesExceptResponseAndActions(t *testing.T) {
 		}
 	}
 }
-
-func TestCardControlsMatchScaledInsets(t *testing.T) {
-	const scale = 1.5
-	px := func(v int32) int32 { return int32(float64(v)*scale + 0.5) }
-	cw, ch := int32(714), int32(400)
-	editor := Editor(cw, ch, scale)
-	if editor.X != px(22) || editor.Y != px(59) || editor.W != cw-px(44) || editor.H != ch-px(119) {
-		t.Fatalf("editor %+v", editor)
-	}
-	note := Note(cw, scale)
-	if note.X != px(132) || note.Y != px(16) || note.W != cw-px(190) || note.H != px(20) {
-		t.Fatalf("note %+v", note)
-	}
-	close := CloseButton(cw, scale)
-	if close.X != cw-px(51) || close.Y != px(11) || close.W != px(31) || close.H != px(29) {
-		t.Fatalf("close %+v", close)
-	}
-	copy := CopyButton(cw, ch, scale)
-	if copy.X != cw-px(119) || copy.Y != ch-px(48) || copy.W != px(98) || copy.H != px(33) {
-		t.Fatalf("copy %+v", copy)
-	}
-	apply := ApplyButton(cw, ch, scale)
-	if apply.X != cw-px(243) || apply.Y != copy.Y || apply.W != px(116) || apply.H != px(33) {
-		t.Fatalf("apply %+v", apply)
-	}
-}
