@@ -5,12 +5,12 @@ extension HeadlessApp {
     func verifyReboundRelease(code: Int64, before: String,
                               after: String, modifier: Bool) {
         let initial = try! GoCore.request(config: before, audio: Data(), selection: nil)
-        config = HostConfig(profile: initial.profile!)
+        config = initial.profile!
         precondition(VRAction(Int32(code)) != 0)
         updatePress(code: code, down: true, delay: 3600)
         precondition(VRDown(Int32(code)) == 1 && VRArmed() == 1)
         let rebound = try! GoCore.request(config: after, audio: Data(), selection: nil)
-        config = HostConfig(profile: rebound.profile!)
+        config = rebound.profile!
         precondition(VRAction(Int32(code)) == 0)
         if modifier {
             handleModifier(code: code, flags: [])
