@@ -17,21 +17,6 @@ import (
 	"voicerewrite/internal/core/ux"
 )
 
-// validateRequest applies platform-independent selection and instruction limits
-// before any selected text is sent to a provider.
-func validateSelectedText(ctx context.Context, cfg coreconfig.Config, selected string) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if strings.TrimSpace(selected) == "" {
-		return errors.New(ux.EmptySelection)
-	}
-	if err := SelectedLengthError(cfg.MaxSelectedRunes, selected); err != nil {
-		return err
-	}
-	return nil
-}
-
 // SelectedLengthError reports a selection that exceeds the configured rune limit.
 // An empty selection is allowed; callers that require text check that separately.
 func SelectedLengthError(limit int, selected string) error {
@@ -40,16 +25,6 @@ func SelectedLengthError(limit int, selected string) error {
 	}
 	if utf8.RuneCountInString(selected) > limit {
 		return fmt.Errorf("选中文字超过 %d 字限制", limit)
-	}
-	return nil
-}
-
-func validateRequest(ctx context.Context, cfg coreconfig.Config, selected, instruction string) error {
-	if err := validateSelectedText(ctx, cfg, selected); err != nil {
-		return err
-	}
-	if strings.TrimSpace(instruction) == "" {
-		return errors.New(ux.EmptyInstruction)
 	}
 	return nil
 }
