@@ -101,8 +101,8 @@ func watchHoldRelease(hwnd, vk, mods, session uintptr, canceled <-chan struct{},
 // text (rewrite). Both use one worker and the same portable voice.Run.
 type recordingTask struct {
 	dictation bool
-	target uintptr
-	anchor trayPoint
+	target    uintptr
+	anchor    trayPoint
 	selection *selectedText // set by toggle mode; hold mode reads on release
 }
 
