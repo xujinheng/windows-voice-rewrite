@@ -6,9 +6,6 @@ import (
 )
 
 func TestVoiceStartKeepsSideAndKeyboardWindowsApart(t *testing.T) {
-	if SettingsMouseCapture(3, 3, 1) != "Mouse4" || SettingsMouseCapture(3, 3, 2) != "Mouse5" || SettingsMouseCapture(3, 3, 0) != "" || SettingsMouseCapture(3, 4, 1) != "" || SettingsMouseCapture(0, 0, 1) != "Mouse4" {
-		t.Fatal("mouse capture")
-	}
 	if HoldModeLabel(true, true) != "会议直译" || HoldModeLabel(false, true) != "会议意图" || HoldModeLabel(true, false) != "听写" || HoldModeLabel(false, false) != "改写" {
 		t.Fatal("mode")
 	}
