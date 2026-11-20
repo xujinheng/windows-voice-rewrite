@@ -44,7 +44,7 @@ func VRAction(code C.int) C.int {
 
 //export VRDown
 func VRDown(code C.int) C.int {
-	if nativeCore.Down(int(code)) {
+	if nativeCore.Down(int(VRAction(code))) {
 		return 1
 	}
 	return 0
@@ -55,12 +55,12 @@ func VRPress(code C.int, busy C.int) C.ulonglong {
 	if VRAction(code) == 0 {
 		return 0
 	}
-	return C.ulonglong(nativeCore.Press(int(code), busy != 0))
+	return C.ulonglong(nativeCore.Press(int(VRAction(code)), busy != 0))
 }
 
 //export VRActivate
 func VRActivate(code C.int, token C.ulonglong) C.int {
-	if nativeCore.Activate(int(code), uint64(token)) {
+	if nativeCore.Activate(int(VRAction(code)), uint64(token)) {
 		return 1
 	}
 	return 0
@@ -68,7 +68,7 @@ func VRActivate(code C.int, token C.ulonglong) C.int {
 
 //export VRRelease
 func VRRelease(code C.int) C.int {
-	return C.int(nativeCore.Release(int(code)))
+	return C.int(nativeCore.Release(int(VRAction(code))))
 }
 
 //export VRAbandon
