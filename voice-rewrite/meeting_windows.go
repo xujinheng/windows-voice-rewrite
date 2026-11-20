@@ -104,11 +104,11 @@ var meetingEnumCallback = syscall.NewCallback(func(hwnd, statePtr uintptr) uintp
 func expressMeeting(s *meetingcore.Session, app *appState, rec *audioRecorder, generation uint64, mode string) {
 	defer app.busy.Store(false)
 	result := <-rec.result
-	if !app.core.Valid(generation) || s.Context().Err() != nil {
+	if !app.core.Snapshot(0, generation).Valid || s.Context().Err() != nil {
 		return
 	}
 	err := s.Express(app.core.ContextFor(generation), result.pcm, result.err, mode)
-	if !app.core.Valid(generation) || s.Context().Err() != nil || errors.Is(err, context.Canceled) {
+	if !app.core.Snapshot(0, generation).Valid || s.Context().Err() != nil || errors.Is(err, context.Canceled) {
 		return
 	}
 	if err != nil {
