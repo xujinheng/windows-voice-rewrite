@@ -54,7 +54,9 @@ func safeProcessRequest(ctx context.Context, req request) (reply response) {
 		if recover() != nil {
 			return
 		}
-		if err := ctx.Err(); err != nil { reply = contextFailure(err) }
+		if err := ctx.Err(); err != nil {
+			reply = contextFailure(err)
+		}
 	}()
 	trimmed := bytes.TrimSpace(req.Config)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
