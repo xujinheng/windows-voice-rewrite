@@ -36,6 +36,8 @@ func TestHeadlessProfileValidatesSettingsAndNeverLeaksKeys(t *testing.T) {
 	}{
 		{`{}`, `"dictation":"RightCommand"`, true},
 		{`{"dictation_hotkey":"Mouse4","hotkey_record":"Mouse5","max_record_seconds":30}`, `"maximumSeconds":30`, true},
+		{`{"dictation_hotkey":"rightcmd","hotkey_record":"mouse5"}`, `"dictation":"RightCommand"`, true},
+		{`{"dictation_hotkey":"mouse4","hotkey_record":"rightalt"}`, `"rewrite":"RightOption"`, true},
 		{`{"dictation_hotkey":"Mouse4","hotkey_record":"Mouse4"}`, "invalid_config", false},
 		{`{"dictation_hotkey":"LeftCommand"}`, "invalid_config", false},
 		{`{"record_mode":"toggle"}`, "invalid_config", false},
