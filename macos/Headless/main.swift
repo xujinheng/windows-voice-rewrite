@@ -367,6 +367,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             // Pre-roll starts on physical down; a short click discards it.
             do { try microphone.start(maximumSeconds: config.profile.maximumSeconds) }
             catch { VRAbandon(); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, VRDown(key) != 0 else { return }
+                self.targetFocus = FocusIdentity(window: self.focusedWindow(), element: nil, title: nil)
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, VRActivate(key, token) == 1,
                       let action = self.activeAction else { return }
@@ -395,7 +399,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func begin(_ action: Action) {
         guard targetPID > 0 else { reset("No target"); return }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { reset("Focus changed"); return }
-        let window = focusedWindow(), element = action == .rewrite ? focusedElement() : nil
+        let window = targetFocus?.window ?? focusedWindow(), element = action == .rewrite ? focusedElement() : nil
+        if targetFocus?.window != nil, let current = focusedWindow(), targetFocus?.matches(window: current, element: nil, title: nil) == false { reset("Focus changed"); return }
         guard action == .dictation || (window != nil && element != nil) else { reset("Target unavailable"); return }
         targetFocus = FocusIdentity(window: window, element: element,
                                     title: action == .rewrite ? window.flatMap(windowTitle) : nil)
