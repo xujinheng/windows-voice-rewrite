@@ -6,36 +6,36 @@ import (
 
 func TestCoreRejectsOldTask(t *testing.T) {
 	var g Core
-	first := g.Start()
-	if !g.Valid(first) {
+	first := g.Apply(Command{Kind: CommandStart}).Token
+	if !g.Snapshot(0, first).Valid {
 		t.Fatal("first task should be current")
 	}
-	next := g.Start()
-	if g.Valid(first) || !g.Valid(next) {
+	next := g.Apply(Command{Kind: CommandStart}).Token
+	if g.Snapshot(0, first).Valid || !g.Snapshot(0, next).Valid {
 		t.Fatal("a new task must fence old workers")
 	}
-	g.Shutdown()
-	if g.Valid(next) || g.Start() != 0 {
+	g.Apply(Command{Kind: CommandShutdown})
+	if g.Snapshot(0, next).Valid || g.Apply(Command{Kind: CommandStart}).Token != 0 {
 		t.Fatal("shutdown must fence every task")
 	}
 }
 
 func TestCoreCancelsPriorRequests(t *testing.T) {
 	var g Core
-	first := g.Start()
+	first := g.Apply(Command{Kind: CommandStart}).Token
 	previous := g.ContextFor(first)
 	select {
 	case <-previous.Done():
 		t.Fatal("current task should not be canceled")
 	default:
 	}
-	second := g.Start()
+	second := g.Apply(Command{Kind: CommandStart}).Token
 	select {
 	case <-previous.Done():
 	default:
 		t.Fatal("starting a new task must cancel previous requests")
 	}
-	if !g.Valid(second) || g.Valid(first) {
+	if !g.Snapshot(0, second).Valid || g.Snapshot(0, first).Valid {
 		t.Fatal("old generation must not be valid")
 	}
 	select {
@@ -43,7 +43,7 @@ func TestCoreCancelsPriorRequests(t *testing.T) {
 	default:
 		t.Fatal("stale generation context must be canceled")
 	}
-	g.Shutdown()
+	g.Apply(Command{Kind: CommandShutdown})
 	select {
 	case <-g.ContextFor(second).Done():
 	default:
