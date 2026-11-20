@@ -1,29 +1,30 @@
 # Coding-agent rules
 
-Read `voice-rewrite/ARCHITECTURE.md`, relevant production code, open PRs and CI before changing anything. This file defines principles; architecture and platform-specific details belong in `ARCHITECTURE.md`.
+Read `voice-rewrite/ARCHITECTURE.md`, affected production call chains, latest `main`, open PRs and CI before editing. This file states durable product and engineering constraints, not project history.
 
-## Product and ownership
+## Product and platform boundaries
 
-- **Working behavior first.** Fix real defects before cosmetic cleanup. Preserve existing working features; a green CI run does not prove real-device behavior.
-- **One Go business core.** Every portable decision has one Go owner. Native Windows/macOS code performs OS-specific work only; do not duplicate business policies or force OS APIs into fake shared abstractions.
-- **Keep behavior honest.** Preserve necessary cancellation, permissions, focus and clipboard ownership checks. Sending input is not proof of insertion; do not retry uncertain delivery.
-- **Design for the final state.** Remove obsolete internal compatibility, parallel implementations and speculative layers. Do not preserve code merely because it already exists.
+- **Working behavior first.** Fix input failures before cosmetic cleanup. Preserve Windows Mouse4 dictation, Mouse5 selected-text rewrite, shortcuts, result cards and Meeting. macOS is intentionally a minimal status-bar dictation/rewrite host, not a second settings/Meeting app. A green build is not real-device acceptance.
+- **One Go business core.** Portable config, ASR/LLM, text routing, task policy, UI specification and state decisions have one Go owner. Windows/macOS adapters perform native audio, input, focus, clipboard and rendering operations only. Do not duplicate business decisions in Swift/Windows or introduce fake sharing through wrappers. `oneclick/` is an independent ASR bootstrapper, not a desktop host.
+- **Dictation and rewrite have different delivery requirements.** Ordinary dictation should paste into common editors even if AX text/selection attributes are unavailable; do not apply rewrite-grade checks to it. Selected-text rewrite must verify the target and selection before replacement, otherwise preview instead of replacing blindly.
+- **Delivery is an OS boundary, not proof of insertion.** Preserve focus/epoch checks, clipboard ownership and restoration, cancellation and necessary permissions. Do not retry a paste that may already have been delivered; distinguish ASR success, event sent and confirmed editor insertion. Avoid speculative security gates that obstruct working input.
 
-## Simplicity and deletion
+## Simplicity and final-state design
 
-- **Equivalent behavior should use fewer readable production lines and shorter call chains.** Prefer direct logic over wrappers, redundant state, interfaces and managers. Do not trade correctness, useful tests or readability for a LOC score.
-- Trace actual callers and end-to-end paths on **affected platforms** before editing. Find the real owner; delete superseded code and obsolete implementation-detail tests in the same change. Retain behavior-regression tests.
-- Measure production LOC before/after and total PR additions/deletions. Explain necessary growth with concrete behavior or evidence; do not call added layers an improvement by default.
+- **Equivalent behavior should take fewer readable production lines and shorter call chains.** Find the simplest direct algorithm; eliminate single-caller forwarding wrappers, mirrored state, dead paths, unused contracts and unnecessary Manager/Controller/Coordinator layers. Do not game LOC with dense one-liners, missing error handling or deleted meaningful tests.
+- **One decision, one owner.** Trace actual production callers end-to-end on each affected platform before refactoring. Sharing an import is not sharing a decision. Move portable logic to its existing Go owner and delete superseded branches, fields and obsolete implementation-detail tests **in the same PR**. Preserve behavior-regression tests and working Windows paths.
+- **No transitional architecture by default.** This project does not need compatibility for unused internal APIs or abandoned workflows. Prefer the clean final state; do not add speculative interfaces, controllers, state machines, bridge protocols or extra IPC. Keep real OS lifecycle and concurrency safeguards.
+- **Make code growth explicit.** Report production LOC before/after, total additions/deletions and ownership/call-chain simplification per PR. Prefer net deletion for equivalent behavior. Justify added lines with concrete behavior, correctness or test evidence; LOC is a metric, not a substitute for working software.
 
-## Continuous delivery
+## Continuous PR pipeline and verification
 
-1. Fix a concrete defect or make a small, independent deletion-first change. Avoid unrelated refactors and overlapping PR edits.
-2. While one PR waits for CI, develop the next **independent** PR. Stack only when dependencies require it; rebase or retarget as predecessors merge.
-3. Review the final diff and affected Windows/macOS paths; run relevant tests and required CI on the **exact head**. Never bypass failures. Separately identify physical-device acceptance gaps.
-4. Merge only verified work, check main CI, report PR/SHA and LOC delta, and continue to the next meaningful task. Stop cosmetic churn when nothing substantive remains.
+1. Fix a real defect or choose the smallest independent deletion-first refactor. Review adjacent PRs and actual callers; do not mix unrelated work.
+2. While PR A waits for CI, develop independent PR B on its own branch. Stack only for real dependencies, rebase/retarget as predecessors merge, and avoid overlapping changes or redundant CI.
+3. Review the **exact final diff and head SHA**, run relevant Go, Windows and macOS checks, and require passing CI before merge. Do not bypass failures. Separately record real-device gaps: physical microphone/side buttons, focus changes, clipboard, Unicode and insertion into third-party editors.
+4. Merge verified work, check main CI, report PR/SHA and LOC delta, then continue to the next meaningful task without waiting for another instruction. Stop cosmetic churn when only device acceptance remains.
 
-## Verification and documentation
+## CI, performance and documentation
 
-- Keep CI proportional to the change and avoid redundant or paid infrastructure without approval. Preserve relevant cross-platform, regression and release coverage.
-- Measure real user-visible latency and failures before claiming performance gains; label synthetic results honestly.
-- Keep docs concise and current. Put technical architecture, paths and test commands in `ARCHITECTURE.md` or their owning files, not here. Close issues only after their acceptance criteria are met.
+- Keep CI proportional to changes: standard GitHub-hosted runners, no paid infrastructure without approval, no redundant builds or excessive artifacts. Preserve meaningful Windows regressions, Go/race tests, both macOS architectures and release checks.
+- Measure trigger-to-indicator, recording readiness and release-to-visible-text latency (P50/P95/failures) before claiming performance gains. Synthetic CI is not a physical-device benchmark.
+- Keep README and architecture docs concise and current; put platform/API details and test commands in their owning docs/scripts, not here. Close issues only when their acceptance criteria are met.
