@@ -1,26 +1,15 @@
-# Cross-platform native UI acceptance (#84 / #73)
+# Native UI acceptance (current repository)
 
-The workflow `Cross-platform UI acceptance evidence` is a **test workflow**, separate from K's installer/release workflows. It builds real Windows Win32 and native macOS (Apple Silicon/Intel) views and retains screenshots and diagnostic logs. Existing `visual-matrix.yml`, `meeting-ui.yml`, `scripts/test-meeting-ui.ps1`, Swift Interaction and AppKit tests remain authoritative; this workflow reuses their renderers and meeting harness.
+Windows has native settings, result cards, status pill and Meeting. macOS is a minimal **Headless menu-bar app**: it has no Xcode workspace, settings window, Meeting or result-card screenshot matrix. Do not report cross-platform GUI screenshot parity.
 
-## Execute
+## Automated checks
 
-* On Windows with an interactive desktop: from `voice-rewrite/`, run `go build -trimpath -ldflags '-H=windowsgui' -o VoiceRewrite.exe .`, then from repo root run `pwsh -File scripts/capture-acceptance-windows.ps1` and `pwsh -File scripts/test-meeting-ui.ps1`. A disconnected/locked desktop may produce invalid screenshots.
-* On macOS run `VOICEREWRITE_ACCEPTANCE_PLATFORM=macos-arm64 VOICEREWRITE_ACCEPTANCE_DIR="$PWD/acceptance-output/macos-arm64" xcodebuild -project macos/VoiceRewrite.xcodeproj -scheme VoiceRewrite -configuration Debug -destination 'platform=macOS' -only-testing:VoiceRewriteTests/VisualAcceptanceTests -resultBundlePath /tmp/acceptance.xcresult test`. Set `macos-x64` for Intel. The Xcode suite attaches PNG evidence and writes a manifest; it does **not** start the microphone/Go model service or send text to external editors.
-* Generate review report: `python3 -m pip install Pillow`, then `python3 tests/acceptance/report.py acceptance-output/windows/manifest.json acceptance-output/macos-arm64/manifest.json acceptance-output/macos-x64/manifest.json --output acceptance-report --require-complete-matrix`. Run parser regressions: `python3 -m unittest discover -s tests/acceptance -v`.
-* Validate future real-device records: `python3 tests/acceptance/manual_matrix.py tests/acceptance/device-matrix.csv`.
+- **Windows:** the `Windows UI acceptance evidence (headless Mac excluded)` workflow (`.github/workflows/acceptance-evidence.yml`) builds the Win32 application, runs native popup/Meeting E2E, and saves screenshots/logs. On a Windows desktop, run `pwsh -File scripts/capture-acceptance-windows.ps1` and `pwsh -File scripts/test-meeting-ui.ps1` from the repository root.
+- **macOS arm64 and x86_64:** `.github/workflows/build.yml` calls `bash scripts/build-macos-headless.sh ARCH OUTPUT VERSION`, then compiles and executes `scripts/test-macos-focus.swift` appended to the real host source with `FOCUS_GUARD_TEST`. It checks Go C ABI linkage, synthetic focus/selection/shortcut events, configuration and compilation. It does **not** produce native GUI screenshot parity evidence.
+- **Historical report tools:** `tests/acceptance/report.py` and `manual_matrix.py` still accept their own input manifests, but do not imply that a current macOS Xcode screenshot suite exists.
 
-## Exact-state comparison contract
+## Physical acceptance remains open
 
-Every image is recorded with `state`, `fixture`, `theme`, `locale`, and `scale`. **All five must match** before side-by-side comparison. A renderer showing a different state is not a visual mismatch: it is missing evidence. Same-state reports contain normalized image diagnostics for reviewer investigation, never an automatic pixel parity pass. Review header/navigation/fields and font hierarchy, action roles, scaling, focus, viewport clipping, floating panel placement, six-pane splits, scroll-to-latest and color contrast. Different fonts, color profiles, native chrome and DPI need human interpretation.
+CI cannot certify a real mouse side button/keyboard hold, live microphone, third-party AX/UIA editor insertion, focus switching, multi-format clipboard contention, Unicode fallback, unsigned app installation or Meeting audio. Record actual device, OS/editor version, hardware/driver, observed result and redacted evidence. The `device-matrix.csv` examples are `not_run`, not passes; validate completed records with `python3 tests/acceptance/manual_matrix.py tests/acceptance/device-matrix.csv`.
 
-The initial capture set includes:
-* Windows — three settings pages in light/dark themes; preview, recording, processing, error and event-sent pill; copy-only result (light/dark); real Win32 Meeting demo full/focus/expanded/large text.
-* macOS ARM and Intel — all three settings pages in light/dark (at the same 860×530 viewport as the actual settings windows), the same five pill phases, copy-only, manually applicable, and long-scroll result cards (light/dark, with a synthetic non-writing Apply action), and populated Go Core offline Meeting full/focus/expanded/large-type views. Each architecture also captures an intentionally **unpaired** empty Meeting reader.
-* The CI report requires **21 specific matched states per Mac architecture, 42 pairs total**. Incomplete or mismatched manifests fail the evidence job; matched states remain **review-only** and do not prove visual parity.
-* **Not covered by the synthetic screenshots** — actual result-card manual replacement into a third-party editor, live audio and third-party editor delivery, native permission recovery and signed installation. Windows Meeting E2E exercises buttons, pane drags, font and scroll state; Swift Interaction tests exercise native clipboard and input decisions, not physical third-party insertion.
-
-## Release-gate matrix (#73)
-
-`device-matrix.csv` contains `not_run` examples only. A person operating the device must record the CPU, exact OS and target editor version, mouse model and driver, actual permission state, installer SHA256, action and witnessed outcome, and a redacted evidence reference. The validator rejects any `pass`, `fail` or `blocked` entry with missing facts, including an invalid 64-character SHA. Cover hardware Mouse4/Mouse5 short navigation and long holds (250ms on both hosts), R/E keyboard combinations, microphone permission and actual ASR, unicode/emoji, clipboard multi-format/ownership takeover, within-app and between-app focus, password/Secure Input, AX-denied browser textareas/contenteditable, Electron/VS Code, Zoom/Teams source/child-process audio and install/upgrade/restart with verified signatures and notarization.
-
-No CI runner establishes true mouse hardware, physical microphone, third-party editor injection, signed Finder installation or actual meeting audio. CI statuses must say **代码检查通过** or **模拟测试通过**, not `真机已验收` and never `284/284` without physical verification. Never upload real microphone audio, clipboard contents, API keys or private meeting transcripts.
+Never call a compile-only or synthetic run **device-accepted**. Do not upload raw microphone audio, selected text, clipboard contents, API keys or private meeting transcripts.
