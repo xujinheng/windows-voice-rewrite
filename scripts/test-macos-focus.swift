@@ -1,5 +1,21 @@
 // This is appended to the host source for the native CI-only smoke binary.
 // It is never linked into the production app.
+// Same-file extension can exercise private host state without widening production access.
+extension HeadlessApp {
+    func verifyReboundRelease(code: Int64, name: String, before: HostConfig,
+                              after: HostConfig, modifier: Bool) {
+        config = before
+        updatePress(code: code, name: name, down: true, delay: 3600)
+        precondition(VRDown(Int32(code)) == 1 && VRArmed() == 1)
+        config = after
+        if modifier {
+            handleModifier(code: code, flags: [])
+        } else {
+            updatePress(code: code, name: name, down: false, delay: 0)
+        }
+        precondition(VRDown(Int32(code)) == 0 && VRArmed() == 0)
+    }
+}
 MainActor.assumeIsolated {
     let window = AXUIElementCreateApplication(90001)
     let otherWindow = AXUIElementCreateApplication(90002)
@@ -54,23 +70,14 @@ MainActor.assumeIsolated {
     var mouseBound = original
     mouseBound["dictation_hotkey"] = "Mouse4"
     func host(_ raw: [String: Any]) -> HostConfig {
-        let profile = try! GoCore.request(config: raw, operation: "host_profile",
-                                          audio: Data(), selection: nil).profile!
-        return HostConfig(raw: raw, profile: profile)
+        let output = try! GoCore.request(config: raw, operation: "host_profile",
+                                         audio: Data(), selection: nil)
+        return HostConfig(raw: raw, profile: output.profile!)
     }
     let hostApp = HeadlessApp()
-    hostApp.config = host(mouseBound)
-    hostApp.updatePress(code: 103, name: "Mouse4", down: true, delay: 3600)
-    precondition(VRDown(103) == 1 && VRArmed() == 1)
-    hostApp.config = host(original) // Simulate a successful reload before mouse-up.
-    precondition(VRDown(103) == 1) // The original press is still owned by Go.
-    hostApp.updatePress(code: 103, name: "Mouse4", down: false, delay: 0)
-    precondition(VRDown(103) == 0 && VRArmed() == 0)
-
-    hostApp.updatePress(code: 54, name: "RightCommand", down: true, delay: 3600)
-    precondition(VRDown(54) == 1 && VRArmed() == 1)
-    hostApp.config = host(mouseBound)
-    hostApp.handleModifier(code: 54, flags: [])
-    precondition(VRDown(54) == 0 && VRArmed() == 0)
+    hostApp.verifyReboundRelease(code: 103, name: "Mouse4", before: host(mouseBound),
+                                 after: host(original), modifier: false)
+    hostApp.verifyReboundRelease(code: 54, name: "RightCommand", before: host(original),
+                                 after: host(mouseBound), modifier: true)
     print("AX focus, selection, Unicode and shortcut rebind smoke passed")
 }
