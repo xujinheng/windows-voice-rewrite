@@ -14,11 +14,11 @@ import (
 	"time"
 	"unsafe"
 
-	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/clipboard"
-	"voicerewrite/internal/core/ux"
+	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/session"
+	"voicerewrite/internal/core/ux"
 )
 
 var nativeEpoch session.Epoch
