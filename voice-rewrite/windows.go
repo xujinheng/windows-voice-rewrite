@@ -235,7 +235,10 @@ func (a *appState) fail(e error) {
 	}
 	a.logger.Printf("ERROR: %v", e)
 	a.lastErrorMu.Lock()
-	a.lastError = ux.Present(e)
+	a.lastError = e.Error()
+	if message, ok := ux.Classify(e); ok {
+		a.lastError = message
+	}
 	a.lastErrorMu.Unlock()
 	a.setStatus(trayError) // nonmodal; available via tray's last-error command
 }

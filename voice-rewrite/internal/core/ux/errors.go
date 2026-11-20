@@ -55,7 +55,7 @@ func fixedRecovery(message string) (string, bool) {
 	switch message {
 	case NoSpeech, EmptyRecording, RecordingTooLong, BadASRResponse,
 		EmptySelection, EmptyInstruction, EmptyChoices, EmptyModelText,
-		DictationEmpty, SpokenCaptureInvalid, DictationTooShort, RewriteTooShort:
+		DictationEmpty, DictationTooShort, RewriteTooShort:
 		return message, true
 	}
 	rest, ok := strings.CutPrefix(message, "选中文字超过 ")
@@ -74,14 +74,3 @@ func fixedRecovery(message string) (string, bool) {
 	return message, true
 }
 
-// Present is the Windows host message: a catalog recovery string, or the
-// original error text when the failure is not classified.
-func Present(err error) string {
-	if message, ok := Classify(err); ok {
-		return message
-	}
-	if err == nil {
-		return ""
-	}
-	return err.Error()
-}
