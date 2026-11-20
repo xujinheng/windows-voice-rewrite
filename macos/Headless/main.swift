@@ -281,9 +281,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
     @objc private func copyResult() {
         guard let lastResult else { show("No result"); return }
-        let board = NSPasteboard.general
-        board.clearContents()
-        show(board.setString(lastResult, forType: .string) ? "Copied" : "Copy failed")
+        NSPasteboard.general.clearContents()
+        show(NSPasteboard.general.setString(lastResult, forType: .string) ? "Copied" : "Copy failed")
     }
     @objc private func quit() { VREpochCancel(); NSApp.terminate(nil) }
     private func show(_ text: String) { item.button?.title = text }
