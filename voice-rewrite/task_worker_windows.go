@@ -110,7 +110,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 	defer app.busy.Store(false)
 	defer func() {
 		if x := recover(); x != nil {
-			app.logger.Printf("voice worker panic: %v\\n%s", x, debug.Stack())
+			app.logger.Printf("voice worker panic: %v\n%s", x, debug.Stack())
 			app.fail(fmt.Errorf("录音处理线程发生错误：%v", x))
 			app.postHandyPhase(indicator.Error, generation)
 		}
@@ -157,7 +157,9 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 	}
 	if r.err != nil {
 		app.fail(r.err)
-		if task.dictation { app.postHandyPhase(indicator.Error, generation) }
+		if task.dictation {
+			app.postHandyPhase(indicator.Error, generation)
+		}
 		return
 	}
 	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/audio.PCMBytesPerSecond)
@@ -165,7 +167,9 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 	var afterASR func(string)
 	if !task.dictation {
 		afterASR = func(text string) {
-			if !app.epoch.Valid(generation) { return }
+			if !app.epoch.Valid(generation) {
+				return
+			}
 			app.logger.Printf("stage=asr ms=%d", time.Since(started).Milliseconds())
 			app.setStatus(trayRewriting)
 			app.postHandyPhase(indicator.Rewriting, generation)
@@ -178,7 +182,9 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 	}
 	if err != nil {
 		app.fail(err)
-		if task.dictation { app.postHandyPhase(indicator.Error, generation) }
+		if task.dictation {
+			app.postHandyPhase(indicator.Error, generation)
+		}
 		return
 	}
 
