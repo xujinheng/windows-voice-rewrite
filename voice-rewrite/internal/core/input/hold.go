@@ -29,59 +29,21 @@ const (
 	WindowsSideHold = 250 * time.Millisecond
 )
 
-// Hold is one physical button's press, hold, and release.
-// A late timer carries the old token and cannot start a newer press.
-type Hold struct {
-	down   bool
-	active bool
-	token  uint64
+// Holds is the sole cross-platform owner of physical key press generations.
+// OS adapters handle hooks and timers, never another business hold state.
+type keyState struct {
+	down, active bool
+	token uint64
 }
 
-func (s *Hold) Down() bool { return s.down }
-
-func (s *Hold) Press() (uint64, bool) {
-	if s.down {
-		return s.token, false
-	}
-	s.token++
-	s.down = true
-	s.active = false
-	return s.token, true
-}
-
-func (s *Hold) CanActivate(token uint64) bool {
-	return s.down && !s.active && s.token == token
-}
-
-func (s *Hold) Activate(token uint64) bool {
-	if !s.CanActivate(token) {
-		return false
-	}
-	s.active = true
-	return true
-}
-
-func (s *Hold) Release() (wasHeld, active bool) {
-	if !s.down {
-		return false, false
-	}
-	active = s.active
-	s.down = false
-	s.active = false
-	s.token++
-	return true, active
-}
-
-// Holds gives both native hosts one exclusive physical-key owner. The per-key
-// generation prevents delayed activation from resurrecting a released press.
 type Holds struct {
-	keys  []Hold
+	keys []keyState
 	owner int
 }
 
-func NewHolds(count int) Holds { return Holds{keys: make([]Hold, count)} }
+func NewHolds(count int) Holds { return Holds{keys: make([]keyState, count)} }
 
-func (s *Holds) key(code int) *Hold {
+func (s *Holds) key(code int) *keyState {
 	if code <= 0 || code >= len(s.keys) {
 		return nil
 	}
@@ -90,30 +52,31 @@ func (s *Holds) key(code int) *Hold {
 
 func (s *Holds) Down(code int) bool {
 	h := s.key(code)
-	return h != nil && h.Down()
+	return h != nil && h.down
 }
 
 func (s *Holds) Press(code int, busy bool) uint64 {
 	h := s.key(code)
-	if h == nil || busy || s.owner != 0 {
+	if h == nil || h.down || busy || s.owner != 0 {
 		return 0
 	}
-	token, ok := h.Press()
-	if !ok {
-		return 0
-	}
+	h.token++
+	h.down, h.active = true, false
 	s.owner = code
-	return token
+	return h.token
 }
 
 func (s *Holds) CanActivate(code int, token uint64) bool {
 	h := s.key(code)
-	return h != nil && s.owner == code && h.CanActivate(token)
+	return h != nil && s.owner == code && h.down && !h.active && h.token == token
 }
 
 func (s *Holds) Activate(code int, token uint64) bool {
-	h := s.key(code)
-	return h != nil && s.owner == code && h.Activate(token)
+	if !s.CanActivate(code, token) {
+		return false
+	}
+	s.keys[code].active = true
+	return true
 }
 
 func (s *Holds) Release(code int) (held, active, primary bool) {
@@ -121,21 +84,29 @@ func (s *Holds) Release(code int) (held, active, primary bool) {
 	if h == nil {
 		return false, false, false
 	}
-	held, active = h.Release()
 	primary = s.owner == code
 	if primary {
 		s.owner = 0
 	}
-	return
+	if !h.down {
+		return false, false, primary
+	}
+	active = h.active
+	h.down, h.active = false, false
+	h.token++
+	return true, active, primary
 }
 
-func (s *Holds) Abandon()    { s.owner = 0 }
+func (s *Holds) Abandon() { s.owner = 0 }
 func (s *Holds) Armed() bool { return s.owner != 0 }
 
 // Cancel invalidates every late timer without resetting its generation.
 func (s *Holds) Cancel() {
 	s.owner = 0
 	for i := range s.keys {
-		s.keys[i].Release()
+		if s.keys[i].down {
+			s.keys[i].down, s.keys[i].active = false, false
+			s.keys[i].token++
+		}
 	}
 }

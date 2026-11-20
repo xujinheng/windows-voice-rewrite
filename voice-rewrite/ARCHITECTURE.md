@@ -20,7 +20,7 @@ AppKit panel and status-menu drawing. It links Go `cmd/voicebridge` as a Darwin
 `VoiceCore.h`. It does not start a Go helper, exchange audio-frame IPC, or
 implement a second voice-policy state machine.
 
-On macOS, physical shortcut events call Go `input.Hold`, task generations and
+On macOS, physical shortcut events call Go `input.Holds`, task generations and
 provider cancellation call Go `session.Epoch`, and each waveform/spinner/clock
 frame calls Go `indicator` through the in-process ABI. Swift performs the OS
 operations and draws the returned pixels. The macOS bridge and the single Windows recording worker call the same `voice.Run`,

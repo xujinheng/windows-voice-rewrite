@@ -17,53 +17,6 @@ func TestWindowsSideHoldDuration(t *testing.T) {
 	}
 }
 
-func TestHoldShortPressDoesNotActivate(t *testing.T) {
-	var s Hold
-	token, ok := s.Press()
-	if !ok || !s.CanActivate(token) {
-		t.Fatal("initial press must begin pending hold")
-	}
-	if held, active := s.Release(); !held || active {
-		t.Fatalf("short release: held=%t active=%t", held, active)
-	}
-	if s.Activate(token) || s.CanActivate(token) {
-		t.Fatal("expired timer activated a released button")
-	}
-}
-
-func TestHoldLongPressStartsOnce(t *testing.T) {
-	var s Hold
-	token, ok := s.Press()
-	if !ok || !s.Activate(token) {
-		t.Fatal("hold must activate")
-	}
-	if s.CanActivate(token) || s.Activate(token) {
-		t.Fatal("hold activated more than once")
-	}
-	if held, active := s.Release(); !held || !active {
-		t.Fatalf("long release: held=%t active=%t", held, active)
-	}
-}
-
-func TestHoldDuplicateAndStaleEvents(t *testing.T) {
-	var s Hold
-	if held, _ := s.Release(); held {
-		t.Fatal("release without a press was handled")
-	}
-	first, _ := s.Press()
-	if second, ok := s.Press(); ok || first != second {
-		t.Fatal("duplicate down changed active press")
-	}
-	s.Release()
-	next, ok := s.Press()
-	if !ok || next == first || s.Activate(first) {
-		t.Fatal("old timer activated new press")
-	}
-	if !s.Activate(next) {
-		t.Fatal("current press did not activate")
-	}
-}
-
 func TestHoldsCrossPlatformExclusiveLifecycle(t *testing.T) {
 	s := NewHolds(105)
 	if s.Press(0, false) != 0 || s.Press(105, false) != 0 || s.Down(-1) {
@@ -79,8 +32,18 @@ func TestHoldsCrossPlatformExclusiveLifecycle(t *testing.T) {
 	if s.Press(61, false) != 0 || s.Down(61) {
 		t.Fatal("second key should pass through")
 	}
-	if s.CanActivate(61, a) || !s.Activate(54, a) {
+	if s.CanActivate(61, a) {
 		t.Fatal("wrong activation owner")
+	}
+	if held, active, primary := s.Release(54); !held || active || !primary {
+		t.Fatal("short click activated a task")
+	}
+	if s.Activate(54, a) {
+		t.Fatal("late timer activated a short click")
+	}
+	a = s.Press(54, false)
+	if a == 0 || !s.Activate(54, a) || s.Activate(54, a) {
+		t.Fatal("long press must activate exactly once")
 	}
 	if held, active, primary := s.Release(61); held || active || primary {
 		t.Fatal("phantom release")
