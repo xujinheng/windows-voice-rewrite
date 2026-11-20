@@ -56,8 +56,8 @@ func execute(args []string, output io.Writer) error {
 		selected = string(raw)
 	}
 	var core voice.Core
-	defer core.Shutdown()
-	result, err := core.Execute(core.Start(), cfg, pcm, selected, *rewrite, nil)
+	defer core.Apply(voice.Command{Kind: voice.CommandShutdown})
+	result, err := core.Execute(core.Apply(voice.Command{Kind: voice.CommandStart}).Token, cfg, pcm, selected, *rewrite, nil)
 	if err != nil {
 		return err
 	}
