@@ -162,12 +162,12 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 				mu.Unlock()
 				return 1
 			}
-			if buttons.Role(int(button)) == 0 && buttons.HeldRole(int(button)) == 0 {
+			if buttons.Snapshot(int(button), 0).Role == 0 && buttons.Snapshot(int(button), 0).HeldRole == 0 {
 				mu.Unlock()
 				return callNextMouseHook(hook, code, message, data)
 			}
 			if event == WM_XBUTTONDOWN || event == WM_XBUTTONDBLCLK {
-				if buttons.Down(int(button)) {
+				if buttons.Snapshot(int(button), 0).Down {
 					mu.Unlock()
 					return 1
 				}
@@ -175,7 +175,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 					mu.Unlock()
 					return callNextMouseHook(hook, code, message, data)
 				}
-				token := buttons.Press(int(button), false)
+				token := buttons.Apply(voice.Command{Kind: voice.CommandPress, Code: int(button), Busy: false}).Token
 				if token == 0 {
 					mu.Unlock()
 					return callNextMouseHook(hook, code, message, data)
@@ -183,18 +183,18 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 				// Start a local audio buffer at physical button-down. The hold
 				// timer only decides whether that buffer is used.
 				if ok, _, _ := procPostMessage.Call(hwnd, WM_SIDE_ARM, uintptr(button), 0); ok == 0 {
-					buttons.Release(int(button))
+					buttons.Apply(voice.Command{Kind: voice.CommandRelease, Code: int(button)}).Release
 					mu.Unlock()
 					return callNextMouseHook(hook, code, message, data)
 				}
 				timers[button] = time.AfterFunc(voice.SideHoldThreshold, func() {
 					mu.Lock()
 					defer mu.Unlock()
-					if closed || (paused != nil && paused.Load()) || !buttons.CanActivate(int(button), token) {
+					if closed || (paused != nil && paused.Load()) || !buttons.Snapshot(int(button), token).CanActivate {
 						return
 					}
 					if ok, _, _ := procPostMessage.Call(hwnd, WM_SIDE_DOWN, uintptr(button), 0); ok != 0 {
-						buttons.Activate(int(button), token)
+						(buttons.Apply(voice.Command{Kind: voice.CommandActivate, Code: int(button), Token: token}).Kind == voice.EventActivated)
 					}
 				})
 				mu.Unlock()
@@ -202,7 +202,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 			}
 			// A matching press was intercepted. Either finish the recording
 			// or replay the navigation click, never both.
-			action := buttons.Release(int(button))
+			action := buttons.Apply(voice.Command{Kind: voice.CommandRelease, Code: int(button)}).Release
 			if action == voice.ReleaseIgnored {
 				mu.Unlock()
 				return callNextMouseHook(hook, code, message, data)
