@@ -111,18 +111,25 @@ private final class Microphone {
         }
     }
 
-    func stop(discard: Bool = false) throws -> Data {
+    // Stop the native device immediately. The captured samples are immutable
+    // and may be converted on the existing inference worker, not the AppKit thread.
+    func stop(discard: Bool = false) throws -> (samples: [Float], rate: Double) {
         guard running else { throw HostError.microphone("not recording") }
         running = false
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
         lock.lock()
-        let captured = samples
+        let captured = discard ? [] : samples
         let rate = sampleRate
         samples = []
         rms = 0
         lock.unlock()
-        guard !discard, !captured.isEmpty else { return Data() }
+        return (captured, rate)
+    }
+
+    static func pcm(_ capture: (samples: [Float], rate: Double)) throws -> Data {
+        let captured = capture.samples, rate = capture.rate
+        guard !captured.isEmpty else { return Data() }
         // AVAudioConverter supplies quality resampling; never resample on the audio callback.
         guard let source = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate,
                                          channels: 1, interleaved: false),
@@ -410,16 +417,17 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let configValue = config.raw
         let token = taskID
         do {
-            let pcm = try microphone.stop()
+            let capture = try microphone.stop()
             if rewrite && !targetStillValid() { reset("Focus changed"); return }
             let selectedValue = rewrite ? selectionFromAX() : nil
             if rewrite && selectedValue == nil { reset("Select text"); return }
             if rewrite { pill.working(.processing); show(config.profile.pill.processingRewrite) }
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let result = Result {
-                    try GoCore.request(config: configValue,
-                                      rewrite: rewrite,
-                                      audio: pcm, selection: selectedValue?.text, token: token)
+                    let pcm = try Microphone.pcm(capture)
+                    return try GoCore.request(config: configValue,
+                                             rewrite: rewrite,
+                                             audio: pcm, selection: selectedValue?.text, token: token)
                 }
                 DispatchQueue.main.async {
                     guard let self, VREpochValid(token) == 1 else { return }
