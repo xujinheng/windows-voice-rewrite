@@ -55,8 +55,7 @@ func fixedRecovery(message string) (string, bool) {
 	switch message {
 	case NoSpeech, EmptyRecording, RecordingTooLong, BadASRResponse,
 		EmptySelection, EmptyInstruction, EmptyChoices, EmptyModelText,
-		DictationEmpty, SpokenCaptureInvalid, DictationTooShort, RewriteTooShort,
-		PasswordDictation, PasswordSelection, PasswordRewrite:
+		DictationEmpty, SpokenCaptureInvalid, DictationTooShort, RewriteTooShort:
 		return message, true
 	}
 	rest, ok := strings.CutPrefix(message, "选中文字超过 ")
