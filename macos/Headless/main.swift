@@ -238,6 +238,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         item.menu = menu
         pill.onCancel = { [weak self] in self?.cancelFromPill() }
         pill.onRecordingSecond = { [weak self] seconds in self?.show("● \(seconds)s") }
+        pill.prepare()
         let defaultPath = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/voicerewrite/config.json")
         configURL = ProcessInfo.processInfo.arguments.dropFirst().first.map {
