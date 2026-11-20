@@ -19,4 +19,3 @@ type meetingView struct {
 	capturePaused                      bool
 	metrics                            meetingMetrics
 }
-
