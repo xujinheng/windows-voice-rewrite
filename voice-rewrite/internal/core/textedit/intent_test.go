@@ -19,31 +19,31 @@ func TestIntentsRouting(t *testing.T) {
 		want                string
 	}{
 		{"改得简洁一点", "edit", "replace"},
-		{"这是什么意思？", "answer", "popup"},
-		{"为什么这样写？", "edit", "popup"},
-		{"总结这段话", "summarize", "popup"},
+		{"这是什么意思？", "answer", "preview"},
+		{"为什么这样写？", "edit", "preview"},
+		{"总结这段话", "summarize", "preview"},
 		{"翻译成中文", "translate", "replace"},
 		{"翻译成中文并替换原文", "edit", "replace"},
 		{"replace this with a shorter version", "edit", "replace"},
-		{"总结这段话", "edit", "popup"},
+		{"总结这段话", "edit", "preview"},
 		{"请写成英文", "translate", "replace"},
 		{"翻译成英文", "translate", "replace"},
-		{"英文是什么意思？", "answer", "popup"},
-		{"怎么用英文说？", "translate", "popup"},
+		{"英文是什么意思？", "answer", "preview"},
+		{"怎么用英文说？", "translate", "preview"},
 		{"把这句话改成英文", "edit", "replace"},
-		{"解释一下这个术语", "edit", "popup"},
+		{"解释一下这个术语", "edit", "preview"},
 		{"帮我润色一下", "edit", "replace"},
 		{"请写成英文", "answer", "replace"}, // conflicting model intent
 		{"改成英文", "ambiguous", "replace"},
-		{"这是什么意思", "answer", "popup"},
-		{"为什么会出现这个错误", "answer", "popup"},
+		{"这是什么意思", "answer", "preview"},
+		{"为什么会出现这个错误", "answer", "preview"},
 		{"帮我润色一下", "ambiguous", "replace"},
-		{"帮我", "edit", "popup"},
-		{"嗯", "translate", "popup"},
-		{"看一下", "edit", "popup"},
+		{"帮我", "edit", "preview"},
+		{"嗯", "translate", "preview"},
+		{"看一下", "edit", "preview"},
 	} {
 		got := RouteTask(AssistantResult{Intent: tc.intent, Result: "text"}, tc.instruction)
-		if got != Action(tc.want) {
+		if got != tc.want {
 			t.Errorf("%s intent=%s: got %s want %s", tc.instruction, tc.intent, got, tc.want)
 		}
 	}
@@ -110,7 +110,7 @@ func TestModelIntentAndInvalidResultsNeverAuthorizeWrite(t *testing.T) {
 		{"malformed preview", AssistantResult{Intent: "ambiguous", Result: "untrusted", PreviewOnly: true}, "润色一下"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if action := RouteTask(tc.result, tc.instruction); action != Popup {
+			if action := RouteTask(tc.result, tc.instruction); action != "preview" {
 				t.Fatalf("unauthorized action %s", action)
 			}
 		})
@@ -143,7 +143,7 @@ func TestCompleteSelectedTaskMalformedOutputs(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || !got.PreviewOnly || RouteTask(got, "润色一下") != Popup {
+			if err != nil || !got.PreviewOnly || RouteTask(got, "润色一下") != "preview" {
 				t.Fatalf("unsafe malformed response: %+v %v", got, err)
 			}
 		})
@@ -166,7 +166,7 @@ func TestResolveSelectedTaskCorrectsMisclassifiedEdit(t *testing.T) {
 	cfg.LLMBaseURL = server.URL
 	got, err := ResolveSelectedTask(context.Background(), cfg, "Original text", "make it shorter")
 	if err != nil || count != 2 || got.Result != "Shorter text" || got.Intent != "edit" ||
-		RouteTask(got, "make it shorter") != Replace {
+		RouteTask(got, "make it shorter") != "replace" {
 		t.Fatalf("result=%+v err=%v calls=%d", got, err, count)
 	}
 }

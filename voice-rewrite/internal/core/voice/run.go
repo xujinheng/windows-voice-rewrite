@@ -70,9 +70,5 @@ func Run(ctx context.Context, cfg coreconfig.Config, pcm []byte, selected string
 	if err != nil {
 		return Result{}, err
 	}
-	route := "preview"
-	if textedit.RouteTask(answer, instruction) == textedit.Replace {
-		route = "replace"
-	}
-	return Result{Text: answer.Result, Intent: answer.Intent, Instruction: instruction, Route: route}, nil
+	return Result{Text: answer.Result, Intent: answer.Intent, Instruction: instruction, Route: textedit.RouteTask(answer, instruction)}, nil
 }
