@@ -41,6 +41,11 @@ class ClassifyTests(unittest.TestCase):
             "ui": False, "direct2d": False,
         })
 
+    def test_independent_cli(self):
+        self.assertEqual(classify(["cli/main.go"]), {
+            "core": True, "macos": False, "windows": False,
+            "oneclick": False, "ui": False, "direct2d": False})
+
     def test_oneclick(self):
         self.assertEqual(classify(["oneclick/main.go"]), {
             "core": False, "macos": False, "windows": False, "oneclick": True, "ui": False, "direct2d": False})
