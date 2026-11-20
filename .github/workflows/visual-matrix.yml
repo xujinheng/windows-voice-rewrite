@@ -3,15 +3,16 @@ on:
   push:
     branches: [main]
     paths:
+      - 'core/settingsform/**'
+      - 'core/popup/**'
+      - 'core/indicator/**'
+      - 'core/desktop/**'
+      - 'core/contract/**'
+      - 'core/ux/**'
       - 'clients/windows/appearance_windows.go'
       - 'clients/windows/visual_skin_windows.go'
-      - 'clients/windows/settings_layout.go'
       - 'clients/windows/settings_direct2d_windows.go'
-      - 'clients/windows/settings_field_geometry.go'
-      - 'clients/windows/settings_field_geometry_test.go'
       - 'clients/windows/result_direct2d_windows.go'
-      - 'clients/windows/popup_layout.go'
-      - 'clients/windows/desktop_geometry.go'
       - 'clients/windows/desktop_monitor_windows.go'
       - 'clients/windows/settings_windows.go'
       - 'clients/windows/settings_direct2d_windows.go'

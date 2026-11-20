@@ -28,9 +28,9 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
-          cache-dependency-path: clients/go.mod
+          cache-dependency-path: core/go.mod
       - name: Repeat shared Go tests with race detection
-        working-directory: clients/windows
+        working-directory: core
         run: go test -race -count=3 -timeout 20m ./...
       - name: Validate portable Go Core boundaries
         run: |
@@ -59,8 +59,8 @@ jobs:
           test "$(uname -m)" = '${{ matrix.arch }}'
           bash scripts/build-macos-headless.sh '${{ matrix.arch }}' "$RUNNER_TEMP/headless"
       - name: Go bridge regression tests on macOS
-        working-directory: clients/windows
-        run: go test -race -count=1 ./cmd/voicebridge ./internal/core/...
+        working-directory: clients
+        run: go test -race -count=1 ./macos/bridge
   native-windows:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -92,7 +92,7 @@ jobs:
       - name: Build Win32 executable and capture Meeting UI
         shell: pwsh
         run: |
-          Push-Location voice-rewrite
+          Push-Location clients/windows
           try {
             go build -trimpath -ldflags '-H=windowsgui' -o VoiceRewrite.exe .
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

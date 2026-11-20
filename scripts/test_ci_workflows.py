@@ -71,5 +71,18 @@ class HeadlessWorkflowTests(unittest.TestCase):
         self.assertTrue((ROOT / "clients/macos/app/config.example.json").is_file())
         self.assertTrue((ROOT / "scripts/check_headless_scope.py").is_file())
 
+    def test_nightly_obeys_core_and_client_module_boundaries(self):
+        nightly = (WORKFLOWS / "nightly.yml").read_text()
+        self.assertIn("cache-dependency-path: core/go.mod", nightly)
+        self.assertIn("working-directory: core\n        run: go test -race -count=3", nightly)
+        self.assertIn("working-directory: clients\n        run: go test -race -count=1 ./macos/bridge", nightly)
+        self.assertIn("Push-Location clients/windows", nightly)
+        self.assertNotIn("cmd/voicebridge", nightly)
+        self.assertNotIn("internal/core", nightly)
+        self.assertNotIn("Push-Location voice-rewrite", nightly)
+        visual = (WORKFLOWS / "visual-matrix.yml").read_text()
+        for package in ("settingsform", "popup", "indicator", "desktop", "contract", "ux"):
+            self.assertIn(f"'core/{package}/**'", visual)
+
 if __name__ == "__main__":
     unittest.main()
