@@ -22,6 +22,7 @@ import (
 	"voicerewrite/internal/core/speech"
 	"voicerewrite/internal/core/textedit"
 	"voicerewrite/internal/core/ux"
+	"voicerewrite/internal/core/voice"
 )
 
 const (
@@ -198,44 +199,6 @@ func headlessProfile(req request) response {
 	}})
 }
 
-func decodeRequestPCM(req request, cfg coreconfig.Config) ([]byte, string) {
-	maxBytes := maxPCMBytes
-	if limit := cfg.MaxRecordSeconds * audio.PCMBytesPerSecond; limit > 0 && limit < maxBytes {
-		maxBytes = limit
-	}
-	var pcm []byte
-	if req.NativePCM != nil {
-		pcm = req.NativePCM
-	} else {
-		if len(req.PCMBase64) == 0 || len(req.PCMBase64) > base64.StdEncoding.EncodedLen(maxBytes) {
-			return nil, "invalid"
-		}
-		var err error
-		pcm, err = base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
-		if err != nil {
-			return nil, "invalid"
-		}
-	}
-	if len(pcm) == 0 || len(pcm)%2 != 0 || len(pcm) > maxBytes {
-		return nil, "invalid"
-	}
-	if audio.BelowMinCapture(pcm) {
-		return nil, "short"
-	}
-	return pcm, ""
-}
-
-func rejectPCM(id, op, reason string) response {
-	if reason == "short" {
-		message := ux.DictationTooShort
-		if op == "selected_voice_task" {
-			message = ux.RewriteTooShort
-		}
-		return failure(id, "invalid_pcm", message)
-	}
-	return failure(id, "invalid_pcm", "PCM must be 16 kHz mono PCM16, at least 0.1s and within duration limit")
-}
-
 func processRequest(ctx context.Context, req request) response {
 	trimmed := bytes.TrimSpace(req.Config)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
@@ -255,42 +218,45 @@ func processRequest(ctx context.Context, req request) response {
 	if err := ctx.Err(); err != nil {
 		return contextFailure(req.ID, err)
 	}
+
 	switch req.Op {
-	case "transcribe":
-		pcm, reason := decodeRequestPCM(req, cfg)
-		if reason != "" {
-			return rejectPCM(req.ID, req.Op, reason)
-		}
-		text, err := speech.Transcribe(ctx, cfg, pcm)
-		if err != nil {
-			return providerFailure(req.ID, "asr_failed", "speech transcription failed", err)
-		}
-		route := "preview"
-		if req.CanInsert {
-			route = "insert"
-		}
-		return success(req.ID, map[string]any{"text": text, "route": route})
-	case "selected_voice_task":
-		if len(req.SelectedText) == 0 || len(req.SelectedText) > maxSelectedBytes ||
-			!utf8.ValidString(req.SelectedText) || req.Instruction != "" {
+	case "transcribe", "selected_voice_task":
+		rewrite := req.Op == "selected_voice_task"
+		if rewrite && (len(req.SelectedText) == 0 || len(req.SelectedText) > maxSelectedBytes ||
+			!utf8.ValidString(req.SelectedText) || req.Instruction != "") {
 			return failure(req.ID, "invalid_request", "selected text or instruction exceeds limits")
 		}
-		pcm, reason := decodeRequestPCM(req, cfg)
-		if reason != "" {
-			return rejectPCM(req.ID, req.Op, reason)
+		// Decode transport framing here; all PCM business validation is in voice.Run.
+		pcm := req.NativePCM
+		if pcm == nil {
+			if len(req.PCMBase64) > base64.StdEncoding.EncodedLen(maxPCMBytes) {
+				return failure(req.ID, "invalid_pcm", "PCM exceeds size limit")
+			}
+			pcm, err = base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
+			if err != nil {
+				return failure(req.ID, "invalid_pcm", "invalid PCM base64")
+			}
 		}
-		result, instruction, err := textedit.ResolveSpokenTask(ctx, cfg, req.SelectedText, pcm, nil)
+		if len(pcm) > maxPCMBytes {
+			return failure(req.ID, "invalid_pcm", "PCM exceeds size limit")
+		}
+		outcome, err := voice.Run(ctx, cfg, pcm, req.SelectedText, rewrite, req.CanInsert, nil)
 		if err != nil {
-			return providerFailure(req.ID, "textedit_failed", "selected text processing failed", err)
+			var capture *voice.PCMError
+			if errors.As(err, &capture) {
+				return failure(req.ID, "invalid_pcm", capture.Error())
+			}
+			if rewrite {
+				return providerFailure(req.ID, "textedit_failed", "selected text processing failed", err)
+			}
+			return providerFailure(req.ID, "asr_failed", "speech transcription failed", err)
 		}
-		action := textedit.RouteTask(result, instruction)
-		route := "preview"
-		if action == textedit.Replace {
-			route = "replace"
+		if !rewrite {
+			return success(req.ID, map[string]any{"text": outcome.Text, "route": outcome.Route})
 		}
 		return success(req.ID, map[string]any{
-			"intent": result.Intent, "text": result.Result,
-			"route": route, "instruction": instruction,
+			"intent": outcome.Intent, "text": outcome.Text,
+			"route": outcome.Route, "instruction": outcome.Instruction,
 		})
 	}
 	return failure(req.ID, "unsupported_op", msgUnsupported)
