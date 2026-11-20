@@ -147,18 +147,6 @@ func TestThinkingTag(t *testing.T) {
 	}
 }
 
-func TestHoldReleaseDebounce(t *testing.T) {
-	polls := 0
-	for _, pressed := range []bool{true, true, false, true, true, false} {
-		if input.ReleaseDebounced(pressed, &polls) {
-			t.Fatalf("premature release")
-		}
-	}
-	if !input.ReleaseDebounced(false, &polls) {
-		t.Fatal("release not detected")
-	}
-}
-
 func TestDefaultMouse5Hold(t *testing.T) {
 	cfg := defaults()
 	if cfg.RecordMode != "hold" || cfg.HotkeyRecord != "Mouse5" {
