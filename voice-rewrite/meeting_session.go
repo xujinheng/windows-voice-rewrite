@@ -177,7 +177,7 @@ func (s *meetingSession) queueReplies(job meetingcore.CaptionTask) {
 	go func() {
 		defer cancel()
 		batch := meetingcore.ReplyBatch{Source: job.Latest}
-		err := s.Complete(ctx, meetingcore.PriorityReply, meetingcore.Query{Mode: "replies", Latest: job.Latest, Prior: job.Prior}, func(line meetingcore.Line) {
+		err := s.complete(ctx, meetingcore.PriorityReply, meetingcore.Query{Mode: "replies", Latest: job.Latest, Prior: job.Prior}, func(line meetingcore.Line) {
 			if !batch.Apply(line) {
 				return
 			}
@@ -238,7 +238,7 @@ func (s *meetingSession) refineReply(index int, instruction string) {
 	s.mu.Unlock()
 	go func() {
 		defer cancel()
-		err := s.Complete(ctx, meetingcore.PriorityExpress, meetingcore.Query{Mode: "refine", SelectedReply: selected, UserPoints: instruction}, func(line meetingcore.Line) {
+		err := s.complete(ctx, meetingcore.PriorityExpress, meetingcore.Query{Mode: "refine", SelectedReply: selected, UserPoints: instruction}, func(line meetingcore.Line) {
 			s.applyExpression(epoch, serial, func() { s.view.expression = line; s.view.expressionStatus = "" })
 		})
 		if err != nil && ctx.Err() == nil {
@@ -277,7 +277,7 @@ func (s *meetingSession) start(source audio.FrameSource) {
 			return latest, err
 		},
 		Translate: func(ctx context.Context, job meetingcore.CaptionTask, emit func(string)) error {
-			return s.Complete(ctx, meetingcore.PriorityCaption, meetingcore.Query{Mode: "caption", Prior: job.Prior, Latest: job.Latest}, func(line meetingcore.Line) {
+			return s.complete(ctx, meetingcore.PriorityCaption, meetingcore.Query{Mode: "caption", Prior: job.Prior, Latest: job.Latest}, func(line meetingcore.Line) {
 				if line.Kind == "ZH" {
 					emit(line.Chinese)
 				}
