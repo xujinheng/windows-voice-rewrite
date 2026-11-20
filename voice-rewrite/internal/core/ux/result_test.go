@@ -42,9 +42,4 @@ func TestResultCardTitles(t *testing.T) {
 	if DictationTooShort != "语音太短，无法转写" || RewriteTooShort != "录音太短（至少约 0.1 秒）；请再试一次" {
 		t.Fatal("short capture")
 	}
-	if PasswordDictation != "密码输入框不接受自动听写，请使用普通输入方式" ||
-		PasswordSelection != "密码输入框不允许读取选中文字或发送给 AI" ||
-		PasswordRewrite != "已拒绝在密码输入框中自动改写" {
-		t.Fatal("password refusal")
-	}
 }

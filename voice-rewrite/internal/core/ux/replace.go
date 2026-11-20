@@ -19,24 +19,6 @@ const (
 	ReplaceRestoreFailed    = "已尝试粘贴，但剪贴板恢复失败"
 )
 
-// ReplaceInsertReady is the order of checks before a selection replacement reads the clipboard.
-// Later checks are not called after an earlier one fails.
-func ReplaceInsertReady(taskValid, keysReleased, windowOK, password func() bool) error {
-	if !taskValid() {
-		return errors.New(ReplaceExpired)
-	}
-	if !keysReleased() {
-		return errors.New(ReplaceReleaseKeys)
-	}
-	if !windowOK() {
-		return errors.New(ReplaceWindowSwitched)
-	}
-	if password() {
-		return errors.New(PasswordRewrite)
-	}
-	return nil
-}
-
 // ReplaceSelectionStillThere rejects a copy failure or a selection that no longer matches.
 func ReplaceSelectionStillThere(err error, actual, expected string) error {
 	if err != nil || actual != expected {

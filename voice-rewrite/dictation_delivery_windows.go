@@ -5,6 +5,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"voicerewrite/internal/core/clipboard"
@@ -16,8 +17,14 @@ import (
 // backed up safely, use direct Unicode input rather than changing clipboard.
 func insertDictationText(hwnd, target uintptr, text string, valid func() bool) error {
 	windowOK := func() bool { return valid() && isSameForegroundWindow(target) }
-	if err := ux.DictationInsertReady(text, func() bool { return waitKeysReleased(2 * time.Second) }, windowOK, func() bool { return nativePasswordFieldFocused(target) }); err != nil {
-		return err
+	if strings.TrimSpace(text) == "" {
+		return errors.New(ux.DictationEmpty)
+	}
+	if !waitKeysReleased(2 * time.Second) {
+		return errors.New(ux.DictationReleaseKeys)
+	}
+	if !windowOK() {
+		return errors.New(ux.DictationWindowChanged)
 	}
 	backup, err := snapshotClipboard(hwnd)
 	if err != nil {

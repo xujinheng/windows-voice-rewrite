@@ -17,6 +17,9 @@ import (
 )
 
 var (
+	ole32                      = syscall.NewLazyDLL("ole32.dll")
+	coInitializeEx             = ole32.NewProc("CoInitializeEx")
+	coUninitialize             = ole32.NewProc("CoUninitialize")
 	activateMeetingAudio       = syscall.NewLazyDLL("Mmdevapi.dll").NewProc("ActivateAudioInterfaceAsync")
 	createMeetingMarshaler     = ole32.NewProc("CoCreateFreeThreadedMarshaler")
 	createMeetingEvent         = kernel32.NewProc("CreateEventW")
@@ -35,6 +38,17 @@ var (
 		syscall.NewCallback(meetingActivateCompleted),
 	}
 )
+
+//go:uintptrescapes
+func comMethod(obj uintptr, index uintptr, args ...uintptr) uintptr {
+	vt := *(*uintptr)(unsafe.Pointer(obj))
+	fn := *(*uintptr)(unsafe.Pointer(vt + index*unsafe.Sizeof(uintptr(0))))
+	parameters := append([]uintptr{obj}, args...)
+	hr, _, _ := syscall.SyscallN(fn, parameters...)
+	return hr
+}
+
+func comFailed(hr uintptr) bool { return int32(hr) < 0 }
 
 type meetingActivationBlob struct {
 	kind, pid, mode uint32

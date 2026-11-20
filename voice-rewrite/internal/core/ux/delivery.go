@@ -1,11 +1,6 @@
 package ux
 
-import (
-	"errors"
-	"strings"
-
-	"voicerewrite/internal/core/indicator"
-)
+import "voicerewrite/internal/core/indicator"
 
 const (
 	PasteReceiptMinimumMilliseconds = 700
@@ -17,24 +12,6 @@ const (
 	// DictationRestoreFailed is the dictation clipboard restore failure. The replace path keeps its own sentence.
 	DictationRestoreFailed = "已触发粘贴，但剪贴板恢复失败"
 )
-
-// DictationInsertReady is the order of checks before a dictation paste changes the clipboard.
-// Later checks are not called after an earlier one fails.
-func DictationInsertReady(text string, keysReleased, windowOK, password func() bool) error {
-	if strings.TrimSpace(text) == "" {
-		return errors.New(DictationEmpty)
-	}
-	if !keysReleased() {
-		return errors.New(DictationReleaseKeys)
-	}
-	if !windowOK() {
-		return errors.New(DictationWindowChanged)
-	}
-	if password() {
-		return errors.New(PasswordDictation)
-	}
-	return nil
-}
 
 // Delivery is how a finished voice result meets the user.
 // A false SetPhase leaves the pill where the host already put it.
