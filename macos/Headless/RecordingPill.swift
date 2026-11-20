@@ -3,7 +3,7 @@ import AppKit
 // A native paint surface, not another voice-task state machine. Visual geometry,
 // colors, and timing match the retired 232x50/252x50 recording pill.
 enum PillAppearance {
-    case recording, selection, processing, rewriting, sent, error, fallback
+    case recording, selection, processing, rewriting, applying, sent, error, fallback
 }
 
 @MainActor
@@ -73,8 +73,6 @@ final class RecordingPill {
     func dismiss() {
         timer?.invalidate()
         timer = nil
-        terminalAt = nil
-        levelSource = { 0 }
         panel?.orderOut(nil)
     }
 
@@ -189,6 +187,7 @@ private final class PillSurface: NSView {
             case .selection: message = spec.selectionLabel
             case .processing: message = rewrite ? spec.processingRewrite : spec.processingDictation
             case .rewriting: message = spec.rewritingLabel
+            case .applying: message = spec.applyingLabel
             case .sent: message = spec.sentLabel
             case .error: message = spec.errorLabel
             case .fallback: message = spec.fallbackLabel
@@ -230,7 +229,7 @@ private final class PillSurface: NSView {
     private func drawMark() {
         guard let spec else { return }
         let color = accent
-        if phase == .selection || phase == .processing || phase == .rewriting {
+        if phase == .selection || phase == .processing || phase == .rewriting || phase == .applying {
             for index in 0..<spec.spinnerDots {
                 let dot = VRSpinner(Int32(index), tick)
                 let x = CGFloat(dot & 255)

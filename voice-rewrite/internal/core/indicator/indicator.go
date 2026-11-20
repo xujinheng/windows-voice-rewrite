@@ -211,6 +211,7 @@ func HostSpec() map[string]any {
 		"processingRewrite":   Label(Processing, "改写"),
 		"selectionLabel":      Label(Selection, "改写"),
 		"rewritingLabel":      Label(Rewriting, "改写"),
+		"applyingLabel":       Label(Applying, "改写"),
 		"sentLabel":           Label(Success, "听写"), "errorLabel": Label(Error, "听写"),
 		"fallbackLabel": Label(Fallback, "听写"),
 	}
