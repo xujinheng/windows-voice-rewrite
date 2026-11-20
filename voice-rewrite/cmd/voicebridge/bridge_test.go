@@ -200,8 +200,12 @@ func TestBridgeTranscribedStageOnlyOnRewrite(t *testing.T) {
 func mustNativeConfig(t *testing.T, raw []byte) coreconfig.Config {
 	t.Helper()
 	cfg, err := coreconfig.Parse(raw)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	cfg, err = coreconfig.Normalize(cfg)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	return cfg
 }
