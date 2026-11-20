@@ -416,7 +416,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         pill.working(action == .dictation ? .processing : .selection)
         show(action == .dictation ? config.profile.pill.processingDictation : config.profile.pill.selectionLabel)
         let configValue = config.raw
-        let pid = targetPID
         let token = taskID
         do {
             let pcm = try microphone.stop()

@@ -2,16 +2,22 @@
 // It is never linked into the production app.
 // Same-file extension can exercise private host state without widening production access.
 extension HeadlessApp {
-    func verifyReboundRelease(code: Int64, name: String, before: HostConfig,
+    func verifyReboundRelease(code: Int64, before: HostConfig,
                               after: HostConfig, modifier: Bool) {
         config = before
-        updatePress(code: code, name: name, down: true, delay: 3600)
+        _ = try! GoCore.request(config: before.raw, operation: "host_profile",
+                               audio: Data(), selection: nil)
+        precondition(VRAction(Int32(code)) != 0)
+        updatePress(code: code, down: true, delay: 3600)
         precondition(VRDown(Int32(code)) == 1 && VRArmed() == 1)
         config = after
+        _ = try! GoCore.request(config: after.raw, operation: "host_profile",
+                               audio: Data(), selection: nil)
+        precondition(VRAction(Int32(code)) == 0)
         if modifier {
             handleModifier(code: code, flags: [])
         } else {
-            updatePress(code: code, name: name, down: false, delay: 0)
+            updatePress(code: code, down: false, delay: 0)
         }
         precondition(VRDown(Int32(code)) == 0 && VRArmed() == 0)
     }
@@ -96,9 +102,9 @@ MainActor.assumeIsolated {
         return HostConfig(raw: json, profile: output.profile!)
     }
     let hostApp = HeadlessApp()
-    hostApp.verifyReboundRelease(code: 103, name: "Mouse4", before: host(mouseBound),
+    hostApp.verifyReboundRelease(code: 103, before: host(mouseBound),
                                  after: host(original), modifier: false)
-    hostApp.verifyReboundRelease(code: 54, name: "RightCommand", before: host(original),
+    hostApp.verifyReboundRelease(code: 54, before: host(original),
                                  after: host(mouseBound), modifier: true)
     hostApp.verifyPillCancelLifecycle()
     hostApp.verifyPressTargetSurvivesDelayedActivation()
