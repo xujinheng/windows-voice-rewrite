@@ -56,14 +56,6 @@ private struct HostProfile: Decodable {
 private struct HostConfig {
     let raw: String
     let profile: HostProfile
-
-    static func load(_ url: URL) throws -> HostConfig {
-        let json = try String(contentsOf: url, encoding: .utf8)
-        guard let profile = try GoCore.request(config: json, operation: "host_profile",
-                                               audio: Data(), selection: nil).profile
-        else { throw HostError.config("missing Go host profile") }
-        return HostConfig(raw: json, profile: profile)
-    }
 }
 
 private final class Microphone {
@@ -246,7 +238,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         item.menu = menu
         pill.onCancel = { [weak self] in self?.cancelFromPill() }
         pill.onRecordingSecond = { [weak self] seconds in self?.show("● \(seconds)s") }
-        pill.prepare()
         let defaultPath = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/voicerewrite/config.json")
         configURL = ProcessInfo.processInfo.arguments.dropFirst().first.map {
@@ -267,8 +258,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     @objc private func reload() {
         guard activeAction == nil && !pending else { show("Reload after current task"); return }
         do {
-            config = try HostConfig.load(configURL)
-            pill.configure(config.profile.pill)
+            let json = try String(contentsOf: configURL, encoding: .utf8)
+            guard let profile = try GoCore.request(config: json, operation: "host_profile",
+                                                   audio: Data(), selection: nil).profile
+            else { throw HostError.config("missing Go host profile") }
+            config = HostConfig(raw: json, profile: profile)
+            pill.configure(profile.pill)
             show("VR")
         } catch {
             show("Config error")

@@ -138,7 +138,6 @@ private final class PillSurface: NSView {
     var onCancel: (() -> Void)?
     private var hovered = false
 
-    override var isFlipped: Bool { false }
 
     private func rgb(_ components: [Int], alpha: CGFloat = 1) -> NSColor {
         NSColor(calibratedRed: CGFloat(components[0]) / 255,
