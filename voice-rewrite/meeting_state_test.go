@@ -158,12 +158,12 @@ func TestMeetingExpressionRemainsReadableWhileWorking(t *testing.T) {
 	if detail := meetingcore.ExpressionDetail("生成失败：超时", "印度有多少人会说英语"); !strings.Contains(detail, "超时") || !strings.Contains(detail, "印度") {
 		t.Fatalf("failure hid the recognized speech: %s", detail)
 	}
-	focusedCaptions, expanded := meetingcore.ExpressionFocus(true, true, true, false)
-	if focusedCaptions || !expanded {
+	copy, focusedCaptions, expanded, fresh, _ := meetingcore.ExpressionStep(true, "done", "previous", true, false, time.Time{}, time.Now())
+	if copy != "done" || !fresh || focusedCaptions || !expanded {
 		t.Fatal("completed English was hidden behind captions-only mode")
 	}
-	focusedCaptions, expanded = meetingcore.ExpressionFocus(true, false, true, false)
-	if !focusedCaptions || expanded {
+	_, focusedCaptions, expanded, fresh, _ = meetingcore.ExpressionStep(true, "done", "done", true, false, time.Time{}, time.Now())
+	if fresh || !focusedCaptions || expanded {
 		t.Fatal("a background refresh stole the user's caption focus")
 	}
 }
