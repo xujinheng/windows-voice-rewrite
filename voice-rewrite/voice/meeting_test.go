@@ -1,4 +1,4 @@
-package main
+package voice
 
 import (
 	"context"
@@ -7,20 +7,21 @@ import (
 	"testing"
 	"time"
 
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
 	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
 )
 
-func newTestMeetingCore() *meetingSession {
-	return newMeetingCore(defaults(), func(string, ...any) {}, func(Config) error { return nil })
+func newTestMeetingCore() *MeetingSession {
+	return NewMeetingSession(coreconfig.Defaults(), func(string, ...any) {}, func(coreconfig.Config) error { return nil })
 }
 
 func TestMeetingSettingsStoreFailureDoesNotMutateState(t *testing.T) {
-	original := defaults()
+	original := coreconfig.Defaults()
 	storeError := errors.New("disk full")
 	var notified bool
-	s := newMeetingCore(original, func(string, ...any) {}, func(Config) error { return storeError })
+	s := NewMeetingSession(original, func(string, ...any) {}, func(coreconfig.Config) error { return storeError })
 	defer s.runtime.Stop()
-	s.onConfig = func(Config) { notified = true }
+	s.onConfig = func(coreconfig.Config) { notified = true }
 	if err := s.updateProfile("new background", "new terms"); !errors.Is(err, storeError) {
 		t.Fatalf("save error = %v", err)
 	}
@@ -30,16 +31,16 @@ func TestMeetingSettingsStoreFailureDoesNotMutateState(t *testing.T) {
 }
 
 func TestMeetingSettingsUseInjectedStore(t *testing.T) {
-	var persisted Config
+	var persisted coreconfig.Config
 	var calls int
-	s := newMeetingCore(defaults(), func(string, ...any) {}, func(cfg Config) error {
+	s := NewMeetingSession(coreconfig.Defaults(), func(string, ...any) {}, func(cfg coreconfig.Config) error {
 		persisted = cfg
 		calls++
 		return nil
 	})
 	defer s.runtime.Stop()
-	var notified Config
-	s.onConfig = func(cfg Config) { notified = cfg }
+	var notified coreconfig.Config
+	s.onConfig = func(cfg coreconfig.Config) { notified = cfg }
 	if err := s.updateProfile("  project background  ", "  vocabulary  "); err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +54,7 @@ func TestMeetingSettingsUseInjectedStore(t *testing.T) {
 
 func TestMeetingProfileRejectsOverlongTextBeforeSave(t *testing.T) {
 	var calls int
-	s := newMeetingCore(defaults(), func(string, ...any) {}, func(Config) error {
+	s := NewMeetingSession(coreconfig.Defaults(), func(string, ...any) {}, func(coreconfig.Config) error {
 		calls++
 		return nil
 	})
@@ -72,7 +73,7 @@ func TestMeetingProfileRejectsOverlongTextBeforeSave(t *testing.T) {
 }
 
 func TestMeetingSettingsRejectMissingStore(t *testing.T) {
-	s := newMeetingCore(defaults(), func(string, ...any) {}, nil)
+	s := NewMeetingSession(coreconfig.Defaults(), func(string, ...any) {}, nil)
 	defer s.runtime.Stop()
 	if err := s.updateProfile("project", "terms"); err == nil {
 		t.Fatal("missing store silently accepted config update")
@@ -83,24 +84,24 @@ func TestMeetingHistoryIsNotDiscardedAfterTwelveTurns(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.runtime.Stop()
 	for id := uint64(1); id <= 30; id++ {
-		s.view.captions = meetingcore.UpsertCaption(s.view.captions, id, "test sentence", true, true)
+		s.view.Captions = meetingcore.UpsertCaption(s.view.Captions, id, "test sentence", true, true)
 	}
-	if len(s.view.captions) != 30 || s.view.captions[0].ID != 1 {
-		t.Fatalf("reader lost early captions: %#v", s.view.captions)
+	if len(s.view.Captions) != 30 || s.view.Captions[0].ID != 1 {
+		t.Fatalf("reader lost early captions: %#v", s.view.Captions)
 	}
 }
 
 func TestMeetingStreamingDoesNotClearTranslation(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.runtime.Stop()
-	s.view.captions = meetingcore.UpsertCaption(s.view.captions, 1, "the first phrase", false, true)
+	s.view.Captions = meetingcore.UpsertCaption(s.view.Captions, 1, "the first phrase", false, true)
 	s.updateCaption(1, 1, "the first phrase", "第一句")
-	s.view.captions = meetingcore.UpsertCaption(s.view.captions, 1, "the first phrase continues", false, false)
-	if len(s.view.captions) != 1 || s.view.captions[0].Chinese != "第一句" {
-		t.Fatalf("translation flickered away: %#v", s.view.captions)
+	s.view.Captions = meetingcore.UpsertCaption(s.view.Captions, 1, "the first phrase continues", false, false)
+	if len(s.view.Captions) != 1 || s.view.Captions[0].Chinese != "第一句" {
+		t.Fatalf("translation flickered away: %#v", s.view.Captions)
 	}
-	s.view.captions = meetingcore.UpsertCaption(s.view.captions, 1, "", false, false)
-	if s.view.captions[0].Source == "" {
+	s.view.Captions = meetingcore.UpsertCaption(s.view.Captions, 1, "", false, false)
+	if s.view.Captions[0].Source == "" {
 		t.Fatal("empty stream chunk erased readable transcript")
 	}
 }
@@ -113,8 +114,8 @@ func TestMeetingPauseInvalidatesOldWork(t *testing.T) {
 	if ctx.Err() == nil {
 		t.Fatal("capture/request context not canceled")
 	}
-	s.applyWork(epoch, func() { s.view.status = "stale" })
-	if s.view.status == "stale" {
+	s.applyWork(epoch, func() { s.view.Status = "stale" })
+	if s.view.Status == "stale" {
 		t.Fatal("stale work overwrote pause")
 	}
 	s.setCapturePaused(false)
@@ -140,22 +141,22 @@ func TestMeetingSerialInference(t *testing.T) {
 func TestMeetingPauseRemovesAbandonedLiveCaption(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.runtime.Stop()
-	s.view.captions = []meetingcore.Caption{{ID: 1, Source: "final", Final: true}, {ID: 2, Source: "unfinished", Live: "unfinished"}}
+	s.view.Captions = []meetingcore.Caption{{ID: 1, Source: "final", Final: true}, {ID: 2, Source: "unfinished", Live: "unfinished"}}
 	s.setCapturePaused(true)
 	s.setCapturePaused(false)
-	if len(s.view.captions) != 1 || !s.view.captions[0].Final {
-		t.Fatalf("abandoned live caption %#v", s.view.captions)
+	if len(s.view.Captions) != 1 || !s.view.Captions[0].Final {
+		t.Fatalf("abandoned live caption %#v", s.view.Captions)
 	}
 }
 
 func TestMeetingCancellationDiscardsUnfinishedLines(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.runtime.Stop()
-	s.view.reply.Displayed.Lines[0] = meetingcore.Line{English: "I would"}
-	s.view.reply.Displayed.Lines[1] = meetingcore.Line{English: "Could you clarify?", Chinese: "能解释吗", Complete: true}
-	s.view.expression = meetingcore.Line{English: "Partial"}
+	s.view.Reply.Displayed.Lines[0] = meetingcore.Line{English: "I would"}
+	s.view.Reply.Displayed.Lines[1] = meetingcore.Line{English: "Could you clarify?", Chinese: "能解释吗", Complete: true}
+	s.view.Expression = meetingcore.Line{English: "Partial"}
 	s.setCapturePaused(true)
-	if s.view.reply.Displayed.Lines[0].English != "" || s.view.reply.Displayed.Lines[1].English == "" || s.view.expression.English != "" {
+	if s.view.Reply.Displayed.Lines[0].English != "" || s.view.Reply.Displayed.Lines[1].English == "" || s.view.Expression.English != "" {
 		t.Fatal("unfinished output retained")
 	}
 }
@@ -174,9 +175,9 @@ func TestMeetingLatestExpressionWins(t *testing.T) {
 	if first.Err() == nil {
 		t.Fatal("old expression not canceled")
 	}
-	s.applyExpression(epoch, current, func() { s.view.expressionStatus = "latest" })
-	s.applyExpression(epoch, old, func() { s.view.expressionStatus = "stale" })
-	if s.view.expressionStatus != "latest" {
+	s.applyExpression(epoch, current, func() { s.view.ExpressionStatus = "latest" })
+	s.applyExpression(epoch, old, func() { s.view.ExpressionStatus = "stale" })
+	if s.view.ExpressionStatus != "latest" {
 		t.Fatal("old expression overwrote current")
 	}
 }

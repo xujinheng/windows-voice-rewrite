@@ -14,7 +14,7 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
 	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/speech"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
 )
 
 const (
@@ -102,116 +102,41 @@ var meetingEnumCallback = syscall.NewCallback(func(hwnd, statePtr uintptr) uintp
 	return 1
 })
 
+// Native Windows owns process selection, microphone and HUD painting only.
+// The complete Meeting transaction and its presentation state live in Go Core.
+type meetingSession = voice.MeetingSession
+type meetingView = voice.MeetingView
+type meetingMetrics = voice.MeetingMetrics
+
 func newMeetingSession(app *appState, demo bool) *meetingSession {
-	s := newMeetingCore(app.cfg, app.logger.Printf, saveConfig)
-	s.demo = demo
-	s.onConfig = func(cfg Config) { app.cfg = cfg }
+	s := voice.NewMeetingSession(app.cfg, app.logger.Printf, saveConfig)
+	s.SetDemo(demo)
+	s.SetOnConfig(func(cfg Config) { app.cfg = cfg })
 	return s
 }
 
-func (s *meetingSession) express(app *appState, rec *audioRecorder, generation uint64, mode string) {
+func expressMeeting(s *meetingSession, app *appState, rec *audioRecorder, generation uint64, mode string) {
 	defer app.busy.Store(false)
 	result := <-rec.result
-	if !app.core.Valid(generation) || s.runtime.Context().Err() != nil {
+	if !app.core.Valid(generation) || s.Context().Err() != nil {
 		return
 	}
-	s.mu.Lock()
-	ctx, cancel, epoch, serial := s.runtime.NewExpression(meetingcore.ExpressionTimeout)
-	s.mu.Unlock()
-	stop := context.AfterFunc(app.core.ContextFor(generation), cancel)
-	defer stop()
-	defer cancel()
-
-	label := meetingcore.ExpressionLabel(mode)
-	s.applyExpression(epoch, serial, func() {
-		// Keep the previous completed English available to read and copy
-		// while the next recognition/model request is running.
-		if !meetingcore.KeepFinishedEnglish(s.view.expression.Complete, s.view.expression.English) {
-			s.view.expression = meetingcore.Line{}
-		}
-		s.view.expressionSource = ""
-		s.view.expressionStatus = label
-	})
-	if label, detail, stop := meetingcore.ExpressCapture(result.err, audio.BelowMinCapture(result.pcm)); stop {
-		cause := result.err
-		if detail != "" {
-			cause = errors.New(detail)
-		}
-		s.expressionFailed(app, generation, epoch, serial, label, cause)
-		return
-	}
-
-	var points string
-	cfg := s.configSnapshot()
-	err := s.runInference(ctx, meetingcore.PriorityExpress, meetingcore.ExpressRecognizing, func(active context.Context) error {
-		var e error
-		points, e = speech.Transcribe(active, cfg, result.pcm)
-		return e
-	})
-	if !app.core.Valid(generation) || ctx.Err() != nil {
-		return
-	}
-	var detail string
-	var halted bool
-	label, detail, points, halted = meetingcore.ExpressTranscript(err, points)
-	if halted {
-		cause := err
-		if detail != "" {
-			cause = errors.New(detail)
-		}
-		s.expressionFailed(app, generation, epoch, serial, label, cause)
-		return
-	}
-	label = meetingcore.ExpressionLabel(mode)
-	s.applyExpression(epoch, serial, func() {
-		s.view.expressionSource = points
-		s.view.expressionStatus = label
-	})
-	var prior []string
-	if mode == "compose" {
-		s.mu.Lock()
-		prior = append([]string(nil), s.prior...)
-		s.mu.Unlock()
-	}
-	app.logger.Printf("meeting expression mode=%s recognized_chars=%d", mode, len([]rune(points)))
-	err = s.complete(ctx, meetingcore.PriorityExpress, meetingcore.Query{Mode: mode, Prior: prior, UserPoints: points}, func(line meetingcore.Line) {
-		if !app.core.Valid(generation) || line.Kind != "SAY" {
-			return
-		}
-		s.applyExpression(epoch, serial, func() {
-			s.view.expression = line
-			s.view.expressionStatus = ""
-		})
-	})
-	if !app.core.Valid(generation) || ctx.Err() != nil || s.runtime.Context().Err() != nil {
+	err := s.Express(app.core.ContextFor(generation), result.pcm, result.err, mode)
+	if !app.core.Valid(generation) || s.Context().Err() != nil || errors.Is(err, context.Canceled) {
 		return
 	}
 	if err != nil {
-		s.expressionFailed(app, generation, epoch, serial, meetingcore.ExpressGenerateFailed, err)
+		app.fail(err)
+		app.postHandyPhase(indicator.Error, generation)
 		return
 	}
 	app.setStatus(traySuccess)
 	app.postHandyPhase(indicator.Answer, generation)
 }
 
-func (s *meetingSession) expressionFailed(app *appState, generation, epoch, serial uint64, label string, cause error) {
-	if !app.core.Valid(generation) || s.runtime.Context().Err() != nil {
-		return
-	}
-	message := label + "：" + cause.Error()
-	s.applyExpression(epoch, serial, func() {
-		s.view.expressionStatus = message
-		if !meetingcore.KeepFinishedEnglish(s.view.expression.Complete, s.view.expression.English) {
-			s.view.expression = meetingcore.Line{}
-		}
-	})
-	app.fail(fmt.Errorf("%s: %w", label, cause))
-	app.postHandyPhase(indicator.Error, generation)
-}
-
 func (a *appState) closeMeeting() {
 	if a.meeting != nil {
-		a.meeting.runtime.Stop()
+		a.meeting.Stop()
 		a.meeting = nil
 	}
 	closeMeetingHUD()
@@ -220,20 +145,21 @@ func (a *appState) closeMeeting() {
 func (a *appState) beginMeeting(pid uint32, demo bool) {
 	a.closeMeeting()
 	s := newMeetingSession(a, demo)
-	s.view.status = "正在连接会议音频…"
-	s.view.asrMode = s.cfg.MeetingASRMode
-	s.view.sourceName = fmt.Sprintf("应用 PID %d", pid)
+	sourceName := fmt.Sprintf("应用 PID %d", pid)
 	for _, source := range runningMeetingSources() {
 		if source.pid == pid {
-			s.view.sourceName = source.name + " · " + source.title
+			sourceName = source.name + " · " + source.title
 			break
 		}
 	}
+	var demoView *meetingView
 	if demo {
-		s.view = demoMeeting()
+		view := demoMeeting()
+		demoView = &view
 	}
-	if err := showMeetingHUD(a.Window, s.view); err != nil {
-		s.runtime.Stop()
+	view := s.Initialize(sourceName, demoView)
+	if err := showMeetingHUD(a.Window, view); err != nil {
+		s.Stop()
 		a.fail(err)
 		return
 	}
@@ -241,7 +167,7 @@ func (a *appState) beginMeeting(pid uint32, demo bool) {
 	activeMeetingHUD.app = a
 	procSetTimer.Call(activeMeetingHUD.window, 1, 100, 0)
 	if !demo {
-		s.start(windowsProcessAudioSource{pid: pid})
+		s.Start(windowsProcessAudioSource{pid: pid})
 	}
 }
 
@@ -249,17 +175,10 @@ func (a *appState) refreshMeeting() {
 	if a.meeting == nil {
 		return
 	}
-	s := a.meeting
-	s.mu.Lock()
-	if !s.dirty {
-		s.mu.Unlock()
+	view, err, dirty := a.meeting.Refresh()
+	if !dirty {
 		return
 	}
-	s.dirty = false
-	err := s.captureErr
-	view := s.view
-	view.captions = append([]meetingcore.Caption(nil), view.captions...)
-	s.mu.Unlock()
 	if err != nil {
 		a.closeMeeting()
 		a.fail(fmt.Errorf("会议采集：%w", err))
@@ -267,5 +186,4 @@ func (a *appState) refreshMeeting() {
 		return
 	}
 	updateMeetingHUD(view)
-
 }

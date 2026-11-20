@@ -411,8 +411,8 @@ func updateMeetingHUD(view meetingView) {
 		return
 	}
 	p.latest = view
-	buttons := meetingcore.ButtonView{Paused: p.paused, CapturePaused: view.capturePaused, CaptionsOnly: p.captionsOnly, ExpressionExpanded: p.expressionExpanded, Pending: view.reply.PendingAvailable}
-	p.setText(p.status, meetingcore.StatusText(view.sourceName, view.status, view.metrics.Stage, view.metrics.Dropped, view.capturePaused, p.paused), false)
+	buttons := meetingcore.ButtonView{Paused: p.paused, CapturePaused: view.CapturePaused, CaptionsOnly: p.captionsOnly, ExpressionExpanded: p.expressionExpanded, Pending: view.Reply.PendingAvailable}
+	p.setText(p.status, meetingcore.StatusText(view.SourceName, view.Status, view.Metrics.Stage, view.Metrics.Dropped, view.CapturePaused, p.paused), false)
 	p.setText(p.buttons[0], meetingcore.ButtonFace(meetingcore.ButtonPause, buttons), false)
 	p.setText(p.buttons[7], meetingcore.ButtonFace(meetingcore.ButtonToggleCapture, buttons), false)
 	p.setText(p.buttons[1], meetingcore.ButtonFace(meetingcore.ButtonCaptions, buttons), false)
@@ -422,12 +422,12 @@ func updateMeetingHUD(view meetingView) {
 			meetingEnableWindow.Call(p.buttons[id-meetingcore.ButtonPause], meetingBool(p.owner != 0))
 		}
 	}
-	meetingEnableWindow.Call(p.buttons[12], meetingBool(meetingcore.AcceptEnabled(p.owner != 0, view.reply.PendingAvailable, p.paused)))
+	meetingEnableWindow.Call(p.buttons[12], meetingBool(meetingcore.AcceptEnabled(p.owner != 0, view.Reply.PendingAvailable, p.paused)))
 	p.setText(p.buttons[12], meetingcore.ButtonFace(meetingcore.ButtonAcceptReplies, buttons), false)
 	if p.paused {
 		return
 	}
-	panels := meetingcore.BuildReadingPanels(view.captions)
+	panels := meetingcore.BuildReadingPanels(view.Captions)
 	now := time.Now()
 	newTurn, paintTranscript := meetingcore.TranscriptStep(panels.CurrentID, p.currentID, panels.HistoryCount, p.historyCount, panels.Live, p.lastTranscript, now)
 	p.currentID = panels.CurrentID
@@ -454,10 +454,10 @@ func updateMeetingHUD(view meetingView) {
 		p.unreadHistory = 0
 	}
 	p.setText(p.labels[3], meetingcore.HistoryHeading(panels.HistoryCount, p.unreadHistory), false)
-	p.displayedReplies, p.displayedTip = view.reply.Displayed.Lines, view.reply.Displayed.Tip
+	p.displayedReplies, p.displayedTip = view.Reply.Displayed.Lines, view.Reply.Displayed.Tip
 	p.renderReply()
 	now = time.Now()
-	copy, captionsOnly, expanded, freshEnglish, paintExpression := meetingcore.ExpressionStep(view.expression.Complete, view.expression.English, p.copyExpression, p.captionsOnly, p.expressionExpanded, p.lastExpression, now)
+	copy, captionsOnly, expanded, freshEnglish, paintExpression := meetingcore.ExpressionStep(view.Expression.Complete, view.Expression.English, p.copyExpression, p.captionsOnly, p.expressionExpanded, p.lastExpression, now)
 	if captionsOnly != p.captionsOnly || expanded != p.expressionExpanded {
 		p.captionsOnly, p.expressionExpanded = captionsOnly, expanded
 		p.layout()
@@ -465,15 +465,15 @@ func updateMeetingHUD(view meetingView) {
 	// Show the last successful utterance while recognition or generation is
 	// underway. Transient status belongs below the result, not in its place.
 	p.copyExpression = copy
-	p.setText(p.labels[2], meetingcore.ExpressionHeading(view.expressionStatus, view.expression.Complete), false)
+	p.setText(p.labels[2], meetingcore.ExpressionHeading(view.ExpressionStatus, view.Expression.Complete), false)
 	if paintExpression {
-		p.setText(p.expression, meetingcore.ExpressionShown(view.expression.English), true)
+		p.setText(p.expression, meetingcore.ExpressionShown(view.Expression.English), true)
 		if freshEnglish {
 			procSendMessage.Call(p.expression, 0x0115, 6, 0) // WM_VSCROLL / SB_TOP
 		}
 		p.lastExpression = now
 	}
-	original := meetingcore.ExpressionDetail(view.expressionStatus, view.expressionSource)
+	original := meetingcore.ExpressionDetail(view.ExpressionStatus, view.ExpressionSource)
 	p.setText(p.expressionSource, original, true)
 	meetingEnableWindow.Call(p.buttons[5], meetingBool(p.copyExpression != ""))
 }
@@ -562,7 +562,7 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			if lParam != 0 {
 				item := (*drawItemStruct)(unsafe.Pointer(lParam))
 				if item.CtlID >= meetingcore.ButtonPause && item.CtlID <= meetingcore.ButtonExpression {
-					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(p.buttons[item.CtlID-meetingcore.ButtonPause]), meetingcore.ButtonPrimary(int(item.CtlID), p.latest.reply.PendingAvailable, p.expressionExpanded))
+					uiDrawActionButton(item, p.palette, p.labelFont, uxWinText(p.buttons[item.CtlID-meetingcore.ButtonPause]), meetingcore.ButtonPrimary(int(item.CtlID), p.latest.Reply.PendingAvailable, p.expressionExpanded))
 					return 1
 				}
 				if item.CtlID == meetingcore.ButtonSaveProfile || item.CtlID == meetingcore.ButtonCloseProfile {
@@ -636,11 +636,11 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				}
 			case meetingcore.EffectRequestReplies:
 				if session := p.session(); session != nil {
-					session.requestReplies()
+					session.RequestReplies()
 				}
 			case meetingcore.EffectToggleCapture:
 				if session := p.session(); session != nil {
-					session.setCapturePaused(!p.latest.capturePaused)
+					session.SetCapturePaused(!p.latest.CapturePaused)
 					p.app.refreshMeeting()
 				}
 			case meetingcore.EffectOpenProfile:
@@ -655,14 +655,14 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				updateMeetingHUD(p.latest)
 			case meetingcore.EffectAccept:
 				if session := p.session(); session != nil && !p.paused {
-					session.acceptPendingReplies()
+					session.AcceptPendingReplies()
 					p.app.refreshMeeting()
 				}
 			case meetingcore.EffectRefine:
 				reply := p.displayedReplies[p.selectedReply]
 				instruction := strings.TrimSpace(uxWinText(p.instruction))
 				if session := p.session(); session != nil && reply.Complete && instruction != "" && !p.paused {
-					session.refineReply(p.selectedReply, instruction)
+					session.RefineReply(p.selectedReply, instruction)
 				}
 			case meetingcore.EffectSaveProfile:
 				p.saveProfile()
@@ -722,9 +722,9 @@ func meetingHUDWindowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 func demoMeeting() meetingView {
 	demo := meetingcore.Sample()
 	return meetingView{
-		status: demo.Status, sourceName: demo.SourceName, asrMode: demo.ASRMode, level: demo.Level,
-		metrics:  meetingMetrics{Stage: demo.Stage, ASRFirstMS: demo.ASRFirstMS, ASRDoneMS: demo.ASRDoneMS, TranslationFirstMS: demo.TranslationFirstMS, TranslationDoneMS: demo.TranslationDoneMS},
-		captions: demo.Captions, reply: demo.Reply,
-		expression: meetingcore.Line{Kind: demo.Expression.Kind, English: demo.Expression.English, Chinese: demo.Expression.Chinese, Complete: demo.Expression.Complete},
+		Status: demo.Status, SourceName: demo.SourceName, ASRMode: demo.ASRMode, Level: demo.Level,
+		Metrics:  meetingMetrics{Stage: demo.Stage, ASRFirstMS: demo.ASRFirstMS, ASRDoneMS: demo.ASRDoneMS, TranslationFirstMS: demo.TranslationFirstMS, TranslationDoneMS: demo.TranslationDoneMS},
+		Captions: demo.Captions, Reply: demo.Reply,
+		Expression: meetingcore.Line{Kind: demo.Expression.Kind, English: demo.Expression.English, Chinese: demo.Expression.Chinese, Complete: demo.Expression.Complete},
 	}
 }
