@@ -2,6 +2,9 @@ import Foundation
 
 // Executed on both native macOS architectures against the actual Go C archive.
 // Validate hold/cancel/clock behavior first, then measure Swift -> Go costs.
+let profile = VRProfile("{}")
+precondition(profile != nil && VRAction(54) == 1 && VRAction(61) == 2 && VRAction(103) == 0)
+VRFree(profile)
 let first = VRPress(103, 0)
 precondition(first != 0)
 precondition(VRPress(104, 0) == 0)

@@ -48,7 +48,6 @@ struct PillSpec: Decodable {
 }
 
 private struct HostProfile: Decodable {
-    let dictation, rewrite: String
     let maximumSeconds, modifierDelayMS, mouseDelayMS, pasteRestoreMS: Int
     let pill: PillSpec
 }
@@ -318,11 +317,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     return Unmanaged.passUnretained(event)
                 }
                 if mouse == 3 || mouse == 4 {
-                    let name = mouse == 3 ? "Mouse4" : "Mouse5"
-                    if (type == .otherMouseDown && (name == app.config.profile.dictation ||
-                        name == app.config.profile.rewrite)) ||
+                    if (type == .otherMouseDown && VRAction(Int32(100 + mouse)) != 0) ||
                         (type == .otherMouseUp && VRDown(Int32(100 + mouse)) != 0) {
-                        app.updatePress(code: 100 + mouse, name: name,
+                        app.updatePress(code: 100 + mouse,
                                         down: type == .otherMouseDown,
                                         delay: Double(app.config.profile.mouseDelayMS) / 1000,
                                         cursor: event.location)
@@ -344,24 +341,24 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func handleModifier(code: Int64, flags: CGEventFlags) {
-        let (name, family): (String, CGEventFlags)
+        let family: CGEventFlags
         switch code {
-        case 54: (name, family) = ("RightCommand", .maskCommand)
-        case 61: (name, family) = ("RightOption", .maskAlternate)
+        case 54: family = .maskCommand
+        case 61: family = .maskAlternate
         default: return
         }
-        updatePress(code: code, name: name,
+        guard VRAction(Int32(code)) != 0 || VRDown(Int32(code)) != 0 else { return }
+        updatePress(code: code,
                     down: VRDown(Int32(code)) == 0 && flags.contains(family),
                     delay: Double(config.profile.modifierDelayMS) / 1000)
     }
-    private func updatePress(code: Int64, name: String, down: Bool, delay: TimeInterval,
+    private func updatePress(code: Int64, down: Bool, delay: TimeInterval,
                              cursor: CGPoint? = nil) {
         let key = Int32(code)
         if down {
-            guard name == config.profile.dictation || name == config.profile.rewrite else { return }
             let token = VRPress(key, pending ? 1 : 0)
             guard token != 0 else { return }
-            activeAction = name == config.profile.dictation ? .dictation : .rewrite
+            activeAction = VRAction(key) == 1 ? .dictation : .rewrite
             targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
             taskID = 0
             do { try microphone.start(maximumSeconds: config.profile.maximumSeconds) }

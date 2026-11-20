@@ -29,6 +29,17 @@ var nativeEpoch session.Epoch
 var nativeHolds = map[int]*input.Hold{}
 var nativeKey int
 
+// Bind physical Quartz codes to the two Go-validated voice roles.
+var nativeRole [105]uint8
+
+//export VRAction
+func VRAction(code C.int) C.int {
+	if code < 0 || int(code) >= len(nativeRole) {
+		return 0
+	}
+	return C.int(nativeRole[int(code)])
+}
+
 func nativeHold(code int) *input.Hold {
 	h := nativeHolds[code]
 	if h == nil {
@@ -171,7 +182,15 @@ func VRProfile(config *C.char) *C.char {
 	if config == nil {
 		return nil
 	}
-	return nativeJSON(headlessProfile(request{ID: "host", Config: json.RawMessage(C.GoString(config))}))
+	reply := headlessProfile(request{ID: "host", Config: json.RawMessage(C.GoString(config))})
+	if reply.OK {
+		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
+		codes := map[string]int{"RightCommand": 54, "RightOption": 61, "Mouse4": 103, "Mouse5": 104}
+		nativeRole = [105]uint8{}
+		nativeRole[codes[profile["dictation"].(string)]] = 1
+		nativeRole[codes[profile["rewrite"].(string)]] = 2
+	}
+	return nativeJSON(reply)
 }
 
 //export VRRun

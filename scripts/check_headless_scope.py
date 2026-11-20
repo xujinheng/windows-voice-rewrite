@@ -45,9 +45,12 @@ def main():
     if "-buildmode=c-archive" not in build_script or "VoiceCore.h" not in build_script:
         raise SystemExit("macOS must link in-process Go Core, not spawn a helper")
     swift = " ".join(p.read_text(encoding="utf-8") for p in swift_files)
-    for sym in ("VRPress(", "VRActivate(", "VRRelease(", "VREpochValid(", "VRWave(", "VRSpinner(", "VRLevel(", "VRDuration(", "VRRun("):
+    for sym in ("VRAction(", "VRPress(", "VRActivate(", "VRRelease(", "VREpochValid(", "VRWave(", "VRSpinner(", "VRLevel(", "VRDuration(", "VRRun("):
         if sym not in swift:
             raise SystemExit(f"native Swift host does not call Go Core directly: {sym}")
+    if any(token in swift for token in ("RightCommand", "RightOption", "Mouse4", "Mouse5",
+                                           "config.profile.dictation", "config.profile.rewrite")):
+        raise SystemExit("native host must get shortcut-to-mode decisions from Go")
     if "Process()" in swift or "voicebridge" in swift:
         raise SystemExit("macOS retains a separate Go bridge subprocess")
     if not required.issubset(imports):
@@ -59,10 +62,21 @@ def main():
     meeting = (ROOT / "voice-rewrite/meeting_session.go").read_text(encoding="utf-8")
     # Both *production entrypoints* must pass through the same task owner.
     # Provider-level calls alone could still leave two independent pipelines.
+    if any(token in bridge for token in ("func serve(", "func dispatch(", "func readFrame(", "PCMBase64")):
+        raise SystemExit("unshipped JSONL bridge reintroduced a second desktop transport")
     if "voicerewrite/internal/core/voice" not in imports or any(
         "voice.Run(" not in host for host in (bridge, windows)
     ):
         raise SystemExit("both hosts must invoke the same Go voice task")
+    # Native files may supply OS data and execute delivery, but cannot recreate
+    # ASR, model-intent or route decisions next to the shared production task.
+    for host in (bridge, windows):
+        if any(token in host for token in ("speech.Transcribe(", "textedit.ResolveSelectedTask(",
+                                           "textedit.RouteTask(", "textedit.Rewrite(")):
+            raise SystemExit("desktop host duplicates portable voice policy outside voice.Run")
+    if any(token in swift for token in ("URLSession", "URLRequest", "/v1/chat/completions",
+                                        "/v1/audio/transcriptions")):
+        raise SystemExit("Swift host implements provider business calls instead of calling Go")
     if "meetingcore.NewSessionRuntime()" not in meeting:
         raise SystemExit("Windows Meeting Core is not preserved")
     if any(token in bridge for token in ("meeting_start", "meeting_feed", "meeting_replies")):
