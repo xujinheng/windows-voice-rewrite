@@ -132,6 +132,19 @@ func FromKey(vk, modifiers uint32) (string, error) {
 	return strings.Join(append(parts, name), "+"), nil
 }
 
+// WindowsSideButton maps a stored shortcut to the XBUTTON id used by the mouse hook.
+// Mouse4 is XBUTTON1 (1) and Mouse5 is XBUTTON2 (2).
+func WindowsSideButton(s string) (uint16, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "mouse4", "xbutton1":
+		return 1, true
+	case "mouse5", "xbutton2":
+		return 2, true
+	default:
+		return 0, false
+	}
+}
+
 // Parse returns the canonical shortcut, modifier bits, virtual key, and whether
 // the value is a mouse side button. Keyboard modifiers include the no-repeat bit.
 func Parse(raw string) (string, uint32, uint32, bool, error) {
