@@ -497,7 +497,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
               CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
         let element = value as! AXUIElement
         var owner: pid_t = 0
-        // Never read an AX selection from a different process.
         guard AXUIElementGetPid(element, &owner) == .success, owner == targetPID else { return nil }
         return element
     }
@@ -576,7 +575,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let lease = board.changeCount
         down.flags = .maskCommand
         up.flags = .maskCommand
-        // Never paste clipboard content replaced by another app.
         guard board.changeCount == lease else { reset("Clipboard changed"); return }
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
