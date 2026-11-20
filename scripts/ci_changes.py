@@ -55,7 +55,7 @@ def classify(paths):
             elif path.startswith("voice-rewrite/internal/core/meeting/"):
                 # Headless macOS does not link Meeting.
                 scope.update(core=True, windows=True)
-            elif path.endswith(("_windows.go", "_windows_test.go")):
+            elif path == "voice-rewrite/windows.go" or path.endswith(("_windows.go", "_windows_test.go")):
                 scope["windows"] = True
             elif path.endswith(("_darwin.go", "_darwin_test.go", "_macos.go")):
                 scope["macos"] = True
