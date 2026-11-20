@@ -19,9 +19,9 @@ func TestCanceledVoiceWorkerReleasesBusy(t *testing.T) {
 		{selection: &selectedText{}}, // toggle selection captured before recording
 	} {
 		app := &appState{}
-		generation := app.core.Start()
+		generation := app.core.Apply(voice.Command{Kind: voice.CommandStart}).Token
 		app.busy.Store(true)
-		app.core.Start() // cancel before starting the worker
+		app.core.Apply(voice.Command{Kind: voice.CommandStart}).Token // cancel before starting the worker
 		rec := &audioRecorder{done: make(chan struct{})}
 		processRecording(app, rec, task, generation)
 		if app.busy.Load() {
