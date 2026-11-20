@@ -922,16 +922,19 @@ func runApp() {
 			}
 			continue
 		case HOTKEY_RECORD:
-			switch input.RewriteHotkeyAction(app.paused.Load(), app.busy.Load(), active != nil, cfg.RecordMode == "hold") {
-			case input.RewriteFinishToggle:
-				finish()
+			if app.paused.Load() || app.busy.Load() {
 				continue
-			case input.RewriteStartHold:
+			}
+			if active != nil {
+				if cfg.RecordMode != "hold" {
+					finish()
+				}
+				continue
+			}
+			if cfg.RecordMode == "hold" {
 				// Hold mode records immediately and does NOT touch the clipboard
 				// while the hotkey is physically held. Capture is performed on release.
 				startHold(false, selectedMouseButton)
-				continue
-			case input.RewriteIgnore:
 				continue
 			}
 			// Legacy toggle mode also prepares its selection on a worker.
