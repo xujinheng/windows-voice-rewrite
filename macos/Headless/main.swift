@@ -87,6 +87,7 @@ private final class Microphone {
         return rms
     }
     private(set) var running = false
+    private(set) var startedAt = Date()
 
     func start(maximumSeconds: Int) throws {
         guard !running else { throw HostError.microphone("already recording") }
@@ -123,6 +124,7 @@ private final class Microphone {
         do {
             engine.prepare()
             try engine.start()
+            startedAt = Date()
             running = true
         } catch {
             input.removeTap(onBus: 0)
@@ -336,8 +338,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             if type == .flagsChanged {
                 app.handleModifier(code: code, flags: event.flags)
             } else if type == .keyDown {
-                if VRArmed() != 0 && !app.microphone.running {
+                if VRArmed() != 0 && app.taskID == 0 {
                     VRAbandon()
+                    if app.microphone.running { _ = try? app.microphone.stop(discard: true) }
                     app.activeAction = nil
                 }
             } else if type == .otherMouseDown || type == .otherMouseUp {
@@ -390,6 +393,17 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             guard token != 0 else { return }
             activeAction = name == config.profile.dictation ? .dictation : .rewrite
             targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
+            taskID = 0
+            // Capture from physical down. A short click discards these samples
+            // and replays the native side-button action; a hold keeps pre-roll.
+            do {
+                try microphone.start(maximumSeconds: config.profile.maximumSeconds)
+            } catch {
+                VRAbandon()
+                reset("Mic error")
+                fputs("Microphone: \(error)\n", stderr)
+                return
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, VRActivate(key, token) == 1,
                       let action = self.activeAction else { return }
@@ -398,7 +412,11 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         } else {
             let outcome = VRRelease(key)
             if outcome == 2 && microphone.running { finish() }
-            else if outcome == 2 || outcome == 3 { activeAction = nil }
+            else if outcome == 3 {
+                // Short side-button click must not leave the audio engine running.
+                if microphone.running { _ = try? microphone.stop(discard: true) }
+                activeAction = nil
+            } else if outcome == 2 { activeAction = nil }
             if (outcome == 1 || outcome == 3), let cursor {
                 replayClick(button: code - 100, cursor: cursor)
             }
@@ -427,17 +445,15 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             guard let snapshot = selectionFromAX() else { reset("Select text"); return }
             selected = snapshot
         }
+        guard microphone.running else { reset("Mic error"); return }
         taskID = VREpochStart()
-        do {
-            try microphone.start(maximumSeconds: config.profile.maximumSeconds)
-            pill.recording(rewrite: action == .rewrite, started: Date(),
-                           meter: { [weak self] in self?.microphone.meterLevel ?? 0 })
-            let token = taskID
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.profile.maximumSeconds)) { [weak self] in
-                guard let self, VREpochValid(token) == 1, self.microphone.running else { return }
-                self.finish()
-            }
-        } catch { reset("Mic error"); fputs("Microphone: \(error)\n", stderr) }
+        pill.recording(rewrite: action == .rewrite, started: microphone.startedAt,
+                       meter: { [weak self] in self?.microphone.meterLevel ?? 0 })
+        let token = taskID
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.profile.maximumSeconds)) { [weak self] in
+            guard let self, VREpochValid(token) == 1, self.microphone.running else { return }
+            self.finish()
+        }
     }
     private func finish() {
         guard microphone.running, let action = activeAction else { return }
@@ -610,6 +626,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func reset(_ message: String, phase: PillAppearance = .error) {
+        if microphone.running { _ = try? microphone.stop(discard: true) }
         if pill.isVisible { pill.result(phase) }
         clearSession()
         show(message)
@@ -617,6 +634,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
 
     private func clearSession() {
         activeAction = nil
+        taskID = 0
         selected = nil
         targetFocus = nil
         pending = false
