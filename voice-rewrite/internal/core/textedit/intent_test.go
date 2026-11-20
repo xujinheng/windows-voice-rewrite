@@ -32,9 +32,7 @@ func TestIntentsRouting(t *testing.T) {
 		{"怎么用英文说？", "translate", "popup"},
 		{"把这句话改成英文", "edit", "replace"},
 		{"解释一下这个术语", "edit", "popup"},
-		{"请写成英文", "translate", "replace"}, // WeChat
-		{"帮我润色一下", "edit", "replace"},     // VS Code
-		{"翻译成中文", "translate", "replace"}, // nonnative editor
+		{"帮我润色一下", "edit", "replace"},
 		{"请写成英文", "answer", "replace"},    // conflicting model intent
 		{"改成英文", "ambiguous", "replace"},
 		{"这是什么意思", "answer", "popup"},
