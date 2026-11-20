@@ -129,7 +129,9 @@ func TestCompleteSelectedTaskMalformedOutputs(t *testing.T) {
 		{"empty", "<think>reasoning</think>", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
 				fmt.Fprintf(w, `{"choices":[{"message":{"content":%q}}]}`, tc.content)
 			}))
 			defer server.Close()
@@ -145,6 +147,10 @@ func TestCompleteSelectedTaskMalformedOutputs(t *testing.T) {
 			}
 			if err != nil || !got.PreviewOnly || RouteTask(got, "润色一下") != "preview" {
 				t.Fatalf("unsafe malformed response: %+v %v", got, err)
+			}
+			resolved, err := ResolveSelectedTask(context.Background(), cfg, "selected", "润色一下")
+			if err != nil || !resolved.PreviewOnly || RouteTask(resolved, "润色一下") != "preview" || calls != 2 {
+				t.Fatalf("preview was retried or authorized: %+v %v calls=%d", resolved, err, calls)
 			}
 		})
 	}

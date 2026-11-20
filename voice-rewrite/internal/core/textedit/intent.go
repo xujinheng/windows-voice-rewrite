@@ -139,7 +139,7 @@ func ResolveSelectedTask(ctx context.Context, cfg coreconfig.Config, selected, i
 	if err != nil {
 		return AssistantResult{}, err
 	}
-	if requestsTextChange(instruction) &&
+	if !result.PreviewOnly && requestsTextChange(instruction) &&
 		result.Intent != "edit" && result.Intent != "translate" {
 		replacement, rewriteErr := Rewrite(ctx, cfg, selected, instruction)
 		if rewriteErr != nil {
