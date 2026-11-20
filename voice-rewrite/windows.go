@@ -19,14 +19,13 @@ import (
 
 	"voicerewrite/internal/core/history"
 	"voicerewrite/internal/core/indicator"
-	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/logfile"
 	meetingcore "voicerewrite/internal/core/meeting"
-	"voicerewrite/internal/core/session"
 	"voicerewrite/internal/core/shortcut"
 	"voicerewrite/internal/core/textedit"
 	"voicerewrite/internal/core/update"
 	"voicerewrite/internal/core/ux"
+	"voicerewrite/internal/core/voice"
 )
 
 var buildID = "0.29.0-dev" // overwritten by -ldflags -X at build time
@@ -173,7 +172,7 @@ type appState struct {
 	logger      *log.Logger
 	cfg         Config
 	busy        atomic.Bool
-	epoch       session.Epoch
+	core        voice.Core
 	status      atomic.Int32
 	trayMu      sync.Mutex
 	tray        *trayIndicator
@@ -336,7 +335,7 @@ func runApp() {
 	}
 	defer procDestroyWindow.Call(hwnd)
 	app := &appState{Window: hwnd, logger: l, cfg: cfg, popups: make(chan popupMessage, 4), updateReady: make(chan update.Notice, 1)}
-	defer app.epoch.Shutdown()
+	defer app.core.Shutdown()
 	defer app.closeMeeting()
 	defer closeActiveAnswer()
 	defer closeNativeSettings()
@@ -487,7 +486,7 @@ func runApp() {
 		if app.meeting != nil && !app.meeting.demo {
 			holdMeeting = app.meeting
 		}
-		activeGeneration = app.epoch.Start()
+		activeGeneration = app.core.Start()
 		active = rec
 		watchRecordingLimit(hwnd, rec, activeGeneration, l)
 		app.setStatus(trayRecording)
@@ -506,7 +505,7 @@ func runApp() {
 			}
 			go watchHoldRelease(hwnd, vk, mods, uintptr(activeGeneration), holdWatch, watchLimit, l)
 		}
-		statusMode := input.HoldModeLabel(dictation, holdMeeting != nil)
+		statusMode := voice.HoldModeLabel(dictation, holdMeeting != nil)
 		// Promote the immediate mouse-down preview without recreating its HWND.
 		// Keyboard hold has no preview, so the promote call stays on the side-button path.
 		promoted := false
@@ -528,7 +527,7 @@ func runApp() {
 		}
 		win, _, _ := procGetForegroundWindow.Call()
 		if win == 0 {
-			app.fail(errors.New(input.NoTargetWindow))
+			app.fail(errors.New(voice.NoTargetWindow))
 			return
 		}
 		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
@@ -554,7 +553,7 @@ func runApp() {
 		// Paint the provisional status immediately. Recording starts at
 		// physical mouse-down, but only a 250ms hold activates voice mode.
 		// A short click closes this preview and replays browser navigation.
-		mode := input.HoldModeLabel(button == dictationButton, false)
+		mode := voice.HoldModeLabel(button == dictationButton, false)
 		showPendingHandyStatus(mode)
 		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
 		pendingSide = &sideCapture{button: button, targetWindow: win, recorder: rec, err: err}
@@ -619,7 +618,7 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_STATUS_UPDATE {
-			if app.epoch.Valid(uint64(msg.LParam)) && activeHandyStatus != nil && activeHandyStatus.owner == uint64(msg.LParam) {
+			if app.core.Valid(uint64(msg.LParam)) && activeHandyStatus != nil && activeHandyStatus.owner == uint64(msg.LParam) {
 				updateHandyStatus(indicator.Phase(msg.WParam))
 			}
 			continue
@@ -628,11 +627,11 @@ func runApp() {
 			status := activeHandyStatus
 			if status != nil && status.pending && msg.WParam == 0 {
 				discardPendingSide()
-			} else if status != nil && app.epoch.Valid(uint64(msg.WParam)) && status.owner == uint64(msg.WParam) {
+			} else if status != nil && app.core.Valid(uint64(msg.WParam)) && status.owner == uint64(msg.WParam) {
 				if indicator.Terminal(status.phase) {
 					closeHandyStatus() // close a completed status, not the answer card
 				} else {
-					app.epoch.Start() // cancel either Mouse4 or Mouse5 before paste
+					app.core.Start() // cancel either Mouse4 or Mouse5 before paste
 					if active != nil {
 						stopHoldWatch()
 						rec := active
@@ -667,7 +666,7 @@ func runApp() {
 		if msg.Message == WM_SHOW_ANSWER {
 			select {
 			case answer := <-app.popups:
-				if !app.epoch.Valid(answer.generation) {
+				if !app.core.Valid(answer.generation) {
 					l.Print("discarded stale popup result")
 					continue
 				}
@@ -684,7 +683,7 @@ func runApp() {
 		}
 		if msg.Message == WM_TOGGLE_READY {
 			result := <-toggleResult
-			if !app.epoch.Valid(result.generation) {
+			if !app.core.Valid(result.generation) {
 				// Canceled while the worker's ready message was queued:
 				// restore only our clipboard lease and release its busy flag.
 				finishTogglePrepare(app, hwnd, result.sel, result.rec, true, nil)
@@ -701,7 +700,7 @@ func runApp() {
 		}
 		if msg.Message == WM_TRAY_UPDATE {
 			state := trayState(app.status.Load())
-			if state == trayError && activeHandyStatus != nil && !indicator.Terminal(activeHandyStatus.phase) && app.epoch.Valid(activeHandyStatus.owner) {
+			if state == trayError && activeHandyStatus != nil && !indicator.Terminal(activeHandyStatus.phase) && app.core.Valid(activeHandyStatus.owner) {
 				updateHandyStatus(indicator.Error)
 			}
 			// Always run Shell_NotifyIconW on the thread that owns the tray window.
@@ -800,13 +799,13 @@ func runApp() {
 			if len(recent) == 0 {
 				winErr(history.EmptySession)
 			} else {
-				app.showAnswer(ux.HistoryRestoreTitle(recent[0].Title), recent[0].Text, currentCursorPoint(), nil, false, app.epoch.Current())
+				app.showAnswer(ux.HistoryRestoreTitle(recent[0].Title), recent[0].Text, currentCursorPoint(), nil, false, app.core.Current())
 			}
 			continue
 		}
 		if msg.Message == WM_TRAY_HISTORY_ITEM {
 			if entry, ok := app.history.Get(uint64(msg.WParam)); ok {
-				app.showAnswer(ux.HistoryRestoreTitle(entry.Title), entry.Text, currentCursorPoint(), nil, false, app.epoch.Current())
+				app.showAnswer(ux.HistoryRestoreTitle(entry.Title), entry.Text, currentCursorPoint(), nil, false, app.core.Current())
 			} else {
 				winErr(history.Cleared)
 			}
@@ -936,7 +935,7 @@ func runApp() {
 				continue
 			}
 			// Legacy toggle mode also prepares its selection on a worker.
-			generation := app.epoch.Start()
+			generation := app.core.Start()
 			app.busy.Store(true)
 			app.setStatus(trayTranscribing)
 			go func() {
@@ -959,7 +958,7 @@ func runApp() {
 					finishTogglePrepare(app, hwnd, sel, nil, true, err)
 					return
 				}
-				if !app.epoch.Valid(generation) {
+				if !app.core.Valid(generation) {
 					finishTogglePrepare(app, hwnd, sel, rec, true, nil)
 					return
 				}
@@ -968,7 +967,7 @@ func runApp() {
 					// The UI never received the ready notification. Withdraw the
 					// buffered result so a later toggle cannot block on a full channel.
 					<-toggleResult
-					finishTogglePrepare(app, hwnd, sel, rec, false, errors.New(input.ToggleUINotifyFailed))
+					finishTogglePrepare(app, hwnd, sel, rec, false, errors.New(voice.ToggleUINotifyFailed))
 				}
 			}()
 		}
