@@ -856,25 +856,19 @@ func runApp() {
 			l.Print("stopped via exit action")
 			return
 		}
-		if msg.Message == WM_HOLD_RELEASE {
-			if cfg.RecordMode == "hold" && active != nil && uint64(msg.WParam) == activeGeneration {
-				l.Print("hold key released; completing recording")
-				finish()
-			}
-			continue
-		}
-		if msg.Message == WM_RECORD_LIMIT {
-			if active != nil && uint64(msg.WParam) == activeGeneration {
-				l.Print("recording reached configured duration; submitting captured audio")
-				finish()
-			}
-			continue
-		}
-		if msg.Message == WM_HOLD_TIMEOUT {
-			if cfg.RecordMode == "hold" && active != nil && uint64(msg.WParam) == activeGeneration {
-				// The safety watcher is not proof that the mouse driver lost
-				// a release. Preserve the captured speech instead of discarding it.
-				l.Print("hold safety deadline reached; submitting available audio")
+		if msg.Message == WM_HOLD_RELEASE || msg.Message == WM_RECORD_LIMIT || msg.Message == WM_HOLD_TIMEOUT {
+			if active != nil && uint64(msg.WParam) == activeGeneration &&
+				(msg.Message == WM_RECORD_LIMIT || cfg.RecordMode == "hold") {
+				switch msg.Message {
+				case WM_HOLD_RELEASE:
+					l.Print("hold key released; completing recording")
+				case WM_RECORD_LIMIT:
+					l.Print("recording reached configured duration; submitting captured audio")
+				case WM_HOLD_TIMEOUT:
+					// A timeout is not proof that the mouse driver lost a release.
+					// Submit captured speech instead of discarding it.
+					l.Print("hold safety deadline reached; submitting available audio")
+				}
 				finish()
 			}
 			continue
