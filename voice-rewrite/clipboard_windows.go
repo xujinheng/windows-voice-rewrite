@@ -239,12 +239,14 @@ func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 // This remains a heuristic: it cannot prove an application's content changed.
 func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement string, cfg Config, verifyBrowser bool, valid func() bool) error {
 	taskValid := func() bool { return valid == nil || valid() }
-	if err := ux.ReplaceInsertReady(taskValid, func() bool { return waitKeysReleased(3 * time.Second) }, func() bool {
-		fg, _, _ := procGetForegroundWindow.Call()
-		windowValid, _, _ := procIsWindow.Call(sel.TargetWindow)
-		return windowValid != 0 && fg == sel.TargetWindow
-	}); err != nil {
-		return err
+	if !taskValid() {
+		return errors.New(ux.ReplaceExpired)
+	}
+	if !waitKeysReleased(3 * time.Second) {
+		return errors.New(ux.ReplaceReleaseKeys)
+	}
+	if !isSameForegroundWindow(sel.TargetWindow) {
+		return errors.New(ux.ReplaceWindowSwitched)
 	}
 
 	backup := sel.ClipboardBackup
