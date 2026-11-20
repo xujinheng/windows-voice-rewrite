@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Audit the actual headless dependency graph and prevent a second native business stack."""
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -10,8 +11,13 @@ def nonblank(path):
     return sum(bool(line.strip()) for line in path.read_text(encoding="utf-8").splitlines())
 
 def main():
+    # Always inspect the shipped Darwin C archive, including on Linux CI.
+    # Linux-only go list skips native_darwin.go and would count the deleted
+    # bridge main as if it were the production speech entrypoint.
+    go_env = {**os.environ, "GOOS": "darwin", "GOARCH": "arm64", "CGO_ENABLED": "1"}
     process = subprocess.run(["go", "list", "-deps", "-json", "./cmd/voicebridge"],
-                             cwd=ROOT / "voice-rewrite", text=True, capture_output=True, check=True)
+                             cwd=ROOT / "voice-rewrite", env=go_env,
+                             text=True, capture_output=True, check=True)
     decoder = json.JSONDecoder()
     idx, paths, imports = 0, set(), set()
     while idx < len(process.stdout):
