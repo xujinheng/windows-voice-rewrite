@@ -153,6 +153,11 @@ func VRProfile(config *C.char) *C.char {
 	}
 	reply := headlessProfile(json.RawMessage(C.GoString(config)))
 	if reply.OK {
+		// An abandoned hold still owns its physical key-up. Do not remap its
+		// logical slot before Quartz sends that release.
+		if nativeCore.Down(1) || nativeCore.Down(2) {
+			return nativeJSON(failure("busy", "release the shortcut before reloading"))
+		}
 		nativeConfig.Store(&reply.cfg)
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
 		nativeRole = [105]uint8{}
