@@ -32,10 +32,8 @@ func Run(ctx context.Context, cfg coreconfig.Config, pcm []byte, selected string
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	maxBytes := cfg.MaxRecordSeconds * audio.PCMBytesPerSecond
-	if maxBytes <= 0 || maxBytes > coreconfig.RecordSecondsMax*audio.PCMBytesPerSecond {
-		maxBytes = coreconfig.RecordSecondsMax * audio.PCMBytesPerSecond
-	}
+	// Both production hosts supply normalized config values.
+	maxBytes := min(cfg.MaxRecordSeconds, coreconfig.RecordSecondsMax) * audio.PCMBytesPerSecond
 	if len(pcm) == 0 || len(pcm)%2 != 0 || len(pcm) > maxBytes {
 		return Result{}, &PCMError{"PCM must be 16 kHz mono PCM16, at least 0.1s and within duration limit"}
 	}

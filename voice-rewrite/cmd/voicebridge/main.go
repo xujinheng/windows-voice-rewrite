@@ -199,25 +199,19 @@ func headlessProfile(req request) response {
 	}})
 }
 
-func decodeRequestPCM(req request, cfg coreconfig.Config) ([]byte, string) {
-	maxBytes := maxPCMBytes
-	if limit := cfg.MaxRecordSeconds * audio.PCMBytesPerSecond; limit > 0 && limit < maxBytes {
-		maxBytes = limit
-	}
-	var pcm []byte
+// JSONL/native framing and base64 only; voice.Run owns PCM policy for both hosts.
+func decodeRequestPCM(req request) ([]byte, string) {
 	if req.NativePCM != nil {
-		pcm = req.NativePCM
-	} else {
-		if len(req.PCMBase64) == 0 || len(req.PCMBase64) > base64.StdEncoding.EncodedLen(maxBytes) {
+		if len(req.NativePCM) > maxPCMBytes {
 			return nil, "invalid"
 		}
-		var err error
-		pcm, err = base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
-		if err != nil {
-			return nil, "invalid"
-		}
+		return req.NativePCM, ""
 	}
-	if len(pcm) == 0 || len(pcm)%2 != 0 || len(pcm) > maxBytes {
+	if len(req.PCMBase64) > base64.StdEncoding.EncodedLen(maxPCMBytes) {
+		return nil, "invalid"
+	}
+	pcm, err := base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
+	if err != nil {
 		return nil, "invalid"
 	}
 	return pcm, ""
@@ -250,7 +244,7 @@ func processRequest(ctx context.Context, req request) response {
 			!utf8.ValidString(req.SelectedText) || req.Instruction != "") {
 			return failure(req.ID, "invalid_request", "selected text or instruction exceeds limits")
 		}
-		pcm, reason := decodeRequestPCM(req, cfg)
+		pcm, reason := decodeRequestPCM(req)
 		if reason != "" {
 			return failure(req.ID, "invalid_pcm", "PCM must be 16 kHz mono PCM16, at least 0.1s and within duration limit")
 		}

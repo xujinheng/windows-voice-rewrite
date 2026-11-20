@@ -175,25 +175,26 @@ func TestInProcessEpochCancellationReachesProvider(t *testing.T) {
 
 func TestNativePCMUsesIdenticalGoValidation(t *testing.T) {
 	cfg := coreconfig.Config{MaxRecordSeconds: 30}
-	audio := make([]byte, 3200) // 100ms exactly, valid on both paths
-	raw, nativeReason := decodeRequestPCM(request{NativePCM: audio}, cfg)
-	encoded, jsonReason := decodeRequestPCM(request{PCMBase64: base64.StdEncoding.EncodeToString(audio)}, cfg)
+	pcm := make([]byte, 3200) // 100ms is valid
+	raw, nativeReason := decodeRequestPCM(request{NativePCM: pcm})
+	encoded, jsonReason := decodeRequestPCM(request{PCMBase64: base64.StdEncoding.EncodeToString(pcm)})
 	if nativeReason != "" || jsonReason != "" || !bytes.Equal(raw, encoded) {
-		t.Fatalf("native and JSONL capture paths differ: native=%q JSON=%q", nativeReason, jsonReason)
+		t.Fatalf("native/JSONL framing differs: native=%q JSON=%q", nativeReason, jsonReason)
 	}
-	for _, size := range []int{0, 1, 3201, 30*32000 + 2} {
-		pcm := make([]byte, size)
-		_, reason := decodeRequestPCM(request{NativePCM: pcm}, cfg)
-		if reason == "" {
-			t.Errorf("accepted invalid native PCM size %d", size)
+	// Both hosts pass their decoded bytes to exactly one shared PCM decision.
+	for _, size := range []int{0, 1, 3198, 3201, 30*32000 + 2} {
+		input, reason := decodeRequestPCM(request{NativePCM: make([]byte, size)})
+		if reason != "" {
+			t.Fatalf("decoder unexpectedly rejected %d bytes: %s", size, reason)
 		}
-	}
-	// The decoder owns framing and base64 only. Both production hosts use
-	// voice.Run for the 100ms minimum and the final PCM admission decision.
-	_, err := voice.Run(context.Background(), cfg, make([]byte, 3198), "", false, true, nil)
-	var capture *voice.PCMError
-	if !errors.As(err, &capture) || capture.Error() != ux.DictationTooShort {
-		t.Fatalf("shared Go task accepted a short recording: %v", err)
+		_, err := voice.Run(context.Background(), cfg, input, "", false, true, nil)
+		var capture *voice.PCMError
+		if !errors.As(err, &capture) {
+			t.Fatalf("shared task accepted invalid PCM length %d: %v", size, err)
+		}
+		if size == 3198 && capture.Error() != ux.DictationTooShort {
+			t.Fatalf("short recording message: %q", capture.Error())
+		}
 	}
 }
 
