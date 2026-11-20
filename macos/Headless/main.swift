@@ -381,6 +381,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             let token = VRPress(key, pending ? 1 : 0)
             guard token != 0 else { return }
             activeAction = name == config.profile.dictation ? .dictation : .rewrite
+            targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
+            let window = focusedWindow()
+            targetFocus = FocusIdentity(window: window, element: focusedElement(), title: window.flatMap(windowTitle))
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, VRActivate(key, token) == 1,
                       let action = self.activeAction else { return }
@@ -407,16 +410,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func begin(_ action: Action) {
-        targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
-        guard targetPID > 0 else { reset("No target"); return }
-        let window = focusedWindow(), element = focusedElement()
-        guard action == .dictation || (window != nil && element != nil) else {
-            reset("Target unavailable"); return
-        }
-        targetFocus = FocusIdentity(window: window, element: element,
-                                    title: window.flatMap(windowTitle))
+        guard sameTarget() else { reset("Focus changed"); return }
         selected = nil
         if action == .rewrite {
+            guard VRReady(0, 0, 1, sensitiveFocus() ? 1 : 0, 1) == 1 else {
+                reset("Secure target"); return
+            }
             guard let snapshot = selectionFromAX() else {
                 reset("Select text"); return
             }
@@ -442,7 +441,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         show(action == .dictation ? config.profile.pill.processingDictation : config.profile.pill.processingRewrite)
         let configValue = config.raw
         let selectedValue = selected
-        let pid = targetPID
         let token = taskID
         do {
             let pcm = try microphone.stop()
@@ -466,24 +464,35 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                         guard value.route == "replace" || (action == .dictation && value.route == "insert") else {
                             self.reset(self.config.profile.pill.fallbackLabel, phase: .fallback); return
                         }
-                        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else {
-                            self.reset("Focus changed"); return
-                        }
-                        let currentWindow = self.focusedWindow()
-                        guard let focus = self.targetFocus,
-                              focus.matches(window: currentWindow,
-                                            element: self.focusedElement(),
-                                            title: currentWindow.flatMap(self.windowTitle)) else {
-                            self.reset("Focus changed"); return
-                        }
-                        if action == .rewrite && selectedValue?.matches(self.selectionFromAX()) != true {
-                            self.reset("Selection changed"); return
+                        guard self.sameTarget() else { self.reset("Focus changed"); return }
+                        let selectionOK = action == .dictation || selectedValue?.matches(self.selectionFromAX()) == true
+                        guard VRReady(action == .dictation ? 1 : 2, token, 1,
+                                      self.sensitiveFocus() ? 1 : 0, selectionOK ? 1 : 0) == 1 else {
+                            self.reset("Unsafe target"); return
                         }
                         self.paste(text)
                     }
                 }
             }
         } catch { pending = false; reset("Audio error"); fputs("Audio: \(error)\n", stderr) }
+    }
+
+    private func sameTarget() -> Bool {
+        guard targetPID > 0, NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID,
+              let focus = targetFocus else { return false }
+        let window = focusedWindow()
+        return focus.matches(window: window, element: focusedElement(), title: window.flatMap(windowTitle))
+    }
+
+    private func sensitiveFocus() -> Bool {
+        guard let element = focusedElement() else { return true } // Unknown target: fail closed.
+        var role: CFTypeRef?, subrole: CFTypeRef?
+        _ = AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
+        _ = AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subrole)
+        return [role as? String, subrole as? String].contains {
+            ($0 ?? "").localizedCaseInsensitiveContains("secure") ||
+            ($0 ?? "").localizedCaseInsensitiveContains("password")
+        }
     }
 
     private func focusedWindow() -> AXUIElement? {
@@ -558,12 +567,16 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         }
         // NSPasteboardItem is not NSCopying; preserve each advertised data type.
         var saved: [NSPasteboardItem] = []
+        var total: Int64 = 0
         for item in originals ?? [] {
             let copy = NSPasteboardItem()
             for type in item.types {
-                guard let data = item.data(forType: type), copy.setData(data, forType: type) else {
+                guard let data = item.data(forType: type),
+                      VRClipboardFits(Int64(data.count), total) == 1,
+                      copy.setData(data, forType: type) else {
                     pasteUnicode(text); return
                 }
+                total += Int64(data.count)
             }
             saved.append(copy)
         }
@@ -594,7 +607,16 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
     private func pasteUnicode(_ text: String) {
         guard let events = unicodeKeyEvents(text) else { reset("Paste unavailable"); return }
-        events.forEach { $0.post(tap: .cghidEventTap) }
+        for (index, event) in events.enumerated() {
+            if index % 64 == 0 {
+                let selectionOK = selected?.matches(selectionFromAX()) ?? true
+                guard sameTarget(), VRReady(selected == nil ? 1 : 2, taskID, 1,
+                                             sensitiveFocus() ? 1 : 0, selectionOK ? 1 : 0) == 1 else {
+                    reset("Input stopped"); return
+                }
+            }
+            event.post(tap: .cghidEventTap)
+        }
         show(config.profile.pill.sentLabel)
         pill.result(.sent)
     }
