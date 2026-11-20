@@ -19,6 +19,8 @@ import (
 )
 
 const (
+	macDefaultDictation, macDefaultRewrite = "RightCommand", "RightOption"
+
 	maxPCMBytes      = audio.PCMBytesPerSecond * coreconfig.RecordSecondsMax
 	maxSelectedBytes = 1 << 20
 	msgCanceled      = "request canceled"
@@ -50,68 +52,21 @@ type response struct {
 // duplicate context checks; private provider errors and panics stay contained.
 func safeProcessRequest(ctx context.Context, req request) (reply response) {
 	reply = failure("internal_error", "request failed")
-	defer func() { _ = recover() }()
-	reply = processRequest(ctx, req)
-	if err := ctx.Err(); err != nil {
-		return contextFailure(err)
-	}
-	return reply
-}
-
-func failure(code, message string) response {
-	return response{Error: &bridgeError{Code: code, Message: message}}
-}
-
-func success(value any) response {
-	return response{OK: true, Result: value}
-}
-
-// headlessProfile shares the existing config normalizer and indicator with
-// Windows; only physical Mac shortcut identifiers differ.
-func headlessProfile(req request) response {
-	var provided map[string]json.RawMessage
-	if len(req.Config) == 0 || json.Unmarshal(req.Config, &provided) != nil || provided == nil {
-		return failure("invalid_config", msgInvalidConfig)
-	}
-	cfg, err := coreconfig.Parse(req.Config)
-	if err != nil {
-		return failure("invalid_config", msgInvalidConfig)
-	}
-	if _, ok := provided["dictation_hotkey"]; !ok {
-		cfg.DictationHotkey = "RightCommand"
-	}
-	if _, ok := provided["hotkey_record"]; !ok {
-		cfg.HotkeyRecord = "RightOption"
-	}
-	allowed := func(s string) bool {
-		return s == "RightCommand" || s == "RightOption" || s == "Mouse4" || s == "Mouse5"
-	}
-	dictation, _, _, _, errDictation := shortcut.Parse(cfg.DictationHotkey)
-	rewrite, _, _, _, errRewrite := shortcut.Parse(cfg.HotkeyRecord)
-	if errDictation != nil || errRewrite != nil || !allowed(dictation) || !allowed(rewrite) || dictation == rewrite {
-		return failure("invalid_config", msgInvalidConfig)
-	}
-	cfg.DictationHotkey, cfg.HotkeyRecord = dictation, rewrite
-	cfg, err = coreconfig.Normalize(cfg)
-	if err != nil || cfg.RecordMode != "hold" || cfg.AudioDeviceID != -1 {
-		return failure("invalid_config", msgInvalidConfig)
-	}
-	return success(map[string]any{"profile": map[string]any{
-		"dictation": cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
-		"maximumSeconds": cfg.MaxRecordSeconds, "modifierDelayMS": 200,
-		"pasteRestoreMS": ux.PasteReceiptMinimumMilliseconds,
-		"mouseDelayMS":   int(input.WindowsSideHold / time.Millisecond),
-		"pill":           indicator.HostSpec(),
-	}})
-}
-
-func processRequest(ctx context.Context, req request) response {
+	defer func() {
+		if recover() != nil {
+			return
+		}
+		if err := ctx.Err(); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				reply = failure("timeout", msgTimedOut)
+			} else {
+				reply = failure("canceled", msgCanceled)
+			}
+		}
+	}()
 	trimmed := bytes.TrimSpace(req.Config)
-	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
-		return failure("invalid_config", "config object is required")
-	}
-	if trimmed[0] != '{' {
-		return failure("invalid_config", "config must be an object")
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return failure("invalid_config", msgInvalidConfig)
 	}
 	cfg, err := coreconfig.Parse(req.Config)
 	if err != nil {
@@ -121,10 +76,6 @@ func processRequest(ctx context.Context, req request) response {
 	if err != nil {
 		return failure("invalid_config", msgInvalidConfig)
 	}
-	if err := ctx.Err(); err != nil {
-		return contextFailure(err)
-	}
-
 	if req.Rewrite && (len(req.SelectedText) > maxSelectedBytes ||
 		!utf8.ValidString(req.SelectedText)) {
 		return failure("invalid_request", "selected text exceeds limits")
@@ -147,11 +98,53 @@ func processRequest(ctx context.Context, req request) response {
 	return success(outcome)
 }
 
-func contextFailure(err error) response {
-	if errors.Is(err, context.DeadlineExceeded) {
-		return failure("timeout", msgTimedOut)
+func failure(code, message string) response {
+	return response{Error: &bridgeError{Code: code, Message: message}}
+}
+
+func success(value any) response {
+	return response{OK: true, Result: value}
+}
+
+// Physical Quartz codes are a Mac host fact, not a second voice rule.
+func macKeyCode(s string) int {
+	return map[string]int{macDefaultDictation: 54, macDefaultRewrite: 61, "Mouse4": 103, "Mouse5": 104}[s]
+}
+
+// headlessProfile shares the existing config normalizer and indicator with
+// Windows; only physical Mac shortcut identifiers differ.
+func headlessProfile(req request) response {
+	var provided map[string]json.RawMessage
+	if len(req.Config) == 0 || json.Unmarshal(req.Config, &provided) != nil || provided == nil {
+		return failure("invalid_config", msgInvalidConfig)
 	}
-	return failure("canceled", msgCanceled)
+	cfg, err := coreconfig.Parse(req.Config)
+	if err != nil {
+		return failure("invalid_config", msgInvalidConfig)
+	}
+	if _, ok := provided["dictation_hotkey"]; !ok {
+		cfg.DictationHotkey = macDefaultDictation
+	}
+	if _, ok := provided["hotkey_record"]; !ok {
+		cfg.HotkeyRecord = macDefaultRewrite
+	}
+	dictation, _, _, _, errDictation := shortcut.Parse(cfg.DictationHotkey)
+	rewrite, _, _, _, errRewrite := shortcut.Parse(cfg.HotkeyRecord)
+	if errDictation != nil || errRewrite != nil || macKeyCode(dictation) == 0 || macKeyCode(rewrite) == 0 || dictation == rewrite {
+		return failure("invalid_config", msgInvalidConfig)
+	}
+	cfg.DictationHotkey, cfg.HotkeyRecord = dictation, rewrite
+	cfg, err = coreconfig.Normalize(cfg)
+	if err != nil || cfg.RecordMode != "hold" || cfg.AudioDeviceID != -1 {
+		return failure("invalid_config", msgInvalidConfig)
+	}
+	return success(map[string]any{"profile": map[string]any{
+		"dictation": cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
+		"maximumSeconds": cfg.MaxRecordSeconds, "modifierDelayMS": 200,
+		"pasteRestoreMS": ux.PasteReceiptMinimumMilliseconds,
+		"mouseDelayMS":   int(input.WindowsSideHold / time.Millisecond),
+		"pill":           indicator.HostSpec(),
+	}})
 }
 
 // Required by Go's c-archive build; the native host calls VRRun directly.

@@ -72,12 +72,18 @@ def main():
         "voice.Run(" not in host for host in (bridge, windows)
     ):
         raise SystemExit("both hosts must invoke the same Go voice task")
-    # Native files may supply OS data and execute delivery, but cannot recreate
-    # ASR, model-intent or route decisions next to the shared production task.
-    for host in (bridge, windows):
-        if any(token in host for token in ("speech.Transcribe(", "textedit.ResolveSelectedTask(",
-                                           "textedit.RouteTask(", "textedit.Rewrite(")):
-            raise SystemExit("desktop host duplicates portable voice policy outside voice.Run")
+    # Scan every Windows desktop host and the shipped Go bridge, not just the
+    # current worker filenames. Meeting is a separate Go Core product pipeline.
+    forbidden = ("speech.Transcribe(", "textedit.ResolveSelectedTask(",
+                 "textedit.RouteTask(", "textedit.Rewrite(")
+    desktop = ROOT / "voice-rewrite"
+    for path in [desktop / "cmd/voicebridge/main.go",
+                 *desktop.glob("*.go")]:
+        if path.name.endswith("_test.go") or path.name.startswith("meeting"):
+            continue
+        source = path.read_text(encoding="utf-8")
+        if '"voicerewrite/internal/core/speech"' in source or any(token in source for token in forbidden):
+            raise SystemExit(f"desktop host duplicates voice policy: {path.relative_to(ROOT)}")
     if any(token in swift for token in ("URLSession", "URLRequest", "/v1/chat/completions",
                                         "/v1/audio/transcriptions")):
         raise SystemExit("Swift host implements provider business calls instead of calling Go")
