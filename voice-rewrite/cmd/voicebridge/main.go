@@ -187,7 +187,7 @@ func headlessProfile(req request) response {
 		return failure(req.ID, "invalid_config", msgInvalidConfig)
 	}
 	cfg, err = coreconfig.Normalize(cfg)
-	if err != nil {
+	if err != nil || cfg.RecordMode != "hold" || cfg.AudioDeviceID != -1 {
 		return failure(req.ID, "invalid_config", msgInvalidConfig)
 	}
 	return success(req.ID, map[string]any{"profile": map[string]any{
