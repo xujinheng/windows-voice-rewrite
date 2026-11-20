@@ -577,7 +577,7 @@ func showAnswerPopup(msg popupMessage) error {
 	}
 	// No permanent status copy: the body is the product. A slim inline
 	// status appears only after an actual Copy/Apply action.
-	note, err := makeChild("STATIC", "", WS_CHILD|WS_VISIBLE, px(132), px(16), cw-px(190), px(20), hwnd, 0)
+	note, err := makeChild("STATIC", "", WS_CHILD|WS_VISIBLE, px(132), px(16), cw - px(190), px(20), hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -586,7 +586,7 @@ func showAnswerPopup(msg popupMessage) error {
 	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | uxWSTabStop | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
 	// Win32 EDIT expects CRLF even when the model responds with LF-only text.
 	editorText := strings.ReplaceAll(strings.ReplaceAll(msg.body, "\r\n", "\n"), "\n", "\r\n")
-	editor, err := makeChild("EDIT", "", bodyStyle, px(22), px(59), cw-px(44), ch-px(119), hwnd, 0)
+	editor, err := makeChild("EDIT", "", bodyStyle, px(22), px(59), cw - px(44), ch - px(119), hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -602,17 +602,17 @@ func showAnswerPopup(msg popupMessage) error {
 		return errors.New(corepopup.UnwrittenCard)
 	}
 	// The header Close action stays outside the draggable caption hit area.
-	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(51), px(11), px(31), px(29), hwnd, BUTTON_CLOSE); err != nil {
+	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw - px(51), px(11), px(31), px(29), hwnd, BUTTON_CLOSE); err != nil {
 		closeActiveAnswer()
 		return err
 	}
 	if msg.allowApply {
-		if _, err = makeChild("BUTTON", ux.ApplyAction, WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(243), ch-px(48), px(116), px(33), hwnd, BUTTON_APPLY); err != nil {
+		if _, err = makeChild("BUTTON", ux.ApplyAction, WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw - px(243), ch - px(48), px(116), px(33), hwnd, BUTTON_APPLY); err != nil {
 			closeActiveAnswer()
 			return err
 		}
 	}
-	if _, err = makeChild("BUTTON", ux.CopyAction, WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(119), ch-px(48), px(98), px(33), hwnd, BUTTON_COPY); err != nil {
+	if _, err = makeChild("BUTTON", ux.CopyAction, WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw - px(119), ch - px(48), px(98), px(33), hwnd, BUTTON_COPY); err != nil {
 		closeActiveAnswer()
 		return err
 	}
