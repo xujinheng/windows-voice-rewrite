@@ -31,6 +31,14 @@ type View struct {
 	Metrics                            Metrics
 }
 
+// AudioSource is implemented by native clients, not by the Go engine.
+// Push consecutive 20ms, 16kHz mono PCM16 frames; return on cancellation.
+// This public signature allows independent Go modules to supply audio without
+// importing a private package or reimplementing Meeting business logic.
+type AudioSource interface {
+	Stream(ctx context.Context, started func(), push func([]byte)) error
+}
+
 type Session struct {
 	pipeline          *Pipeline
 	runtime           *SessionRuntime
@@ -413,7 +421,7 @@ func (s *Session) applyExpression(epoch, serial uint64, update func()) {
 	})
 }
 
-func (s *Session) Start(source audio.FrameSource) {
+func (s *Session) Start(source AudioSource) {
 	s.pipeline = NewPipeline(s.runtime, PipelineHooks{
 		Transcribe: func(ctx context.Context, state *ASRState, turn AudioTurn, emit func(string)) (string, error) {
 			cfg := s.Config()
