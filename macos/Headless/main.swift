@@ -260,12 +260,14 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var targetFocus: FocusIdentity?
     private var selected: AXSelection?
     private var pending = false
+    private var lastResult: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "VR"
         let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "Copy last result", action: #selector(copyResult), keyEquivalent: "c"))
         menu.addItem(NSMenuItem(title: "Reload config", action: #selector(reload), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         for entry in menu.items where entry.action != nil { entry.target = self }
@@ -299,6 +301,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             show("Config error")
             fputs("VoiceRewrite config: \(error)\n", stderr)
         }
+    }
+    @objc private func copyResult() {
+        guard let lastResult else { show("No result"); return }
+        let board = NSPasteboard.general
+        board.clearContents()
+        show(board.setString(lastResult, forType: .string) ? "Copied" : "Copy failed")
     }
     @objc private func quit() { VREpochCancel(); NSApp.terminate(nil) }
     private func show(_ text: String) { item.button?.title = text }
@@ -463,16 +471,14 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                         guard let text = value.text, !text.isEmpty else {
                             self.reset("Empty"); return
                         }
+                        self.lastResult = text
                         guard value.route == "replace" || (action == .dictation && value.route == "insert") else {
                             self.reset(self.config.profile.pill.fallbackLabel, phase: .fallback); return
                         }
-                        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else {
-                            self.reset("Focus changed"); return
-                        }
                         let currentWindow = self.focusedWindow()
-                        guard let focus = self.targetFocus,
-                              focus.matches(window: currentWindow,
-                                            element: self.focusedElement(),
+                        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+                              let focus = self.targetFocus,
+                              focus.matches(window: currentWindow, element: self.focusedElement(),
                                             title: currentWindow.flatMap(self.windowTitle)) else {
                             self.reset("Focus changed"); return
                         }
