@@ -143,6 +143,7 @@ func (c *Core) Valid(id uint64) bool {
 	defer c.mu.Unlock()
 	return id != 0 && !c.closed && c.currentID == id && c.ctx != nil
 }
+
 // ContextFor is used only to bind distinct long-running native work (Meeting)
 // to the current voice generation. Normal clients call Execute instead.
 func (c *Core) ContextFor(id uint64) context.Context {
@@ -160,6 +161,7 @@ func (c *Core) Current() uint64 {
 	defer c.mu.Unlock()
 	return c.currentID
 }
+
 // Cancel stops a task and drops any held key ownership, including late timers.
 func (c *Core) Cancel() {
 	c.mu.Lock()
@@ -184,6 +186,7 @@ func (c *Core) Shutdown() {
 	defer c.mu.Unlock()
 	c.closed = true
 }
+
 // Execute is the platform-independent task entrypoint. No client can execute
 // an expired task or circumvent the shared model deadlines and result routes.
 func (c *Core) Execute(token uint64, cfg coreconfig.Config, pcm []byte, selected string, rewrite bool, onTranscribed func(string)) (Result, error) {
