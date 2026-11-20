@@ -443,7 +443,7 @@ func runApp() {
 			return nil
 		}
 		active = nil
-		if cfg.RecordMode == "hold" && holdButton == 0 {
+		if task.selection == nil && holdButton == 0 {
 			key := keyRewrite
 			if task.dictation {
 				key = keyDictation
@@ -461,7 +461,7 @@ func runApp() {
 		app.busy.Store(true) // no second operation until the worker is finished
 		app.setStatus(trayTranscribing)
 		l.Print("recording stop requested; selection/model processing moved to worker")
-		if cfg.RecordMode == "hold" {
+		if task.selection == nil {
 			if holdMeeting != nil || task.dictation {
 				app.postHandyPhase(indicator.Processing, activeGeneration)
 			} else {
@@ -473,7 +473,7 @@ func runApp() {
 		} else if !task.dictation {
 			task.anchor = currentCursorPoint()
 		}
-		if cfg.RecordMode == "hold" && holdMeeting != nil {
+		if holdMeeting != nil {
 			if holdMeeting.Context().Err() != nil {
 				// The single buffered recorder result needs no drain worker.
 				app.busy.Store(false)
@@ -872,7 +872,7 @@ func runApp() {
 		}
 		if msg.Message == WM_HOLD_RELEASE || msg.Message == WM_RECORD_LIMIT || msg.Message == WM_HOLD_TIMEOUT {
 			if active != nil && uint64(msg.WParam) == activeGeneration &&
-				(msg.Message == WM_RECORD_LIMIT || cfg.RecordMode == "hold") {
+				(msg.Message == WM_RECORD_LIMIT || task.selection == nil) {
 				switch msg.Message {
 				case WM_HOLD_RELEASE:
 					l.Print("hold key released; completing recording")
@@ -909,7 +909,7 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_SIDE_UP {
-			if cfg.RecordMode == "hold" && active != nil && uint16(msg.WParam) == holdButton {
+			if active != nil && task.selection == nil && holdButton != 0 && uint16(msg.WParam) == holdButton {
 				l.Printf("mouse button %d released; completing recording", holdButton)
 				finish()
 			}
@@ -938,7 +938,7 @@ func runApp() {
 				continue
 			}
 			if active != nil {
-				if cfg.RecordMode != "hold" {
+				if task.selection != nil {
 					finish()
 				}
 				continue
