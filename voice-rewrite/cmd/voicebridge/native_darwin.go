@@ -118,6 +118,23 @@ func VREpochCancel() {
 	}
 }
 
+//export VRReady
+func VRReady(op C.int, token C.ulonglong, focusOK, sensitive, selectionOK C.int) C.int {
+	if deliveryReady(int(op), nativeEpoch.Valid(uint64(token)), nativeKey == 0,
+		focusOK != 0, sensitive != 0, selectionOK != 0) {
+		return 1
+	}
+	return 0
+}
+
+//export VRClipboardFits
+func VRClipboardFits(size, total C.longlong) C.int {
+	if clipboardSnapshotFits(int64(size), int64(total)) {
+		return 1
+	}
+	return 0
+}
+
 //export VRLevel
 func VRLevel(previous, raw C.double) C.double {
 	return C.double(indicator.SmoothedLevel(float64(previous), indicator.NormalizeMicrophoneLevel(float64(raw))))
