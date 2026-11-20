@@ -2,7 +2,7 @@
 
 The [30-second demo](voicerewrite-demo.mp4) shows dictation (Mouse4), selected-text rewriting into English and questions (Mouse5). The README displays the [animated preview](voicerewrite-preview.webp).
 
-The editor text and spoken commands are scripted examples. The recording indicator is captured from VoiceRewrite on Windows.
+The selected Chinese sentence, English rewrite and spoken commands are scripted examples, not a live model request. The recording indicator is captured from VoiceRewrite on Windows.
 
 Regenerate the files with Python, Pillow and FFmpeg:
 
