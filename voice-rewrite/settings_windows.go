@@ -16,7 +16,6 @@ import (
 	"unsafe"
 
 	"voicerewrite/internal/contract"
-	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/desktop"
 	"voicerewrite/internal/core/provider"
 	"voicerewrite/internal/core/serviceprobe"
