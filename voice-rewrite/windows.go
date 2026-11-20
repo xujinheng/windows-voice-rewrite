@@ -179,7 +179,6 @@ type appState struct {
 	popups      chan popupMessage
 	lastErrorMu sync.Mutex
 	lastError   string
-	history     history.Store
 	paused      atomic.Bool
 	updateBusy  atomic.Bool
 	updateReady chan update.Notice
@@ -373,7 +372,7 @@ func runApp() {
 		return
 	}
 	defer procUnregisterHotKey.Call(0, HOTKEY_EXIT)
-	trayIcon, err := newTrayIndicator(hwnd, &app.paused, &app.history)
+	trayIcon, err := newTrayIndicator(hwnd, &app.paused, &app.core.History)
 	if err != nil {
 		winErr("无法创建系统托盘图标: " + err.Error())
 		return
@@ -795,7 +794,7 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_TRAY_LAST_RESULT {
-			recent := app.history.Snapshot()
+			recent := app.core.History.Snapshot()
 			if len(recent) == 0 {
 				winErr(history.EmptySession)
 			} else {
@@ -804,7 +803,7 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_TRAY_HISTORY_ITEM {
-			if entry, ok := app.history.Get(uint64(msg.WParam)); ok {
+			if entry, ok := app.core.History.Get(uint64(msg.WParam)); ok {
 				app.showAnswer(ux.HistoryRestoreTitle(entry.Title), entry.Text, currentCursorPoint(), nil, false, app.core.Current())
 			} else {
 				winErr(history.Cleared)
@@ -812,7 +811,7 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_TRAY_CLEAR_HISTORY {
-			app.history.Clear()
+			app.core.History.Clear()
 			closeActiveAnswer()
 			continue
 		}

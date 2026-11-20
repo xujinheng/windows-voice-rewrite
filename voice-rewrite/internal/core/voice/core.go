@@ -6,12 +6,15 @@ import (
 	"time"
 
 	coreconfig "voicerewrite/internal/core/config"
+	"voicerewrite/internal/core/history"
+	"voicerewrite/internal/core/ux"
 )
 
 // Core is the only portable voice runtime. A client supplies physical device
 // facts, audio and final OS effects; the core owns holds, task generations,
 // cancellation, inference and output routing.
 type Core struct {
+	History    history.Store
 	mu        sync.Mutex
 	keys      map[int]*keyState
 	owner     int
@@ -202,5 +205,13 @@ func (c *Core) Shutdown() {
 // Execute is the platform-independent task entrypoint. No client can execute
 // an expired task or circumvent the shared model deadlines and result routes.
 func (c *Core) Execute(token uint64, cfg coreconfig.Config, pcm []byte, selected string, rewrite bool, onTranscribed func(string)) (Result, error) {
-	return run(c.ContextFor(token), cfg, pcm, selected, rewrite, onTranscribed)
+	result, err := run(c.ContextFor(token), cfg, pcm, selected, rewrite, onTranscribed)
+	if err == nil && c.Valid(token) {
+		title := ux.DictationHistoryTitle
+		if rewrite {
+			title = ux.HistoryTitle(result.Intent)
+		}
+		c.History.Remember(title, result.Text)
+	}
+	return result, err
 }

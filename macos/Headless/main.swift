@@ -226,7 +226,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var targetPID: pid_t = 0
     private var targetFocus: FocusIdentity?
     private var pending: Bool { VRArmed() == 0 && taskID != 0 }
-    private var lastResult: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -274,9 +273,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         }
     }
     @objc private func copyResult() {
-        guard let lastResult else { show("No result"); return }
+        guard let result = VRLatestResult() else { show("No result"); return }
+        defer { VRFree(result) }
         NSPasteboard.general.clearContents()
-        show(NSPasteboard.general.setString(lastResult, forType: .string) ? "Copied" : "Copy failed")
+        show(NSPasteboard.general.setString(String(cString: result), forType: .string) ? "Copied" : "Copy failed")
     }
     @objc private func quit() { VREpochCancel(); NSApp.terminate(nil) }
     private func show(_ text: String) { item.button?.title = text }
@@ -434,7 +434,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                         fputs("VoiceRewrite: \(error)\n", stderr)
                     case .success(let value):
                         guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
-                        self.lastResult = text
                         guard value.route == "replace" || value.route == "insert" else {
                             self.reset(self.config.pill.fallbackLabel, phase: .fallback); return
                         }
