@@ -406,34 +406,3 @@ func ValidateStartup(mode, dictation, rewrite, exit string) (Startup, error) {
 	}
 	return out, nil
 }
-
-// Binding is the keyboard or mouse action described by a stored shortcut.
-// Key is the canonical name, such as R, F8, or PageDown. Virtual-key numbers
-// stay inside Parse for the Windows host.
-type Binding struct {
-	Normalized string
-	Key        string
-	Mouse      bool
-	Ctrl       bool
-	Alt        bool
-	Shift      bool
-}
-
-func Bind(raw string) (Binding, error) {
-	normalized, modifiers, _, mouse, err := Parse(raw)
-	if err != nil {
-		return Binding{}, err
-	}
-	key := normalized
-	if i := strings.LastIndex(normalized, "+"); i >= 0 {
-		key = normalized[i+1:]
-	}
-	return Binding{
-		Normalized: normalized,
-		Key:        key,
-		Mouse:      mouse,
-		Ctrl:       modifiers&Ctrl != 0,
-		Alt:        modifiers&Alt != 0,
-		Shift:      modifiers&Shift != 0,
-	}, nil
-}
