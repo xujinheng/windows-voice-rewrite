@@ -44,7 +44,7 @@ struct PillSpec: Decodable {
     let terminalMS: Int
     let pillColor, clockColor, labelColor, dictationAccent, rewriteAccent: [Int]
     let errorAccent, sentMark, fallbackMark, closeColor, closeHover, attentionGlyph: [Int]
-    let processingDictation, processingRewrite, rewritingLabel, sentLabel, errorLabel, fallbackLabel: String
+    let processingDictation, processingRewrite, selectionLabel, rewritingLabel, sentLabel, errorLabel, fallbackLabel: String
 }
 
 private struct HostProfile: Decodable {
@@ -414,7 +414,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         activeAction = nil
         pending = true
         pill.processing()
-        show(action == .dictation ? config.profile.pill.processingDictation : config.profile.pill.processingRewrite)
+        show(action == .dictation ? config.profile.pill.processingDictation : config.profile.pill.selectionLabel)
         let configValue = config.raw
         let pid = targetPID
         let token = taskID
@@ -428,6 +428,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             }
             let selectedValue = action == .rewrite ? selectionFromAX() : nil
             if action == .rewrite && selectedValue == nil { reset("Select text"); return }
+            if action == .rewrite { show(config.profile.pill.processingRewrite) }
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let result = Result {
                     try GoCore.request(config: configValue,
@@ -461,7 +462,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     }
                 }
             }
-        } catch { pending = false; reset("Audio error"); fputs("Audio: \(error)\n", stderr) }
+        } catch { reset("Audio error"); fputs("Audio: \(error)\n", stderr) }
     }
 
     private func focusedWindow() -> AXUIElement? {
