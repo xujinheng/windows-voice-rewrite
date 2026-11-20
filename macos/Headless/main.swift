@@ -4,8 +4,7 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
-// Native boundaries only: device input, microphone, menu bar and OS text delivery.
-// All transcription, intent and routing decisions call the linked Go Core.
+// Native input, microphone, menu and text delivery; transcription and routing use linked Go Core.
 private enum Action { case dictation, rewrite }
 
 // Native AX ranges distinguish repeated text; text-only selection is still supported.
