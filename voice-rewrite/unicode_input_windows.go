@@ -22,7 +22,9 @@ func sendUnicodeText(text string, stillValid func() bool) error {
 			return fmt.Errorf("录入中焦点改变，已停止键盘输入（已输入 %d/%d 个 UTF-16 单元）", pos, len(units))
 		}
 		end := min(pos+32, len(units))
-		if end < len(units) && units[end-1] >= 0xD800 && units[end-1] <= 0xDBFF { end-- }
+		if end < len(units) && units[end-1] >= 0xD800 && units[end-1] <= 0xDBFF {
+			end--
+		}
 		keys := make([]winINPUT, 0, (end-pos)*2)
 		for _, ch := range units[pos:end] {
 			keys = append(keys,
