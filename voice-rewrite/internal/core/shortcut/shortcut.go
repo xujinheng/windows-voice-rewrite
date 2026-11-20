@@ -11,8 +11,6 @@ import (
 )
 
 const (
-	MacDictation, MacRewrite = "RightCommand", "RightOption"
-
 	alt      uint32 = 0x0001
 	ctrl     uint32 = 0x0002
 	shift    uint32 = 0x0004
@@ -130,12 +128,8 @@ func FromKey(vk, modifiers uint32) (string, error) {
 	return strings.Join(append(parts, name), "+"), nil
 }
 
-// MacKeyCode is the single mapping of macOS voice shortcuts to Quartz codes.
-func MacKeyCode(s string) int {
-	return map[string]int{MacDictation: 54, MacRewrite: 61, "Mouse4": 103, "Mouse5": 104}[s]
-}
-
-// WindowsSideButton maps Mouse4/Mouse5 to the XBUTTON ids used by Windows.
+// WindowsSideButton maps a stored shortcut to the XBUTTON id used by the mouse hook.
+// Mouse4 is XBUTTON1 (1) and Mouse5 is XBUTTON2 (2).
 func WindowsSideButton(s string) (uint16, bool) {
 	name, _, _, mouse, _ := Parse(s)
 	if !mouse {

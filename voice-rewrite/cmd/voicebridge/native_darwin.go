@@ -19,7 +19,6 @@ import (
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/session"
-	"voicerewrite/internal/core/shortcut"
 )
 
 var nativeEpoch session.Epoch
@@ -187,8 +186,8 @@ func VRProfile(config *C.char) *C.char {
 	if reply.OK {
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
 		nativeRole = [105]uint8{}
-		nativeRole[shortcut.MacKeyCode(profile["dictation"].(string))] = 1
-		nativeRole[shortcut.MacKeyCode(profile["rewrite"].(string))] = 2
+		nativeRole[macKeyCode(profile["dictation"].(string))] = 1
+		nativeRole[macKeyCode(profile["rewrite"].(string))] = 2
 	}
 	return nativeJSON(reply)
 }

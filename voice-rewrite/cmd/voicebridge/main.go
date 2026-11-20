@@ -19,6 +19,7 @@ import (
 )
 
 const (
+	macDefaultDictation, macDefaultRewrite = "RightCommand", "RightOption"
 	maxPCMBytes      = audio.PCMBytesPerSecond * coreconfig.RecordSecondsMax
 	maxSelectedBytes = 1 << 20
 	msgCanceled      = "request canceled"
@@ -100,6 +101,11 @@ func success(value any) response {
 	return response{OK: true, Result: value}
 }
 
+// Physical Quartz codes are a Mac host fact, not a second voice rule.
+func macKeyCode(s string) int {
+	return map[string]int{macDefaultDictation: 54, macDefaultRewrite: 61, "Mouse4": 103, "Mouse5": 104}[s]
+}
+
 // headlessProfile shares the existing config normalizer and indicator with
 // Windows; only physical Mac shortcut identifiers differ.
 func headlessProfile(req request) response {
@@ -112,14 +118,14 @@ func headlessProfile(req request) response {
 		return failure("invalid_config", msgInvalidConfig)
 	}
 	if _, ok := provided["dictation_hotkey"]; !ok {
-		cfg.DictationHotkey = shortcut.MacDictation
+		cfg.DictationHotkey = macDefaultDictation
 	}
 	if _, ok := provided["hotkey_record"]; !ok {
-		cfg.HotkeyRecord = shortcut.MacRewrite
+		cfg.HotkeyRecord = macDefaultRewrite
 	}
 	dictation, _, _, _, errDictation := shortcut.Parse(cfg.DictationHotkey)
 	rewrite, _, _, _, errRewrite := shortcut.Parse(cfg.HotkeyRecord)
-	if errDictation != nil || errRewrite != nil || shortcut.MacKeyCode(dictation) == 0 || shortcut.MacKeyCode(rewrite) == 0 || dictation == rewrite {
+	if errDictation != nil || errRewrite != nil || macKeyCode(dictation) == 0 || macKeyCode(rewrite) == 0 || dictation == rewrite {
 		return failure("invalid_config", msgInvalidConfig)
 	}
 	cfg.DictationHotkey, cfg.HotkeyRecord = dictation, rewrite
