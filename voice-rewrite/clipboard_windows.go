@@ -216,9 +216,6 @@ func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 	if sel.TargetWindow == 0 {
 		return sel, errors.New(clipboard.CaptureNoWindow)
 	}
-	if nativePasswordFieldFocused(sel.TargetWindow) {
-		return sel, errors.New(ux.PasswordSelection)
-	}
 	backup, err := snapshotClipboard(hwnd)
 	if err != nil {
 		return sel, err
@@ -246,7 +243,7 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 		fg, _, _ := procGetForegroundWindow.Call()
 		windowValid, _, _ := procIsWindow.Call(sel.TargetWindow)
 		return windowValid != 0 && fg == sel.TargetWindow
-	}, func() bool { return nativePasswordFieldFocused(sel.TargetWindow) }); err != nil {
+	}); err != nil {
 		return err
 	}
 
