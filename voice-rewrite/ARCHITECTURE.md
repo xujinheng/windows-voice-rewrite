@@ -20,10 +20,10 @@ AppKit panel and status-menu drawing. It links Go `cmd/voicebridge` as a Darwin
 `VoiceCore.h`. It does not start a Go helper, exchange audio-frame IPC, or
 implement a second voice-policy state machine.
 
-On macOS, physical shortcut events call Go `input.Holds`, task generations and
-provider cancellation call Go `session.Epoch`, and each waveform/spinner/clock
-frame calls Go `indicator` through the in-process ABI. Swift performs the OS
-operations and draws the returned pixels. The native macOS C ABI and the single Windows recording worker call `voice.Run` directly,
+On macOS, physical shortcut events, task generations, cancellation and voice
+execution all call Go `voice.Core`; each waveform/spinner/clock frame calls Go
+`indicator` through the in-process ABI. Swift performs the OS
+operations and draws the returned pixels. The native macOS C ABI and the single Windows recording worker call `voice.Core.Execute` directly,
 which owns PCM admission, `speech.Transcribe`, `textedit.ResolveSelectedTask`
 and result routing. The Go task owns the shared transcription and spoken-task deadlines.
 `cmd/voicebridge` is a C archive, not a JSONL server or helper process.
@@ -40,7 +40,7 @@ automatically retried. Only the OS adapter can perform these final checks.
 - `internal/core/provider`: model discovery and private HTTP transport.
 - `internal/core/speech`: ASR request/response and transcript processing.
 - `internal/core/textedit`: selected-text intent and model rewriting.
-- `internal/core/input`, `session`: hold lifecycle and cancellable task epoch.
+- `internal/core/voice`: single client-facing Core owns holds, generations, cancellation and voice execution.
 - `internal/core/indicator`, `ux`, `clipboard`: presentation decisions,
   delivery policies and clipboard guards. Native hosts own the system APIs.
 - `internal/core/meeting`: Windows-only Meeting business logic. Its
