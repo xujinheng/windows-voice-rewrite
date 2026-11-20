@@ -18,11 +18,9 @@ import (
 	"time"
 
 	"voicerewrite/internal/core/audio"
-	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/jsonl"
 	"voicerewrite/internal/core/session"
 	"voicerewrite/internal/core/ux"
-	"voicerewrite/internal/core/voice"
 )
 
 func TestSharedHostTimeouts(t *testing.T) {
@@ -174,26 +172,22 @@ func TestInProcessEpochCancellationReachesProvider(t *testing.T) {
 }
 
 func TestNativePCMUsesIdenticalGoValidation(t *testing.T) {
-	cfg := coreconfig.Config{MaxRecordSeconds: 30}
-	pcm := make([]byte, 3200) // 100ms is valid
-	raw, nativeReason := decodeRequestPCM(request{NativePCM: pcm})
-	encoded, jsonReason := decodeRequestPCM(request{PCMBase64: base64.StdEncoding.EncodeToString(pcm)})
-	if nativeReason != "" || jsonReason != "" || !bytes.Equal(raw, encoded) {
-		t.Fatalf("native/JSONL framing differs: native=%q JSON=%q", nativeReason, jsonReason)
+	cfg := configFor("http://127.0.0.1:1")
+	cfg["max_record_seconds"] = 30
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// Both hosts pass their decoded bytes to exactly one shared PCM decision.
-	for _, size := range []int{0, 1, 3198, 3201, 30*32000 + 2} {
-		input, reason := decodeRequestPCM(request{NativePCM: make([]byte, size)})
-		if reason != "" {
-			t.Fatalf("decoder unexpectedly rejected %d bytes: %s", size, reason)
-		}
-		_, err := voice.Run(context.Background(), cfg, input, "", false, true, nil)
-		var capture *voice.PCMError
-		if !errors.As(err, &capture) {
-			t.Fatalf("shared task accepted invalid PCM length %d: %v", size, err)
-		}
-		if size == 3198 && capture.Error() != ux.DictationTooShort {
-			t.Fatalf("short recording message: %q", capture.Error())
+	for _, n := range []int{0, 1, 3198, 3201, 30*32000 + 2} {
+		pcm := make([]byte, n)
+		for _, req := range []request{
+			{ID: "native", Op: "transcribe", Config: raw, NativePCM: pcm},
+			{ID: "jsonl", Op: "transcribe", Config: raw, PCMBase64: base64.StdEncoding.EncodeToString(pcm)},
+		} {
+			reply := safeProcessRequest(context.Background(), req)
+			if reply.Error == nil || reply.Error.Code != "invalid_pcm" {
+				t.Fatalf("host %s accepted %d invalid PCM bytes: %#v", req.ID, n, reply)
+			}
 		}
 	}
 }
@@ -363,7 +357,18 @@ func TestBridgeCoreHTTPRequestsAndRouting(t *testing.T) {
 		t.Fatalf("bad ASR response: %#v", reply)
 	}
 	h.close()
-	if asrCalls.Load() != 1 {
+	configJSON, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	native := safeProcessRequest(context.Background(), request{
+		ID: "native", Op: "transcribe", Config: configJSON, NativePCM: make([]byte, 3200),
+	})
+	if !native.OK || object(t, native.Result)["text"] != object(t, reply.Result)["text"] ||
+		object(t, native.Result)["route"] != object(t, reply.Result)["route"] {
+		t.Fatalf("native/JSONL differ: native=%#v JSONL=%#v", native, reply)
+	}
+	if asrCalls.Load() != 2 {
 		t.Fatalf("unexpected ASR calls: %d", asrCalls.Load())
 	}
 }

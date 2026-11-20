@@ -199,24 +199,6 @@ func headlessProfile(req request) response {
 	}})
 }
 
-// JSONL/native framing and base64 only; voice.Run owns PCM policy for both hosts.
-func decodeRequestPCM(req request) ([]byte, string) {
-	if req.NativePCM != nil {
-		if len(req.NativePCM) > maxPCMBytes {
-			return nil, "invalid"
-		}
-		return req.NativePCM, ""
-	}
-	if len(req.PCMBase64) > base64.StdEncoding.EncodedLen(maxPCMBytes) {
-		return nil, "invalid"
-	}
-	pcm, err := base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
-	if err != nil {
-		return nil, "invalid"
-	}
-	return pcm, ""
-}
-
 func processRequest(ctx context.Context, req request) response {
 	trimmed := bytes.TrimSpace(req.Config)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
@@ -244,9 +226,19 @@ func processRequest(ctx context.Context, req request) response {
 			!utf8.ValidString(req.SelectedText) || req.Instruction != "") {
 			return failure(req.ID, "invalid_request", "selected text or instruction exceeds limits")
 		}
-		pcm, reason := decodeRequestPCM(req)
-		if reason != "" {
-			return failure(req.ID, "invalid_pcm", "PCM must be 16 kHz mono PCM16, at least 0.1s and within duration limit")
+		// Decode transport framing here; all PCM business validation is in voice.Run.
+		pcm := req.NativePCM
+		if pcm == nil {
+			if len(req.PCMBase64) > base64.StdEncoding.EncodedLen(maxPCMBytes) {
+				return failure(req.ID, "invalid_pcm", "PCM exceeds size limit")
+			}
+			pcm, err = base64.StdEncoding.Strict().DecodeString(req.PCMBase64)
+			if err != nil {
+				return failure(req.ID, "invalid_pcm", "invalid PCM base64")
+			}
+		}
+		if len(pcm) > maxPCMBytes {
+			return failure(req.ID, "invalid_pcm", "PCM exceeds size limit")
 		}
 		outcome, err := voice.Run(ctx, cfg, pcm, req.SelectedText, rewrite, req.CanInsert, nil)
 		if err != nil {
