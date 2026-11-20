@@ -19,6 +19,7 @@ func TestSideHoldThresholdDuration(t *testing.T) {
 
 func TestHoldsCrossPlatformExclusiveLifecycle(t *testing.T) {
 	var s Core
+	s.Bind(1, 2)
 	if s.Press(0, false) != 0 || s.Press(-1, false) != 0 || s.Down(-1) {
 		t.Fatal("invalid native code")
 	}
@@ -74,6 +75,7 @@ func TestHoldsCrossPlatformExclusiveLifecycle(t *testing.T) {
 
 func TestOneCoreCancellationRevokesHoldAndWork(t *testing.T) {
 	var core Core
+	core.Bind(1, 2)
 	hold := core.Press(1, false)
 	if hold == 0 || !core.Activate(1, hold) {
 		t.Fatal("physical hold did not enter the shared core")
@@ -91,10 +93,12 @@ func TestOneCoreCancellationRevokesHoldAndWork(t *testing.T) {
 
 func TestCorePhysicalRemapCannotReusePendingToken(t *testing.T) {
 	var core Core
+	core.Bind(103, 104)
 	old := core.Press(103, false) // Quartz Mouse4
 	if core.Release(103) != ReleaseShort || core.Down(103) {
 		t.Fatal("old binding did not release")
 	}
+	core.Bind(54, 61)
 	next := core.Press(54, false) // Quartz right Command
 	if next == old || core.Activate(54, old) || !core.Activate(54, next) {
 		t.Fatal("a stale timer from a remapped physical key activated the next input")
@@ -123,5 +127,19 @@ func TestCoreRoleRemainsStableWhenShortcutsReload(t *testing.T) {
 	}
 	if core.Role(54) != 1 || core.Role(61) != 2 {
 		t.Fatal("new bindings did not become active")
+	}
+}
+
+func TestCoreRejectsUnboundPhysicalInput(t *testing.T) {
+	var core Core
+	if core.Press(1, false) != 0 {
+		t.Fatal("an unconfigured client input must not begin a voice task")
+	}
+	core.Bind(54, 61)
+	if core.Press(103, false) != 0 || core.Armed() {
+		t.Fatal("an unbound native key was accepted")
+	}
+	if core.Press(54, false) == 0 {
+		t.Fatal("configured shortcut was refused")
 	}
 }
