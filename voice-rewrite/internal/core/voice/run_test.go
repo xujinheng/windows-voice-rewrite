@@ -48,7 +48,7 @@ func TestSharedVoiceTaskAdmissionAndRouting(t *testing.T) {
 	pcm := make([]byte, 3200)
 	for _, tc := range []struct {
 		insert bool
-		route string
+		route  string
 	}{
 		{true, "insert"}, {false, "preview"},
 	} {
