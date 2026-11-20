@@ -121,3 +121,25 @@ func TestPortableEpochCancellationDisconnectsProvider(t *testing.T) {
 		})
 	}
 }
+
+func TestCoreRetainsCompletedResultWithoutHostState(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/audio/transcriptions" {
+			t.Errorf("unexpected request: %s", r.URL.Path)
+		}
+		_, _ = io.WriteString(w, `{"text":"shared transcript"}`)
+	}))
+	defer server.Close()
+	cfg := coreconfig.Defaults()
+	cfg.ASRBaseURL = server.URL + "/v1"
+	var core Core
+	token := core.Start()
+	out, err := core.Execute(token, cfg, make([]byte, 3200), "", false, nil)
+	if err != nil || out.Text != "shared transcript" {
+		t.Fatalf("execute result: %+v, %v", out, err)
+	}
+	entries := core.History.Snapshot()
+	if len(entries) != 1 || entries[0].Text != out.Text || entries[0].Title != ux.DictationHistoryTitle {
+		t.Fatalf("the sole Go Core must own result history: %+v", entries)
+	}
+}

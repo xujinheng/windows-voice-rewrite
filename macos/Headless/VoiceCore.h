@@ -20,6 +20,7 @@ int VRWave(int index, double level, unsigned int tick);
 unsigned int VRSpinner(int index, unsigned int tick);
 void VRDuration(long long seconds, char *buffer, int capacity);
 void VRFree(void *ptr);
+char *VRLatestResult(void);
 char *VRProfile(const char *config);
 typedef void (*VRTranscribedCallback)(unsigned long long token);
 char *VRRun(int rewrite, const unsigned char *audio,

@@ -190,7 +190,6 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 	if task.dictation {
 		app.logger.Printf("stage=asr flow=dictation ms=%d", time.Since(started).Milliseconds())
 		text := answer.Text
-		app.history.Remember(ux.DictationHistoryTitle, text)
 		if !isSameForegroundWindow(task.target) {
 			app.showAnswer(ux.DictationNotInserted, text, currentCursorPoint(), nil, false, generation)
 			app.postHandyPhase(indicator.Fallback, generation)
@@ -213,7 +212,6 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 
 	app.logger.Printf("stage=spoken_selection ms=%d intent=%s route=%s",
 		time.Since(started).Milliseconds(), answer.Intent, answer.Route)
-	app.history.Remember(ux.HistoryTitle(answer.Intent), answer.Text)
 	if answer.Route == "replace" {
 		app.postHandyPhase(indicator.Applying, generation)
 		started = time.Now()

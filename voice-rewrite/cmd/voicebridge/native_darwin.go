@@ -138,6 +138,15 @@ func VRDuration(seconds C.longlong, buffer *C.char, capacity C.int) {
 //export VRFree
 func VRFree(value unsafe.Pointer) { C.free(value) }
 
+//export VRLatestResult
+func VRLatestResult() *C.char {
+	entries := nativeCore.History.Snapshot()
+	if len(entries) == 0 {
+		return nil
+	}
+	return C.CString(entries[0].Text)
+}
+
 func nativeJSON(value response) *C.char {
 	data, err := json.Marshal(value)
 	if err != nil {
