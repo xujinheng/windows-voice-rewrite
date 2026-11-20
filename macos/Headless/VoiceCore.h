@@ -12,6 +12,7 @@ void VRAbandon(void);
 int VRArmed(void);
 unsigned long long VREpochStart(void);
 int VREpochValid(unsigned long long token);
+int VRClipboardSnapshotFits(unsigned long long size, unsigned long long total);
 void VREpochCancel(void);
 double VRLevel(double previous, double raw);
 int VRWave(int index, double level, unsigned int tick);

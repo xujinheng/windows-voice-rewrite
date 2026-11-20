@@ -225,22 +225,6 @@ private enum GoCore {
     }
 }
 
-// Prebuild events so an unsupported grapheme cannot cause partial Unicode input.
-private func unicodeKeyEvents(_ text: String) -> [CGEvent]? {
-    let source = CGEventSource(stateID: .hidSystemState)
-    var events: [CGEvent] = []
-    for character in text {
-        let units = Array(String(character).utf16)
-        guard units.count <= 20 else { return nil }
-        for down in [true, false] {
-            guard let event = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: down) else { return nil }
-            units.withUnsafeBufferPointer { event.keyboardSetUnicodeString(stringLength: $0.count, unicodeString: $0.baseAddress) }
-            events.append(event)
-        }
-    }
-    return events
-}
-
 @MainActor
 private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var item: NSStatusItem!
@@ -558,12 +542,16 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         }
         // NSPasteboardItem is not NSCopying; preserve each advertised data type.
         var saved: [NSPasteboardItem] = []
+        var totalBytes = 0
         for item in originals ?? [] {
             let copy = NSPasteboardItem()
             for type in item.types {
-                guard let data = item.data(forType: type), copy.setData(data, forType: type) else {
+                guard let data = item.data(forType: type),
+                      VRClipboardSnapshotFits(UInt64(data.count), UInt64(totalBytes)) != 0,
+                      copy.setData(data, forType: type) else {
                     pasteUnicode(text); return
                 }
+                totalBytes += data.count
             }
             saved.append(copy)
         }
@@ -593,8 +581,28 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         }
     }
     private func pasteUnicode(_ text: String) {
-        guard let events = unicodeKeyEvents(text) else { reset("Paste unavailable"); return }
-        events.forEach { $0.post(tap: .cghidEventTap) }
+        let source = CGEventSource(stateID: .hidSystemState)
+        let units = Array(text.utf16)
+        var start = 0
+        while start < units.count {
+            let window = focusedWindow()
+            guard VREpochValid(taskID) == 1,
+                  NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID,
+                  targetFocus?.matches(window: window, element: focusedElement(),
+                                       title: window.flatMap(windowTitle)) == true
+            else { reset("Focus changed"); return }
+            var end = min(start + 20, units.count)
+            if end < units.count && (0xD800...0xDBFF).contains(units[end - 1]) { end -= 1 }
+            for down in [true, false] {
+                guard let event = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: down)
+                else { reset("Paste unavailable"); return }
+                units[start..<end].withUnsafeBufferPointer {
+                    event.keyboardSetUnicodeString(stringLength: $0.count, unicodeString: $0.baseAddress)
+                }
+                event.post(tap: .cghidEventTap)
+            }
+            start = end
+        }
         show(config.profile.pill.sentLabel)
         pill.result(.sent)
     }
