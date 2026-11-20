@@ -24,29 +24,6 @@ func HoldModeLabel(dictation, meeting bool) string {
 	}
 }
 
-// RecordingFinish is where a stopped recording goes. A meeting wins over dictation.
-type RecordingFinish int
-
-const (
-	FinishToggle RecordingFinish = iota
-	FinishDictation
-	FinishSpokenRewrite
-	FinishMeeting
-)
-
-func FinishRecording(holdMode, dictation, meeting bool) RecordingFinish {
-	if !holdMode {
-		return FinishToggle
-	}
-	if meeting {
-		return FinishMeeting
-	}
-	if dictation {
-		return FinishDictation
-	}
-	return FinishSpokenRewrite
-}
-
 const (
 	// WindowsSideHold is how long Mouse4 or Mouse5 must stay down before recording starts.
 	WindowsSideHold = 250 * time.Millisecond
