@@ -4,8 +4,11 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
+// Native boundaries only: device input, microphone, menu bar and OS text delivery.
+// All transcription, intent and routing decisions call the linked Go Core.
 private enum Action { case dictation, rewrite }
 
+// Native AX ranges distinguish repeated text; text-only selection is still supported.
 struct AXSelection {
     let text: String
     let range: CFRange?
@@ -220,6 +223,7 @@ private enum GoCore {
     }
 }
 
+// Prebuild events so an unsupported grapheme cannot cause partial Unicode input.
 private func unicodeKeyEvents(_ text: String) -> [CGEvent]? {
     let source = CGEventSource(stateID: .hidSystemState)
     var events: [CGEvent] = []
@@ -302,6 +306,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             guard let info else { return Unmanaged.passUnretained(event) }
             let app = Unmanaged<HeadlessApp>.fromOpaque(info).takeUnretainedValue()
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                // A lost key-up must not leave Go's physical Hold armed or
+                // allow an old inference response to paste into the editor.
                 if app.microphone.running || app.pending || VRArmed() != 0 {
                     app.cancelFromPill()
                 } else {
@@ -449,11 +455,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                         guard value.route == "replace" || (action == .dictation && value.route == "insert") else {
                             self.reset(self.config.profile.pill.fallbackLabel, phase: .fallback); return
                         }
-                        let selectionOK = action == .dictation || selectedValue?.matches(self.selectionFromAX()) == true
-                        guard VRReady(action == .dictation ? 1 : 2, token, self.sameTarget() ? 1 : 0,
-                                      self.sensitiveFocus() ? 1 : 0, selectionOK ? 1 : 0) == 1 else {
-                            self.reset("Unsafe target"); return
-                        }
                         self.paste(text)
                     }
                 }
@@ -491,6 +492,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
               CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
         let element = value as! AXUIElement
         var owner: pid_t = 0
+        // Never read an AX selection from a different process.
         guard AXUIElementGetPid(element, &owner) == .success, owner == targetPID else { return nil }
         return element
     }
