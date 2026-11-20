@@ -25,13 +25,6 @@ type AssistantResult struct {
 // One spoken selected-text budget shared by desktop hosts.
 const SpokenTaskTimeout = 240 * time.Second
 
-type Action string
-
-const (
-	Popup   Action = "popup"
-	Replace Action = "replace"
-)
-
 const unifiedPrompt = `你是桌面 AI 划词助手。收到用户的语音指令和他选中的文字。
 一次完成意图判定和内容生成；意图可以是 edit、translate、answer、summarize、ambiguous。
 - edit：明确要求改写、纠错、润色、缩写或改变选中文字，输出可直接代替原文的正文。
@@ -69,14 +62,14 @@ func validIntent(intent string) bool {
 
 // RouteTask decides only whether the spoken instruction requests replacement.
 // Native hosts decide how to attempt delivery to their actual editor target.
-func RouteTask(result AssistantResult, instruction string) Action {
+func RouteTask(result AssistantResult, instruction string) string {
 	if result.PreviewOnly || !validIntent(result.Intent) || strings.TrimSpace(result.Result) == "" {
-		return Popup
+		return "preview"
 	}
 	if requestsTextChange(instruction) {
-		return Replace
+		return "replace"
 	}
-	return Popup
+	return "preview"
 }
 
 func parseAssistantResult(text string) (AssistantResult, error) {
