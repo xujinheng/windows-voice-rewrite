@@ -2,6 +2,8 @@ package ux
 
 import (
 	"errors"
+
+	"voicerewrite/internal/core/clipboard"
 )
 
 const (
@@ -18,6 +20,17 @@ const (
 	ReplacePasteRefused     = "原文字仍被选中，目标应用可能拒绝粘贴；结果可从预览卡片复制"
 	ReplaceRestoreFailed    = "已尝试粘贴，但剪贴板恢复失败"
 )
+
+// SelectionReadReady protects selected text before it can reach an ASR/LLM.
+func SelectionReadReady(hasTarget bool, sensitive func() bool) error {
+	if !hasTarget {
+		return errors.New(clipboard.CaptureNoWindow)
+	}
+	if sensitive() {
+		return errors.New(PasswordSelection)
+	}
+	return nil
+}
 
 // ReplaceInsertReady is the order of checks before a selection replacement reads the clipboard.
 // Later checks are not called after an earlier one fails.
