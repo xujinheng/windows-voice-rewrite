@@ -131,20 +131,12 @@ Direct2D acceptance, PR CI Gate, and tagged releases. The specialized
 is reserved for manual diagnostics. A `main` push that edits Direct2D code
 runs its acceptance **inside the main CI**, not as a competing push run.
 
-The README media pipeline has one primary automatic chain:
-`visual-matrix.yml` (rebuild/capture/publish screenshots) followed by
-`demo-video.yml` (render video on successful completion). Changes to the
-video renderer or its workflow also trigger the screenshot workflow so
-there is no overlapping video push run for those changes. Direct edits to
-published `docs/ui/*.png` images still trigger video rendering via a narrow
-push path filter; automated screenshot commits made with `GITHUB_TOKEN` do
-not cause a duplicate push event. A manual demo-only regeneration is
-available via `workflow_dispatch`.
-The screenshots workflow retains its own write permission, bounded
-artifacts and main-head race check. The video workflow likewise checks
-that the source branch is main and that main has not moved before it
-publishes. Generated media commits made with `GITHUB_TOKEN` do not
-trigger recursive CI runs.
+README media builds are read-only. `visual-matrix.yml` verifies the real Windows
+UI and uploads screenshot artifacts. To update `docs/ui/*.png`, download
+verified images and submit a normal reviewed PR; CI never pushes directly to
+protected `main`. `demo-video.yml` renders and uploads a 30-second video
+when reviewed screenshots change, or via manual `workflow_dispatch`.
+Neither media workflow modifies repository branches.
 
 `ready-build.yml` accepts only an explicit title-edit marker or manual
 workflow dispatch. Labeling a PR (including Dependabot's automatic labels)
@@ -154,14 +146,11 @@ past run records.
 
 ## Checkout credentials and CI coverage
 
-Non-publishing CI, reusable acceptance, nightly and developer-build jobs use
+All CI checkouts, including screenshot and demo-media builds, use
 `actions/checkout` with `persist-credentials: false`. Code under test cannot
-read GitHub's checkout credential from the local Git configuration. The
-`changes` job still uses its separate, read-only `GH_TOKEN` specifically
-for GitHub's pull-request/compare APIs. The README screenshot and video
-workflows are the explicit exceptions: they commit generated media to
-`main`, retain `contents: write` only in their publishing workflows, and
-verify that `main` has not advanced before publishing.
+read GitHub's checkout credential from local Git configuration. The
+`changes` job still uses its separate read-only token for PR comparisons.
+Protected `main` is modified through reviewed merges, not workflow pushes.
 
 The PR path classifier treats workflow code, reusable actions, Dependabot
 configuration and CI policy regression tests as cross-platform changes.

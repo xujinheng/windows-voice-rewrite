@@ -1,22 +1,15 @@
 name: README demo video
 
 on:
-  # Direct human edits to published screenshots must still regenerate the video.
-  # Automated screenshot commits use GITHUB_TOKEN, so they are handled by
-  # workflow_run instead of causing a second push-triggered render.
+  # README screenshot updates are reviewed commits, not bot pushes to protected main.
   push:
     branches: [main]
     paths:
       - 'docs/ui/*.png'
   workflow_dispatch:
-  # Source/UI changes: a successful screenshot workflow owns rendering.
-  # Direct edits to docs/ui: the dedicated push event handles them.
-  workflow_run:
-    workflows: ['Windows UI screenshots']
-    types: [completed]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: voicerewrite-demo-video-main
@@ -24,17 +17,12 @@ concurrency:
 
 jobs:
   render:
-    # workflow_run runs on the default branch, regardless of the source ref.
-    if: >-
-      github.event_name != 'workflow_run' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          persist-credentials: true
+          persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: '3.11'
@@ -92,23 +80,3 @@ jobs:
             docs/demo/voicerewrite-preview.webp
           retention-days: 7
           if-no-files-found: error
-      - name: Update README media on main (only for the current revision)
-        if: github.ref == 'refs/heads/main'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git add -- docs/demo/voicerewrite-demo.mp4 docs/demo/voicerewrite-preview.webp
-          if git diff --cached --quiet; then
-            echo 'Video assets unchanged.'
-            exit 0
-          fi
-          built_head="$(git rev-parse HEAD)"
-          remote_head="$(git ls-remote origin refs/heads/main | cut -f1)"
-          if [ "$built_head" != "$remote_head" ]; then
-            echo 'Main changed during rendering; skip old media. The newer UI commit will re-render.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'docs(demo): update 30-second workflow video [skip ci]'
-          git push origin HEAD:main

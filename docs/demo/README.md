@@ -10,4 +10,4 @@ Regenerate the files with Python, Pillow and FFmpeg:
 python scripts/render-demo-video.py --assets docs/ui --output docs/demo
 ```
 
-The [demo video workflow](../../.github/workflows/demo-video.yml) runs when the UI screenshots change.
+The [demo video workflow](../../.github/workflows/demo-video.yml) runs when reviewed `docs/ui/*.png` screenshots change, or by manual dispatch. It uploads the resulting media as an artifact; committing it to protected `main` requires a reviewed PR.

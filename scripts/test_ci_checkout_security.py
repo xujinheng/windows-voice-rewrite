@@ -6,9 +6,8 @@ WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
 READ_ONLY = (
     "build.yml", "acceptance-evidence.yml", "direct2d-result.yml",
     "nightly.yml", "meeting-ui.yml", "macos-distribution.yml",
-    "ready-build.yml",
+    "ready-build.yml", "visual-matrix.yml", "demo-video.yml",
 )
-PUBLISHERS = ("visual-matrix.yml", "demo-video.yml")
 
 
 class CheckoutCredentialPolicyTests(unittest.TestCase):
@@ -32,12 +31,12 @@ class CheckoutCredentialPolicyTests(unittest.TestCase):
         # Runner/jobs were deliberately deduplicated; every checkout is still audited.
         self.assertGreaterEqual(count, 15)
 
-    def test_writable_media_publishers_are_explicitly_separated(self):
-        for name in PUBLISHERS:
+    def test_media_workflows_have_no_direct_push_to_protected_main(self):
+        for name in ("visual-matrix.yml", "demo-video.yml"):
             content = (WORKFLOWS / name).read_text(encoding="utf-8")
             with self.subTest(workflow=name):
-                self.assertIn("contents: write", content)
-                self.assertIn("git push", content)
+                self.assertIn("contents: read", content)
+                self.assertNotIn("git push", content)
 
 
 if __name__ == "__main__":

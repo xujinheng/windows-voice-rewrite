@@ -13,7 +13,6 @@ on:
       - 'voice-rewrite/popup_layout.go'
       - 'voice-rewrite/desktop_geometry.go'
       - 'voice-rewrite/desktop_monitor_windows.go'
-      - 'scripts/publish-readme-screenshots.ps1'
       - 'voice-rewrite/settings_windows.go'
       - 'voice-rewrite/settings_direct2d_windows.go'
       - 'voice-rewrite/popup_windows.go'
@@ -21,12 +20,9 @@ on:
       - 'voice-rewrite/visual_preview_windows.go'
       - 'voice-rewrite/answer_visual_preview_windows.go'
       - '.github/workflows/visual-matrix.yml'
-      # Renderer changes must regenerate video via this single screenshot -> video chain.
-      - 'scripts/render-demo-video.py'
-      - '.github/workflows/demo-video.yml'
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: screenshot-ui-${{ github.ref }}
@@ -38,6 +34,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
         with:
           go-version: '1.23'
@@ -269,42 +267,6 @@ jobs:
             if ($first -eq $second) { throw "Visual states rendered identically: $($pair -join ' vs ')" }
           }
           Write-Host 'Twelve Windows captures, including four-sided focus outline and native page visibility.'
-      - name: Publish verified screenshots to README (main branch only)
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          & ./scripts/publish-readme-screenshots.ps1 -CaptureDir 'visual-matrix' -OutputDir 'docs/ui'
-          # The .ps1 script throws on errors; LASTEXITCODE may be stale from Go.
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- docs/ui
-          git diff --cached --quiet
-          if ($LASTEXITCODE -eq 0) {
-            Write-Host 'README screenshots have not changed.'
-            exit 0
-          }
-          if ($LASTEXITCODE -ne 1) { throw "git diff --cached failed: $LASTEXITCODE" }
-          $builtHead = (git rev-parse HEAD).Trim()
-          $remoteLine = git ls-remote origin refs/heads/main
-          if ($LASTEXITCODE -ne 0 -or !$remoteLine) { throw 'Cannot verify current main HEAD' }
-          $remoteHead = ($remoteLine -split '\s+')[0]
-          if ($remoteHead -ne $builtHead) {
-            Write-Warning 'Main moved during capture. Do not publish screenshots from an older build; let the latest UI run publish them.'
-            exit 0
-          }
-          git commit -m 'docs(ui): refresh real Windows interface screenshots [skip ci]'
-          if ($LASTEXITCODE -ne 0) { throw "git commit failed: $LASTEXITCODE" }
-          git push origin HEAD:main
-          if ($LASTEXITCODE -ne 0) { throw "GitHub screenshot publication failed: $LASTEXITCODE" }
-      - name: Upload README images
-        if: always() && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: VoiceRewrite-readme-gallery
-          path: docs/ui/
-          retention-days: 7
-          if-no-files-found: warn
       - name: Upload UI screenshots
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
