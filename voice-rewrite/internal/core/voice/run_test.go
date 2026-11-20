@@ -71,7 +71,7 @@ func TestPortablePCMAdmission(t *testing.T) {
 // Core.Execute handles cancellation for both native hosts.
 func TestPortableEpochCancellationDisconnectsProvider(t *testing.T) {
 	for _, rewrite := range []bool{false, true} {
-		t.run(map[bool]string{false: "dictation", true: "rewrite"}[rewrite], func(t *testing.T) {
+		t.Run(map[bool]string{false: "dictation", true: "rewrite"}[rewrite], func(t *testing.T) {
 			entered := make(chan struct{}, 1)
 			disconnected := make(chan struct{}, 1)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
