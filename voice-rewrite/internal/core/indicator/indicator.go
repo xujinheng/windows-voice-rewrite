@@ -210,7 +210,7 @@ func HostSpec() map[string]any {
 		"processingDictation": Label(Processing, "听写"),
 		"processingRewrite":   Label(Processing, "改写"),
 		"sentLabel":           Label(Success, "听写"), "errorLabel": Label(Error, "听写"),
-		"fallbackLabel": "结果未写入",
+		"fallbackLabel": Label(Fallback, "听写"),
 	}
 }
 
