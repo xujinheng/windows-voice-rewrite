@@ -58,14 +58,11 @@ private struct HostConfig {
     let profile: HostProfile
 
     static func load(_ url: URL) throws -> HostConfig {
-        let data = try Data(contentsOf: url)
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw HostError.config("config.json must be a JSON object")
-        }
+        guard let json = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        else { throw HostError.config("config.json must be a JSON object") }
         guard let profile = try GoCore.request(config: json, operation: "host_profile",
-                                               audio: Data(), selection: nil).profile else {
-            throw HostError.config("missing Go host profile")
-        }
+                                               audio: Data(), selection: nil).profile
+        else { throw HostError.config("missing Go host profile") }
         return HostConfig(raw: json, profile: profile)
     }
 }
@@ -225,22 +222,6 @@ private enum GoCore {
     }
 }
 
-// Prebuild events so an unsupported grapheme cannot cause partial Unicode input.
-private func unicodeKeyEvents(_ text: String) -> [CGEvent]? {
-    let source = CGEventSource(stateID: .hidSystemState)
-    var events: [CGEvent] = []
-    for character in text {
-        let units = Array(String(character).utf16)
-        guard units.count <= 20 else { return nil }
-        for down in [true, false] {
-            guard let event = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: down) else { return nil }
-            units.withUnsafeBufferPointer { event.keyboardSetUnicodeString(stringLength: $0.count, unicodeString: $0.baseAddress) }
-            events.append(event)
-        }
-    }
-    return events
-}
-
 @MainActor
 private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var item: NSStatusItem!
@@ -300,9 +281,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
     @objc private func copyResult() {
         guard let lastResult else { show("No result"); return }
-        let board = NSPasteboard.general
-        board.clearContents()
-        show(board.setString(lastResult, forType: .string) ? "Copied" : "Copy failed")
+        NSPasteboard.general.clearContents()
+        show(NSPasteboard.general.setString(lastResult, forType: .string) ? "Copied" : "Copy failed")
     }
     @objc private func quit() { VREpochCancel(); NSApp.terminate(nil) }
     private func show(_ text: String) { item.button?.title = text }
@@ -404,18 +384,15 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 activeAction = nil
             }
             if (outcome == 1 || outcome == 3), let cursor {
-                replayClick(button: code - 100, cursor: cursor)
+                let source = CGEventSource(stateID: .hidSystemState)
+                for kind in [CGEventType.otherMouseDown, .otherMouseUp] {
+                    guard let event = CGEvent(mouseEventSource: source, mouseType: kind,
+                                              mouseCursorPosition: cursor, mouseButton: .center) else { return }
+                    event.setIntegerValueField(.mouseEventButtonNumber, value: code - 100)
+                    event.setIntegerValueField(.eventSourceUserData, value: 0x56525842)
+                    event.post(tap: .cghidEventTap)
+                }
             }
-        }
-    }
-    private func replayClick(button: Int64, cursor: CGPoint) {
-        let source = CGEventSource(stateID: .hidSystemState)
-        for kind in [CGEventType.otherMouseDown, .otherMouseUp] {
-            guard let event = CGEvent(mouseEventSource: source, mouseType: kind,
-                                      mouseCursorPosition: cursor, mouseButton: .center) else { return }
-            event.setIntegerValueField(.mouseEventButtonNumber, value: button)
-            event.setIntegerValueField(.eventSourceUserData, value: 0x56525842)
-            event.post(tap: .cghidEventTap)
         }
     }
 
@@ -553,17 +530,19 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let board = NSPasteboard.general
         let stamp = board.changeCount
         let originals = board.pasteboardItems
-        guard originals != nil || board.types?.isEmpty != false else {
-            pasteUnicode(text); return
-        }
+        if originals == nil && board.types?.isEmpty == false { pasteUnicode(text); return }
         // NSPasteboardItem is not NSCopying; preserve each advertised data type.
         var saved: [NSPasteboardItem] = []
+        var totalBytes = 0
         for item in originals ?? [] {
             let copy = NSPasteboardItem()
             for type in item.types {
-                guard let data = item.data(forType: type), copy.setData(data, forType: type) else {
+                guard let data = item.data(forType: type),
+                      VRClipboardSnapshotFits(UInt64(data.count), UInt64(totalBytes)) != 0,
+                      copy.setData(data, forType: type) else {
                     pasteUnicode(text); return
                 }
+                totalBytes += data.count
             }
             saved.append(copy)
         }
@@ -593,8 +572,28 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         }
     }
     private func pasteUnicode(_ text: String) {
-        guard let events = unicodeKeyEvents(text) else { reset("Paste unavailable"); return }
-        events.forEach { $0.post(tap: .cghidEventTap) }
+        let source = CGEventSource(stateID: .hidSystemState)
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: false)
+        else { reset("Paste unavailable"); return }
+        let units = Array(text.utf16)
+        var start = 0
+        while start < units.count {
+            let window = focusedWindow()
+            guard VREpochValid(taskID) == 1,
+                  NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID,
+                  targetFocus?.matches(window: window, element: focusedElement(), title: window.flatMap(windowTitle)) == true
+            else { reset("Focus changed"); return }
+            var end = min(start + 20, units.count)
+            if end < units.count && (0xD800...0xDBFF).contains(units[end - 1]) { end -= 1 }
+            for event in [down, up] {
+                units[start..<end].withUnsafeBufferPointer {
+                    event.keyboardSetUnicodeString(stringLength: $0.count, unicodeString: $0.baseAddress)
+                }
+                event.post(tap: .cghidEventTap)
+            }
+            start = end
+        }
         show(config.profile.pill.sentLabel)
         pill.result(.sent)
     }

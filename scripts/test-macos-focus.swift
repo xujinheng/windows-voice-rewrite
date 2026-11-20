@@ -39,6 +39,8 @@ extension HeadlessApp {
     }
 }
 MainActor.assumeIsolated {
+    // The shipped status-bar app creates NSApplication before querying AppKit/Quartz.
+    _ = NSApplication.shared
     let window = AXUIElementCreateApplication(90001)
     let otherWindow = AXUIElementCreateApplication(90002)
     let editor = AXUIElementCreateApplication(90003)
@@ -70,21 +72,11 @@ MainActor.assumeIsolated {
     let noAX = FocusIdentity(window: nil, element: nil, title: nil)
     precondition(noAX.matches(window: nil, element: nil, title: nil))
     precondition(noAX.matches(window: nil, element: nil, title: "Other"))
-    // Construct without posting: UTF-16, surrogate pairs and combining marks
-    // must survive the native fallback, including both key-down and key-up.
-    let sample = "a中🙂e\u{301}"
-    guard let events = unicodeKeyEvents(sample) else { preconditionFailure("Unicode event creation") }
-    precondition(events.count == sample.count * 2)
-    for (index, character) in sample.enumerated() {
-        var size = 0
-        var buffer = [UniChar](repeating: 0, count: 20)
-        buffer.withUnsafeMutableBufferPointer {
-            events[index * 2].keyboardGetUnicodeString(maxStringLength: $0.count,
-                actualStringLength: &size, unicodeString: $0.baseAddress)
-        }
-        precondition(String(decoding: buffer.prefix(size), as: UTF16.self) == String(character))
-    }
-    precondition(unicodeKeyEvents(String(repeating: "\u{0301}", count: 21)) == nil)
+    // Exercise the actual native C ABI over the Go clipboard ownership budget.
+    precondition(VRClipboardSnapshotFits(1, 0) == 1)
+    precondition(VRClipboardSnapshotFits(16 << 20, 32 << 20) == 1)
+    precondition(VRClipboardSnapshotFits((16 << 20) + 1, 0) == 0)
+    precondition(VRClipboardSnapshotFits(1, 48 << 20) == 0)
     // Exercise the production Swift -> native Go Hold path without posting HID events.
     // A shortcut can be rebound while its old physical key is still down.
     let configData = try! Data(contentsOf: URL(fileURLWithPath: "macos/Headless/config.example.json"))
@@ -103,5 +95,5 @@ MainActor.assumeIsolated {
                                  after: host(mouseBound), modifier: true)
     hostApp.verifyPillCancelLifecycle()
     hostApp.verifyPressTargetSurvivesDelayedActivation()
-    print("AX focus, selection, Unicode, shortcut rebind, pill cancel and press-target smoke passed")
+    print("AX focus, selection, clipboard budget, shortcut rebind, pill cancel and press-target smoke passed")
 }

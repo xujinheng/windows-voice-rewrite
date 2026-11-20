@@ -14,6 +14,7 @@ import (
 	"time"
 	"unsafe"
 
+	"voicerewrite/internal/core/clipboard"
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/session"
@@ -116,6 +117,14 @@ func VREpochCancel() {
 	for _, hold := range nativeHolds {
 		hold.Release()
 	}
+}
+
+//export VRClipboardSnapshotFits
+func VRClipboardSnapshotFits(size, total C.ulonglong) C.int {
+	if clipboard.SnapshotFits(uintptr(size), uintptr(total)) {
+		return 1
+	}
+	return 0
 }
 
 //export VRLevel
