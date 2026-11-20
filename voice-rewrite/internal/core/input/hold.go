@@ -71,3 +71,59 @@ func (s *Hold) Release() (wasHeld, active bool) {
 	s.token++
 	return true, active
 }
+
+// Holds gives both native hosts one exclusive physical-key owner. The per-key
+// generation prevents delayed activation from resurrecting a released press.
+type Holds struct {
+	keys []Hold
+	owner int
+}
+
+func NewHolds(count int) Holds { return Holds{keys: make([]Hold, count)} }
+
+func (s *Holds) key(code int) *Hold {
+	if code <= 0 || code >= len(s.keys) { return nil }
+	return &s.keys[code]
+}
+
+func (s *Holds) Down(code int) bool {
+	h := s.key(code)
+	return h != nil && h.Down()
+}
+
+func (s *Holds) Press(code int, busy bool) uint64 {
+	h := s.key(code)
+	if h == nil || busy || s.owner != 0 { return 0 }
+	token, ok := h.Press()
+	if !ok { return 0 }
+	s.owner = code
+	return token
+}
+
+func (s *Holds) CanActivate(code int, token uint64) bool {
+	h := s.key(code)
+	return h != nil && s.owner == code && h.CanActivate(token)
+}
+
+func (s *Holds) Activate(code int, token uint64) bool {
+	h := s.key(code)
+	return h != nil && s.owner == code && h.Activate(token)
+}
+
+func (s *Holds) Release(code int) (held, active, primary bool) {
+	h := s.key(code)
+	if h == nil { return false, false, false }
+	held, active = h.Release()
+	primary = s.owner == code
+	if primary { s.owner = 0 }
+	return
+}
+
+func (s *Holds) Abandon() { s.owner = 0 }
+func (s *Holds) Armed() bool { return s.owner != 0 }
+
+// Cancel invalidates every late timer without resetting its generation.
+func (s *Holds) Cancel() {
+	s.owner = 0
+	for i := range s.keys { s.keys[i].Release() }
+}

@@ -23,32 +23,22 @@ import (
 
 var nativeEpoch session.Epoch
 
-// One fixed physical-key table contains both the Go-validated role and the
-// shared Hold state. Quartz callbacks are serial; Epoch also serves workers.
-var nativeKeys [105]struct {
-	hold input.Hold
-	role uint8
-}
-var nativeKey int
+// Physical state lives in the same Go owner used by Windows' mouse hook.
+// Quartz callbacks are serial; Epoch is shared with the worker thread.
+var nativeHolds = input.NewHolds(105)
+var nativeRole [105]uint8
 
 //export VRAction
 func VRAction(code C.int) C.int {
-	if code < 0 || int(code) >= len(nativeKeys) {
+	if code < 0 || int(code) >= len(nativeRole) {
 		return 0
 	}
-	return C.int(nativeKeys[int(code)].role)
-}
-
-func nativeHold(code int) *input.Hold {
-	if code < 0 || code >= len(nativeKeys) {
-		return nil
-	}
-	return &nativeKeys[code].hold
+	return C.int(nativeRole[int(code)])
 }
 
 //export VRDown
 func VRDown(code C.int) C.int {
-	if hold := nativeHold(int(code)); hold != nil && hold.Down() {
+	if nativeHolds.Down(int(code)) {
 		return 1
 	}
 	return 0
@@ -56,21 +46,13 @@ func VRDown(code C.int) C.int {
 
 //export VRPress
 func VRPress(code C.int, busy C.int) C.ulonglong {
-	if VRAction(code) == 0 || nativeKey != 0 || busy != 0 {
-		return 0 // unbound or busy input does not acquire a physical hold
-	}
-	h := nativeHold(int(code))
-	token, ok := h.Press()
-	if !ok {
-		return 0
-	}
-	nativeKey = int(code)
-	return C.ulonglong(token)
+	if VRAction(code) == 0 { return 0 }
+	return C.ulonglong(nativeHolds.Press(int(code), busy != 0))
 }
 
 //export VRActivate
 func VRActivate(code C.int, token C.ulonglong) C.int {
-	if nativeKey == int(code) && nativeHold(int(code)).Activate(uint64(token)) {
+	if nativeHolds.Activate(int(code), uint64(token)) {
 		return 1
 	}
 	return 0
@@ -78,15 +60,7 @@ func VRActivate(code C.int, token C.ulonglong) C.int {
 
 //export VRRelease
 func VRRelease(code C.int) C.int {
-	hold := nativeHold(int(code))
-	if hold == nil {
-		return 0
-	}
-	held, active := hold.Release()
-	primary := nativeKey == int(code)
-	if primary {
-		nativeKey = 0
-	}
+	held, active, primary := nativeHolds.Release(int(code))
 	if !held {
 		return 0
 	}
@@ -101,12 +75,12 @@ func VRRelease(code C.int) C.int {
 
 //export VRAbandon
 func VRAbandon() {
-	nativeKey = 0 // physical hold remains, so a short side click can replay
+	nativeHolds.Abandon() // retain key-up after recording timeout
 }
 
 //export VRArmed
 func VRArmed() C.int {
-	if nativeKey != 0 {
+	if nativeHolds.Armed() {
 		return 1
 	}
 	return 0
@@ -126,13 +100,8 @@ func VREpochValid(token C.ulonglong) C.int {
 //export VREpochCancel
 func VREpochCancel() {
 	nativeEpoch.Start()
-	nativeKey = 0
-	// A disabled event tap can lose the physical key-up event. Release the
-	// existing Hold objects; do not replace them, or old timer tokens can
-	// collide with a later press.
-	for i := range nativeKeys {
-		nativeKeys[i].hold.Release()
-	}
+	// Disabled event tap: release every hold and obsolete timer.
+	nativeHolds.Cancel()
 }
 
 //export VRClipboardSnapshotFits
@@ -189,11 +158,9 @@ func VRProfile(config *C.char) *C.char {
 	reply := headlessProfile(request{Config: json.RawMessage(C.GoString(config))})
 	if reply.OK {
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
-		for i := range nativeKeys {
-			nativeKeys[i].role = 0
-		}
-		nativeKeys[macKeyCode(profile["dictation"].(string))].role = 1
-		nativeKeys[macKeyCode(profile["rewrite"].(string))].role = 2
+		nativeRole = [105]uint8{}
+		nativeRole[macKeyCode(profile["dictation"].(string))] = 1
+		nativeRole[macKeyCode(profile["rewrite"].(string))] = 2
 	}
 	return nativeJSON(reply)
 }
