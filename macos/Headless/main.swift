@@ -395,9 +395,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func begin(_ action: Action) {
         guard targetPID > 0 else { reset("No target"); return }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { reset("Focus changed"); return }
-        let window = focusedWindow(), element = focusedElement()
+        let window = focusedWindow(), element = action == .rewrite ? focusedElement() : nil
         guard action == .dictation || (window != nil && element != nil) else { reset("Target unavailable"); return }
-        targetFocus = FocusIdentity(window: window, element: action == .rewrite ? element : nil,
+        targetFocus = FocusIdentity(window: window, element: element,
                                     title: action == .rewrite ? window.flatMap(windowTitle) : nil)
         guard microphone.running else { reset("Mic error"); return }
         taskID = VREpochStart()
@@ -516,11 +516,13 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func targetStillValid() -> Bool {
-        let window = focusedWindow()
-        return VREpochValid(taskID) == 1 &&
-            NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID &&
-            targetFocus?.matches(window: window, element: focusedElement(),
-                                 title: window.flatMap(windowTitle)) == true
+        guard VREpochValid(taskID) == 1,
+              NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID,
+              let targetFocus else { return false }
+        let window = targetFocus.window == nil ? nil : focusedWindow()
+        return targetFocus.matches(window: window,
+                                   element: targetFocus.element == nil ? nil : focusedElement(),
+                                   title: targetFocus.title == nil ? nil : window.flatMap(windowTitle))
     }
 
     private func paste(_ text: String) {
