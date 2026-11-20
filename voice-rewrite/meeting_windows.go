@@ -101,18 +101,7 @@ var meetingEnumCallback = syscall.NewCallback(func(hwnd, statePtr uintptr) uintp
 	return 1
 })
 
-// Native Windows owns process selection, microphone and HUD painting only.
-// The complete Meeting transaction and its presentation state live in Go Core.
-type meetingSession = meetingcore.Session
-type meetingView = meetingcore.View
-type meetingMetrics = meetingcore.Metrics
-
-func newMeetingSession(app *appState, demo bool) *meetingSession {
-	s := meetingcore.NewSession(app.cfg, app.logger.Printf, saveConfig, func(cfg Config) { app.cfg = cfg }, demo)
-	return s
-}
-
-func expressMeeting(s *meetingSession, app *appState, rec *audioRecorder, generation uint64, mode string) {
+func expressMeeting(s *meetingcore.Session, app *appState, rec *audioRecorder, generation uint64, mode string) {
 	defer app.busy.Store(false)
 	result := <-rec.result
 	if !app.core.Valid(generation) || s.Context().Err() != nil {
@@ -141,7 +130,7 @@ func (a *appState) closeMeeting() {
 
 func (a *appState) beginMeeting(pid uint32, demo bool) {
 	a.closeMeeting()
-	s := newMeetingSession(a, demo)
+	s := meetingcore.NewSession(a.cfg, a.logger.Printf, saveConfig, func(cfg Config) { a.cfg = cfg }, demo)
 	sourceName := fmt.Sprintf("应用 PID %d", pid)
 	for _, source := range runningMeetingSources() {
 		if source.pid == pid {
@@ -149,7 +138,7 @@ func (a *appState) beginMeeting(pid uint32, demo bool) {
 			break
 		}
 	}
-	var demoView *meetingView
+	var demoView *meetingcore.View
 	if demo {
 		view := demoMeeting()
 		demoView = &view
