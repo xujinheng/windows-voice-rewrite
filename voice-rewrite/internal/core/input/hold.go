@@ -71,4 +71,3 @@ func (s *Hold) Release() (wasHeld, active bool) {
 	s.token++
 	return true, active
 }
-
