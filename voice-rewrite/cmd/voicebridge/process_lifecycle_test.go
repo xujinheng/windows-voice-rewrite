@@ -70,7 +70,7 @@ func TestBridgeSubprocessDelayedProviderReply(t *testing.T) {
 			payload := map[string]any{
 				"v": 1, "id": "delayed", "op": op, "config": cfg,
 				"selected_text": "Original text",
-				"pcm_base64": base64.StdEncoding.EncodeToString(make([]byte, 3200)),
+				"pcm_base64":    base64.StdEncoding.EncodeToString(make([]byte, 3200)),
 			}
 			if err := json.NewEncoder(stdin).Encode(payload); err != nil {
 				_ = stdin.Close()
