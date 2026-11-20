@@ -1,5 +1,21 @@
 // This is appended to the host source for the native CI-only smoke binary.
 // It is never linked into the production app.
+// Same-file extension can exercise private host state without widening production access.
+extension HeadlessApp {
+    func verifyReboundRelease(code: Int64, name: String, before: HostConfig,
+                              after: HostConfig, modifier: Bool) {
+        config = before
+        updatePress(code: code, name: name, down: true, delay: 3600)
+        precondition(VRDown(Int32(code)) == 1 && VRArmed() == 1)
+        config = after
+        if modifier {
+            handleModifier(code: code, flags: [])
+        } else {
+            updatePress(code: code, name: name, down: false, delay: 0)
+        }
+        precondition(VRDown(Int32(code)) == 0 && VRArmed() == 0)
+    }
+}
 MainActor.assumeIsolated {
     let window = AXUIElementCreateApplication(90001)
     let otherWindow = AXUIElementCreateApplication(90002)
@@ -47,5 +63,21 @@ MainActor.assumeIsolated {
         precondition(String(decoding: buffer.prefix(size), as: UTF16.self) == String(character))
     }
     precondition(unicodeKeyEvents(String(repeating: "\u{0301}", count: 21)) == nil)
-    print("AX focus, selection and Unicode event smoke passed")
+    // Exercise the production Swift -> native Go Hold path without posting HID events.
+    // A shortcut can be rebound while its old physical key is still down.
+    let configData = try! Data(contentsOf: URL(fileURLWithPath: "macos/Headless/config.example.json"))
+    let original = try! JSONSerialization.jsonObject(with: configData) as! [String: Any]
+    var mouseBound = original
+    mouseBound["dictation_hotkey"] = "Mouse4"
+    func host(_ raw: [String: Any]) -> HostConfig {
+        let output = try! GoCore.request(config: raw, operation: "host_profile",
+                                         audio: Data(), selection: nil)
+        return HostConfig(raw: raw, profile: output.profile!)
+    }
+    let hostApp = HeadlessApp()
+    hostApp.verifyReboundRelease(code: 103, name: "Mouse4", before: host(mouseBound),
+                                 after: host(original), modifier: false)
+    hostApp.verifyReboundRelease(code: 54, name: "RightCommand", before: host(original),
+                                 after: host(mouseBound), modifier: true)
+    print("AX focus, selection, Unicode and shortcut rebind smoke passed")
 }
