@@ -397,8 +397,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { reset("Focus changed"); return }
         let window = focusedWindow(), element = focusedElement()
         guard action == .dictation || (window != nil && element != nil) else { reset("Target unavailable"); return }
-        targetFocus = FocusIdentity(window: window, element: element,
-                                    title: window.flatMap(windowTitle))
+        targetFocus = FocusIdentity(window: window, element: action == .rewrite ? element : nil,
+                                    title: action == .rewrite ? window.flatMap(windowTitle) : nil)
         guard microphone.running else { reset("Mic error"); return }
         taskID = VREpochStart()
         pill.recording(rewrite: action == .rewrite, started: Date(),

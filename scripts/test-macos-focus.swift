@@ -66,6 +66,10 @@ MainActor.assumeIsolated {
     let textOnly = AXSelection(text: "repeat", range: nil)
     precondition(textOnly.matches(AXSelection(text: "repeat", range: nil)))
     precondition(!textOnly.matches(AXSelection(text: "changed", range: nil)))
+    // Dictation must tolerate caret and tab-title changes within the same window.
+    let dictationTarget = FocusIdentity(window: window, element: nil, title: nil)
+    precondition(dictationTarget.matches(window: window, element: otherEditor, title: "Switched tab"))
+    precondition(!dictationTarget.matches(window: otherWindow, element: editor, title: "Original tab"))
     // Dictation can retain whatever AX identity was actually available.
     let partial = FocusIdentity(window: window, element: nil, title: "Original tab")
     precondition(partial.matches(window: window, element: nil, title: "Original tab"))
