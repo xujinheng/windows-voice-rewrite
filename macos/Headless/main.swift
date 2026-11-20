@@ -293,6 +293,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func reload() {
+        guard activeAction == nil && !pending else { show("Reload after current task"); return }
         do {
             config = try HostConfig.load(configURL)
             pill.configure(config.profile.pill)
@@ -333,7 +334,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             }
             let code = event.getIntegerValueField(.keyboardEventKeycode)
             let mouse = event.getIntegerValueField(.mouseEventButtonNumber)
-            // The event tap executes on the main runloop; never perform audio/IPC here.
             if type == .flagsChanged {
                 app.handleModifier(code: code, flags: event.flags)
             } else if type == .keyDown {
@@ -347,7 +347,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 }
                 if mouse == 3 || mouse == 4 {
                     let name = mouse == 3 ? "Mouse4" : "Mouse5"
-                    if name == app.config.profile.dictation || name == app.config.profile.rewrite {
+                    if (type == .otherMouseDown && (name == app.config.profile.dictation ||
+                        name == app.config.profile.rewrite)) ||
+                        (type == .otherMouseUp && VRDown(Int32(100 + mouse)) != 0) {
                         app.updatePress(code: 100 + mouse, name: name,
                                         down: type == .otherMouseDown,
                                         delay: Double(app.config.profile.mouseDelayMS) / 1000,
@@ -376,16 +378,15 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         case 61: (name, family) = ("RightOption", .maskAlternate)
         default: return
         }
-        // Right-side flags may change with other modifiers; only track real presses.
         updatePress(code: code, name: name,
                     down: VRDown(Int32(code)) == 0 && flags.contains(family),
                     delay: Double(config.profile.modifierDelayMS) / 1000)
     }
     private func updatePress(code: Int64, name: String, down: Bool, delay: TimeInterval,
                              cursor: CGPoint? = nil) {
-        guard name == config.profile.dictation || name == config.profile.rewrite else { return }
         let key = Int32(code)
         if down {
+            guard name == config.profile.dictation || name == config.profile.rewrite else { return }
             let token = VRPress(key, pending ? 1 : 0)
             guard token != 0 else { return }
             activeAction = name == config.profile.dictation ? .dictation : .rewrite
