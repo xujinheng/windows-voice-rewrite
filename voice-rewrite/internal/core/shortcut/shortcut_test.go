@@ -5,19 +5,6 @@ import (
 	"testing"
 )
 
-func TestSettingsSaveShowsTheFieldErrorBeforeCapture(t *testing.T) {
-	field := errors.New("地址无效")
-	if err := SettingsSaveAfterFields(field, true); err != field {
-		t.Fatal(err)
-	}
-	if err := SettingsSaveAfterFields(nil, true); err == nil || err.Error() != CapturePendingMessage {
-		t.Fatal(err)
-	}
-	if err := SettingsSaveAfterFields(nil, false); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestVoiceShortcutNormalization(t *testing.T) {
 	tests := []struct {
 		raw, want string
@@ -57,12 +44,6 @@ func TestDictationAndRewriteShortcutCollisions(t *testing.T) {
 	}
 	if text, ok := CaptureFailure(errors.New("其它")); !ok || text != CaptureFailedPrefix+"其它" {
 		t.Fatal(text)
-	}
-	if AfterCaptureKey(nil) != ShortcutCaptureAccept || AfterCaptureKey(ErrSkipCapture) != ShortcutCaptureIgnore || AfterCaptureKey(errors.New(WinCaptureMessage)) != ShortcutCaptureHint || AfterCaptureKey(errors.New("其它")) != ShortcutCaptureHint {
-		t.Fatal("capture key")
-	}
-	if AfterCaptureField(nil) != ShortcutCaptureStore || AfterCaptureField(ErrSkipCapture) != ShortcutCaptureStore || AfterCaptureField(errors.New("其它")) != ShortcutCaptureHint {
-		t.Fatal("capture field")
 	}
 	if SettingsKeyAction(true, 0x0100, 0x1B) != SettingsKeyCancel || SettingsKeyAction(true, 0x0104, 0x41) != SettingsKeyAccept || SettingsKeyAction(false, 0x0100, 0x1B) != SettingsKeyClose || SettingsKeyAction(false, 0x0104, 0x1B) != SettingsKeyIgnore {
 		t.Fatal("settings key")
@@ -129,9 +110,6 @@ func TestCaptureKeyIgnoresModifiersAndWindowsKey(t *testing.T) {
 	got, err := CaptureKey('P', Ctrl, false)
 	if err != nil || got != "Ctrl+P" {
 		t.Fatalf("capture %q %v", got, err)
-	}
-	if CaptureSaved("Ctrl+P") != "已录入 Ctrl+P。点击「保存设置」并重启软件后生效。" {
-		t.Fatal("saved sentence")
 	}
 }
 

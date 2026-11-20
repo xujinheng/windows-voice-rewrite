@@ -329,14 +329,9 @@ func (p *uxSettings) acceptShortcutKey(vk, mods uint32) {
 	winL, _, _ := procGetAsyncKeyState.Call(0x5B)
 	winR, _, _ := procGetAsyncKeyState.Call(0x5C)
 	candidate, err := shortcut.CaptureKey(vk, mods, winL&0x8000 != 0 || winR&0x8000 != 0)
-	switch shortcut.AfterCaptureKey(err) {
-	case shortcut.ShortcutCaptureHint:
-		text, _ := shortcut.CaptureFailure(err)
+	if text, show := shortcut.CaptureFailure(err); show {
 		uxSetText(p.hint, text)
-		return
-	case shortcut.ShortcutCaptureIgnore:
-		return
-	default:
+	} else if err == nil {
 		p.acceptShortcut(candidate)
 	}
 }
@@ -354,14 +349,13 @@ func (p *uxSettings) acceptShortcut(candidate string) {
 		target = p.shortcut
 		normalized, err = shortcut.ValidateDictation(candidate, uxWinText(p.rewriteShortcut), p.app.cfg.HotkeyExit)
 	}
-	if shortcut.AfterCaptureField(err) == shortcut.ShortcutCaptureHint {
-		text, _ := shortcut.CaptureFailure(err)
+	if text, show := shortcut.CaptureFailure(err); show {
 		uxSetText(p.hint, text)
 		return
 	}
 	uxSetText(target, normalized)
 	p.stopShortcutCapture()
-	uxSetText(p.hint, shortcut.CaptureSaved(normalized))
+	uxSetText(p.hint, "已录入 "+normalized+"。点击「保存设置」并重启软件后生效。")
 }
 func uxSettingsKeyMessage(msg winMSG) bool {
 	p := uxActiveSettings
@@ -643,8 +637,11 @@ func (p *uxSettings) save() error {
 		fields[i] = uxWinText(h)
 	}
 	cfg, err := uxUpdatedConfig(p.app.cfg, fields)
-	if err = shortcut.SettingsSaveAfterFields(err, p.capturingShortcut != 0); err != nil {
+	if err != nil {
 		return err
+	}
+	if p.capturingShortcut != 0 {
+		return errors.New(shortcut.CapturePendingMessage)
 	}
 	newRewrite, newDictation, changedShortcut, err := shortcut.AssignPair(cfg.HotkeyRecord, cfg.DictationHotkey, cfg.HotkeyExit, uxWinText(p.rewriteShortcut), uxWinText(p.shortcut))
 	if err != nil {
