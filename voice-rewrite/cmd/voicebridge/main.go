@@ -314,9 +314,9 @@ func processRequest(ctx context.Context, req request) response {
 		if err != nil {
 			return providerFailure(req.ID, "textedit_failed", "selected text processing failed", err)
 		}
-		action := textedit.RouteTask(result, instruction, false)
+		action := textedit.RouteTask(result, instruction)
 		route := "preview"
-		if action == textedit.Replace || action == textedit.TryReplace {
+		if action == textedit.Replace {
 			route = "replace"
 		}
 		return success(req.ID, map[string]any{
