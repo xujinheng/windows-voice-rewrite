@@ -389,6 +389,16 @@ func TestOneClickGoBuildsForBothMacArchitectures(t *testing.T) {
 	}
 }
 
+// A distinct module can provide a Meeting audio source without importing
+// voice-rewrite/internal or holding any platform-specific native handle.
+type externalMeetingSource struct{}
+
+func (externalMeetingSource) Stream(ctx context.Context, started func(), push func([]byte)) error {
+	return ctx.Err()
+}
+
+var _ meeting.AudioSource = externalMeetingSource{}
+
 func TestStandaloneClientCanImportPublicVoiceAndConfig(t *testing.T) {
 	// This second Go module is deliberately outside the Core's internal/
 	// import boundary. Meeting must be usable with no Windows main package.
