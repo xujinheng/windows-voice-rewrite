@@ -1,6 +1,6 @@
 # Product demonstration
 
-The [30-second demo](voicerewrite-demo.mp4) shows dictation (Mouse4), selected-text editing and questions (Mouse5). The README displays the [animated preview](voicerewrite-preview.webp).
+The [30-second demo](voicerewrite-demo.mp4) shows dictation (Mouse4), selected-text rewriting into English and questions (Mouse5). The README displays the [animated preview](voicerewrite-preview.webp).
 
 The editor text and spoken commands are scripted examples. The recording indicator is captured from VoiceRewrite on Windows.
 
