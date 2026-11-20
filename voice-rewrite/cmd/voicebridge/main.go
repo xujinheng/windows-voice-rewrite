@@ -57,11 +57,8 @@ func safeProcessRequest(ctx context.Context, req request) (reply response) {
 		if err := ctx.Err(); err != nil { reply = contextFailure(err) }
 	}()
 	trimmed := bytes.TrimSpace(req.Config)
-	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
-		return failure("invalid_config", "config object is required")
-	}
-	if trimmed[0] != '{' {
-		return failure("invalid_config", "config must be an object")
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return failure("invalid_config", msgInvalidConfig)
 	}
 	cfg, err := coreconfig.Parse(req.Config)
 	if err != nil {
