@@ -3,7 +3,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -13,8 +12,6 @@ import (
 
 	"voicerewrite/internal/core/audio"
 	"voicerewrite/internal/core/indicator"
-	"voicerewrite/internal/core/speech"
-	"voicerewrite/internal/core/textedit"
 	"voicerewrite/internal/core/ux"
 	"voicerewrite/internal/core/voice"
 )
@@ -121,8 +118,7 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 		app.postHandyPhase(indicator.Error, generation)
 		return
 	}
-	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), speech.TranscribeTimeout)
-	defer cancel()
+	ctx := app.epoch.ContextFor(generation)
 	start := time.Now()
 	outcome, err := voice.Run(ctx, app.cfg, r.pcm, "", false, nil)
 	if !app.epoch.Valid(generation) {
@@ -227,8 +223,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		return
 	}
 	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/audio.PCMBytesPerSecond)
-	ctx, cancel := context.WithTimeout(app.epoch.ContextFor(generation), textedit.SpokenTaskTimeout)
-	defer cancel()
+	ctx := app.epoch.ContextFor(generation)
 	started := time.Now()
 	answer, e := voice.Run(ctx, app.cfg, r.pcm, sel.Text, true, func(text string) {
 		if !app.epoch.Valid(generation) {
