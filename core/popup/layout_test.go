@@ -40,4 +40,3 @@ func TestClickDismissesExceptResponseAndActions(t *testing.T) {
 		}
 	}
 }
-
