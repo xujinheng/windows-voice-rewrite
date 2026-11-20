@@ -209,6 +209,7 @@ func HostSpec() map[string]any {
 		"attentionGlyph":      rgb(AttentionGlyph),
 		"processingDictation": Label(Processing, "听写"),
 		"processingRewrite":   Label(Processing, "改写"),
+		"rewritingLabel":      Label(Rewriting, "改写"),
 		"sentLabel":           Label(Success, "听写"), "errorLabel": Label(Error, "听写"),
 		"fallbackLabel": Label(Fallback, "听写"),
 	}

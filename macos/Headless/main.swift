@@ -44,7 +44,7 @@ struct PillSpec: Decodable {
     let terminalMS: Int
     let pillColor, clockColor, labelColor, dictationAccent, rewriteAccent: [Int]
     let errorAccent, sentMark, fallbackMark, closeColor, closeHover, attentionGlyph: [Int]
-    let processingDictation, processingRewrite, sentLabel, errorLabel, fallbackLabel: String
+    let processingDictation, processingRewrite, rewritingLabel, sentLabel, errorLabel, fallbackLabel: String
 }
 
 private struct HostProfile: Decodable {
@@ -63,7 +63,6 @@ private final class Microphone {
     private let lock = NSLock()
     private var samples: [Float] = []
     private var sampleRate: Double = 0
-    private var maxSamples = 0
     private var rms = 0.0
     var meterLevel: Double {
         lock.lock()
@@ -84,13 +83,13 @@ private final class Microphone {
         samples = []
         rms = 0
         sampleRate = format.sampleRate
-        maxSamples = Int(format.sampleRate) * maximumSeconds
+        let maxSamples = Int(format.sampleRate) * maximumSeconds
         lock.unlock()
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             guard let self, let channels = buffer.floatChannelData else { return }
             self.lock.lock()
             defer { self.lock.unlock() }
-            let available = max(0, self.maxSamples - self.samples.count)
+            let available = max(0, maxSamples - self.samples.count)
             let count = min(Int(buffer.frameLength), available)
             guard count > 0 else { return }
             let channelCount = Int(buffer.format.channelCount)
@@ -186,6 +185,10 @@ private struct BridgeReply: Decodable {
 }
 
 // In-process Go Core. Event/animation calculations never cross IPC.
+private let onASRTranscribed: @convention(c) (UInt64) -> Void = { token in
+    DispatchQueue.main.async { MainActor.assumeIsolated { (NSApp.delegate as? HeadlessApp)?.reportTranscribed(token) } }
+}
+
 private enum GoCore {
     static func request(config: String, operation: String, audio: Data,
                         selection: String?, token: UInt64 = 0) throws -> BridgeReply.Output {
@@ -195,7 +198,7 @@ private enum GoCore {
                 (selection ?? "").withCString { selected in
                     audio.withUnsafeBytes { pcm in
                         VRRun(cfg, op, pcm.bindMemory(to: UInt8.self).baseAddress,
-                              Int32(audio.count), selected, token)
+                              Int32(audio.count), selected, token, onASRTranscribed)
                     }
                 }
             }
@@ -278,6 +281,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
     @objc private func quit() { VREpochCancel(); NSApp.terminate(nil) }
     private func show(_ text: String) { item.button?.title = text }
+    fileprivate func reportTranscribed(_ token: UInt64) { if pending && taskID == token && VREpochValid(token) == 1 { show(config.profile.pill.rewritingLabel) } }
 
     private func startEventTap() {
         guard tap == nil else { return }

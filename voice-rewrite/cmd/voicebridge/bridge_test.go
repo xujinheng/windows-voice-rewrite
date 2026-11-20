@@ -661,3 +661,39 @@ func TestBridgeSpokenSelectionRejectsBadPCMAndEmptySelection(t *testing.T) {
 		t.Fatal("rejected spoken requests contacted a provider")
 	}
 }
+
+func TestBridgeTranscribedStageOnlyOnRewrite(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/audio/transcriptions":
+			_, _ = io.WriteString(w, `{"text":"润色一下"}`)
+		case "/v1/chat/completions":
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\"intent\":\"edit\",\"result\":\"updated\"}"}}]}`)
+		default:
+			t.Errorf("unexpected provider endpoint: %s", r.URL.Path)
+			w.WriteHeader(404)
+		}
+	}))
+	defer srv.Close()
+	cfg := configFor(srv.URL)
+	cfg["text_model"] = "test-model"
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	req := request{ID: "stage", Op: "selected_voice_task", Config: raw, NativePCM: make([]byte, 3200),
+		SelectedText: "Original", AfterASR: func(text string) {
+			if text != "润色一下" {
+				t.Errorf("wrong transcript: %q", text)
+			}
+			calls++
+		}}
+	if reply := safeProcessRequest(context.Background(), req); !reply.OK || calls != 1 {
+		t.Fatalf("rewrite stage not reported once: reply=%+v calls=%d", reply, calls)
+	}
+	req.Op = "transcribe"
+	if reply := safeProcessRequest(context.Background(), req); !reply.OK || calls != 1 {
+		t.Fatalf("dictation incorrectly reported rewrite stage: reply=%+v calls=%d", reply, calls)
+	}
+}
