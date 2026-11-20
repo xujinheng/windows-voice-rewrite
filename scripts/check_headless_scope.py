@@ -51,6 +51,8 @@ def main():
     if any(token in swift for token in ("RightCommand", "RightOption", "Mouse4", "Mouse5",
                                            "config.profile.dictation", "config.profile.rewrite")):
         raise SystemExit("native host must get shortcut-to-mode decisions from Go")
+    if "private enum Action" in swift or "activeAction" in swift:
+        raise SystemExit("Swift must not mirror Go-owned task role state")
     if "Process()" in swift or "voicebridge" in swift:
         raise SystemExit("macOS retains a separate Go bridge subprocess")
     if not required.issubset(imports):
