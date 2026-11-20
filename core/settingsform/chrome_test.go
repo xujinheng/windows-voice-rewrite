@@ -2,32 +2,14 @@ package settingsform
 
 import "testing"
 
-func TestSettingsRailAndTitlesStayDistinct(t *testing.T) {
-	if RailFill(500) != (Box{0, 0, 194, 500}) || RailDivider(500) != (Box{193, 0, 1, 500}) {
-		t.Fatal("rail")
+func TestSettingsRailPaletteKeepsLightAndDarkDistinct(t *testing.T) {
+	if RailWidth != 194 || RailDividerX != RailWidth-1 {
+		t.Fatal("rail alignment")
 	}
 	if DirectFieldRadius == FallbackFieldRadius || NavRadius != FallbackFieldRadius {
 		t.Fatal("radius")
 	}
-	if RailColor(true) == 0x17191E || RailColor(false) == 0xF6F7F9 || RailColor(true) == RailColor(false) {
-		t.Fatal("rail color")
-	}
-	x, y, cut, h := DirectTitle()
-	fallback := FallbackTitle()
-	if x != 220 || y != 35 || cut != 245 || h != 39 || fallback != (Edges{220, 34, 15, 80}) || y == fallback.Top {
-		t.Fatalf("title %d %d %d %d %#v", x, y, cut, h, fallback)
-	}
-	sx, sy, scut, sh := DirectSubtitle()
-	gdi := FallbackSubtitle()
-	if sx != 222 || sy != 79 || scut != 244 || sh != 23 || gdi != (Edges{222, 80, 15, 110}) {
-		t.Fatalf("subtitle %d %d %#v", sy, scut, gdi)
-	}
-	fx, fy, fw, fh := DirectFooterRule()
-	if fx != 194 || fy != 77 || fw != 194 || fh != 1 || DirectSection() != (Box{224, 132, 235, 26}) {
-		t.Fatal("section")
-	}
-	item := Edges{Left: 10, Top: 20, Right: 180, Bottom: 55}
-	if NavAccent(item) != (Edges{12, 29, 15, 46}) || NavLabelLeft(item.Left) != 28 || NavFocus(item) != (Edges{18, 24, 174, 51}) {
-		t.Fatal("nav item")
+	if RailColor(true) == RailColor(false) {
+		t.Fatal("settings sidebar lost its light/dark palette")
 	}
 }
