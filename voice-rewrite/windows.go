@@ -445,14 +445,19 @@ func runApp() {
 		app.busy.Store(true) // no second operation until the worker is finished
 		app.setStatus(trayTranscribing)
 		l.Print("recording stop requested; selection/model processing moved to worker")
-		kind := input.FinishRecording(cfg.RecordMode == "hold", holdIsDictation, holdMeeting != nil)
-		if kind == input.FinishDictation || kind == input.FinishMeeting {
-			app.postHandyPhase(indicator.Processing, activeGeneration)
-		} else if kind == input.FinishSpokenRewrite {
-			app.postHandyPhase(indicator.Selection, activeGeneration)
+		if cfg.RecordMode == "hold" {
+			if holdMeeting != nil || holdIsDictation {
+				app.postHandyPhase(indicator.Processing, activeGeneration)
+			} else {
+				app.postHandyPhase(indicator.Selection, activeGeneration)
+			}
 		}
-		switch kind {
-		case input.FinishMeeting:
+		switch {
+		case cfg.RecordMode != "hold":
+			sel := selected
+			sel.Anchor = currentCursorPoint()
+			go processRecorded(app, rec, sel, activeGeneration)
+		case holdMeeting != nil:
 			if holdMeeting.runtime.Context().Err() != nil {
 				// The single buffered recorder result needs no drain worker.
 				app.busy.Store(false)
@@ -462,14 +467,10 @@ func runApp() {
 				go holdMeeting.express(app, rec, activeGeneration, meetingcore.VoiceMode(holdIsDictation))
 			}
 			holdMeeting = nil
-		case input.FinishDictation:
+		case holdIsDictation:
 			go processDictationHold(app, rec, holdTargetWindow, activeGeneration)
-		case input.FinishSpokenRewrite:
-			go processRecordedHold(app, rec, holdTargetWindow, currentCursorPoint(), activeGeneration)
 		default:
-			sel := selected
-			sel.Anchor = currentCursorPoint()
-			go processRecorded(app, rec, sel, activeGeneration)
+			go processRecordedHold(app, rec, holdTargetWindow, currentCursorPoint(), activeGeneration)
 		}
 	}
 
