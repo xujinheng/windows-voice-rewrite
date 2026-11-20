@@ -1,4 +1,4 @@
-package voice
+package meeting
 
 import (
 	"context"
@@ -8,18 +8,17 @@ import (
 	"time"
 
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
-	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
 )
 
-func newTestMeetingCore() *MeetingSession {
-	return NewMeetingSession(coreconfig.Defaults(), func(string, ...any) {}, func(coreconfig.Config) error { return nil })
+func newTestMeetingCore() *Session {
+	return NewSession(coreconfig.Defaults(), func(string, ...any) {}, func(coreconfig.Config) error { return nil })
 }
 
 func TestMeetingSettingsStoreFailureDoesNotMutateState(t *testing.T) {
 	original := coreconfig.Defaults()
 	storeError := errors.New("disk full")
 	var notified bool
-	s := NewMeetingSession(original, func(string, ...any) {}, func(coreconfig.Config) error { return storeError })
+	s := NewSession(original, func(string, ...any) {}, func(coreconfig.Config) error { return storeError })
 	defer s.runtime.Stop()
 	s.onConfig = func(coreconfig.Config) { notified = true }
 	if err := s.updateProfile("new background", "new terms"); !errors.Is(err, storeError) {
@@ -33,7 +32,7 @@ func TestMeetingSettingsStoreFailureDoesNotMutateState(t *testing.T) {
 func TestMeetingSettingsUseInjectedStore(t *testing.T) {
 	var persisted coreconfig.Config
 	var calls int
-	s := NewMeetingSession(coreconfig.Defaults(), func(string, ...any) {}, func(cfg coreconfig.Config) error {
+	s := NewSession(coreconfig.Defaults(), func(string, ...any) {}, func(cfg coreconfig.Config) error {
 		persisted = cfg
 		calls++
 		return nil
@@ -54,26 +53,26 @@ func TestMeetingSettingsUseInjectedStore(t *testing.T) {
 
 func TestMeetingProfileRejectsOverlongTextBeforeSave(t *testing.T) {
 	var calls int
-	s := NewMeetingSession(coreconfig.Defaults(), func(string, ...any) {}, func(coreconfig.Config) error {
+	s := NewSession(coreconfig.Defaults(), func(string, ...any) {}, func(coreconfig.Config) error {
 		calls++
 		return nil
 	})
 	defer s.runtime.Stop()
-	err := s.updateProfile(" "+strings.Repeat("字", meetingcore.MaxBackgroundRunes), "terms")
+	err := s.updateProfile(" "+strings.Repeat("字", MaxBackgroundRunes), "terms")
 	if err == nil || err.Error() != "背景最多 4000 字，术语最多 2000 字" || calls != 0 {
 		t.Fatalf("background: %v calls=%d", err, calls)
 	}
-	err = s.updateProfile("bg", strings.Repeat("词", meetingcore.MaxTermsRunes+1))
+	err = s.updateProfile("bg", strings.Repeat("词", MaxTermsRunes+1))
 	if err == nil || err.Error() != "背景最多 4000 字，术语最多 2000 字" || calls != 0 {
 		t.Fatalf("terms: %v calls=%d", err, calls)
 	}
-	if err = s.updateProfile(strings.Repeat("字", meetingcore.MaxBackgroundRunes), strings.Repeat("词", meetingcore.MaxTermsRunes)); err != nil || calls != 1 {
+	if err = s.updateProfile(strings.Repeat("字", MaxBackgroundRunes), strings.Repeat("词", MaxTermsRunes)); err != nil || calls != 1 {
 		t.Fatalf("limit accepted: %v calls=%d", err, calls)
 	}
 }
 
 func TestMeetingSettingsRejectMissingStore(t *testing.T) {
-	s := NewMeetingSession(coreconfig.Defaults(), func(string, ...any) {}, nil)
+	s := NewSession(coreconfig.Defaults(), func(string, ...any) {}, nil)
 	defer s.runtime.Stop()
 	if err := s.updateProfile("project", "terms"); err == nil {
 		t.Fatal("missing store silently accepted config update")
@@ -84,7 +83,7 @@ func TestMeetingHistoryIsNotDiscardedAfterTwelveTurns(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.runtime.Stop()
 	for id := uint64(1); id <= 30; id++ {
-		s.view.Captions = meetingcore.UpsertCaption(s.view.Captions, id, "test sentence", true, true)
+		s.view.Captions = UpsertCaption(s.view.Captions, id, "test sentence", true, true)
 	}
 	if len(s.view.Captions) != 30 || s.view.Captions[0].ID != 1 {
 		t.Fatalf("reader lost early captions: %#v", s.view.Captions)
@@ -94,13 +93,13 @@ func TestMeetingHistoryIsNotDiscardedAfterTwelveTurns(t *testing.T) {
 func TestMeetingStreamingDoesNotClearTranslation(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.runtime.Stop()
-	s.view.Captions = meetingcore.UpsertCaption(s.view.Captions, 1, "the first phrase", false, true)
+	s.view.Captions = UpsertCaption(s.view.Captions, 1, "the first phrase", false, true)
 	s.updateCaption(1, 1, "the first phrase", "第一句")
-	s.view.Captions = meetingcore.UpsertCaption(s.view.Captions, 1, "the first phrase continues", false, false)
+	s.view.Captions = UpsertCaption(s.view.Captions, 1, "the first phrase continues", false, false)
 	if len(s.view.Captions) != 1 || s.view.Captions[0].Chinese != "第一句" {
 		t.Fatalf("translation flickered away: %#v", s.view.Captions)
 	}
-	s.view.Captions = meetingcore.UpsertCaption(s.view.Captions, 1, "", false, false)
+	s.view.Captions = UpsertCaption(s.view.Captions, 1, "", false, false)
 	if s.view.Captions[0].Source == "" {
 		t.Fatal("empty stream chunk erased readable transcript")
 	}
@@ -125,15 +124,15 @@ func TestMeetingPauseInvalidatesOldWork(t *testing.T) {
 	}
 }
 func TestMeetingSerialInference(t *testing.T) {
-	var g meetingcore.Scheduler
-	ctx, release, err := g.Acquire(context.Background(), meetingcore.PriorityCaption)
+	var g Scheduler
+	ctx, release, err := g.Acquire(context.Background(), PriorityCaption)
 	defer release()
 	if err != nil || ctx.Err() != nil {
 		t.Fatal(err)
 	}
 	waiting, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	if _, _, err = g.Acquire(waiting, meetingcore.PriorityPreview); err == nil {
+	if _, _, err = g.Acquire(waiting, PriorityPreview); err == nil {
 		t.Fatal("parallel work admitted")
 	}
 }
@@ -141,7 +140,7 @@ func TestMeetingSerialInference(t *testing.T) {
 func TestMeetingPauseRemovesAbandonedLiveCaption(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.runtime.Stop()
-	s.view.Captions = []meetingcore.Caption{{ID: 1, Source: "final", Final: true}, {ID: 2, Source: "unfinished", Live: "unfinished"}}
+	s.view.Captions = []Caption{{ID: 1, Source: "final", Final: true}, {ID: 2, Source: "unfinished", Live: "unfinished"}}
 	s.setCapturePaused(true)
 	s.setCapturePaused(false)
 	if len(s.view.Captions) != 1 || !s.view.Captions[0].Final {
@@ -152,9 +151,9 @@ func TestMeetingPauseRemovesAbandonedLiveCaption(t *testing.T) {
 func TestMeetingCancellationDiscardsUnfinishedLines(t *testing.T) {
 	s := newTestMeetingCore()
 	defer s.runtime.Stop()
-	s.view.Reply.Displayed.Lines[0] = meetingcore.Line{English: "I would"}
-	s.view.Reply.Displayed.Lines[1] = meetingcore.Line{English: "Could you clarify?", Chinese: "能解释吗", Complete: true}
-	s.view.Expression = meetingcore.Line{English: "Partial"}
+	s.view.Reply.Displayed.Lines[0] = Line{English: "I would"}
+	s.view.Reply.Displayed.Lines[1] = Line{English: "Could you clarify?", Chinese: "能解释吗", Complete: true}
+	s.view.Expression = Line{English: "Partial"}
 	s.setCapturePaused(true)
 	if s.view.Reply.Displayed.Lines[0].English != "" || s.view.Reply.Displayed.Lines[1].English == "" || s.view.Expression.English != "" {
 		t.Fatal("unfinished output retained")

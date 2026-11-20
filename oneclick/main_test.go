@@ -19,6 +19,7 @@ import (
 
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/asrtext"
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/config"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/meeting"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
 )
 
@@ -389,6 +390,14 @@ func TestOneClickGoBuildsForBothMacArchitectures(t *testing.T) {
 }
 
 func TestStandaloneClientCanImportPublicVoiceAndConfig(t *testing.T) {
+	// This second Go module is deliberately outside the Core's internal/
+	// import boundary. Meeting must be usable with no Windows main package.
+	session := meeting.NewSession(coreconfig.Defaults(), func(string, ...any) {}, nil)
+	if session.Context().Err() != nil {
+		t.Fatal("public Meeting runtime unexpectedly canceled")
+	}
+	session.Stop()
+
 	cfg := coreconfig.Defaults()
 	if cfg.ASRBaseURL == "" {
 		t.Fatal("public config API was not reachable from the OneClick module")

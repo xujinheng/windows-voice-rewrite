@@ -11,7 +11,7 @@ import (
 	"testing"
 	"unsafe"
 
-	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/meeting"
 )
 
 func meetingE2EFirstLine(control uintptr) uintptr {

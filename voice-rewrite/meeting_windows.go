@@ -13,8 +13,7 @@ import (
 
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
-	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
-	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/meeting"
 )
 
 const (
@@ -104,12 +103,12 @@ var meetingEnumCallback = syscall.NewCallback(func(hwnd, statePtr uintptr) uintp
 
 // Native Windows owns process selection, microphone and HUD painting only.
 // The complete Meeting transaction and its presentation state live in Go Core.
-type meetingSession = voice.MeetingSession
-type meetingView = voice.MeetingView
-type meetingMetrics = voice.MeetingMetrics
+type meetingSession = meetingcore.Session
+type meetingView = meetingcore.View
+type meetingMetrics = meetingcore.Metrics
 
 func newMeetingSession(app *appState, demo bool) *meetingSession {
-	s := voice.NewMeetingSession(app.cfg, app.logger.Printf, saveConfig)
+	s := meetingcore.NewSession(app.cfg, app.logger.Printf, saveConfig)
 	s.SetDemo(demo)
 	s.SetOnConfig(func(cfg Config) { app.cfg = cfg })
 	return s

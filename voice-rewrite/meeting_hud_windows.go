@@ -12,7 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/desktop"
-	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/meeting"
 )
 
 type meetingHUD struct {

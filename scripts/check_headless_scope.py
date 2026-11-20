@@ -65,7 +65,7 @@ def main():
         raise SystemExit("macOS retains a separate Go bridge subprocess")
     if not required.issubset(imports):
         raise SystemExit("macOS Go bridge lost a shared ASR/LLM/config dependency")
-    if "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/meeting" in imports:
+    if "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/meeting" in imports:
         raise SystemExit("removed macOS Meeting must not stay linked just to inflate Go LOC")
     bridge = " ".join((ROOT / "voice-rewrite/cmd/voicebridge" / p).read_text(encoding="utf-8")
                       for p in ("main.go", "native_darwin.go"))
@@ -74,7 +74,7 @@ def main():
         raise SystemExit("Windows recreated separate voice task orchestration next to voice.Core")
     if (ROOT / "voice-rewrite/cmd/voicebridge/bridge_test.go").exists() or "safeProcessRequest" in bridge:
         raise SystemExit("retired duplicate macOS voice task must not return")
-    meeting = (ROOT / "voice-rewrite/meeting_session.go").read_text(encoding="utf-8")
+    meeting = (ROOT / "voice-rewrite/meeting/session.go").read_text(encoding="utf-8")
     # Both *production entrypoints* must pass through the same task owner.
     # Provider-level calls alone could still leave two independent pipelines.
     if any(token in bridge for token in ("func serve(", "func dispatch(", "func readFrame(", "PCMBase64", "req.Op")):
@@ -99,7 +99,7 @@ def main():
     if any(token in swift for token in ("URLSession", "URLRequest", "/v1/chat/completions",
                                         "/v1/audio/transcriptions")):
         raise SystemExit("Swift host implements provider business calls instead of calling Go")
-    if "meetingcore.NewSessionRuntime()" not in meeting:
+    if "NewSessionRuntime()" not in meeting:
         raise SystemExit("Windows Meeting Core is not preserved")
     if any(token in bridge for token in ("meeting_start", "meeting_feed", "meeting_replies")):
         raise SystemExit("obsolete macOS Meeting protocol is still linked")
