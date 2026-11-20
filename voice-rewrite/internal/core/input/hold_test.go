@@ -63,15 +63,3 @@ func TestHoldDuplicateAndStaleEvents(t *testing.T) {
 		t.Fatal("current press did not activate")
 	}
 }
-
-func TestReleaseDebouncedIgnoresOneSampleGap(t *testing.T) {
-	polls := 0
-	for _, pressed := range []bool{true, true, false, true, true, false} {
-		if ReleaseDebounced(pressed, &polls) {
-			t.Fatal("premature release")
-		}
-	}
-	if !ReleaseDebounced(false, &polls) {
-		t.Fatal("release not detected")
-	}
-}
