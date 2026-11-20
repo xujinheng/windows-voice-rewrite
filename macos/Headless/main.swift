@@ -404,6 +404,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
     private func finish(rewrite: Bool) {
         guard microphone.running, taskID != 0 else { return }
+        VRAbandon() // timeout also releases Go's primary key; the physical hold remains
         pill.working(rewrite ? .selection : .processing)
         show(rewrite ? config.profile.pill.selectionLabel : config.profile.pill.processingDictation)
         let configValue = config.raw
@@ -605,6 +606,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func clearSession() {
+        VRAbandon()
         targetFocus = nil
         taskID = 0
     }
