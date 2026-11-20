@@ -183,7 +183,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 				// Start a local audio buffer at physical button-down. The hold
 				// timer only decides whether that buffer is used.
 				if ok, _, _ := procPostMessage.Call(hwnd, WM_SIDE_ARM, uintptr(button), 0); ok == 0 {
-					buttons.Apply(voice.Command{Kind: voice.CommandRelease, Code: int(button)}).Release
+					buttons.Apply(voice.Command{Kind: voice.CommandRelease, Code: int(button)})
 					mu.Unlock()
 					return callNextMouseHook(hook, code, message, data)
 				}
@@ -194,7 +194,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 						return
 					}
 					if ok, _, _ := procPostMessage.Call(hwnd, WM_SIDE_DOWN, uintptr(button), 0); ok != 0 {
-						(buttons.Apply(voice.Command{Kind: voice.CommandActivate, Code: int(button), Token: token}).Kind == voice.EventActivated)
+						buttons.Apply(voice.Command{Kind: voice.CommandActivate, Code: int(button), Token: token})
 					}
 				})
 				mu.Unlock()
