@@ -274,8 +274,8 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 		// process. Preserve it instead of restoring our old snapshot over it.
 		backup.abandon()
 	}
-	if err = ux.ReplaceSelectionStillThere(err, actual, sel.Text); err != nil {
-		return err
+	if err != nil || actual != sel.Text {
+		return errors.New(ux.ReplaceSelectionChanged)
 	}
 	if !taskValid() || !isSameForegroundWindow(sel.TargetWindow) {
 		return errors.New(ux.ReplaceBeforePaste)
@@ -306,8 +306,8 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 			// An unsuccessful probe cannot claim the latest clipboard update.
 			backup.abandon()
 		}
-		if err = ux.ReplacePasteKeptSelection(verifyErr, stillSelected, sel.Text); err != nil {
-			return err
+		if verifyErr == nil && stillSelected == sel.Text {
+			return errors.New(ux.ReplacePasteRefused)
 		}
 	}
 	if err := backup.restoreIfOwned(hwnd); err != nil {

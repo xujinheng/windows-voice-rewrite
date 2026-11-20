@@ -1,9 +1,5 @@
 package ux
 
-import (
-	"errors"
-)
-
 const (
 	// These Windows replacement sentences stay distinct from dictation.
 	// The held-key wait here is 3s and the wording names Ctrl/Alt.
@@ -18,19 +14,3 @@ const (
 	ReplacePasteRefused     = "原文字仍被选中，目标应用可能拒绝粘贴；结果可从预览卡片复制"
 	ReplaceRestoreFailed    = "已尝试粘贴，但剪贴板恢复失败"
 )
-
-// ReplaceSelectionStillThere rejects a copy failure or a selection that no longer matches.
-func ReplaceSelectionStillThere(err error, actual, expected string) error {
-	if err != nil || actual != expected {
-		return errors.New(ReplaceSelectionChanged)
-	}
-	return nil
-}
-
-// ReplacePasteKeptSelection reports that the original text is still selected after paste.
-func ReplacePasteKeptSelection(verifyErr error, stillSelected, expected string) error {
-	if verifyErr == nil && stillSelected == expected {
-		return errors.New(ReplacePasteRefused)
-	}
-	return nil
-}
