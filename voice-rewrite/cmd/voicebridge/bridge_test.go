@@ -571,6 +571,52 @@ func TestBridgeSpokenSelectionUsesSharedASRAndTextedit(t *testing.T) {
 	}
 }
 
+func TestBridgePreviewRoutesRetainFullResult(t *testing.T) {
+	for _, tc := range []struct {
+		name, instruction, model, intent, want string
+	}{
+		{"answer", "这是什么意思", `{"intent":"answer","result":"这是解释"}`, "answer", "这是解释"},
+		{"summary", "总结一下", `{"intent":"summarize","result":"这是摘要"}`, "summarize", "这是摘要"},
+		{"ambiguous", "帮我看看", `{"intent":"ambiguous","result":"不确定的建议"}`, "ambiguous", "不确定的建议"},
+		{"malformed", "帮我看看", "unstructured result", "ambiguous", "unstructured result"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var llm atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/v1/audio/transcriptions":
+					fmt.Fprintf(w, `{"text":%q}`, tc.instruction)
+				case "/v1/chat/completions":
+					llm.Add(1)
+					fmt.Fprintf(w, `{"choices":[{"message":{"content":%q}}]}`, tc.model)
+				default:
+					t.Errorf("unexpected model path: %s", r.URL.Path)
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
+			cfg := configFor(srv.URL)
+			cfg["text_model"] = "text-model"
+			raw, err := json.Marshal(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reply := safeProcessRequest(context.Background(), request{
+				ID: tc.name, Op: "selected_voice_task", Config: raw,
+				SelectedText: "原文", NativePCM: make([]byte, 3200),
+			})
+			if !reply.OK {
+				t.Fatalf("preview request failed: %+v", reply)
+			}
+			got := object(t, reply.Result)
+			if got["text"] != tc.want || got["intent"] != tc.intent ||
+				got["instruction"] != tc.instruction || got["route"] != "preview" || llm.Load() != 1 {
+				t.Fatalf("lost or autorouted preview: result=%#v calls=%d", got, llm.Load())
+			}
+		})
+	}
+}
+
 func TestBridgeSpokenSelectionRejectsBadPCMAndEmptySelection(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
