@@ -321,11 +321,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 if mouse == 3 || mouse == 4 {
                     if (type == .otherMouseDown && VRAction(Int32(100 + mouse)) != 0) ||
                         (type == .otherMouseUp && VRDown(Int32(100 + mouse)) != 0) {
-                        app.updatePress(code: 100 + mouse,
-                                        down: type == .otherMouseDown,
-                                        delay: Double(app.config.profile.mouseDelayMS) / 1000,
-                                        cursor: event.location)
-                        return nil
+                        if app.updatePress(code: 100 + mouse,
+                                           down: type == .otherMouseDown,
+                                           delay: Double(app.config.profile.mouseDelayMS) / 1000,
+                                           cursor: event.location) {
+                            return nil
+                        }
                     }
                 }
             }
@@ -354,12 +355,13 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     down: VRDown(Int32(code)) == 0 && flags.contains(family),
                     delay: Double(config.profile.modifierDelayMS) / 1000)
     }
+    @discardableResult
     private func updatePress(code: Int64, down: Bool, delay: TimeInterval,
-                             cursor: CGPoint? = nil) {
+                             cursor: CGPoint? = nil) -> Bool {
         let key = Int32(code)
         if down {
             let token = VRPress(key, pending ? 1 : 0)
-            guard token != 0 else { return }
+            guard token != 0 else { return false }
             targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
             taskID = 0
             do { try microphone.start(maximumSeconds: config.profile.maximumSeconds) }
@@ -372,6 +374,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             }
         } else {
             let outcome = VRRelease(key)
+            guard outcome != 0 else { return false }
             if outcome == 2 && microphone.running { finish(rewrite: VRAction(key) == 2) }
             else if outcome == 2 || outcome == 3 {
                 if microphone.running { _ = try? microphone.stop(discard: true) }
@@ -380,13 +383,14 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 let source = CGEventSource(stateID: .hidSystemState)
                 for kind in [CGEventType.otherMouseDown, .otherMouseUp] {
                     guard let event = CGEvent(mouseEventSource: source, mouseType: kind,
-                                              mouseCursorPosition: cursor, mouseButton: .center) else { return }
+                                              mouseCursorPosition: cursor, mouseButton: .center) else { return true }
                     event.setIntegerValueField(.mouseEventButtonNumber, value: code - 100)
                     event.setIntegerValueField(.eventSourceUserData, value: 0x56525842)
                     event.post(tap: .cghidEventTap)
                 }
             }
         }
+        return true
     }
 
     private func begin(rewrite: Bool) {
