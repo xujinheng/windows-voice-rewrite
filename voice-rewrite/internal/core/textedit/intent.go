@@ -9,11 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/provider"
-	"voicerewrite/internal/core/speech"
-	"voicerewrite/internal/core/ux"
 )
 
 // AssistantResult contains the generated result and its model-classified intent.
@@ -160,29 +157,3 @@ func ResolveSelectedTask(ctx context.Context, cfg coreconfig.Config, selected, i
 	return result, nil
 }
 
-// ResolveSpokenTask performs the same ASR-instruction and text-edit routing
-// on every host. The optional callback lets native UI report the stage change
-// without owning provider requests, prompt rules or classification logic.
-func ResolveSpokenTask(
-	ctx context.Context, cfg coreconfig.Config, selected string, pcm []byte,
-	onTranscribed func(string),
-) (AssistantResult, string, error) {
-	if err := validateSelectedText(ctx, cfg, selected); err != nil {
-		return AssistantResult{}, "", err
-	}
-	if audio.BelowMinCapture(pcm) || len(pcm)%2 != 0 {
-		return AssistantResult{}, "", errors.New(ux.SpokenCaptureInvalid)
-	}
-	instruction, err := speech.Transcribe(ctx, cfg, pcm)
-	if err != nil {
-		return AssistantResult{}, "", err
-	}
-	if err := ctx.Err(); err != nil {
-		return AssistantResult{}, "", err
-	}
-	if onTranscribed != nil {
-		onTranscribed(instruction)
-	}
-	result, err := ResolveSelectedTask(ctx, cfg, selected, instruction)
-	return result, instruction, err
-}

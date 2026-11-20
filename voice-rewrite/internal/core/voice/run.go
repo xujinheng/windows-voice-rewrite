@@ -4,6 +4,8 @@ package voice
 
 import (
 	"context"
+	"errors"
+	"strings"
 
 	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
@@ -54,7 +56,23 @@ func Run(ctx context.Context, cfg coreconfig.Config, pcm []byte, selected string
 		}
 		return Result{Text: text, Route: route}, nil
 	}
-	answer, instruction, err := textedit.ResolveSpokenTask(ctx, cfg, selected, pcm, onTranscribed)
+	if strings.TrimSpace(selected) == "" {
+		return Result{}, errors.New(ux.EmptySelection)
+	}
+	if err := textedit.SelectedLengthError(cfg.MaxSelectedRunes, selected); err != nil {
+		return Result{}, err
+	}
+	instruction, err := speech.Transcribe(ctx, cfg, pcm)
+	if err != nil {
+		return Result{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	if onTranscribed != nil {
+		onTranscribed(instruction)
+	}
+	answer, err := textedit.ResolveSelectedTask(ctx, cfg, selected, instruction)
 	if err != nil {
 		return Result{}, err
 	}
