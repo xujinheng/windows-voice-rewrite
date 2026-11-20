@@ -430,76 +430,69 @@ func runApp() {
 		}
 	}
 	defer discardPendingSide()
-	var selected selectedText
+	var task recordingTask
 	toggleResult := make(chan togglePrepareResult, 1)
-	var holdTargetWindow uintptr
 	var holdButton uint16
-	var holdIsDictation bool
 	var holdMeeting *meetingcore.Session
 	var activeGeneration uint64
-	var holdWatch chan struct{}
-	stopHoldWatch := func() {
-		if holdWatch != nil {
-			close(holdWatch)
-			holdWatch = nil
+	// The UI thread is the sole owner of native recorder shutdown, including
+	// keyboard-release receipts and watcher cancellation.
+	stopActive := func() *audioRecorder {
+		rec := active
+		if rec == nil {
+			return nil
 		}
+		active = nil
+		if cfg.RecordMode == "hold" && holdButton == 0 {
+			key := keyRewrite
+			if task.dictation {
+				key = keyDictation
+			}
+			app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: key})
+		}
+		rec.Stop()
+		return rec
 	}
-	defer stopHoldWatch()
 	finish := func() {
-		if active == nil {
+		rec := stopActive()
+		if rec == nil {
 			return
 		}
-		if cfg.RecordMode == "hold" {
-			stopHoldWatch()
-			if holdButton == 0 {
-				if holdIsDictation {
-					app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyDictation})
-				} else {
-					app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyRewrite})
-				}
-			}
-		}
-		rec := active
-		active = nil
-		rec.Stop()
 		app.busy.Store(true) // no second operation until the worker is finished
 		app.setStatus(trayTranscribing)
 		l.Print("recording stop requested; selection/model processing moved to worker")
 		if cfg.RecordMode == "hold" {
-			if holdMeeting != nil || holdIsDictation {
+			if holdMeeting != nil || task.dictation {
 				app.postHandyPhase(indicator.Processing, activeGeneration)
 			} else {
 				app.postHandyPhase(indicator.Selection, activeGeneration)
 			}
 		}
-		switch {
-		case cfg.RecordMode != "hold":
-			sel := selected
-			sel.Anchor = currentCursorPoint()
-			go processRecording(app, rec, recordingTask{selection: &sel}, activeGeneration)
-		case holdMeeting != nil:
+		if task.selection != nil {
+			task.selection.Anchor = currentCursorPoint()
+		} else if !task.dictation {
+			task.anchor = currentCursorPoint()
+		}
+		if cfg.RecordMode == "hold" && holdMeeting != nil {
 			if holdMeeting.Context().Err() != nil {
 				// The single buffered recorder result needs no drain worker.
 				app.busy.Store(false)
 				app.setStatus(trayIdle)
 				closeHandyStatus()
 			} else {
-				go expressMeeting(holdMeeting, app, rec, activeGeneration, meetingcore.VoiceMode(holdIsDictation))
+				go expressMeeting(holdMeeting, app, rec, activeGeneration, meetingcore.VoiceMode(task.dictation))
 			}
 			holdMeeting = nil
-		case holdIsDictation:
-			go processRecording(app, rec, recordingTask{dictation: true, target: holdTargetWindow}, activeGeneration)
-		default:
-			go processRecording(app, rec, recordingTask{target: holdTargetWindow, anchor: currentCursorPoint()}, activeGeneration)
+		} else {
+			go processRecording(app, rec, task, activeGeneration)
 		}
 	}
 
 	// A microphone stream may already be capturing the first 250ms before
 	// a side-button hold becomes a voice operation.
 	activateHold := func(rec *audioRecorder, dictation bool, button uint16, target uintptr) {
-		holdTargetWindow = target
+		task = recordingTask{dictation: dictation, target: target}
 		holdButton = button
-		holdIsDictation = dictation
 		holdMeeting = nil
 		if app.meeting != nil && !app.meeting.Demo() {
 			holdMeeting = app.meeting
@@ -508,10 +501,9 @@ func runApp() {
 		active = rec
 		watchRecordingLimit(hwnd, rec, activeGeneration, l)
 		app.setStatus(trayRecording)
-		holdWatch = make(chan struct{})
 		watchLimit := time.Duration(cfg.MaxRecordSeconds+2) * time.Second
 		if button != 0 {
-			go watchMouseHoldTimeout(hwnd, uintptr(activeGeneration), holdWatch, watchLimit, l)
+			go watchMouseHoldTimeout(hwnd, uintptr(activeGeneration), rec.done, watchLimit, l)
 		} else {
 			vk := recordVK
 			if dictation {
@@ -521,7 +513,7 @@ func runApp() {
 			if dictation {
 				mods = dictationMods
 			}
-			go watchHoldRelease(hwnd, vk, mods, uintptr(activeGeneration), holdWatch, watchLimit, l)
+			go watchHoldRelease(hwnd, vk, mods, uintptr(activeGeneration), rec.done, watchLimit, l)
 		}
 		statusMode := voice.HoldModeLabel(dictation, holdMeeting != nil)
 		// Promote the immediate mouse-down preview without recreating its HWND.
@@ -663,19 +655,7 @@ func runApp() {
 					closeHandyStatus() // close a completed status, not the answer card
 				} else {
 					app.core.Apply(voice.Command{Kind: voice.CommandStart}) // cancel either Mouse4 or Mouse5 before paste
-					if active != nil {
-						stopHoldWatch()
-						if holdButton == 0 && cfg.RecordMode == "hold" {
-							if holdIsDictation {
-								app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyDictation})
-							} else {
-								app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyRewrite})
-							}
-						}
-						rec := active
-						active = nil
-						rec.Stop()
-					}
+					stopActive()
 					closeHandyStatus()
 					app.setStatus(trayIdle)
 				}
@@ -730,10 +710,10 @@ func runApp() {
 			activeGeneration = result.generation
 			active = result.rec
 			watchRecordingLimit(hwnd, active, activeGeneration, l)
-			selected = result.sel
+			task = recordingTask{selection: &result.sel}
 			app.busy.Store(false)
 			app.setStatus(trayRecording)
-			l.Printf("recording started, mode=toggle, selected characters=%d", utf8.RuneCountInString(selected.Text))
+			l.Printf("recording started, mode=toggle, selected characters=%d", utf8.RuneCountInString(result.sel.Text))
 			continue
 		}
 		if msg.Message == WM_TRAY_UPDATE {
@@ -886,10 +866,7 @@ func runApp() {
 		if msg.Message == WM_TRAY_EXIT || (msg.Message == WM_HOTKEY && msg.WParam == HOTKEY_EXIT) {
 			discardPendingSide()
 			closeHandyStatus()
-			if active != nil {
-				stopHoldWatch()
-				active.Stop()
-			}
+			stopActive()
 			l.Print("stopped via exit action")
 			return
 		}
