@@ -15,7 +15,7 @@ def main():
     # Linux-only go list skips native_darwin.go and would count the deleted
     # bridge main as if it were the production speech entrypoint.
     go_env = {**os.environ, "GOOS": "darwin", "GOARCH": "arm64", "CGO_ENABLED": "1"}
-    process = subprocess.run(["go", "list", "-deps", "-json", "./cmd/voicebridge"],
+    process = subprocess.run(["go", "list", "-deps", "-json", "./cmd/voicebridge", "./internal/core/voice"],
                              cwd=ROOT / "voice-rewrite", env=go_env,
                              text=True, capture_output=True, check=True)
     decoder = json.JSONDecoder()
