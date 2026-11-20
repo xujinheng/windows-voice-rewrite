@@ -14,4 +14,3 @@ const (
 	ReplacePasteRefused     = "原文字仍被选中，目标应用可能拒绝粘贴；结果可从预览卡片复制"
 	ReplaceRestoreFailed    = "已尝试粘贴，但剪贴板恢复失败"
 )
-
