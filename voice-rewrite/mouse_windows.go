@@ -203,8 +203,8 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 			}
 			// A matching press was intercepted. Either finish the recording
 			// or replay the navigation click, never both.
-			wasHeld, active, _ := buttons.Release(int(button))
-			if !wasHeld {
+			action := buttons.Release(int(button))
+			if action == input.ReleaseIgnored {
 				mu.Unlock()
 				return callNextMouseHook(hook, code, message, data)
 			}
@@ -212,7 +212,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 				timers[button].Stop()
 				timers[button] = nil
 			}
-			if active {
+			if action == input.ReleaseActive {
 				procPostMessage.Call(hwnd, WM_SIDE_UP, uintptr(button), 0)
 			} else {
 				// A short click must stop its provisional recording before

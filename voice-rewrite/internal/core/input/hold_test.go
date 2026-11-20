@@ -35,7 +35,7 @@ func TestHoldsCrossPlatformExclusiveLifecycle(t *testing.T) {
 	if s.CanActivate(61, a) {
 		t.Fatal("wrong activation owner")
 	}
-	if held, active, primary := s.Release(54); !held || active || !primary {
+	if action := s.Release(54); action != ReleaseShort {
 		t.Fatal("short click activated a task")
 	}
 	if s.Activate(54, a) {
@@ -45,10 +45,10 @@ func TestHoldsCrossPlatformExclusiveLifecycle(t *testing.T) {
 	if a == 0 || !s.Activate(54, a) || s.Activate(54, a) {
 		t.Fatal("long press must activate exactly once")
 	}
-	if held, active, primary := s.Release(61); held || active || primary {
+	if action := s.Release(61); action != ReleaseIgnored {
 		t.Fatal("phantom release")
 	}
-	if held, active, primary := s.Release(54); !held || !active || !primary || s.Armed() {
+	if action := s.Release(54); action != ReleaseActive || s.Armed() {
 		t.Fatal("owner release")
 	}
 	b := s.Press(54, false)
@@ -59,7 +59,7 @@ func TestHoldsCrossPlatformExclusiveLifecycle(t *testing.T) {
 	if s.Armed() || !s.Down(54) {
 		t.Fatal("abandoned press lost physical release")
 	}
-	if held, active, primary := s.Release(54); !held || active || primary {
+	if action := s.Release(54); action != ReleaseOther {
 		t.Fatal("abandoned key created task")
 	}
 	c := s.Press(54, false)

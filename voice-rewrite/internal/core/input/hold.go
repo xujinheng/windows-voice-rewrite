@@ -79,22 +79,34 @@ func (s *Holds) Activate(code int, token uint64) bool {
 	return true
 }
 
-func (s *Holds) Release(code int) (held, active, primary bool) {
+// One release decision is shared by Windows and macOS. Native hosts only
+// execute the returned effect (finish recording or replay a navigation click).
+const (
+	ReleaseIgnored = iota // unknown/unheld key, pass through
+	ReleaseOther          // abandoned/secondary key, preserve navigation
+	ReleaseActive         // confirmed voice hold, finish recording
+	ReleaseShort          // armed but not activated, cancel and replay navigation
+)
+
+func (s *Holds) Release(code int) int {
 	h := s.key(code)
-	if h == nil {
-		return false, false, false
+	if h == nil || !h.down {
+		return ReleaseIgnored
 	}
-	primary = s.owner == code
+	primary := s.owner == code
 	if primary {
 		s.owner = 0
 	}
-	if !h.down {
-		return false, false, primary
-	}
-	active = h.active
+	active := h.active
 	h.down, h.active = false, false
 	h.token++
-	return true, active, primary
+	if active {
+		return ReleaseActive
+	}
+	if primary {
+		return ReleaseShort
+	}
+	return ReleaseOther
 }
 
 func (s *Holds) Abandon()    { s.owner = 0 }
