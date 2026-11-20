@@ -64,6 +64,8 @@ def classify(paths):
                 scope.update(core=True, macos=True, windows=True)
         elif path.startswith("macos/"):
             scope["macos"] = True
+        elif path.startswith("cli/"):
+            scope["core"] = True
         elif path.startswith("oneclick/"):
             scope["oneclick"] = True
         elif path.startswith("installer/"):
