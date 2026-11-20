@@ -141,9 +141,9 @@ func TestMacSideModifiersParseButWindowsRejectsTheirRegistration(t *testing.T) {
 		{"leftalt", "LeftOption"}, {"rightalt", "RightOption"},
 		{"leftcmd", "LeftCommand"}, {"rightcmd", "RightCommand"},
 	} {
-		value, err := Bind(tc.raw)
-		if err != nil || value.Normalized != tc.canonical || value.Key != tc.canonical || value.Mouse || value.Ctrl || value.Alt || value.Shift {
-			t.Fatalf("mac modifier binding %q: %#v %v", tc.raw, value, err)
+		name, mods, key, mouse, err := Parse(tc.raw)
+		if err != nil || name != tc.canonical || mods != noRepeat || key != 0 || mouse {
+			t.Fatalf("mac modifier parse %q: %q %d %d %t %v", tc.raw, name, mods, key, mouse, err)
 		}
 		if _, err := ValidateDictation(tc.raw, "Mouse5", "Ctrl+Alt+F10"); err == nil {
 			t.Fatalf("Windows must reject bare modifier %q", tc.raw)
