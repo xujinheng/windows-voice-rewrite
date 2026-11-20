@@ -187,13 +187,6 @@ func Allowed(phase Phase) bool {
 	}
 }
 
-const (
-	CancelIgnore  = 0
-	CancelPending = 1
-	CancelDismiss = 2
-	CancelWork    = 3
-)
-
 // HostSpec exposes the Windows recording pill's presentation model once to
 // native hosts. Swift does not need a per-frame bridge or a second palette.
 func HostSpec() map[string]any {
@@ -219,21 +212,6 @@ func HostSpec() map[string]any {
 		"sentLabel":           Label(Success, "听写"), "errorLabel": Label(Error, "听写"),
 		"fallbackLabel": "结果未写入",
 	}
-}
-
-// CancelChoice is the pill cancel. A pending preview wins, a stale message is ignored,
-// and a finished phase only closes the pill.
-func CancelChoice(pending, current, terminal bool) int {
-	if pending {
-		return CancelPending
-	}
-	if !current {
-		return CancelIgnore
-	}
-	if terminal {
-		return CancelDismiss
-	}
-	return CancelWork
 }
 
 func Terminal(phase Phase) bool {
