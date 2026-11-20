@@ -23,35 +23,32 @@ import (
 
 var nativeEpoch session.Epoch
 
-// The physical key state is the existing shared input.Hold model, not a
-// second Swift press/arm/cancel state machine. Quartz callbacks run on the
-// main thread; only Epoch is accessed from both the UI and worker threads.
-var nativeHolds = map[int]*input.Hold{}
+// One fixed physical-key table contains both the Go-validated role and the
+// shared Hold state. Quartz callbacks are serial; Epoch also serves workers.
+var nativeKeys [105]struct {
+	hold input.Hold
+	role uint8
+}
 var nativeKey int
-
-// Bind physical Quartz codes to the two Go-validated voice roles.
-var nativeRole [105]uint8
 
 //export VRAction
 func VRAction(code C.int) C.int {
-	if code < 0 || int(code) >= len(nativeRole) {
+	if code < 0 || int(code) >= len(nativeKeys) {
 		return 0
 	}
-	return C.int(nativeRole[int(code)])
+	return C.int(nativeKeys[int(code)].role)
 }
 
 func nativeHold(code int) *input.Hold {
-	h := nativeHolds[code]
-	if h == nil {
-		h = &input.Hold{}
-		nativeHolds[code] = h
+	if code < 0 || code >= len(nativeKeys) {
+		return nil
 	}
-	return h
+	return &nativeKeys[code].hold
 }
 
 //export VRDown
 func VRDown(code C.int) C.int {
-	if nativeHold(int(code)).Down() {
+	if hold := nativeHold(int(code)); hold != nil && hold.Down() {
 		return 1
 	}
 	return 0
@@ -81,7 +78,11 @@ func VRActivate(code C.int, token C.ulonglong) C.int {
 
 //export VRRelease
 func VRRelease(code C.int) C.int {
-	held, active := nativeHold(int(code)).Release()
+	hold := nativeHold(int(code))
+	if hold == nil {
+		return 0
+	}
+	held, active := hold.Release()
 	primary := nativeKey == int(code)
 	if primary {
 		nativeKey = 0
@@ -129,8 +130,8 @@ func VREpochCancel() {
 	// A disabled event tap can lose the physical key-up event. Release the
 	// existing Hold objects; do not replace them, or old timer tokens can
 	// collide with a later press.
-	for _, hold := range nativeHolds {
-		hold.Release()
+	for i := range nativeKeys {
+		nativeKeys[i].hold.Release()
 	}
 }
 
@@ -188,9 +189,11 @@ func VRProfile(config *C.char) *C.char {
 	reply := headlessProfile(request{Config: json.RawMessage(C.GoString(config))})
 	if reply.OK {
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
-		nativeRole = [105]uint8{}
-		nativeRole[macKeyCode(profile["dictation"].(string))] = 1
-		nativeRole[macKeyCode(profile["rewrite"].(string))] = 2
+		for i := range nativeKeys {
+			nativeKeys[i].role = 0
+		}
+		nativeKeys[macKeyCode(profile["dictation"].(string))].role = 1
+		nativeKeys[macKeyCode(profile["rewrite"].(string))].role = 2
 	}
 	return nativeJSON(reply)
 }
