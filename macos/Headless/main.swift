@@ -281,7 +281,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
     @objc private func quit() { VREpochCancel(); NSApp.terminate(nil) }
     private func show(_ text: String) { item.button?.title = text }
-    fileprivate func reportTranscribed(_ token: UInt64) { if pending && taskID == token && VREpochValid(token) == 1 { show(config.profile.pill.rewritingLabel) } }
+    fileprivate func reportTranscribed(_ token: UInt64) { if pending && taskID == token && VREpochValid(token) == 1 { pill.working(.rewriting); show(config.profile.pill.rewritingLabel) } }
 
     private func startEventTap() {
         guard tap == nil else { return }
@@ -412,7 +412,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func finish() {
         guard microphone.running, let action = activeAction else { return }
         activeAction = nil
-        pill.processing()
+        pill.working(.processing)
         show(action == .dictation ? config.profile.pill.processingDictation : config.profile.pill.selectionLabel)
         let configValue = config.raw
         let pid = targetPID
