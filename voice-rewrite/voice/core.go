@@ -14,17 +14,17 @@ import (
 // facts, audio and final OS effects; the core owns holds, task generations,
 // cancellation, inference and output routing.
 type Core struct {
-	History   history.Store
-	mu        sync.Mutex
-	keys      map[int]*keyState
-	owner     int
+	History      history.Store
+	mu           sync.Mutex
+	keys         map[int]*keyState
+	owner        int
 	dictationKey int
 	rewriteKey   int
-	nextToken uint64
-	currentID uint64
-	closed    bool
-	ctx       context.Context
-	cancel    context.CancelFunc
+	nextToken    uint64
+	currentID    uint64
+	closed       bool
+	ctx          context.Context
+	cancel       context.CancelFunc
 }
 type keyState struct {
 	down, active bool
@@ -64,6 +64,7 @@ func (c *Core) key(code int) *keyState {
 	}
 	return c.keys[code]
 }
+
 // Bind replaces the physical input mapping without changing the role of a
 // key already held. Both native hosts pass OS key IDs to the same runtime.
 func (c *Core) Bind(dictationKey, rewriteKey int) {
