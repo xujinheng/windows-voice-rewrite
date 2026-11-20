@@ -19,7 +19,7 @@ func TestSideHoldThresholdDuration(t *testing.T) {
 
 func TestHoldsCrossPlatformExclusiveLifecycle(t *testing.T) {
 	var s Core
-	if s.Press(0, false) != 0 || s.Press(3, false) != 0 || s.Down(-1) {
+	if s.Press(0, false) != 0 || s.Press(-1, false) != 0 || s.Down(-1) {
 		t.Fatal("invalid native code")
 	}
 	if s.Press(1, true) != 0 || s.Down(1) {
