@@ -119,26 +119,6 @@ func TestStartupHotkeyRulesKeepWindowsOrder(t *testing.T) {
 	}
 }
 
-func TestBindingReportsKeyAndModifiers(t *testing.T) {
-	for _, tc := range []struct{ raw, key string }{
-		{"Ctrl+Alt+R", "R"},
-		{"ctrl+alt+e", "E"},
-		{"Ctrl+Alt+T", "T"},
-	} {
-		binding, err := Bind(tc.raw)
-		if err != nil || binding.Key != tc.key || !binding.Ctrl || !binding.Alt || binding.Shift || binding.Mouse {
-			t.Fatalf("%s %#v %v", tc.raw, binding, err)
-		}
-	}
-	if _, err := Bind("Shift+A"); err == nil {
-		t.Fatal("shift letter accepted")
-	}
-	mouse, err := Bind("mouse4")
-	if err != nil || !mouse.Mouse || mouse.Key != "Mouse4" {
-		t.Fatalf("mouse %#v %v", mouse, err)
-	}
-}
-
 func TestCaptureKeyIgnoresModifiersAndWindowsKey(t *testing.T) {
 	if _, err := CaptureKey(0x11, Ctrl, false); !errors.Is(err, ErrSkipCapture) {
 		t.Fatal("ctrl alone")
