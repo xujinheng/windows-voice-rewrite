@@ -167,7 +167,9 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 	var afterASR func(voice.Event)
 	if !task.dictation {
 		afterASR = func(event voice.Event) {
-			if event.Kind != voice.EventTranscribed { return }
+			if event.Kind != voice.EventTranscribed {
+				return
+			}
 			if !app.core.Snapshot(0, generation).Valid {
 				return
 			}
