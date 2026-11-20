@@ -24,6 +24,12 @@ func DictationInsertReady(text string, keysReleased, windowOK, password func() b
 	if strings.TrimSpace(text) == "" {
 		return errors.New(DictationEmpty)
 	}
+	return DictationTargetReady(keysReleased, windowOK, password)
+}
+
+// DictationTargetReady checks the same native delivery facts on both hosts.
+// A result has already passed RouteDictationTranscript before this check.
+func DictationTargetReady(keysReleased, windowOK, password func() bool) error {
 	if !keysReleased() {
 		return errors.New(DictationReleaseKeys)
 	}
