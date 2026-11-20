@@ -44,7 +44,7 @@ struct PillSpec: Decodable {
     let terminalMS: Int
     let pillColor, clockColor, labelColor, dictationAccent, rewriteAccent: [Int]
     let errorAccent, sentMark, fallbackMark, closeColor, closeHover, attentionGlyph: [Int]
-    let processingDictation, processingRewrite, selectionLabel, rewritingLabel, sentLabel, errorLabel, fallbackLabel: String
+    let processingDictation, processingRewrite, selectionLabel, rewritingLabel, applyingLabel, sentLabel, errorLabel, fallbackLabel: String
 }
 
 private struct HostProfile: Decodable {
@@ -457,6 +457,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                         if action == .rewrite && selectedValue?.matches(self.selectionFromAX()) != true {
                             self.reset("Selection changed"); return
                         }
+                        if value.route == "replace" { self.pill.working(.applying); self.show(self.config.profile.pill.applyingLabel) }
                         self.paste(text)
                     }
                 }
