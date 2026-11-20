@@ -447,13 +447,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                         guard value.route == "replace" || value.route == "insert" else {
                             self.reset(self.config.profile.pill.fallbackLabel, phase: .fallback); return
                         }
-                        let currentWindow = self.focusedWindow()
-                        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
-                              let focus = self.targetFocus,
-                              focus.matches(window: currentWindow, element: self.focusedElement(),
-                                            title: currentWindow.flatMap(self.windowTitle)) else {
-                            self.reset("Focus changed"); return
-                        }
+                        guard self.targetStillValid() else { self.reset("Focus changed"); return }
                         if action == .rewrite && selectedValue?.matches(self.selectionFromAX()) != true {
                             self.reset("Selection changed"); return
                         }
@@ -521,6 +515,14 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         return AXSelection(text: string, range: range)
     }
 
+    private func targetStillValid() -> Bool {
+        let window = focusedWindow()
+        return VREpochValid(taskID) == 1 &&
+            NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID &&
+            targetFocus?.matches(window: window, element: focusedElement(),
+                                 title: window.flatMap(windowTitle)) == true
+    }
+
     private func paste(_ text: String) {
         // Prebuild the single paste event; a sent event is not confirmed insertion.
         let source = CGEventSource(stateID: .hidSystemState)
@@ -549,6 +551,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             saved.append(copy)
         }
         guard board.changeCount == stamp else { reset("Clipboard changed"); return }
+        guard targetStillValid() else { reset("Focus changed"); return }
         board.clearContents()
         let cleared = board.changeCount
         guard board.setString(text, forType: .string) else {
@@ -581,11 +584,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let units = Array(text.utf16)
         var start = 0
         while start < units.count {
-            let window = focusedWindow()
-            guard VREpochValid(taskID) == 1,
-                  NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID,
-                  targetFocus?.matches(window: window, element: focusedElement(), title: window.flatMap(windowTitle)) == true
-            else { reset("Focus changed"); return }
+            guard targetStillValid() else { reset("Focus changed"); return }
             var end = min(start + 20, units.count)
             if end < units.count && (0xD800...0xDBFF).contains(units[end - 1]) { end -= 1 }
             for event in [down, up] {
