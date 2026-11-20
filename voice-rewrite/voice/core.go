@@ -112,7 +112,7 @@ func (c *Core) Press(code int, busy bool) uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	h := c.key(code)
-	if c.closed || code <= 0 || h != nil && h.down || busy || c.owner != 0 {
+	if c.closed || c.role(code) == 0 || h != nil && h.down || busy || c.owner != 0 {
 		return 0
 	}
 	if h == nil {
