@@ -366,7 +366,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             targetFocus = FocusIdentity(window: focusedWindow(), element: nil, title: nil)
             taskID = 0
             do { try microphone.start(maximumSeconds: config.profile.maximumSeconds) }
-            catch { VRAbandon(); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return }
+            catch { VRAbandon(); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return true }
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, VRActivate(key, token) == 1 else { return }
                 self.begin(rewrite: VRAction(key) == 2)
