@@ -258,17 +258,15 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		app.fail(e)
 		return
 	}
-	editable := isSafelyEditableControl(sel.TargetWindow)
-	browserSurface := isBrowserEditorSurface(sel.TargetWindow)
-	action := textedit.RouteTask(answer, instruction, editable)
-	app.logger.Printf("route=%s intent=%s native_editable=%t browser_surface=%t", action, answer.Intent, editable, browserSurface)
-	allowApply := action == textedit.Replace || action == textedit.TryReplace
+	action := textedit.RouteTask(answer, instruction)
+	app.logger.Printf("route=%s intent=%s", action, answer.Intent)
+	allowApply := action == textedit.Replace
 	app.history.Remember(ux.HistoryTitle(answer.Intent), answer.Result)
 	if allowApply {
 		app.postHandyPhase(indicator.Applying, generation)
 		startedPaste := time.Now()
-		// All unknown controls receive the same pre/post paste checks as a browser.
-		e = replaceSelectionWithGuard(app.Window, sel, answer.Result, app.cfg, action == textedit.TryReplace, func() bool { return app.epoch.Valid(generation) })
+		// Native editability determines whether to verify the pasted selection.
+		e = replaceSelectionWithGuard(app.Window, sel, answer.Result, app.cfg, !isSafelyEditableControl(sel.TargetWindow), func() bool { return app.epoch.Valid(generation) })
 		app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
 	}
 	if allowApply && e == nil {

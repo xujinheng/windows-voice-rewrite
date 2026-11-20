@@ -180,12 +180,6 @@ func isSafelyEditableControl(target uintptr) bool {
 	return style&ES_READONLY == 0 && style&WS_DISABLED == 0
 }
 
-// Chrome/Edge/Electron and Firefox expose a renderer HWND, not an EDIT HWND.
-// A positive value only authorizes a guarded PASTE PROBE for explicit edits,
-// never an unconditional replacement or general-purpose write permission.
-func isBrowserEditorSurface(target uintptr) bool {
-	return texttarget.BrowserEditorSurface(windowClassName(target), foregroundFocusedClass(target))
-}
 func currentCursorPoint() trayPoint {
 	var p trayPoint
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&p)))
