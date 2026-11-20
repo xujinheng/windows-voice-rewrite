@@ -4,8 +4,7 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
-// Native boundaries only: device input, microphone, menu bar and OS text delivery.
-// All transcription, intent and routing decisions call the linked Go Core.
+// Native input, microphone, menu and text delivery; transcription and routing use linked Go Core.
 private enum Action { case dictation, rewrite }
 
 // Native AX ranges distinguish repeated text; text-only selection is still supported.
@@ -354,7 +353,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                         down: type == .otherMouseDown,
                                         delay: Double(app.config.profile.mouseDelayMS) / 1000,
                                         cursor: event.location)
-                        return nil // Intercept hold; replay an ordinary short click below
+                        return nil
                     }
                 }
             }
@@ -390,6 +389,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             let token = VRPress(key, pending ? 1 : 0)
             guard token != 0 else { return }
             activeAction = name == config.profile.dictation ? .dictation : .rewrite
+            targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, VRActivate(key, token) == 1,
                       let action = self.activeAction else { return }
@@ -416,8 +416,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func begin(_ action: Action) {
-        targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
         guard targetPID > 0 else { reset("No target"); return }
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { reset("Focus changed"); return }
         let window = focusedWindow(), element = focusedElement()
         guard action == .dictation || (window != nil && element != nil) else { reset("Target unavailable"); return }
         targetFocus = FocusIdentity(window: window, element: element,
