@@ -354,7 +354,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                         down: type == .otherMouseDown,
                                         delay: Double(app.config.profile.mouseDelayMS) / 1000,
                                         cursor: event.location)
-                        return nil // Intercept hold; replay an ordinary short click below
+                        return nil
                     }
                 }
             }
@@ -418,9 +418,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
 
     private func begin(_ action: Action) {
         guard targetPID > 0 else { reset("No target"); return }
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else {
-            reset("Focus changed"); return
-        }
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { reset("Focus changed"); return }
         let window = focusedWindow(), element = focusedElement()
         guard action == .dictation || (window != nil && element != nil) else { reset("Target unavailable"); return }
         targetFocus = FocusIdentity(window: window, element: element,
