@@ -72,13 +72,3 @@ func (s *Hold) Release() (wasHeld, active bool) {
 	return true, active
 }
 
-// ReleaseDebounced reports a key release only after two consecutive polls see
-// it up, so a one-sample gap does not cut off dictation.
-func ReleaseDebounced(keyDown bool, upPolls *int) bool {
-	if keyDown {
-		*upPolls = 0
-		return false
-	}
-	*upPolls++
-	return *upPolls >= 2
-}
