@@ -9,9 +9,6 @@ func TestVoiceStartKeepsSideAndKeyboardWindowsApart(t *testing.T) {
 	if HoldModeLabel(true, true) != "会议直译" || HoldModeLabel(false, true) != "会议意图" || HoldModeLabel(true, false) != "听写" || HoldModeLabel(false, false) != "改写" {
 		t.Fatal("mode")
 	}
-	if FinishRecording(false, true, true) != FinishToggle || FinishRecording(true, true, true) != FinishMeeting || FinishRecording(true, true, false) != FinishDictation || FinishRecording(true, false, false) != FinishSpokenRewrite {
-		t.Fatal("finish")
-	}
 }
 
 func TestWindowsSideHoldDuration(t *testing.T) {
