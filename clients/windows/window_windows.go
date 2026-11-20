@@ -56,7 +56,7 @@ func createTrayCallbackWindow() (uintptr, error) {
 	}
 	atom, _, err := procRegisterClassEx.Call(uintptr(unsafe.Pointer(&class)))
 	runtime.KeepAlive(class)
-	if atom == 0 {
+	if atom == 0 && err != syscall.Errno(1410) { // ERROR_CLASS_ALREADY_EXISTS
 		return 0, fmt.Errorf("RegisterClassExW: %w", err)
 	}
 	hwnd, _, createErr := procCreateWindow.Call(0,
