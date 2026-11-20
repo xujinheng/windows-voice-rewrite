@@ -20,6 +20,25 @@ AppKit panel and status-menu drawing. It links Go `cmd/voicebridge` as a Darwin
 `VoiceCore.h`. It does not start a Go helper, exchange audio-frame IPC, or
 implement a second voice-policy state machine.
 
+## One public lifecycle contract
+
+All clients import the same Go Core and submit `voice.Command` values to
+`Core.Apply`. The returned `voice.Event` is a typed command receipt, not
+a separate host decision. `Core.Snapshot(physicalCode, generation)` returns
+one atomic `voice.State` view (bound role, frozen held role, hold/activation,
+task generation validity, phase and shutdown). This replaces the old public
+`Press`, `Release`, `Activate`, `Start`, `Cancel`, `Role`, `HeldRole`,
+`Down`, `Valid` and related getters; do not add forwarding aliases.
+
+`Core.Execute` consumes OS-captured PCM/selection and produces the existing
+`voice.Result` route. Its optional callback emits the **same**
+`voice.Event` vocabulary for transcription, completion and failure. Clients
+own capture, editor revalidation and OS side effects, not business event
+classification. The macOS in-process bridge exports only `VRCommand` and
+`VRSnapshot` for lifecycle input/state, and `VRRun` for task inference;
+the Windows adapter invokes the same Go methods directly. CLI exercises
+those public methods in an independent Go module.
+
 On macOS, physical shortcut events, task generations, cancellation and voice
 execution all call Go `voice.Core` (including task-role snapshots across shortcut rebinds); each waveform/spinner/clock frame calls Go
 `indicator` through the in-process ABI. Swift performs the OS
