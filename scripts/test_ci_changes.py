@@ -85,7 +85,7 @@ class ClassifyTests(unittest.TestCase):
         self.assertFalse(routed["oneclick"])
 
     def test_direct2d_acceptance(self):
-        self.assertTrue(classify(["clients/windows/popup_layout.go"])["direct2d"])
+        self.assertTrue(classify(["core/popup/layout.go"])["direct2d"])
         self.assertFalse(classify(["core/meeting/session.go"])["direct2d"])
 
     def test_headless_scope_change_runs_real_audit(self):

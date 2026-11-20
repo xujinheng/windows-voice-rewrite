@@ -34,7 +34,7 @@ Source: "..\clients\windows\VoiceRewrite.exe"; DestDir: "{app}"; Flags: ignoreve
 Source: "..\clients\windows\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\clients\windows\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\clients\windows\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\docs\third-party-notices.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\VoiceRewrite"; Filename: "{app}\{#AppExe}"
