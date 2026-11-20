@@ -9,7 +9,6 @@ package main
 import "C"
 
 import (
-	"context"
 	"encoding/json"
 	"time"
 	"unsafe"
@@ -185,9 +184,6 @@ func VRRun(config, operation *C.char, audio *C.uchar, length C.int, selection *C
 	if selection != nil {
 		req.SelectedText = C.GoString(selection)
 	}
-	// Share the CLI's 220s ASR / 240s selected-text deadlines, even when
-	// Swift never launches a helper. Epoch invalidation remains the parent.
-	ctx, cancel := context.WithTimeout(nativeEpoch.ContextFor(uint64(token)), defaultOptions().timeoutFor(req))
-	defer cancel()
-	return nativeJSON(safeProcessRequest(ctx, req))
+	// The shared voice.Run applies the task deadline; Epoch owns cancellation.
+	return nativeJSON(safeProcessRequest(nativeEpoch.ContextFor(uint64(token)), req))
 }

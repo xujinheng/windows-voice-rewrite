@@ -34,6 +34,12 @@ func Run(ctx context.Context, cfg coreconfig.Config, pcm []byte, selected string
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
+	limit := speech.TranscribeTimeout
+	if rewrite {
+		limit = textedit.SpokenTaskTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
 	// Both production hosts supply normalized config values.
 	maxBytes := min(cfg.MaxRecordSeconds, coreconfig.RecordSecondsMax) * audio.PCMBytesPerSecond
 	if len(pcm) == 0 || len(pcm)%2 != 0 || len(pcm) > maxBytes {
