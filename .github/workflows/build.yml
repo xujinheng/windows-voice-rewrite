@@ -92,6 +92,9 @@ jobs:
       - name: Test core with race detector
         working-directory: core
         run: go test -race -count=1 ./...
+      - name: Test native macOS Go bridge helpers without GUI
+        working-directory: clients
+        run: go test -race -count=1 ./macos/bridge
       - name: Test independent Go CLI and cross-build without native adapters
         working-directory: clients/cli
         run: |
@@ -153,7 +156,7 @@ jobs:
         run: |
           set -euo pipefail
           swiftc -O -target '${{ matrix.arch }}-apple-macosx13.0' \
-            -import-objc-header clients/macos/app/VoiceCore.h \
+            -import-objc-header clients/macos/bridge/VoiceCore.h \
             -framework Foundation -framework Security -framework CoreFoundation \
             -o "$RUNNER_TEMP/voicecore-bench" scripts/bench-macos-core.swift \
             "$RUNNER_TEMP/headless/libvoicecore.a"
@@ -165,7 +168,7 @@ jobs:
           cp clients/macos/app/main.swift "$RUNNER_TEMP/main.swift"
           cat scripts/test-macos-focus.swift >> "$RUNNER_TEMP/main.swift"
           swiftc -O -D FOCUS_GUARD_TEST -target '${{ matrix.arch }}-apple-macosx13.0' \
-            -import-objc-header clients/macos/app/VoiceCore.h \
+            -import-objc-header clients/macos/bridge/VoiceCore.h \
             -framework AppKit -framework AVFoundation -framework ApplicationServices \
             -framework CoreGraphics -framework Security -framework CoreFoundation \
             -o "$RUNNER_TEMP/voicecore-focus-test" \

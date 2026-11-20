@@ -50,7 +50,7 @@ class HeadlessWorkflowTests(unittest.TestCase):
         self.assertIn("目前不稳定", (ROOT / "README.md").read_text(encoding="utf-8"))
         self.assertIn("currently unstable", (ROOT / "README.en.md").read_text(encoding="utf-8"))
 
-    def test_source_budget_and_user_path(self):
+    def test_native_sources_and_user_path(self):
         sources = [ROOT / "clients/macos/app/main.swift",
                    ROOT / "clients/macos/app/RecordingPill.swift"]
         for path in sources:

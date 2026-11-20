@@ -23,7 +23,7 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
     -o "$out/libvoicecore.a" ./macos/bridge
 )
 swiftc -O -target "${arch}-apple-macosx13.0" \
-  -import-objc-header clients/macos/app/VoiceCore.h \
+  -import-objc-header clients/macos/bridge/VoiceCore.h \
   -framework AppKit -framework AVFoundation -framework ApplicationServices \
   -framework CoreGraphics -framework Security -framework CoreFoundation \
   -o "$app/Contents/MacOS/VoiceRewrite" \
