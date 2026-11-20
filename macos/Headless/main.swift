@@ -418,16 +418,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
         guard targetPID > 0 else { reset("No target"); return }
         let window = focusedWindow(), element = focusedElement()
-        guard action == .dictation || (window != nil && element != nil) else {
-            reset("Target unavailable"); return
-        }
+        guard action == .dictation || (window != nil && element != nil) else { reset("Target unavailable"); return }
         targetFocus = FocusIdentity(window: window, element: element,
                                     title: window.flatMap(windowTitle))
         selected = nil
         if action == .rewrite {
-            guard let snapshot = selectionFromAX() else {
-                reset("Select text"); return
-            }
+            guard let snapshot = selectionFromAX() else { reset("Select text"); return }
             selected = snapshot
         }
         taskID = VREpochStart()
@@ -468,9 +464,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                         self.reset(self.config.profile.pill.errorLabel)
                         fputs("VoiceRewrite: \(error)\n", stderr)
                     case .success(let value):
-                        guard let text = value.text, !text.isEmpty else {
-                            self.reset("Empty"); return
-                        }
+                        guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
                         self.lastResult = text
                         guard value.route == "replace" || (action == .dictation && value.route == "insert") else {
                             self.reset(self.config.profile.pill.fallbackLabel, phase: .fallback); return
