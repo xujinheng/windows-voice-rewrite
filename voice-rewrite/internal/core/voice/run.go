@@ -15,10 +15,10 @@ import (
 )
 
 type Result struct {
-	Text        string
-	Intent      string
-	Instruction string
-	Route       string
+	Text        string `json:"text"`
+	Intent      string `json:"intent,omitempty"`
+	Instruction string `json:"instruction,omitempty"`
+	Route       string `json:"route"`
 }
 
 // PCMError marks audio admission failures, distinct from provider failures.
