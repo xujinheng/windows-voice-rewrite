@@ -17,49 +17,57 @@ func TestWindowsSideHoldDuration(t *testing.T) {
 	}
 }
 
-func TestHoldShortPressDoesNotActivate(t *testing.T) {
-	var s Hold
-	token, ok := s.Press()
-	if !ok || !s.CanActivate(token) {
-		t.Fatal("initial press must begin pending hold")
+func TestHoldsCrossPlatformExclusiveLifecycle(t *testing.T) {
+	s := NewHolds(105)
+	if s.Press(0, false) != 0 || s.Press(105, false) != 0 || s.Down(-1) {
+		t.Fatal("invalid native code")
 	}
-	if held, active := s.Release(); !held || active {
-		t.Fatalf("short release: held=%t active=%t", held, active)
+	if s.Press(54, true) != 0 || s.Down(54) {
+		t.Fatal("busy event created phantom hold")
 	}
-	if s.Activate(token) || s.CanActivate(token) {
-		t.Fatal("expired timer activated a released button")
+	a := s.Press(54, false)
+	if a == 0 || !s.Armed() || !s.Down(54) {
+		t.Fatal("owner was not armed")
 	}
-}
-
-func TestHoldLongPressStartsOnce(t *testing.T) {
-	var s Hold
-	token, ok := s.Press()
-	if !ok || !s.Activate(token) {
-		t.Fatal("hold must activate")
+	if s.Press(61, false) != 0 || s.Down(61) {
+		t.Fatal("second key should pass through")
 	}
-	if s.CanActivate(token) || s.Activate(token) {
-		t.Fatal("hold activated more than once")
+	if s.CanActivate(61, a) {
+		t.Fatal("wrong activation owner")
 	}
-	if held, active := s.Release(); !held || !active {
-		t.Fatalf("long release: held=%t active=%t", held, active)
+	if action := s.Release(54); action != ReleaseShort {
+		t.Fatal("short click activated a task")
 	}
-}
-
-func TestHoldDuplicateAndStaleEvents(t *testing.T) {
-	var s Hold
-	if held, _ := s.Release(); held {
-		t.Fatal("release without a press was handled")
+	if s.Activate(54, a) {
+		t.Fatal("late timer activated a short click")
 	}
-	first, _ := s.Press()
-	if second, ok := s.Press(); ok || first != second {
-		t.Fatal("duplicate down changed active press")
+	a = s.Press(54, false)
+	if a == 0 || !s.Activate(54, a) || s.Activate(54, a) {
+		t.Fatal("long press must activate exactly once")
 	}
-	s.Release()
-	next, ok := s.Press()
-	if !ok || next == first || s.Activate(first) {
-		t.Fatal("old timer activated new press")
+	if action := s.Release(61); action != ReleaseIgnored {
+		t.Fatal("phantom release")
 	}
-	if !s.Activate(next) {
-		t.Fatal("current press did not activate")
+	if action := s.Release(54); action != ReleaseActive || s.Armed() {
+		t.Fatal("owner release")
+	}
+	b := s.Press(54, false)
+	if b == 0 || b == a || s.Activate(54, a) {
+		t.Fatal("stale timer replay")
+	}
+	s.Abandon()
+	if s.Armed() || !s.Down(54) {
+		t.Fatal("abandoned press lost physical release")
+	}
+	if action := s.Release(54); action != ReleaseOther {
+		t.Fatal("abandoned key created task")
+	}
+	c := s.Press(54, false)
+	if c == 0 {
+		t.Fatal("cannot start after abandon")
+	}
+	s.Cancel()
+	if s.Down(54) || s.Armed() || s.Activate(54, c) {
+		t.Fatal("cancel left live key")
 	}
 }

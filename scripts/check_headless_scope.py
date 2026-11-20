@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Audit the actual headless dependency graph and prevent a second native business stack."""
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -10,8 +11,13 @@ def nonblank(path):
     return sum(bool(line.strip()) for line in path.read_text(encoding="utf-8").splitlines())
 
 def main():
+    # Always inspect the shipped Darwin C archive, including on Linux CI.
+    # Linux-only go list skips native_darwin.go and would count the deleted
+    # bridge main as if it were the production speech entrypoint.
+    go_env = {**os.environ, "GOOS": "darwin", "GOARCH": "arm64", "CGO_ENABLED": "1"}
     process = subprocess.run(["go", "list", "-deps", "-json", "./cmd/voicebridge"],
-                             cwd=ROOT / "voice-rewrite", text=True, capture_output=True, check=True)
+                             cwd=ROOT / "voice-rewrite", env=go_env,
+                             text=True, capture_output=True, check=True)
     decoder = json.JSONDecoder()
     idx, paths, imports = 0, set(), set()
     while idx < len(process.stdout):
@@ -51,7 +57,7 @@ def main():
     if any(token in swift for token in ("RightCommand", "RightOption", "Mouse4", "Mouse5",
                                            "config.profile.dictation", "config.profile.rewrite")):
         raise SystemExit("native host must get shortcut-to-mode decisions from Go")
-    if any(token in swift for token in ("private enum Action", "activeAction", "activeKey")):
+    if any(token in swift for token in ("private enum Action", "activeAction", "activeKey", "struct HostConfig")):
         raise SystemExit("Swift must not mirror Go-owned task role state")
     if any(token in swift for token in ('"selected_voice_task"', '"transcribe"', '"host_profile"')):
         raise SystemExit("Swift must not restore stringly typed task dispatch")
@@ -61,8 +67,13 @@ def main():
         raise SystemExit("macOS Go bridge lost a shared ASR/LLM/config dependency")
     if "voicerewrite/internal/core/meeting" in imports:
         raise SystemExit("removed macOS Meeting must not stay linked just to inflate Go LOC")
-    bridge = (ROOT / "voice-rewrite/cmd/voicebridge/main.go").read_text(encoding="utf-8")
+    bridge = " ".join((ROOT / "voice-rewrite/cmd/voicebridge" / p).read_text(encoding="utf-8")
+                      for p in ("main.go", "native_darwin.go"))
     windows = (ROOT / "voice-rewrite/task_worker_windows.go").read_text(encoding="utf-8")
+    if any(token in windows for token in ("func processRecordedHold(", "func processDictationHold(", "func processAudioAndRewrite(")):
+        raise SystemExit("Windows recreated separate voice task orchestration next to voice.Run")
+    if (ROOT / "voice-rewrite/cmd/voicebridge/bridge_test.go").exists() or "safeProcessRequest" in bridge:
+        raise SystemExit("retired duplicate macOS voice task must not return")
     meeting = (ROOT / "voice-rewrite/meeting_session.go").read_text(encoding="utf-8")
     # Both *production entrypoints* must pass through the same task owner.
     # Provider-level calls alone could still leave two independent pipelines.

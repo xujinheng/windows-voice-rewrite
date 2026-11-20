@@ -26,7 +26,7 @@ func TestHeadlessProfileValidatesSettingsAndNeverLeaksKeys(t *testing.T) {
 		{`{"asr_api_key":"` + secret + `"}`, `"pillColor":[32,36,46]`, true},
 	}
 	for _, tt := range tests {
-		result := headlessProfile(request{Config: json.RawMessage(tt.config)})
+		result := headlessProfile(json.RawMessage(tt.config))
 		encoded, err := json.Marshal(result)
 		if err != nil {
 			t.Fatal(err)
@@ -42,7 +42,7 @@ func TestHeadlessProfileValidatesSettingsAndNeverLeaksKeys(t *testing.T) {
 }
 
 func TestHostProfileUsesSharedPasteMinimum(t *testing.T) {
-	reply := headlessProfile(request{Config: json.RawMessage(`{}`)})
+	reply := headlessProfile(json.RawMessage(`{}`))
 	if !reply.OK {
 		t.Fatalf("profile failed: %+v", reply)
 	}

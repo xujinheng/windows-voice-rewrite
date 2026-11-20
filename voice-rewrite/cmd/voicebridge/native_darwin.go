@@ -11,25 +11,30 @@ static inline void vrReportTranscribed(VRTranscribedCallback fn, unsigned long l
 import "C"
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"sync/atomic"
 	"time"
+	"unicode/utf8"
 	"unsafe"
 
+	"voicerewrite/internal/core/audio"
 	"voicerewrite/internal/core/clipboard"
+	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/session"
+	"voicerewrite/internal/core/ux"
+	"voicerewrite/internal/core/voice"
 )
 
 var nativeEpoch session.Epoch
+var nativeConfig atomic.Pointer[coreconfig.Config]
 
-// The physical key state is the existing shared input.Hold model, not a
-// second Swift press/arm/cancel state machine. Quartz callbacks run on the
-// main thread; only Epoch is accessed from both the UI and worker threads.
-var nativeHolds = map[int]*input.Hold{}
-var nativeKey int
-
-// Bind physical Quartz codes to the two Go-validated voice roles.
+// Physical state lives in the same Go owner used by Windows' mouse hook.
+// Quartz callbacks are serial; Epoch is shared with the worker thread.
+var nativeHolds = input.NewHolds(105)
 var nativeRole [105]uint8
 
 //export VRAction
@@ -40,18 +45,9 @@ func VRAction(code C.int) C.int {
 	return C.int(nativeRole[int(code)])
 }
 
-func nativeHold(code int) *input.Hold {
-	h := nativeHolds[code]
-	if h == nil {
-		h = &input.Hold{}
-		nativeHolds[code] = h
-	}
-	return h
-}
-
 //export VRDown
 func VRDown(code C.int) C.int {
-	if nativeHold(int(code)).Down() {
+	if nativeHolds.Down(int(code)) {
 		return 1
 	}
 	return 0
@@ -59,18 +55,15 @@ func VRDown(code C.int) C.int {
 
 //export VRPress
 func VRPress(code C.int, busy C.int) C.ulonglong {
-	h := nativeHold(int(code))
-	token, ok := h.Press()
-	if !ok || nativeKey != 0 || busy != 0 {
+	if VRAction(code) == 0 {
 		return 0
 	}
-	nativeKey = int(code)
-	return C.ulonglong(token)
+	return C.ulonglong(nativeHolds.Press(int(code), busy != 0))
 }
 
 //export VRActivate
 func VRActivate(code C.int, token C.ulonglong) C.int {
-	if nativeKey == int(code) && nativeHold(int(code)).Activate(uint64(token)) {
+	if nativeHolds.Activate(int(code), uint64(token)) {
 		return 1
 	}
 	return 0
@@ -78,31 +71,17 @@ func VRActivate(code C.int, token C.ulonglong) C.int {
 
 //export VRRelease
 func VRRelease(code C.int) C.int {
-	held, active := nativeHold(int(code)).Release()
-	primary := nativeKey == int(code)
-	if primary {
-		nativeKey = 0
-	}
-	if !held {
-		return 0
-	}
-	if active {
-		return 2
-	}
-	if primary {
-		return 3 // released an armed shortcut before its activation timer
-	}
-	return 1 // an unrelated side button should still navigate
+	return C.int(nativeHolds.Release(int(code)))
 }
 
 //export VRAbandon
 func VRAbandon() {
-	nativeKey = 0 // physical hold remains, so a short side click can replay
+	nativeHolds.Abandon() // retain key-up after recording timeout
 }
 
 //export VRArmed
 func VRArmed() C.int {
-	if nativeKey != 0 {
+	if nativeHolds.Armed() {
 		return 1
 	}
 	return 0
@@ -122,13 +101,8 @@ func VREpochValid(token C.ulonglong) C.int {
 //export VREpochCancel
 func VREpochCancel() {
 	nativeEpoch.Start()
-	nativeKey = 0
-	// A disabled event tap can lose the physical key-up event. Release the
-	// existing Hold objects; do not replace them, or old timer tokens can
-	// collide with a later press.
-	for _, hold := range nativeHolds {
-		hold.Release()
-	}
+	// Disabled event tap: release every hold and obsolete timer.
+	nativeHolds.Cancel()
 }
 
 //export VRClipboardSnapshotFits
@@ -182,8 +156,9 @@ func VRProfile(config *C.char) *C.char {
 	if config == nil {
 		return nil
 	}
-	reply := headlessProfile(request{Config: json.RawMessage(C.GoString(config))})
+	reply := headlessProfile(json.RawMessage(C.GoString(config)))
 	if reply.OK {
+		nativeConfig.Store(&reply.cfg)
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
 		nativeRole = [105]uint8{}
 		nativeRole[macKeyCode(profile["dictation"].(string))] = 1
@@ -192,21 +167,56 @@ func VRProfile(config *C.char) *C.char {
 	return nativeJSON(reply)
 }
 
+const maxPCMBytes = audio.PCMBytesPerSecond * coreconfig.RecordSecondsMax
+
 //export VRRun
-func VRRun(config *C.char, rewrite C.int, audio *C.uchar, length C.int, selection *C.char, token C.ulonglong, onTranscribed C.VRTranscribedCallback) *C.char {
-	if config == nil || length < 0 || length > C.int(maxPCMBytes) || (length > 0 && audio == nil) {
+func VRRun(rewrite C.int, audio *C.uchar, length C.int, selection *C.char, token C.ulonglong, onTranscribed C.VRTranscribedCallback) (result *C.char) {
+	if length < 0 || length > C.int(maxPCMBytes) || (length > 0 && audio == nil) {
 		return nil
 	}
-	req := request{
-		Config: json.RawMessage(C.GoString(config)), Rewrite: rewrite != 0,
-		NativePCM: C.GoBytes(unsafe.Pointer(audio), length),
+	cfg := nativeConfig.Load()
+	if cfg == nil {
+		return nativeJSON(failure("invalid_config", msgInvalidConfig))
 	}
+	selected := ""
 	if selection != nil {
-		req.SelectedText = C.GoString(selection)
+		selected = C.GoString(selection)
 	}
+	if rewrite != 0 && (len(selected) > 1<<20 || !utf8.ValidString(selected)) {
+		return nativeJSON(failure("invalid_request", "selected text exceeds limits"))
+	}
+	var afterASR func(string)
 	if onTranscribed != nil {
-		req.AfterASR = func(string) { C.vrReportTranscribed(onTranscribed, C.ulonglong(token)) }
+		afterASR = func(string) { C.vrReportTranscribed(onTranscribed, C.ulonglong(token)) }
 	}
-	// The shared voice.Run applies the task deadline; Epoch owns cancellation.
-	return nativeJSON(safeProcessRequest(nativeEpoch.ContextFor(uint64(token)), req))
+	ctx := nativeEpoch.ContextFor(uint64(token))
+	// Native ABI errors and stale task results cannot escape into Swift.
+	defer func() {
+		if recover() != nil {
+			result = nativeJSON(failure("internal_error", "request failed"))
+		}
+		if err := ctx.Err(); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				result = nativeJSON(failure("timeout", "request timed out"))
+			} else {
+				result = nativeJSON(failure("canceled", "request canceled"))
+			}
+		}
+	}()
+	outcome, err := voice.Run(ctx, *cfg, C.GoBytes(unsafe.Pointer(audio), length), selected, rewrite != 0, afterASR)
+	if err == nil {
+		return nativeJSON(success(outcome))
+	}
+	var pcm *voice.PCMError
+	if errors.As(err, &pcm) {
+		return nativeJSON(failure("invalid_pcm", pcm.Error()))
+	}
+	code, message := "asr_failed", "speech transcription failed"
+	if rewrite != 0 {
+		code, message = "textedit_failed", "selected text processing failed"
+	}
+	if classified, ok := ux.Classify(err); ok {
+		message = classified
+	}
+	return nativeJSON(failure(code, message))
 }

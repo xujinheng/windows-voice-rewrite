@@ -51,11 +51,6 @@ private struct HostProfile: Decodable {
     let pill: PillSpec
 }
 
-private struct HostConfig {
-    let raw: String
-    let profile: HostProfile
-}
-
 private final class Microphone {
     private let engine = AVAudioEngine()
     private let lock = NSLock()
@@ -195,16 +190,18 @@ private let onASRTranscribed: @convention(c) (UInt64) -> Void = { token in
 }
 
 private enum GoCore {
-    static func request(config: String, rewrite: Bool? = nil, audio: Data,
+    static func request(config: String? = nil, rewrite: Bool? = nil, audio: Data,
                         selection: String?, token: UInt64 = 0) throws -> BridgeReply.Output {
-        let result = config.withCString { cfg in
-            guard let rewrite else { return VRProfile(cfg) }
-            return (selection ?? "").withCString { selected in
+        let result: UnsafeMutablePointer<CChar>?
+        if let rewrite {
+            result = (selection ?? "").withCString { selected in
                 audio.withUnsafeBytes { pcm in
-                    VRRun(cfg, rewrite ? 1 : 0, pcm.bindMemory(to: UInt8.self).baseAddress,
+                    VRRun(rewrite ? 1 : 0, pcm.bindMemory(to: UInt8.self).baseAddress,
                           Int32(audio.count), selected, token, onASRTranscribed)
                 }
             }
+        } else {
+            result = (config ?? "").withCString { VRProfile($0) }
         }
         guard let result else { throw HostError.bridge("Go Core returned no response") }
         defer { VRFree(result) }
@@ -223,7 +220,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var tap: CFMachPort?
     private var microphone = Microphone()
     private let pill = RecordingPill()
-    private var config: HostConfig!
+    private var config: HostProfile!
     private var configURL: URL!
     private var taskID: UInt64 = 0
     private var targetPID: pid_t = 0
@@ -268,7 +265,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             guard let profile = try GoCore.request(config: json,
                                                    audio: Data(), selection: nil).profile
             else { throw HostError.config("missing Go host profile") }
-            config = HostConfig(raw: json, profile: profile)
+            config = profile
             pill.configure(profile.pill)
             show("VR")
         } catch {
@@ -283,7 +280,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
     @objc private func quit() { VREpochCancel(); NSApp.terminate(nil) }
     private func show(_ text: String) { item.button?.title = text }
-    fileprivate func reportTranscribed(_ token: UInt64) { if pending && taskID == token && VREpochValid(token) == 1 { pill.working(.rewriting); show(config.profile.pill.rewritingLabel) } }
+    fileprivate func reportTranscribed(_ token: UInt64) { if pending && taskID == token && VREpochValid(token) == 1 { pill.working(.rewriting); show(config.pill.rewritingLabel) } }
 
     private func startEventTap() {
         guard tap == nil else { return }
@@ -321,11 +318,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 if mouse == 3 || mouse == 4 {
                     if (type == .otherMouseDown && VRAction(Int32(100 + mouse)) != 0) ||
                         (type == .otherMouseUp && VRDown(Int32(100 + mouse)) != 0) {
-                        app.updatePress(code: 100 + mouse,
-                                        down: type == .otherMouseDown,
-                                        delay: Double(app.config.profile.mouseDelayMS) / 1000,
-                                        cursor: event.location)
-                        return nil
+                        if app.updatePress(code: 100 + mouse,
+                                           down: type == .otherMouseDown,
+                                           delay: Double(app.config.mouseDelayMS) / 1000,
+                                           cursor: event.location) {
+                            return nil
+                        }
                     }
                 }
             }
@@ -352,28 +350,27 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard VRAction(Int32(code)) != 0 || VRDown(Int32(code)) != 0 else { return }
         updatePress(code: code,
                     down: VRDown(Int32(code)) == 0 && flags.contains(family),
-                    delay: Double(config.profile.modifierDelayMS) / 1000)
+                    delay: Double(config.modifierDelayMS) / 1000)
     }
+    @discardableResult
     private func updatePress(code: Int64, down: Bool, delay: TimeInterval,
-                             cursor: CGPoint? = nil) {
+                             cursor: CGPoint? = nil) -> Bool {
         let key = Int32(code)
         if down {
             let token = VRPress(key, pending ? 1 : 0)
-            guard token != 0 else { return }
+            guard token != 0 else { return false }
             targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
+            targetFocus = FocusIdentity(window: focusedWindow(), element: nil, title: nil)
             taskID = 0
-            do { try microphone.start(maximumSeconds: config.profile.maximumSeconds) }
-            catch { VRAbandon(); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return }
-            DispatchQueue.main.async { [weak self] in
-                guard let self, VRDown(key) != 0 else { return }
-                self.targetFocus = FocusIdentity(window: self.focusedWindow(), element: nil, title: nil)
-            }
+            do { try microphone.start(maximumSeconds: config.maximumSeconds) }
+            catch { VRAbandon(); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return true }
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, VRActivate(key, token) == 1 else { return }
                 self.begin(rewrite: VRAction(key) == 2)
             }
         } else {
             let outcome = VRRelease(key)
+            guard outcome != 0 else { return false }
             if outcome == 2 && microphone.running { finish(rewrite: VRAction(key) == 2) }
             else if outcome == 2 || outcome == 3 {
                 if microphone.running { _ = try? microphone.stop(discard: true) }
@@ -382,13 +379,14 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 let source = CGEventSource(stateID: .hidSystemState)
                 for kind in [CGEventType.otherMouseDown, .otherMouseUp] {
                     guard let event = CGEvent(mouseEventSource: source, mouseType: kind,
-                                              mouseCursorPosition: cursor, mouseButton: .center) else { return }
+                                              mouseCursorPosition: cursor, mouseButton: .center) else { return true }
                     event.setIntegerValueField(.mouseEventButtonNumber, value: code - 100)
                     event.setIntegerValueField(.eventSourceUserData, value: 0x56525842)
                     event.post(tap: .cghidEventTap)
                 }
             }
         }
+        return true
     }
 
     private func begin(rewrite: Bool) {
@@ -404,7 +402,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         pill.recording(rewrite: rewrite, started: Date(),
                        meter: { [weak self] in self?.microphone.meterLevel ?? 0 })
         let token = taskID
-        DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.profile.maximumSeconds)) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.maximumSeconds)) { [weak self] in
             guard let self, VREpochValid(token) == 1, self.microphone.running else { return }
             self.finish(rewrite: rewrite)
         }
@@ -413,20 +411,18 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard microphone.running, taskID != 0 else { return }
         VRAbandon() // timeout also releases Go's primary key; the physical hold remains
         pill.working(rewrite ? .selection : .processing)
-        show(rewrite ? config.profile.pill.selectionLabel : config.profile.pill.processingDictation)
-        let configValue = config.raw
+        show(rewrite ? config.pill.selectionLabel : config.pill.processingDictation)
         let token = taskID
         do {
             let capture = try microphone.stop()
             if rewrite && !targetStillValid() { reset("Focus changed"); return }
             let selectedValue = rewrite ? selectionFromAX() : nil
             if rewrite && selectedValue == nil { reset("Select text"); return }
-            if rewrite { pill.working(.processing); show(config.profile.pill.processingRewrite) }
+            if rewrite { pill.working(.processing); show(config.pill.processingRewrite) }
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let result = Result {
                     let pcm = try Microphone.pcm(capture)
-                    return try GoCore.request(config: configValue,
-                                             rewrite: rewrite,
+                    return try GoCore.request(rewrite: rewrite,
                                              audio: pcm, selection: selectedValue?.text, token: token)
                 }
                 DispatchQueue.main.async {
@@ -434,19 +430,19 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     defer { self.clearSession() }
                     switch result {
                     case .failure(let error):
-                        self.reset(self.config.profile.pill.errorLabel)
+                        self.reset(self.config.pill.errorLabel)
                         fputs("VoiceRewrite: \(error)\n", stderr)
                     case .success(let value):
                         guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
                         self.lastResult = text
                         guard value.route == "replace" || value.route == "insert" else {
-                            self.reset(self.config.profile.pill.fallbackLabel, phase: .fallback); return
+                            self.reset(self.config.pill.fallbackLabel, phase: .fallback); return
                         }
                         guard self.targetStillValid() else { self.reset("Focus changed"); return }
                         if rewrite && selectedValue?.matches(self.selectionFromAX()) != true {
                             self.reset("Selection changed"); return
                         }
-                        if value.route == "replace" { self.pill.working(.applying); self.show(self.config.profile.pill.applyingLabel) }
+                        if value.route == "replace" { self.pill.working(.applying); self.show(self.config.pill.applyingLabel) }
                         self.paste(text)
                     }
                 }
@@ -565,10 +561,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         }
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
-        show(config.profile.pill.sentLabel)
+        show(config.pill.sentLabel)
         pill.result(.sent)
         // Only changeCount, not matching text, fences clipboard ownership.
-        DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.profile.pasteRestoreMS) / 1000) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Double(config.pasteRestoreMS) / 1000) {
             guard board.changeCount == lease else { return }
             board.clearContents()
             if !saved.isEmpty { _ = board.writeObjects(saved) }
@@ -593,7 +589,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             }
             start = end
         }
-        show(config.profile.pill.sentLabel)
+        show(config.pill.sentLabel)
         pill.result(.sent)
     }
 

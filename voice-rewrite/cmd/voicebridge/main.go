@@ -2,39 +2,20 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
 	"time"
-	"unicode/utf8"
-
-	"voicerewrite/internal/core/audio"
 	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/shortcut"
 	"voicerewrite/internal/core/ux"
-	"voicerewrite/internal/core/voice"
 )
 
 const (
 	macDefaultDictation, macDefaultRewrite = "RightCommand", "RightOption"
 
-	maxPCMBytes      = audio.PCMBytesPerSecond * coreconfig.RecordSecondsMax
-	maxSelectedBytes = 1 << 20
-	msgCanceled      = "request canceled"
-	msgTimedOut      = "request timed out"
 	msgInvalidConfig = "invalid configuration"
 )
-
-type request struct {
-	Rewrite      bool
-	Config       json.RawMessage
-	SelectedText string
-	NativePCM    []byte
-	AfterASR     func(string)
-}
 
 type bridgeError struct {
 	Code    string `json:"code"`
@@ -42,60 +23,10 @@ type bridgeError struct {
 }
 
 type response struct {
-	OK     bool         `json:"ok"`
-	Result any          `json:"result,omitempty"`
-	Error  *bridgeError `json:"error,omitempty"`
-}
-
-// The native C ABI uses this boundary.
-// It owns the final cancellation result so ASR and rewrite do not each
-// duplicate context checks; private provider errors and panics stay contained.
-func safeProcessRequest(ctx context.Context, req request) (reply response) {
-	reply = failure("internal_error", "request failed")
-	defer func() {
-		if recover() != nil {
-			return
-		}
-		if err := ctx.Err(); err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				reply = failure("timeout", msgTimedOut)
-			} else {
-				reply = failure("canceled", msgCanceled)
-			}
-		}
-	}()
-	trimmed := bytes.TrimSpace(req.Config)
-	if len(trimmed) == 0 || trimmed[0] != '{' {
-		return failure("invalid_config", msgInvalidConfig)
-	}
-	cfg, err := coreconfig.Parse(req.Config)
-	if err != nil {
-		return failure("invalid_config", msgInvalidConfig)
-	}
-	cfg, err = coreconfig.Normalize(cfg)
-	if err != nil {
-		return failure("invalid_config", msgInvalidConfig)
-	}
-	if req.Rewrite && (len(req.SelectedText) > maxSelectedBytes ||
-		!utf8.ValidString(req.SelectedText)) {
-		return failure("invalid_request", "selected text exceeds limits")
-	}
-	outcome, err := voice.Run(ctx, cfg, req.NativePCM, req.SelectedText, req.Rewrite, req.AfterASR)
-	if err != nil {
-		var capture *voice.PCMError
-		if errors.As(err, &capture) {
-			return failure("invalid_pcm", capture.Error())
-		}
-		code, message := "asr_failed", "speech transcription failed"
-		if req.Rewrite {
-			code, message = "textedit_failed", "selected text processing failed"
-		}
-		if classified, ok := ux.Classify(err); ok {
-			message = classified
-		}
-		return failure(code, message)
-	}
-	return success(outcome)
+	OK     bool              `json:"ok"`
+	Result any               `json:"result,omitempty"`
+	Error  *bridgeError      `json:"error,omitempty"`
+	cfg    coreconfig.Config // normalized profile, never sent over the C ABI
 }
 
 func failure(code, message string) response {
@@ -113,12 +44,12 @@ func macKeyCode(s string) int {
 
 // headlessProfile shares the existing config normalizer and indicator with
 // Windows; only physical Mac shortcut identifiers differ.
-func headlessProfile(req request) response {
+func headlessProfile(raw json.RawMessage) response {
 	var provided map[string]json.RawMessage
-	if len(req.Config) == 0 || json.Unmarshal(req.Config, &provided) != nil || provided == nil {
+	if len(raw) == 0 || json.Unmarshal(raw, &provided) != nil || provided == nil {
 		return failure("invalid_config", msgInvalidConfig)
 	}
-	cfg, err := coreconfig.Parse(req.Config)
+	cfg, err := coreconfig.Parse(raw)
 	if err != nil {
 		return failure("invalid_config", msgInvalidConfig)
 	}
@@ -138,13 +69,15 @@ func headlessProfile(req request) response {
 	if err != nil || cfg.RecordMode != "hold" || cfg.AudioDeviceID != -1 {
 		return failure("invalid_config", msgInvalidConfig)
 	}
-	return success(map[string]any{"profile": map[string]any{
+	reply := success(map[string]any{"profile": map[string]any{
 		"dictation": cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
 		"maximumSeconds": cfg.MaxRecordSeconds, "modifierDelayMS": 200,
 		"pasteRestoreMS": ux.PasteReceiptMinimumMilliseconds,
 		"mouseDelayMS":   int(input.WindowsSideHold / time.Millisecond),
 		"pill":           indicator.HostSpec(),
 	}})
+	reply.cfg = cfg
+	return reply
 }
 
 // Required by Go's c-archive build; the native host calls VRRun directly.

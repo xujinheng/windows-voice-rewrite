@@ -29,45 +29,96 @@ const (
 	WindowsSideHold = 250 * time.Millisecond
 )
 
-// Hold is one physical button's press, hold, and release.
-// A late timer carries the old token and cannot start a newer press.
-type Hold struct {
-	down   bool
-	active bool
-	token  uint64
+// Holds is the sole cross-platform owner of physical key press generations.
+// OS adapters handle hooks and timers, never another business hold state.
+type keyState struct {
+	down, active bool
+	token        uint64
 }
 
-func (s *Hold) Down() bool { return s.down }
+type Holds struct {
+	keys  []keyState
+	owner int
+}
 
-func (s *Hold) Press() (uint64, bool) {
-	if s.down {
-		return s.token, false
+func NewHolds(count int) Holds { return Holds{keys: make([]keyState, count)} }
+
+func (s *Holds) key(code int) *keyState {
+	if code <= 0 || code >= len(s.keys) {
+		return nil
 	}
-	s.token++
-	s.down = true
-	s.active = false
-	return s.token, true
+	return &s.keys[code]
 }
 
-func (s *Hold) CanActivate(token uint64) bool {
-	return s.down && !s.active && s.token == token
+func (s *Holds) Down(code int) bool {
+	h := s.key(code)
+	return h != nil && h.down
 }
 
-func (s *Hold) Activate(token uint64) bool {
-	if !s.CanActivate(token) {
+func (s *Holds) Press(code int, busy bool) uint64 {
+	h := s.key(code)
+	if h == nil || h.down || busy || s.owner != 0 {
+		return 0
+	}
+	h.token++
+	h.down, h.active = true, false
+	s.owner = code
+	return h.token
+}
+
+func (s *Holds) CanActivate(code int, token uint64) bool {
+	h := s.key(code)
+	return h != nil && s.owner == code && h.down && !h.active && h.token == token
+}
+
+func (s *Holds) Activate(code int, token uint64) bool {
+	if !s.CanActivate(code, token) {
 		return false
 	}
-	s.active = true
+	s.keys[code].active = true
 	return true
 }
 
-func (s *Hold) Release() (wasHeld, active bool) {
-	if !s.down {
-		return false, false
+// One release decision is shared by Windows and macOS. Native hosts only
+// execute the returned effect (finish recording or replay a navigation click).
+const (
+	ReleaseIgnored = iota // unknown/unheld key, pass through
+	ReleaseOther          // abandoned/secondary key, preserve navigation
+	ReleaseActive         // confirmed voice hold, finish recording
+	ReleaseShort          // armed but not activated, cancel and replay navigation
+)
+
+func (s *Holds) Release(code int) int {
+	h := s.key(code)
+	if h == nil || !h.down {
+		return ReleaseIgnored
 	}
-	active = s.active
-	s.down = false
-	s.active = false
-	s.token++
-	return true, active
+	primary := s.owner == code
+	if primary {
+		s.owner = 0
+	}
+	active := h.active
+	h.down, h.active = false, false
+	h.token++
+	if active {
+		return ReleaseActive
+	}
+	if primary {
+		return ReleaseShort
+	}
+	return ReleaseOther
+}
+
+func (s *Holds) Abandon()    { s.owner = 0 }
+func (s *Holds) Armed() bool { return s.owner != 0 }
+
+// Cancel invalidates every late timer without resetting its generation.
+func (s *Holds) Cancel() {
+	s.owner = 0
+	for i := range s.keys {
+		if s.keys[i].down {
+			s.keys[i].down, s.keys[i].active = false, false
+			s.keys[i].token++
+		}
+	}
 }

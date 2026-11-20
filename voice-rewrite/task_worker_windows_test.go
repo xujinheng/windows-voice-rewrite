@@ -12,22 +12,26 @@ import (
 	"unsafe"
 )
 
-func TestCanceledRewriteHoldReleasesBusy(t *testing.T) {
-	app := &appState{}
-	generation := app.epoch.Start()
-	app.busy.Store(true) // finish() marks post-record processing busy
-	app.epoch.Start()    // dismissing the active pill cancels that task
-	rec := &audioRecorder{done: make(chan struct{})}
-
-	processRecordedHold(app, rec, 0, trayPoint{}, generation)
-
-	if app.busy.Load() {
-		t.Fatal("canceled hold kept the app busy and blocked the next recording")
-	}
-	select {
-	case <-rec.done:
-	default:
-		t.Fatal("canceled hold did not stop its recorder")
+func TestCanceledVoiceWorkerReleasesBusy(t *testing.T) {
+	for _, task := range []recordingTask{
+		{target: 0}, // hold selection captured after release
+		{dictation: true, target: 0},
+		{selection: &selectedText{}}, // toggle selection captured before recording
+	} {
+		app := &appState{}
+		generation := app.epoch.Start()
+		app.busy.Store(true)
+		app.epoch.Start() // cancel before starting the worker
+		rec := &audioRecorder{done: make(chan struct{})}
+		processRecording(app, rec, task, generation)
+		if app.busy.Load() {
+			t.Fatal("canceled voice worker kept the app busy")
+		}
+		select {
+		case <-rec.done:
+		default:
+			t.Fatal("canceled voice worker did not stop its recorder")
+		}
 	}
 }
 
