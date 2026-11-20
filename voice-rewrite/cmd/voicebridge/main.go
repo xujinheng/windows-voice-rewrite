@@ -19,6 +19,7 @@ import (
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/jsonl"
+	"voicerewrite/internal/core/speech"
 	"voicerewrite/internal/core/textedit"
 	"voicerewrite/internal/core/voice"
 	"voicerewrite/internal/core/ux"
