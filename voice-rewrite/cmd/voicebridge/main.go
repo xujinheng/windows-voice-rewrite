@@ -268,21 +268,6 @@ func rejectPCM(id, op, reason string) response {
 	return failure(id, "invalid_pcm", "PCM must be 16 kHz mono PCM16, at least 0.1s and within duration limit")
 }
 
-func selectedTaskSuccess(id string, result textedit.AssistantResult, instruction string) response {
-	action := textedit.RouteTask(result, instruction, false)
-	route := "preview"
-	if action == textedit.TryReplace || action == textedit.Replace {
-		route = "replace"
-	}
-	payload := map[string]any{
-		"intent": result.Intent,
-		"text":   result.Result,
-		"route":  route,
-	}
-	payload["instruction"] = instruction
-	return success(id, payload)
-}
-
 func processRequest(ctx context.Context, req request) response {
 	trimmed := bytes.TrimSpace(req.Config)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
@@ -329,7 +314,15 @@ func processRequest(ctx context.Context, req request) response {
 		if err != nil {
 			return providerFailure(req.ID, "textedit_failed", "selected text processing failed", err)
 		}
-		return selectedTaskSuccess(req.ID, result, instruction)
+		action := textedit.RouteTask(result, instruction, false)
+		route := "preview"
+		if action == textedit.Replace || action == textedit.TryReplace {
+			route = "replace"
+		}
+		return success(req.ID, map[string]any{
+			"intent": result.Intent, "text": result.Result,
+			"route": route, "instruction": instruction,
+		})
 	}
 	return failure(req.ID, "unsupported_op", msgUnsupported)
 }
