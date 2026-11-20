@@ -20,6 +20,7 @@ import (
 
 const (
 	macDefaultDictation, macDefaultRewrite = "RightCommand", "RightOption"
+
 	maxPCMBytes      = audio.PCMBytesPerSecond * coreconfig.RecordSecondsMax
 	maxSelectedBytes = 1 << 20
 	msgCanceled      = "request canceled"
