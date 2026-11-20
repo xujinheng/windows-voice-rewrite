@@ -16,7 +16,6 @@ import (
 	"unsafe"
 
 	"voicerewrite/internal/contract"
-	coreconfig "voicerewrite/internal/core/config"
 	"voicerewrite/internal/core/desktop"
 	"voicerewrite/internal/core/provider"
 	"voicerewrite/internal/core/serviceprobe"
@@ -655,7 +654,11 @@ func (p *uxSettings) save() error {
 	changedDuration := cfg.MaxRecordSeconds != seconds
 	cfg.MaxRecordSeconds = seconds
 	selected, _, _ := procSendMessage.Call(p.microphone, uxCBGetCurSel, 0, 0)
-	deviceID, changedAudioDevice := coreconfig.ChooseAudioDevice(cfg.AudioDeviceID, int(selected), p.microphone != 0 && selected != ^uintptr(0), p.microphoneIDs)
+	deviceID := cfg.AudioDeviceID
+	if p.microphone != 0 && selected != ^uintptr(0) && int(selected) >= 0 && int(selected) < len(p.microphoneIDs) {
+		deviceID = p.microphoneIDs[int(selected)]
+	}
+	changedAudioDevice := deviceID != cfg.AudioDeviceID
 	cfg.AudioDeviceID = deviceID
 	if err = saveConfig(cfg); err != nil {
 		return err

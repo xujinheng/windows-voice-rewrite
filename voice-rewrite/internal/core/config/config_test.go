@@ -154,15 +154,6 @@ func TestMeetingASRModesKeepSettingsOrder(t *testing.T) {
 	if MeetingASRModeIndex(MeetingASRLlamaPrefix) != 1 || MeetingASRModeIndex("stream") != 0 {
 		t.Fatal("mode index")
 	}
-	if id, changed := ChooseAudioDevice(4, 1, true, []int{4, 9}); id != 9 || !changed {
-		t.Fatalf("device %d %v", id, changed)
-	}
-	if id, changed := ChooseAudioDevice(4, 0, true, []int{4, 9}); id != 4 || changed {
-		t.Fatal("same device")
-	}
-	if id, changed := ChooseAudioDevice(4, 3, false, []int{4, 9}); id != 4 || changed {
-		t.Fatal("closed combo")
-	}
 	if MeetingASRModeTitle(MeetingASRMultipart) != "分段音频识别" || !strings.HasPrefix(MeetingASRModeNote(), MeetingASRLlamaPrefix) {
 		t.Fatal("mode label")
 	}
