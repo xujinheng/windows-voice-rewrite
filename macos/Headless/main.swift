@@ -366,12 +366,13 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             catch { VRAbandon(); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return true }
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, VRActivate(key, token) == 1 else { return }
-                self.begin(rewrite: VRAction(key) == 2)
+                self.begin(rewrite: VRHeldRole(key) == 2)
             }
         } else {
+            let rewrite = VRHeldRole(key) == 2
             let outcome = VRRelease(key)
             guard outcome != 0 else { return false }
-            if outcome == 2 && microphone.running { finish(rewrite: VRAction(key) == 2) }
+            if outcome == 2 && microphone.running { finish(rewrite: rewrite) }
             else if outcome == 2 || outcome == 3 {
                 if microphone.running { _ = try? microphone.stop(discard: true) }
             }
@@ -434,14 +435,15 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                         fputs("VoiceRewrite: \(error)\n", stderr)
                     case .success(let value):
                         guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
-                        guard value.route == "replace" || value.route == "insert" else {
+                        let targetReady = self.targetStillValid()
+                        let selectionReady = !rewrite || selectedValue?.matches(self.selectionFromAX()) == true
+                        let delivery = (value.route ?? "").withCString {
+                            VRDelivery($0, targetReady ? 1 : 0, selectionReady ? 1 : 0)
+                        }
+                        guard delivery != 0 else {
                             self.reset(self.config.pill.fallbackLabel, phase: .fallback); return
                         }
-                        guard self.targetStillValid() else { self.reset("Focus changed"); return }
-                        if rewrite && selectedValue?.matches(self.selectionFromAX()) != true {
-                            self.reset("Selection changed"); return
-                        }
-                        if value.route == "replace" { self.pill.working(.applying); self.show(self.config.pill.applyingLabel) }
+                        if delivery == 2 { self.pill.working(.applying); self.show(self.config.pill.applyingLabel) }
                         self.paste(text)
                     }
                 }

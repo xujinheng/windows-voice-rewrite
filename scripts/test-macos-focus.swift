@@ -9,15 +9,17 @@ extension HeadlessApp {
         precondition(VRAction(Int32(code)) != 0)
         updatePress(code: code, down: true, delay: 3600)
         precondition(VRDown(Int32(code)) == 1 && VRArmed() == 1)
+        let heldRole = VRHeldRole(Int32(code))
+        precondition(heldRole != 0)
         let rebound = try! GoCore.request(config: after, audio: Data(), selection: nil)
         config = rebound.profile!
-        precondition(VRAction(Int32(code)) == 0)
+        precondition(VRAction(Int32(code)) == 0 && VRHeldRole(Int32(code)) == heldRole)
         if modifier {
             handleModifier(code: code, flags: [])
         } else {
             updatePress(code: code, down: false, delay: 0)
         }
-        precondition(VRDown(Int32(code)) == 0 && VRArmed() == 0)
+        precondition(VRDown(Int32(code)) == 0 && VRArmed() == 0 && VRHeldRole(Int32(code)) == 0)
     }
 
     func verifyPressTargetSurvivesDelayedActivation() {
@@ -88,6 +90,13 @@ MainActor.assumeIsolated {
     let noAX = FocusIdentity(window: nil, element: nil, title: nil)
     precondition(noAX.matches(window: nil, element: nil, title: nil))
     precondition(noAX.matches(window: nil, element: nil, title: "Other"))
+    "insert".withCString { route in
+        precondition(VRDelivery(route, 1, 0) == 1 && VRDelivery(route, 0, 1) == 0)
+    }
+    "replace".withCString { route in
+        precondition(VRDelivery(route, 1, 1) == 2 && VRDelivery(route, 1, 0) == 0)
+    }
+    "preview".withCString { route in precondition(VRDelivery(route, 1, 1) == 0) }
     // Exercise the actual native C ABI over the Go clipboard ownership budget.
     precondition(VRClipboardSnapshotFits(1, 0) == 1)
     precondition(VRClipboardSnapshotFits(16 << 20, 32 << 20) == 1)

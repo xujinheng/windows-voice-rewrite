@@ -51,7 +51,7 @@ def main():
     if "-buildmode=c-archive" not in build_script or "VoiceCore.h" not in build_script:
         raise SystemExit("macOS must link in-process Go Core, not spawn a helper")
     swift = " ".join(p.read_text(encoding="utf-8") for p in swift_files)
-    for sym in ("VRAction(", "VRPress(", "VRActivate(", "VRRelease(", "VREpochValid(", "VRWave(", "VRSpinner(", "VRLevel(", "VRDuration(", "VRRun("):
+    for sym in ("VRAction(", "VRPress(", "VRActivate(", "VRRelease(", "VREpochValid(", "VRWave(", "VRSpinner(", "VRLevel(", "VRDuration(", "VRRun(", "VRHeldRole(", "VRDelivery("):
         if sym not in swift:
             raise SystemExit(f"native Swift host does not call Go Core directly: {sym}")
     if any(token in swift for token in ("RightCommand", "RightOption", "Mouse4", "Mouse5",
@@ -81,7 +81,8 @@ def main():
         raise SystemExit("unshipped JSONL bridge reintroduced a second desktop transport")
     if "voicerewrite/voice" not in imports or any(
         ".Execute(" not in host for host in (bridge, windows)
-    ):
+    ) or "voice.Delivery(" not in windows or "voice.Delivery(" not in bridge:
+
         raise SystemExit("both hosts must invoke the same Go voice task")
     # Scan every Windows desktop host and the shipped Go bridge, not just the
     # current worker filenames. Meeting is a separate Go Core product pipeline.

@@ -18,6 +18,8 @@ type Core struct {
 	mu        sync.Mutex
 	keys      map[int]*keyState
 	owner     int
+	dictationKey int
+	rewriteKey   int
 	nextToken uint64
 	currentID uint64
 	closed    bool
@@ -26,6 +28,7 @@ type Core struct {
 }
 type keyState struct {
 	down, active bool
+	role         int
 	token        uint64
 }
 
@@ -61,6 +64,43 @@ func (c *Core) key(code int) *keyState {
 	}
 	return c.keys[code]
 }
+// Bind replaces the physical input mapping without changing the role of a
+// key already held. Both native hosts pass OS key IDs to the same runtime.
+func (c *Core) Bind(dictationKey, rewriteKey int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dictationKey, c.rewriteKey = dictationKey, rewriteKey
+}
+
+func (c *Core) role(code int) int {
+	if code <= 0 {
+		return 0
+	}
+	if code == c.dictationKey {
+		return 1
+	}
+	if code == c.rewriteKey {
+		return 2
+	}
+	return 0
+}
+
+func (c *Core) Role(code int) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.role(code)
+}
+
+// HeldRole is frozen at physical key-down, surviving hotkey reload.
+func (c *Core) HeldRole(code int) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if h := c.key(code); h != nil && h.down {
+		return h.role
+	}
+	return 0
+}
+
 func (c *Core) Down(code int) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -83,6 +123,7 @@ func (c *Core) Press(code int, busy bool) uint64 {
 	}
 	c.nextToken++
 	h.token = c.nextToken
+	h.role = c.role(code)
 	h.down, h.active = true, false
 	c.owner = code
 	return h.token

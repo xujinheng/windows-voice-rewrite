@@ -100,3 +100,28 @@ func TestCorePhysicalRemapCannotReusePendingToken(t *testing.T) {
 		t.Fatal("a stale timer from a remapped physical key activated the next input")
 	}
 }
+
+func TestCoreRoleRemainsStableWhenShortcutsReload(t *testing.T) {
+	var core Core
+	core.Bind(103, 104)
+	if core.Role(103) != 1 || core.Role(104) != 2 {
+		t.Fatal("incorrect bound roles")
+	}
+	hold := core.Press(103, false)
+	if hold == 0 || core.HeldRole(103) != 1 {
+		t.Fatal("dictation mode was not captured at key-down")
+	}
+	core.Bind(54, 61)
+	if core.Role(103) != 0 || core.HeldRole(103) != 1 {
+		t.Fatal("hotkey reload silently changed in-flight task")
+	}
+	if !core.Activate(103, hold) || core.HeldRole(103) != 1 {
+		t.Fatal("late activation lost original task role")
+	}
+	if core.Release(103) != ReleaseActive || core.HeldRole(103) != 0 {
+		t.Fatal("released key retained a task role")
+	}
+	if core.Role(54) != 1 || core.Role(61) != 2 {
+		t.Fatal("new bindings did not become active")
+	}
+}
