@@ -16,46 +16,44 @@ import (
 func TestIntentsRouting(t *testing.T) {
 	for _, tc := range []struct {
 		instruction, intent string
-		editable            bool
-		browser             bool
 		want                string
 	}{
-		{"改得简洁一点", "edit", true, false, "replace"},
-		{"改得简洁一点", "edit", false, true, "try_replace"},
-		{"改得简洁一点", "edit", false, false, "try_replace"},
-		{"这是什么意思？", "answer", true, true, "popup"},
-		{"为什么这样写？", "edit", true, true, "popup"},
-		{"总结这段话", "summarize", true, true, "popup"},
-		{"翻译成中文", "translate", true, false, "replace"},
-		{"翻译成中文", "translate", false, true, "try_replace"},
-		{"翻译成中文并替换原文", "edit", true, false, "replace"},
-		{"replace this with a shorter version", "edit", true, false, "replace"},
-		{"总结这段话", "edit", true, true, "popup"},
-		{"请写成英文", "translate", true, false, "replace"},
-		{"请写成英文", "translate", false, true, "try_replace"},
-		{"请写成英文", "translate", false, false, "try_replace"},
-		{"翻译成英文", "translate", false, true, "try_replace"},
-		{"英文是什么意思？", "answer", true, true, "popup"},
-		{"怎么用英文说？", "translate", true, false, "popup"},
-		{"把这句话改成英文", "edit", true, false, "replace"},
-		{"解释一下这个术语", "edit", true, true, "popup"},
+		{"改得简洁一点", "edit", "replace"},
+		{"改得简洁一点", "edit", "replace"},
+		{"改得简洁一点", "edit", "replace"},
+		{"这是什么意思？", "answer", "popup"},
+		{"为什么这样写？", "edit", "popup"},
+		{"总结这段话", "summarize", "popup"},
+		{"翻译成中文", "translate", "replace"},
+		{"翻译成中文", "translate", "replace"},
+		{"翻译成中文并替换原文", "edit", "replace"},
+		{"replace this with a shorter version", "edit", "replace"},
+		{"总结这段话", "edit", "popup"},
+		{"请写成英文", "translate", "replace"},
+		{"请写成英文", "translate", "replace"},
+		{"请写成英文", "translate", "replace"},
+		{"翻译成英文", "translate", "replace"},
+		{"英文是什么意思？", "answer", "popup"},
+		{"怎么用英文说？", "translate", "popup"},
+		{"把这句话改成英文", "edit", "replace"},
+		{"解释一下这个术语", "edit", "popup"},
 		// Third-party editors may expose unknown Win32 control classes.
-		{"请写成英文", "translate", false, false, "try_replace"}, // WeChat
-		{"帮我润色一下", "edit", false, false, "try_replace"},     // VS Code
-		{"翻译成中文", "translate", false, false, "try_replace"}, // nonnative editor
-		{"请写成英文", "answer", false, false, "try_replace"},    // conflicting model intent
-		{"改成英文", "ambiguous", false, false, "try_replace"},
-		{"这是什么意思", "answer", false, false, "popup"},
-		{"为什么会出现这个错误", "answer", false, false, "popup"},
-		{"总结这段话", "summarize", false, false, "popup"},
-		{"帮我润色一下", "ambiguous", true, true, "replace"},
-		{"帮我", "edit", true, false, "popup"},
-		{"嗯", "translate", false, true, "popup"},
-		{"看一下", "edit", false, false, "popup"},
+		{"请写成英文", "translate", "replace"}, // WeChat
+		{"帮我润色一下", "edit", "replace"},     // VS Code
+		{"翻译成中文", "translate", "replace"}, // nonnative editor
+		{"请写成英文", "answer", "replace"},    // conflicting model intent
+		{"改成英文", "ambiguous", "replace"},
+		{"这是什么意思", "answer", "popup"},
+		{"为什么会出现这个错误", "answer", "popup"},
+		{"总结这段话", "summarize", "popup"},
+		{"帮我润色一下", "ambiguous", "replace"},
+		{"帮我", "edit", "popup"},
+		{"嗯", "translate", "popup"},
+		{"看一下", "edit", "popup"},
 	} {
-		got := RouteTask(AssistantResult{Intent: tc.intent, Result: "text"}, tc.instruction, tc.editable)
+		got := RouteTask(AssistantResult{Intent: tc.intent, Result: "text"}, tc.instruction)
 		if got != Action(tc.want) {
-			t.Errorf("%s intent=%s editable=%t: got %s want %s", tc.instruction, tc.intent, tc.editable, got, tc.want)
+			t.Errorf("%s intent=%s: got %s want %s", tc.instruction, tc.intent, got, tc.want)
 		}
 	}
 }
@@ -121,10 +119,8 @@ func TestModelIntentAndInvalidResultsNeverAuthorizeWrite(t *testing.T) {
 		{"malformed preview", AssistantResult{Intent: "ambiguous", Result: "untrusted", PreviewOnly: true}, "润色一下"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			for _, editable := range []bool{true, false} {
-				if action := RouteTask(tc.result, tc.instruction, editable); action != Popup {
-					t.Fatalf("unauthorized action %s", action)
-				}
+			if action := RouteTask(tc.result, tc.instruction); action != Popup {
+				t.Fatalf("unauthorized action %s", action)
 			}
 		})
 	}
@@ -156,7 +152,7 @@ func TestCompleteSelectedTaskMalformedOutputs(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || !got.PreviewOnly || RouteTask(got, "润色一下", true) != Popup {
+			if err != nil || !got.PreviewOnly || RouteTask(got, "润色一下") != Popup {
 				t.Fatalf("unsafe malformed response: %+v %v", got, err)
 			}
 		})
@@ -179,7 +175,7 @@ func TestResolveSelectedTaskCorrectsMisclassifiedEdit(t *testing.T) {
 	cfg.LLMBaseURL = server.URL
 	got, err := ResolveSelectedTask(context.Background(), cfg, "Original text", "make it shorter")
 	if err != nil || count != 2 || got.Result != "Shorter text" || got.Intent != "edit" ||
-		RouteTask(got, "make it shorter", true) != Replace {
+		RouteTask(got, "make it shorter") != Replace {
 		t.Fatalf("result=%+v err=%v calls=%d", got, err, count)
 	}
 }
