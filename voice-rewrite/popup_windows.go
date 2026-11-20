@@ -524,8 +524,8 @@ func showAnswerPopup(msg popupMessage) error {
 	restoreDPI := handyAwareWindowThread()
 	defer restoreDPI()
 	closeActiveAnswer()
-	if err := corepopup.ResultShown(msg.body); err != nil {
-		return err
+	if strings.TrimSpace(msg.body) == "" {
+		return errors.New(corepopup.EmptyCard)
 	}
 	// Never truncate a model response: users must be able to review and copy
 	// the full answer, including large translations and generated documents.

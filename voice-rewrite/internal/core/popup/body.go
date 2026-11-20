@@ -1,9 +1,6 @@
 package popup
 
-import (
-	"errors"
-	"strings"
-)
+import "strings"
 
 const (
 	// EmptyCard is the Windows result card with no visible text.
@@ -11,14 +8,6 @@ const (
 	EmptyCard     = "AI 未返回可显示的文字"
 	UnwrittenCard = "结果正文未写入文本控件"
 )
-
-// ResultShown refuses a card whose body is empty or only whitespace.
-func ResultShown(body string) error {
-	if strings.TrimSpace(body) == "" {
-		return errors.New(EmptyCard)
-	}
-	return nil
-}
 
 // EditorText uses Windows newlines in the native edit control.
 func EditorText(body string) string {
