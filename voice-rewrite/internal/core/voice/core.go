@@ -26,9 +26,9 @@ type keyState struct {
 }
 
 const (
-	NoTargetWindow		= "没有可用的目标窗口"
-	ToggleUINotifyFailed	= "无法通知 UI 线程准备录音"
-	SideHoldThreshold		= 250 * time.Millisecond
+	NoTargetWindow       = "没有可用的目标窗口"
+	ToggleUINotifyFailed = "无法通知 UI 线程准备录音"
+	SideHoldThreshold    = 250 * time.Millisecond
 )
 
 func HoldModeLabel(dictation, meeting bool) string {
