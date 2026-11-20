@@ -1,12 +1,7 @@
 # VoiceRewrite macOS
 
-The macOS product is now a **headless menu-bar application**, sharing its ASR,
-LLM, configuration and task result routing with the existing Go Core.
+macOS is a compact headless menu-bar host for dictation and selected-text rewriting. It uses the **same in-process Go Core** as Windows for ASR/LLM and portable decisions, linked as a Go `c-archive` in the app executable.
 
 Build and usage: [Headless/README.md](Headless/README.md).
 
-There is no SwiftUI/Xcode workspace, settings window, Meeting UI, or independent
-macOS business-logic implementation. The single `Headless/main.swift` file
-contains platform APIs only: keyboard/mouse, audio, menu bar and paste/selection.
-The Go `cmd/voicebridge` runs as a bundled helper. Windows remains a separate
-Win32 host using the same Go processing packages.
+There is no SwiftUI/Xcode project, settings window, Meeting UI or separate macOS business-logic implementation. Native Swift owns only Quartz input, AVAudioEngine, AppKit status pill, Accessibility selection and pasteboard delivery. macOS installation and editor compatibility remain experimental; see CI headless build and physical acceptance requirements.
