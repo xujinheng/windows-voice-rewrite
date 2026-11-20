@@ -82,7 +82,7 @@ def main():
             continue
         source = path.read_text(encoding="utf-8")
         if ('"voicerewrite/internal/core/speech"' in source or
-            path.name != "windows.go" and '"voicerewrite/internal/core/textedit"' in source or
+            path != desktop / "windows.go" and '"voicerewrite/internal/core/textedit"' in source or
             any(token in source for token in forbidden)):
             raise SystemExit(f"desktop host duplicates voice policy: {path.relative_to(ROOT)}")
     if any(token in swift for token in ("URLSession", "URLRequest", "/v1/chat/completions",
