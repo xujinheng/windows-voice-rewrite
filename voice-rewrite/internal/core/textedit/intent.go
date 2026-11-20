@@ -31,9 +31,8 @@ const SpokenTaskTimeout = 240 * time.Second
 type Action string
 
 const (
-	Popup      Action = "popup"
-	Replace    Action = "replace"
-	TryReplace Action = "try_replace"
+	Popup   Action = "popup"
+	Replace Action = "replace"
 )
 
 const unifiedPrompt = `你是桌面 AI 划词助手。收到用户的语音指令和他选中的文字。
@@ -54,19 +53,12 @@ var editCuePattern = regexp.MustCompile(`(?i)(改写|改成|修改|润色|重写
 var translationCuePattern = regexp.MustCompile(`(?i)(翻译成|译成|写成.{0,10}(英|中|日|法|德|西|韩|文)|改成.{0,10}(英|中|日|法|德|西|韩|文)|用.{0,10}(英文|中文|日文|法文|德文|西班牙文|韩文).{0,10}(写|表达)|translate (this |it |the selected text )?(to|into)|write (this |it )?in (english|chinese|japanese|french|german|spanish|korean))`)
 var questionCuePattern = regexp.MustCompile(`(?i)(什么意思|是什么|为什么|怎么回事|怎么用|怎么翻译|如何|解释|讲解|请问|告诉我|什么叫|怎么说|what (does|is|are)|why |how |explain|define|meaning of|summari[sz]e|总结|概括|摘要)`)
 
-// Independent lexical guards prevent the model from granting write permission.
-func clearlyRequestsEdit(instruction string) bool {
+// A spoken text transformation must be explicit; questions remain previews.
+func requestsTextChange(instruction string) bool {
 	if questionCuePattern.MatchString(instruction) {
 		return false
 	}
-	return editCuePattern.MatchString(instruction)
-}
-
-func clearlyRequestsTranslation(instruction string) bool {
-	if questionCuePattern.MatchString(instruction) {
-		return false
-	}
-	return translationCuePattern.MatchString(instruction)
+	return editCuePattern.MatchString(instruction) || translationCuePattern.MatchString(instruction)
 }
 
 func validIntent(intent string) bool {
@@ -78,18 +70,14 @@ func validIntent(intent string) bool {
 	}
 }
 
-// RouteTask decides whether a voice command authorizes replacement. A model
-// classification alone never authorizes a write. Unknown window classes are
-// eligible only for a guarded attempt in the platform layer.
-func RouteTask(result AssistantResult, instruction string, safelyEditable bool) Action {
+// RouteTask decides only whether the spoken instruction requests replacement.
+// Native hosts decide how to attempt delivery to their actual editor target.
+func RouteTask(result AssistantResult, instruction string) Action {
 	if result.PreviewOnly || !validIntent(result.Intent) || strings.TrimSpace(result.Result) == "" {
 		return Popup
 	}
-	if clearlyRequestsEdit(instruction) || clearlyRequestsTranslation(instruction) {
-		if safelyEditable {
-			return Replace
-		}
-		return TryReplace
+	if requestsTextChange(instruction) {
+		return Replace
 	}
 	return Popup
 }
@@ -161,7 +149,7 @@ func ResolveSelectedTask(ctx context.Context, cfg coreconfig.Config, selected, i
 	if err != nil {
 		return AssistantResult{}, err
 	}
-	if (clearlyRequestsEdit(instruction) || clearlyRequestsTranslation(instruction)) &&
+	if requestsTextChange(instruction) &&
 		result.Intent != "edit" && result.Intent != "translate" {
 		replacement, rewriteErr := Rewrite(ctx, cfg, selected, instruction)
 		if rewriteErr != nil {
