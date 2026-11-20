@@ -13,7 +13,6 @@ import (
 
 	"voicerewrite/internal/core/audio"
 	"voicerewrite/internal/core/indicator"
-	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/speech"
 	"voicerewrite/internal/core/textedit"
 	"voicerewrite/internal/core/ux"
@@ -84,7 +83,12 @@ func watchHoldRelease(hwnd, vk, mods, session uintptr, canceled <-chan struct{},
 					down = down || state&0x8000 != 0
 				}
 			}
-			if input.ReleaseDebounced(down, &releasedTicks) {
+			if down {
+				releasedTicks = 0
+			} else {
+				releasedTicks++
+			}
+			if releasedTicks >= 2 {
 				logger.Printf("hold watcher detected key release; session=%d elapsed=%s", session, time.Since(start).Truncate(time.Millisecond))
 				if ok, _, err := procPostMessage.Call(hwnd, WM_HOLD_RELEASE, session, 0); ok == 0 {
 					logger.Printf("ERROR: cannot post hold release: %v", err)

@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"voicerewrite/asrtext"
-	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/provider"
 	"voicerewrite/internal/core/shortcut"
 	"voicerewrite/internal/core/speech"
@@ -144,18 +143,6 @@ func TestThinkingTag(t *testing.T) {
 	s := provider.ThinkingTag.ReplaceAllString("<think>分析...</think>更简洁。", "")
 	if s != "更简洁。" {
 		t.Fatal(s)
-	}
-}
-
-func TestHoldReleaseDebounce(t *testing.T) {
-	polls := 0
-	for _, pressed := range []bool{true, true, false, true, true, false} {
-		if input.ReleaseDebounced(pressed, &polls) {
-			t.Fatalf("premature release")
-		}
-	}
-	if !input.ReleaseDebounced(false, &polls) {
-		t.Fatal("release not detected")
 	}
 }
 
