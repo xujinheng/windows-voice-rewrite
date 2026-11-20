@@ -164,16 +164,17 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 	}
 	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/audio.PCMBytesPerSecond)
 	started := time.Now()
-	var afterASR func(string)
+	var afterASR func(voice.Event)
 	if !task.dictation {
-		afterASR = func(text string) {
+		afterASR = func(event voice.Event) {
+			if event.Kind != voice.EventTranscribed { return }
 			if !app.core.Snapshot(0, generation).Valid {
 				return
 			}
 			app.logger.Printf("stage=asr ms=%d", time.Since(started).Milliseconds())
 			app.setStatus(trayRewriting)
 			app.postHandyPhase(indicator.Rewriting, generation)
-			app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(text))
+			app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(event.Text))
 		}
 	}
 	answer, err := app.core.Execute(generation, app.cfg, r.pcm, sel.Text, !task.dictation, afterASR)
