@@ -45,6 +45,7 @@ type request struct {
 	SelectedText string          `json:"selected_text"`
 	Instruction  string          `json:"instruction"`
 	NativePCM    []byte          `json:"-"`
+	AfterASR     func(string)    `json:"-"`
 }
 
 type bridgeError struct {
@@ -239,7 +240,7 @@ func processRequest(ctx context.Context, req request) response {
 		if len(pcm) > maxPCMBytes {
 			return failure(req.ID, "invalid_pcm", "PCM exceeds size limit")
 		}
-		outcome, err := voice.Run(ctx, cfg, pcm, req.SelectedText, rewrite, nil)
+		outcome, err := voice.Run(ctx, cfg, pcm, req.SelectedText, rewrite, req.AfterASR)
 		if err != nil {
 			var capture *voice.PCMError
 			if errors.As(err, &capture) {

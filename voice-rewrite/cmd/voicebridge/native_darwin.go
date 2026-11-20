@@ -5,6 +5,10 @@ package main
 /*
 #include <stdint.h>
 #include <stdlib.h>
+typedef void (*VRTranscribedCallback)(unsigned long long);
+static inline void vrReportTranscribed(VRTranscribedCallback fn, unsigned long long token) {
+    if (fn) fn(token);
+}
 */
 import "C"
 
@@ -173,7 +177,7 @@ func VRProfile(config *C.char) *C.char {
 }
 
 //export VRRun
-func VRRun(config, operation *C.char, audio *C.uchar, length C.int, selection *C.char, token C.ulonglong) *C.char {
+func VRRun(config, operation *C.char, audio *C.uchar, length C.int, selection *C.char, token C.ulonglong, onTranscribed C.VRTranscribedCallback) *C.char {
 	if config == nil || operation == nil || length < 0 || length > C.int(maxPCMBytes) || (length > 0 && audio == nil) {
 		return nil
 	}
@@ -183,6 +187,13 @@ func VRRun(config, operation *C.char, audio *C.uchar, length C.int, selection *C
 	}
 	if selection != nil {
 		req.SelectedText = C.GoString(selection)
+	}
+	if req.Op == "selected_voice_task" && onTranscribed != nil {
+		req.AfterASR = func(string) {
+			if nativeEpoch.Valid(uint64(token)) {
+				C.vrReportTranscribed(onTranscribed, C.ulonglong(token))
+			}
+		}
 	}
 	// The shared voice.Run applies the task deadline; Epoch owns cancellation.
 	return nativeJSON(safeProcessRequest(nativeEpoch.ContextFor(uint64(token)), req))
