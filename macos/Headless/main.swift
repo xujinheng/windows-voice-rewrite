@@ -398,7 +398,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard sameTarget() else { reset("Focus changed"); return }
         selected = nil
         if action == .rewrite {
-            guard VRReady(0, 0, 1, sensitiveFocus() ? 1 : 0, 1) == 1 else {
+            guard VRReady(0, 0, sameTarget() ? 1 : 0, sensitiveFocus() ? 1 : 0, 1) == 1 else {
                 reset("Secure target"); return
             }
             guard let snapshot = selectionFromAX() else {
@@ -449,9 +449,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                         guard value.route == "replace" || (action == .dictation && value.route == "insert") else {
                             self.reset(self.config.profile.pill.fallbackLabel, phase: .fallback); return
                         }
-                        guard self.sameTarget() else { self.reset("Focus changed"); return }
                         let selectionOK = action == .dictation || selectedValue?.matches(self.selectionFromAX()) == true
-                        guard VRReady(action == .dictation ? 1 : 2, token, 1,
+                        guard VRReady(action == .dictation ? 1 : 2, token, self.sameTarget() ? 1 : 0,
                                       self.sensitiveFocus() ? 1 : 0, selectionOK ? 1 : 0) == 1 else {
                             self.reset("Unsafe target"); return
                         }
@@ -574,8 +573,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         down.flags = .maskCommand
         up.flags = .maskCommand
         guard board.changeCount == lease else { reset("Clipboard changed"); return }
-        guard sameTarget(), VRReady(selected == nil ? 1 : 2, taskID, 1,
-                                     sensitiveFocus() ? 1 : 0, selected?.matches(selectionFromAX()) == false ? 0 : 1) == 1 else {
+        guard VRReady(selected == nil ? 1 : 2, taskID, sameTarget() ? 1 : 0,
+                      sensitiveFocus() ? 1 : 0, selected?.matches(selectionFromAX()) == false ? 0 : 1) == 1 else {
             restoreIfOwned()
             reset("Focus changed"); return
         }
@@ -591,8 +590,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard let events = unicodeKeyEvents(text) else { reset("Paste unavailable"); return }
         for (index, event) in events.enumerated() {
             if index % 64 == 0 {
-                guard sameTarget(), VRReady(selected == nil ? 1 : 2, taskID, 1,
-                                             sensitiveFocus() ? 1 : 0, selected?.matches(selectionFromAX()) == false ? 0 : 1) == 1 else {
+                guard VRReady(selected == nil ? 1 : 2, taskID, sameTarget() ? 1 : 0,
+                              sensitiveFocus() ? 1 : 0, selected?.matches(selectionFromAX()) == false ? 0 : 1) == 1 else {
                     reset("Input stopped"); return
                 }
             }
