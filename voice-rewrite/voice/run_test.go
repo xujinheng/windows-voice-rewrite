@@ -104,7 +104,7 @@ func TestPortableEpochCancellationDisconnectsProvider(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				t.Fatal("provider was never contacted")
 			}
-			epoch.Apply(Command{Kind: CommandStart}).Token
+			epoch.Apply(Command{Kind: CommandStart})
 			select {
 			case <-disconnected:
 			case <-time.After(5 * time.Second):
