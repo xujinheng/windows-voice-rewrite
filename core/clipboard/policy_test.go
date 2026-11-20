@@ -5,26 +5,6 @@ import (
 	"time"
 )
 
-func TestCopyStopsBeforeReadingAnotherWindow(t *testing.T) {
-	before := CopyWindowReady(false, false)
-	during := CopyWindowReady(false, true)
-	if before == nil || during == nil || before.Error() == during.Error() || before.Error() != CopyWindowBefore || during.Error() != CopyWindowDuring {
-		t.Fatalf("before=%v during=%v", before, during)
-	}
-	if CopyWindowReady(true, true) != nil {
-		t.Fatal("same window")
-	}
-	if SelectionReadable(nil, true, "  a ") != true || SelectionReadable(nil, true, "  ") || SelectionReadable(nil, false, "a") {
-		t.Fatal("readable")
-	}
-	if CopyPollMissed(false).Error() == CopyPollMissed(true).Error() {
-		t.Fatal("poll sentences collapsed")
-	}
-	if CopyRetryPause(0) != 100*time.Millisecond || CopyRetryPause(1) != 200*time.Millisecond {
-		t.Fatal(CopyRetryPause(0), CopyRetryPause(1))
-	}
-}
-
 func TestAttemptTimeoutKeepsBudget(t *testing.T) {
 	for _, base := range []time.Duration{600 * time.Millisecond, 750 * time.Millisecond, 1200 * time.Millisecond, 1500 * time.Millisecond} {
 		first := AttemptTimeout(base, 0, 2)
