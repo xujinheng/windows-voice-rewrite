@@ -146,7 +146,7 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$app/Contents/Info.plist")" = true
           test "$(lipo -archs "$app/Contents/MacOS/VoiceRewrite")" = '${{ matrix.arch }}'
           test ! -e "$app/Contents/MacOS/voicebridge"
-          nm -g "$app/Contents/MacOS/VoiceRewrite" | grep ' _VRPress' >/dev/null
+          nm -g "$app/Contents/MacOS/VoiceRewrite" | grep ' _VRCommand' >/dev/null
           codesign --verify --deep --strict "$app"
       - name: Smoke native Go ABI and benchmark real Swift-to-Go call overhead
         shell: bash
