@@ -20,7 +20,7 @@ const (
 
 // DictationInsertReady is the order of checks before a dictation paste changes the clipboard.
 // Later checks are not called after an earlier one fails.
-func DictationInsertReady(text string, keysReleased, windowOK, password func() bool) error {
+func DictationInsertReady(text string, keysReleased, windowOK func() bool) error {
 	if strings.TrimSpace(text) == "" {
 		return errors.New(DictationEmpty)
 	}
@@ -29,9 +29,6 @@ func DictationInsertReady(text string, keysReleased, windowOK, password func() b
 	}
 	if !windowOK() {
 		return errors.New(DictationWindowChanged)
-	}
-	if password() {
-		return errors.New(PasswordDictation)
 	}
 	return nil
 }
