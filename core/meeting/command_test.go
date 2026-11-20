@@ -14,12 +14,6 @@ func TestPostedMeetingKeepsDemoAvailableWhilePaused(t *testing.T) {
 	}
 }
 
-func TestAcceptButtonNeedsOwnerPendingAndLiveMeeting(t *testing.T) {
-	if AcceptEnabled(false, true, false) || AcceptEnabled(true, false, false) || !AcceptEnabled(true, true, false) || AcceptEnabled(true, true, true) {
-		t.Fatal("button")
-	}
-}
-
 func TestApplyCommandTogglesViewFlags(t *testing.T) {
 	flags := HUDFlags{SelectedReply: 1, ProfileOpen: true}
 	next, effect := ApplyCommand(flags, CommandTogglePause, 0)
@@ -44,9 +38,6 @@ func TestApplyCommandTogglesViewFlags(t *testing.T) {
 	}
 	if _, effect = ApplyCommand(next, CommandCopyReply, 0); effect != EffectCopy {
 		t.Fatal(effect)
-	}
-	if !NeedsMeetingOwner(ButtonRequestReplies) || !NeedsMeetingOwner(ButtonToggleCapture) || !NeedsMeetingOwner(ButtonOpenProfile) || NeedsMeetingOwner(ButtonPause) || NeedsMeetingOwner(ButtonAcceptReplies) {
-		t.Fatal("owner buttons")
 	}
 	if _, effect = ApplyCommand(next, CommandNone, 0); effect != EffectNone {
 		t.Fatal(effect)
@@ -108,10 +99,7 @@ func TestMeetingButtonsStayContiguous(t *testing.T) {
 	if CopyText(CommandCopyExpression, "en", true, "expr") != "expr" {
 		t.Fatal("expression copy")
 	}
-	if !ReplyCopyEnabled(true, "en") || ReplyCopyEnabled(true, "") || !AcceptEnabled(true, true, false) || AcceptEnabled(true, true, true) || AcceptEnabled(false, true, false) {
-		t.Fatal("copy and refine gates")
-	}
-	if RefineButtonEnabled(true, true, "", false) || !RefineButtonEnabled(true, true, "en", false) || RefineButtonEnabled(false, true, "en", false) || RefineButtonEnabled(true, true, "en", true) {
-		t.Fatal("refine button")
+	if !ReplyCopyEnabled(true, "en") || ReplyCopyEnabled(true, "") {
+		t.Fatal("Core must not allow copying incomplete or empty replies")
 	}
 }

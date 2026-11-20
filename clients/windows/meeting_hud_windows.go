@@ -417,12 +417,10 @@ func updateMeetingHUD(view meetingcore.View) {
 	p.setText(p.buttons[7], meetingcore.ButtonFace(meetingcore.ButtonToggleCapture, buttons), false)
 	p.setText(p.buttons[1], meetingcore.ButtonFace(meetingcore.ButtonCaptions, buttons), false)
 	p.setText(p.buttons[15], meetingcore.ButtonFace(meetingcore.ButtonExpression, buttons), false)
-	for id := meetingcore.ButtonPause; id <= meetingcore.ButtonExpression; id++ {
-		if meetingcore.NeedsMeetingOwner(id) {
-			meetingEnableWindow.Call(p.buttons[id-meetingcore.ButtonPause], meetingBool(p.owner != 0))
-		}
+	for _, id := range [...]int{meetingcore.ButtonRequestReplies, meetingcore.ButtonToggleCapture, meetingcore.ButtonOpenProfile} {
+		meetingEnableWindow.Call(p.buttons[id-meetingcore.ButtonPause], meetingBool(p.owner != 0))
 	}
-	meetingEnableWindow.Call(p.buttons[12], meetingBool(meetingcore.AcceptEnabled(p.owner != 0, view.Reply.PendingAvailable, p.paused)))
+	meetingEnableWindow.Call(p.buttons[12], meetingBool(p.owner != 0 && view.Reply.PendingAvailable && !p.paused))
 	p.setText(p.buttons[12], meetingcore.ButtonFace(meetingcore.ButtonAcceptReplies, buttons), false)
 	if p.paused {
 		return
@@ -497,7 +495,7 @@ func (p *meetingHUD) renderReply() {
 	}
 	canCopy := meetingcore.ReplyCopyEnabled(reply.Complete, reply.English)
 	meetingEnableWindow.Call(p.buttons[4], meetingBool(canCopy))
-	meetingEnableWindow.Call(p.buttons[13], meetingBool(meetingcore.RefineButtonEnabled(p.owner != 0, reply.Complete, reply.English, p.paused)))
+	meetingEnableWindow.Call(p.buttons[13], meetingBool(p.owner != 0 && canCopy && !p.paused))
 }
 
 func (p *meetingHUD) session() *meetingcore.Session {

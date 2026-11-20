@@ -71,16 +71,6 @@ const (
 	EffectCloseProfile
 )
 
-// NeedsMeetingOwner reports a button that stays disabled until a live meeting owns the window.
-func NeedsMeetingOwner(id int) bool {
-	switch id {
-	case ButtonRequestReplies, ButtonToggleCapture, ButtonOpenProfile:
-		return true
-	default:
-		return false
-	}
-}
-
 // ApplyCommand returns the view flags after a button and the host effect.
 // Captions save the layout. Expanding an expression only lays the window out again.
 func ApplyCommand(flags HUDFlags, action Command, replyIndex int) (HUDFlags, Effect) {
@@ -226,16 +216,6 @@ func CopyText(action Command, replyEnglish string, replyComplete bool, expressio
 
 func ReplyCopyEnabled(complete bool, english string) bool {
 	return complete && english != ""
-}
-
-func AcceptEnabled(owner, pending, paused bool) bool {
-	return owner && pending && !paused
-}
-
-// RefineButtonEnabled is the button face, not the click. The click still
-// requires a typed instruction. The button also requires English and an owner.
-func RefineButtonEnabled(owner, complete bool, english string, paused bool) bool {
-	return owner && ReplyCopyEnabled(complete, english) && !paused
 }
 
 // ButtonPrimary reports whether the owner-draw button uses the primary style.
