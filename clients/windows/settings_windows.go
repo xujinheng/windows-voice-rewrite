@@ -15,7 +15,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/xujinheng/windows-voice-rewrite/core/internal/contract"
+	"github.com/xujinheng/windows-voice-rewrite/core/contract"
 	"github.com/xujinheng/windows-voice-rewrite/core/desktop"
 	"github.com/xujinheng/windows-voice-rewrite/core/provider"
 	"github.com/xujinheng/windows-voice-rewrite/core/serviceprobe"

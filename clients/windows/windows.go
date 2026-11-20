@@ -20,11 +20,11 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/core/history"
 	"github.com/xujinheng/windows-voice-rewrite/core/indicator"
 	"github.com/xujinheng/windows-voice-rewrite/core/logfile"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/core/meeting"
 	"github.com/xujinheng/windows-voice-rewrite/core/shortcut"
 	"github.com/xujinheng/windows-voice-rewrite/core/textedit"
 	"github.com/xujinheng/windows-voice-rewrite/core/update"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
-	meetingcore "github.com/xujinheng/windows-voice-rewrite/core/meeting"
 	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 )
 

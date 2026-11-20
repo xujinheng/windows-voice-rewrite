@@ -9,7 +9,6 @@ import (
 
 	"github.com/xujinheng/windows-voice-rewrite/core/asrtext"
 	"github.com/xujinheng/windows-voice-rewrite/core/serviceprobe"
-	"github.com/xujinheng/windows-voice-rewrite/core/internal/speech"
 )
 
 func TestOneClickLanguagePrefixAllLanguages(t *testing.T) {
@@ -34,25 +33,6 @@ func TestOneClickLanguagePrefixAllLanguages(t *testing.T) {
 	}
 }
 
-func TestParseASRResponseFormats(t *testing.T) {
-	cases := []struct {
-		body, ct, expect string
-		bad              bool
-	}{
-		{`{"text":"language Chinese<asr_text>测试"}`, "application/json", "language Chinese<asr_text>测试", false},
-		{`language English<asr_text>Hello`, "text/plain; charset=utf-8", "language English<asr_text>Hello", false},
-		{`"language German<asr_text>Hallo"`, "application/json", "language German<asr_text>Hallo", false},
-		{`{"text":`, "application/json", "", true},
-		{`{"oops":`, "text/plain", "", true},
-		{`<html>Error</html>`, "text/html", "", true},
-	}
-	for _, c := range cases {
-		got, e := speech.ParseASRResponse([]byte(c.body), c.ct)
-		if (e != nil) != c.bad || (!c.bad && got != c.expect) {
-			t.Errorf("parse %q: %q / %v", c.body, got, e)
-		}
-	}
-}
 func TestConfigValuesValidation(t *testing.T) {
 	cfg := defaults()
 	cfg2, e := uxUpdatedConfig(cfg, [6]string{" http://127.0.0.1:8081/v1/ ", " qwen3-asr ", "secret", "http://127.0.0.1:1234/v1", "", "llm-secret"})

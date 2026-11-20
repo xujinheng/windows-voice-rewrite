@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/xujinheng/windows-voice-rewrite/core/asrtext"
-	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/audio"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/provider"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 )

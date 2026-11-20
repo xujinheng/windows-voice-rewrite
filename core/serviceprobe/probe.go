@@ -14,8 +14,8 @@ import (
 	"time"
 
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
-	"github.com/xujinheng/windows-voice-rewrite/core/provider"
 	"github.com/xujinheng/windows-voice-rewrite/core/internal/speech"
+	"github.com/xujinheng/windows-voice-rewrite/core/provider"
 )
 
 const (

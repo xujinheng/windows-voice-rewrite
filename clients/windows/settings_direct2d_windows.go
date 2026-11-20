@@ -5,7 +5,7 @@ package main
 import (
 	"unsafe"
 
-	"github.com/xujinheng/windows-voice-rewrite/core/internal/contract"
+	"github.com/xujinheng/windows-voice-rewrite/core/contract"
 	"github.com/xujinheng/windows-voice-rewrite/core/settingsform"
 )
 

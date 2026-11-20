@@ -109,3 +109,52 @@ func TestAudioAndLLMWorkflow(t *testing.T) {
 		t.Errorf("wrong result: %q", result)
 	}
 }
+
+func TestDictationTranscribesWithoutLLM(t *testing.T) {
+	var asrCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/audio/transcriptions" {
+			t.Errorf("unexpected request: %s", r.URL.Path)
+			w.WriteHeader(404)
+			return
+		}
+		asrCalls++
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("multipart: %v", err)
+		}
+		if r.FormValue("model") != "qwen3-asr" {
+			t.Errorf("model=%s", r.FormValue("model"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"text":"早上好，今天的会议开始。"}`))
+	}))
+	defer server.Close()
+	cfg := coreconfig.Defaults()
+	cfg.ASRBaseURL = server.URL + "/v1"
+	cfg.LLMBaseURL = "http://127.0.0.1:1/v1" // must not be called
+	pcm := make([]byte, 6400)
+	result, err := Transcribe(context.Background(), cfg, pcm)
+	if err != nil || result != "早上好，今天的会议开始。" || asrCalls != 1 {
+		t.Fatalf("result=%q err=%v calls=%d", result, err, asrCalls)
+	}
+}
+
+func TestParseASRResponseFormats(t *testing.T) {
+	cases := []struct {
+		body, ct, expect string
+		bad              bool
+	}{
+		{`{"text":"language Chinese<asr_text>测试"}`, "application/json", "language Chinese<asr_text>测试", false},
+		{`language English<asr_text>Hello`, "text/plain; charset=utf-8", "language English<asr_text>Hello", false},
+		{`"language German<asr_text>Hallo"`, "application/json", "language German<asr_text>Hallo", false},
+		{`{"text":`, "application/json", "", true},
+		{`{"oops":`, "text/plain", "", true},
+		{`<html>Error</html>`, "text/html", "", true},
+	}
+	for _, c := range cases {
+		got, e := ParseASRResponse([]byte(c.body), c.ct)
+		if (e != nil) != c.bad || (!c.bad && got != c.expect) {
+			t.Errorf("parse %q: %q / %v", c.body, got, e)
+		}
+	}
+}
