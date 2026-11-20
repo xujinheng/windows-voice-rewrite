@@ -152,18 +152,17 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	}
 	start = time.Now()
 	err = insertDictationText(app.Window, expectedWindow, text, func() bool { return app.epoch.Valid(generation) })
-	follow := ux.DictationInserted(err)
-	if follow.ShowCard {
+	if err != nil {
 		app.fail(err)
 		app.history.Remember(ux.DictationHistoryTitle, text)
-		app.showAnswer(follow.Title, text, currentCursorPoint(), nil, false, generation)
-		app.postHandyPhase(follow.Phase, generation)
+		app.showAnswer(ux.DictationCopyManually, text, currentCursorPoint(), nil, false, generation)
+		app.postHandyPhase(indicator.Fallback, generation)
 		return
 	}
 	app.history.Remember(ux.DictationHistoryTitle, text)
 	app.logger.Printf("stage=paste flow=dictation ms=%d chars=%d status=unverified", time.Since(start).Milliseconds(), utf8.RuneCountInString(text))
 	app.setStatus(traySuccess)
-	app.postHandyPhase(follow.Phase, generation)
+	app.postHandyPhase(indicator.Success, generation)
 }
 
 // The selection must be copied AFTER releasing the held shortcut. This function
@@ -272,10 +271,9 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		e = replaceSelectionWithGuard(app.Window, sel, answer.Result, app.cfg, action == textedit.TryReplace, func() bool { return app.epoch.Valid(generation) })
 		app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
 	}
-	follow := ux.RewritePasted(allowApply, e)
-	if !follow.ShowCard {
+	if allowApply && e == nil {
 		app.setStatus(traySuccess)
-		app.postHandyPhase(follow.Phase, generation)
+		app.postHandyPhase(indicator.Success, generation)
 		// Completion is indicated by the non-blocking status bar; no sound.
 		app.logger.Printf("paste_status=unverified intent=%s result_chars=%d (SendInput accepted, editor insertion not provable)", answer.Intent, utf8.RuneCountInString(answer.Result))
 		return
