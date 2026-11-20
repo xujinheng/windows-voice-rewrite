@@ -54,9 +54,7 @@ func safeProcessRequest(ctx context.Context, req request) (reply response) {
 		if recover() != nil {
 			return
 		}
-		if err := ctx.Err(); err != nil {
-			reply = contextFailure(err)
-		}
+		if err := ctx.Err(); err != nil { reply = contextFailure(err) }
 	}()
 	trimmed := bytes.TrimSpace(req.Config)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
@@ -73,10 +71,6 @@ func safeProcessRequest(ctx context.Context, req request) (reply response) {
 	if err != nil {
 		return failure("invalid_config", msgInvalidConfig)
 	}
-	if err := ctx.Err(); err != nil {
-		return contextFailure(err)
-	}
-
 	if req.Rewrite && (len(req.SelectedText) > maxSelectedBytes ||
 		!utf8.ValidString(req.SelectedText)) {
 		return failure("invalid_request", "selected text exceeds limits")
