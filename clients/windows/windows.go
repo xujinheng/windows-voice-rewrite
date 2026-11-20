@@ -430,11 +430,9 @@ func runApp() {
 		}
 	}
 	defer discardPendingSide()
-	var selected selectedText
+	var task recordingTask
 	toggleResult := make(chan togglePrepareResult, 1)
-	var holdTargetWindow uintptr
 	var holdButton uint16
-	var holdIsDictation bool
 	var holdMeeting *meetingcore.Session
 	var activeGeneration uint64
 	var holdWatch chan struct{}
@@ -452,11 +450,11 @@ func runApp() {
 		if cfg.RecordMode == "hold" {
 			stopHoldWatch()
 			if holdButton == 0 {
-				if holdIsDictation {
-					app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyDictation})
-				} else {
-					app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyRewrite})
+				key := keyRewrite
+				if task.dictation {
+					key = keyDictation
 				}
+				app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: key})
 			}
 		}
 		rec := active
@@ -466,40 +464,37 @@ func runApp() {
 		app.setStatus(trayTranscribing)
 		l.Print("recording stop requested; selection/model processing moved to worker")
 		if cfg.RecordMode == "hold" {
-			if holdMeeting != nil || holdIsDictation {
+			if holdMeeting != nil || task.dictation {
 				app.postHandyPhase(indicator.Processing, activeGeneration)
 			} else {
 				app.postHandyPhase(indicator.Selection, activeGeneration)
 			}
 		}
-		switch {
-		case cfg.RecordMode != "hold":
-			sel := selected
-			sel.Anchor = currentCursorPoint()
-			go processRecording(app, rec, recordingTask{selection: &sel}, activeGeneration)
-		case holdMeeting != nil:
+		if task.selection != nil {
+			task.selection.Anchor = currentCursorPoint()
+		} else if !task.dictation {
+			task.anchor = currentCursorPoint()
+		}
+		if cfg.RecordMode == "hold" && holdMeeting != nil {
 			if holdMeeting.Context().Err() != nil {
 				// The single buffered recorder result needs no drain worker.
 				app.busy.Store(false)
 				app.setStatus(trayIdle)
 				closeHandyStatus()
 			} else {
-				go expressMeeting(holdMeeting, app, rec, activeGeneration, meetingcore.VoiceMode(holdIsDictation))
+				go expressMeeting(holdMeeting, app, rec, activeGeneration, meetingcore.VoiceMode(task.dictation))
 			}
 			holdMeeting = nil
-		case holdIsDictation:
-			go processRecording(app, rec, recordingTask{dictation: true, target: holdTargetWindow}, activeGeneration)
-		default:
-			go processRecording(app, rec, recordingTask{target: holdTargetWindow, anchor: currentCursorPoint()}, activeGeneration)
+		} else {
+			go processRecording(app, rec, task, activeGeneration)
 		}
 	}
 
 	// A microphone stream may already be capturing the first 250ms before
 	// a side-button hold becomes a voice operation.
 	activateHold := func(rec *audioRecorder, dictation bool, button uint16, target uintptr) {
-		holdTargetWindow = target
+		task = recordingTask{dictation: dictation, target: target}
 		holdButton = button
-		holdIsDictation = dictation
 		holdMeeting = nil
 		if app.meeting != nil && !app.meeting.Demo() {
 			holdMeeting = app.meeting
@@ -666,11 +661,11 @@ func runApp() {
 					if active != nil {
 						stopHoldWatch()
 						if holdButton == 0 && cfg.RecordMode == "hold" {
-							if holdIsDictation {
-								app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyDictation})
-							} else {
-								app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: keyRewrite})
+							key := keyRewrite
+							if task.dictation {
+								key = keyDictation
 							}
+							app.core.Apply(voice.Command{Kind: voice.CommandRelease, Code: key})
 						}
 						rec := active
 						active = nil
@@ -730,10 +725,10 @@ func runApp() {
 			activeGeneration = result.generation
 			active = result.rec
 			watchRecordingLimit(hwnd, active, activeGeneration, l)
-			selected = result.sel
+			task = recordingTask{selection: &result.sel}
 			app.busy.Store(false)
 			app.setStatus(trayRecording)
-			l.Printf("recording started, mode=toggle, selected characters=%d", utf8.RuneCountInString(selected.Text))
+			l.Printf("recording started, mode=toggle, selected characters=%d", utf8.RuneCountInString(result.sel.Text))
 			continue
 		}
 		if msg.Message == WM_TRAY_UPDATE {
