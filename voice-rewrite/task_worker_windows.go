@@ -187,9 +187,6 @@ func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintp
 	if err == nil && sel.TargetWindow != expectedWindow {
 		err = errors.New(ux.HoldSelectionMoved)
 	}
-	if err == nil {
-		err = textedit.SelectedLengthError(app.cfg.MaxSelectedRunes, sel.Text)
-	}
 	if err != nil {
 		app.fail(err)
 		return

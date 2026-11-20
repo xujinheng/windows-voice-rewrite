@@ -222,7 +222,7 @@ func processRequest(ctx context.Context, req request) response {
 	switch req.Op {
 	case "transcribe", "selected_voice_task":
 		rewrite := req.Op == "selected_voice_task"
-		if rewrite && (len(req.SelectedText) == 0 || len(req.SelectedText) > maxSelectedBytes ||
+		if rewrite && (len(req.SelectedText) > maxSelectedBytes ||
 			!utf8.ValidString(req.SelectedText) || req.Instruction != "") {
 			return failure(req.ID, "invalid_request", "selected text or instruction exceeds limits")
 		}
