@@ -390,6 +390,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             let token = VRPress(key, pending ? 1 : 0)
             guard token != 0 else { return }
             activeAction = name == config.profile.dictation ? .dictation : .rewrite
+            targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, VRActivate(key, token) == 1,
                       let action = self.activeAction else { return }
@@ -416,8 +417,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func begin(_ action: Action) {
-        targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
         guard targetPID > 0 else { reset("No target"); return }
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else {
+            reset("Focus changed"); return
+        }
         let window = focusedWindow(), element = focusedElement()
         guard action == .dictation || (window != nil && element != nil) else { reset("Target unavailable"); return }
         targetFocus = FocusIdentity(window: window, element: element,
