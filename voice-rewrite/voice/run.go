@@ -21,6 +21,13 @@ type Result struct {
 	Route       string `json:"route"`
 }
 
+// Routes are Go Core results, not separate per-client business policies.
+const (
+	RouteInsert  = "insert"
+	RouteReplace = "replace"
+	RoutePreview = "preview"
+)
+
 // PCMError marks audio admission failures, distinct from provider failures.
 // The native hosts retain their own error presentation and OS recovery actions.
 type PCMError struct{ message string }
@@ -64,7 +71,7 @@ func run(ctx context.Context, cfg coreconfig.Config, pcm []byte, selected string
 		return Result{}, err
 	}
 	if !rewrite {
-		return Result{Text: instruction, Route: "insert"}, nil
+		return Result{Text: instruction, Route: RouteInsert}, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return Result{}, err

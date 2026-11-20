@@ -13,6 +13,7 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/audio"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
 )
 
 // A recorder may reach its hardware duration limit before the held key or
@@ -212,7 +213,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 
 	app.logger.Printf("stage=spoken_selection ms=%d intent=%s route=%s",
 		time.Since(started).Milliseconds(), answer.Intent, answer.Route)
-	if answer.Route == "replace" {
+	if answer.Route == voice.RouteReplace {
 		app.postHandyPhase(indicator.Applying, generation)
 		started = time.Now()
 		// Native editability determines whether to verify the pasted selection.
@@ -230,7 +231,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 	}
 	selectionCopy := sel
 	app.showAnswer(ux.ResultCardTitle(answer.Intent), answer.Text, sel.Anchor,
-		&selectionCopy, answer.Route == "replace", generation)
+		&selectionCopy, answer.Route == voice.RouteReplace, generation)
 	app.setStatus(traySuccess)
 	app.logger.Printf("popup result queued; chars=%d", utf8.RuneCountInString(answer.Text))
 }
