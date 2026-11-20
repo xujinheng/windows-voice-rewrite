@@ -135,8 +135,8 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 		return
 	}
 	// ASR Core rejects empty speech. The native target owns focus at delivery.
+	app.history.Remember(ux.DictationHistoryTitle, text)
 	if !isSameForegroundWindow(expectedWindow) {
-		app.history.Remember(ux.DictationHistoryTitle, text)
 		app.showAnswer(ux.DictationNotInserted, text, currentCursorPoint(), nil, false, generation)
 		app.postHandyPhase(indicator.Fallback, generation)
 		return
@@ -145,12 +145,10 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	err = insertDictationText(app.Window, expectedWindow, text, func() bool { return app.epoch.Valid(generation) })
 	if err != nil {
 		app.fail(err)
-		app.history.Remember(ux.DictationHistoryTitle, text)
 		app.showAnswer(ux.DictationCopyManually, text, currentCursorPoint(), nil, false, generation)
 		app.postHandyPhase(indicator.Fallback, generation)
 		return
 	}
-	app.history.Remember(ux.DictationHistoryTitle, text)
 	app.logger.Printf("stage=paste flow=dictation ms=%d chars=%d status=unverified", time.Since(start).Milliseconds(), utf8.RuneCountInString(text))
 	app.setStatus(traySuccess)
 	app.postHandyPhase(indicator.Success, generation)
@@ -243,28 +241,25 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		return
 	}
 	app.logger.Printf("route=%s intent=%s", answer.Route, answer.Intent)
-	allowApply := answer.Route == "replace"
 	app.history.Remember(ux.HistoryTitle(answer.Intent), answer.Text)
-	if allowApply {
+	if answer.Route == "replace" {
 		app.postHandyPhase(indicator.Applying, generation)
 		startedPaste := time.Now()
 		// Native editability determines whether to verify the pasted selection.
 		e = replaceSelectionWithGuard(app.Window, sel, answer.Text, app.cfg, !isSafelyEditableControl(sel.TargetWindow), func() bool { return app.epoch.Valid(generation) })
 		app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
-	}
-	if allowApply && e == nil {
-		app.setStatus(traySuccess)
-		app.postHandyPhase(indicator.Success, generation)
-		// Completion is indicated by the non-blocking status bar; no sound.
-		app.logger.Printf("paste_status=unverified intent=%s result_chars=%d (SendInput accepted, editor insertion not provable)", answer.Intent, utf8.RuneCountInString(answer.Text))
-		return
-	}
-	if allowApply && e != nil {
+		if e == nil {
+			app.setStatus(traySuccess)
+			app.postHandyPhase(indicator.Success, generation)
+			// Completion is indicated by the non-blocking status bar; no sound.
+			app.logger.Printf("paste_status=unverified intent=%s result_chars=%d (SendInput accepted, editor insertion not provable)", answer.Intent, utf8.RuneCountInString(answer.Text))
+			return
+		}
 		app.logger.Printf("auto replacement failed; preview instead: %v", e)
 	}
 	title := ux.ResultCardTitle(answer.Intent)
 	selectionCopy := sel
-	app.showAnswer(title, answer.Text, sel.Anchor, &selectionCopy, allowApply, generation)
+	app.showAnswer(title, answer.Text, sel.Anchor, &selectionCopy, answer.Route == "replace", generation)
 	app.setStatus(traySuccess)
 	app.logger.Printf("popup result queued; chars=%d", utf8.RuneCountInString(answer.Text))
 }
