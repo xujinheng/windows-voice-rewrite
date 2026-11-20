@@ -21,8 +21,8 @@ import (
 	"voicerewrite/internal/core/jsonl"
 	"voicerewrite/internal/core/speech"
 	"voicerewrite/internal/core/textedit"
-	"voicerewrite/internal/core/voice"
 	"voicerewrite/internal/core/ux"
+	"voicerewrite/internal/core/voice"
 )
 
 const (
