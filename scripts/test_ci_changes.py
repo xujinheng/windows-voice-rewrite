@@ -28,6 +28,18 @@ class ClassifyTests(unittest.TestCase):
             "core": False, "macos": False, "windows": True,
             "oneclick": False, "ui": False, "direct2d": True})
 
+    def test_root_main_package_does_not_link_into_mac(self):
+        for path in ("voice-rewrite/main.go", "voice-rewrite/config_store.go",
+                     "voice-rewrite/meeting_state.go"):
+            with self.subTest(path=path):
+                selected = classify([path])
+                self.assertFalse(selected["core"])
+                self.assertFalse(selected["macos"])
+                self.assertTrue(selected["windows"])
+        # Module dependencies and unsuffixed tests still follow the broad conservative scope.
+        self.assertTrue(classify(["voice-rewrite/go.mod"])["macos"])
+        self.assertTrue(classify(["voice-rewrite/main_test.go"])["core"])
+
     def test_voicebridge_only(self):
         selected = classify(["voice-rewrite/cmd/voicebridge/main.go"])
         self.assertEqual(selected, {
