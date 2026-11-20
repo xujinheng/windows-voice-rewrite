@@ -23,10 +23,10 @@ implement a second voice-policy state machine.
 On macOS, physical shortcut events call Go `input.Hold`, task generations and
 provider cancellation call Go `session.Epoch`, and each waveform/spinner/clock
 frame calls Go `indicator` through the in-process ABI. Swift performs the OS
-operations and draws the returned pixels. The same Go `processRequest`
-invokes `speech.Transcribe`, `textedit.ResolveSpokenTask`, and `ux` routing,
-using the same 220-second transcription and 240-second spoken-task deadlines
-as the JSONL entrypoint. `cmd/voicebridge` retains a serial command-line JSONL diagnostic mode for
+operations and draws the returned pixels. The macOS `processRequest` and Windows workers call the same `voice.Run`,
+which owns PCM admission, `speech.Transcribe`, `textedit.ResolveSelectedTask`
+and result routing. The bridge preserves the same 220-second transcription and
+240-second spoken-task deadlines as its JSONL entrypoint. `cmd/voicebridge` retains a serial command-line JSONL diagnostic mode for
 independent tests, without a second task registry or in-process cancel
 protocol; it is not shipped as a second macOS process.
 
