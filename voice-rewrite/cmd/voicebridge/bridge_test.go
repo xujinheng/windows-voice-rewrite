@@ -34,7 +34,7 @@ func TestInProcessRequestDeadlineCancelsASR(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	reply := safeProcessRequest(ctx, request{
-		Config: cfg,
+		Config:    cfg,
 		NativePCM: make([]byte, 3200),
 	})
 	if reply.Error == nil || reply.Error.Code != "timeout" {
@@ -53,8 +53,8 @@ func TestInProcessRequestDeadlineCancelsASR(t *testing.T) {
 func TestInProcessEpochCancellationReachesProvider(t *testing.T) {
 	for _, tc := range []struct {
 		name, blockedPath string
-		rewrite bool
-		wantCalls int32
+		rewrite           bool
+		wantCalls         int32
 	}{
 		{"asr", "/v1/audio/transcriptions", false, 1},
 		{"rewrite_llm", "/v1/chat/completions", true, 2},
