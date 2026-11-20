@@ -392,7 +392,7 @@ func TestOneClickGoBuildsForBothMacArchitectures(t *testing.T) {
 func TestStandaloneClientCanImportPublicVoiceAndConfig(t *testing.T) {
 	// This second Go module is deliberately outside the Core's internal/
 	// import boundary. Meeting must be usable with no Windows main package.
-	session := meeting.NewSession(coreconfig.Defaults(), func(string, ...any) {}, nil)
+	session := meeting.NewSession(coreconfig.Defaults(), func(string, ...any) {}, nil, nil, false)
 	if session.Context().Err() != nil {
 		t.Fatal("public Meeting runtime unexpectedly canceled")
 	}

@@ -20,11 +20,11 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/history"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/indicator"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/logfile"
-	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/meeting"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/shortcut"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/textedit"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/update"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/internal/core/ux"
+	meetingcore "github.com/xujinheng/windows-voice-rewrite/voice-rewrite/meeting"
 	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
 )
 
@@ -636,7 +636,7 @@ func runApp() {
 			case meetingcore.PostedBeginDemo:
 				app.beginMeeting(0, true)
 			case meetingcore.PostedReplies:
-				app.meeting.requestReplies()
+				app.meeting.RequestReplies()
 			case meetingcore.PostedStopMeeting:
 				app.closeMeeting()
 				if holdMeeting != nil {

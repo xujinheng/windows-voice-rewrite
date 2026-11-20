@@ -48,23 +48,15 @@ type Session struct {
 	saveConfiguration func(coreconfig.Config) error
 }
 
-func NewSession(cfg coreconfig.Config, logger func(string, ...any), saveConfiguration func(coreconfig.Config) error) *Session {
-	return &Session{runtime: NewSessionRuntime(), cfg: cfg, logger: logger, saveConfiguration: saveConfiguration}
+func NewSession(cfg coreconfig.Config, logger func(string, ...any), saveConfiguration func(coreconfig.Config) error, onConfig func(coreconfig.Config), demo bool) *Session {
+	return &Session{runtime: NewSessionRuntime(), cfg: cfg, logger: logger, saveConfiguration: saveConfiguration, onConfig: onConfig, demo: demo}
 }
 
-func (s *Session) SetOnConfig(notify func(coreconfig.Config)) { s.onConfig = notify }
-func (s *Session) SetDemo(demo bool) { s.demo = demo }
-
 func (s *Session) Demo() bool { return s.demo }
+
 func (s *Session) Context() context.Context { return s.runtime.Context() }
+
 func (s *Session) Stop() { s.runtime.Stop() }
-func (s *Session) Start(source audio.FrameSource) { s.start(source) }
-func (s *Session) UpdateProfile(background, terms string) error { return s.updateProfile(background, terms) }
-func (s *Session) SetASRMode(mode string) error { return s.setASRMode(mode) }
-func (s *Session) RequestReplies() { s.requestReplies() }
-func (s *Session) RefineReply(index int, instruction string) { s.refineReply(index, instruction) }
-func (s *Session) AcceptPendingReplies() { s.acceptPendingReplies() }
-func (s *Session) SetCapturePaused(paused bool) { s.setCapturePaused(paused) }
 
 // Initialize fixes the shared Meeting session's initial presentation before
 // the native host opens its window. The host supplies only its source label.
@@ -138,7 +130,7 @@ func (s *Session) Express(parent context.Context, pcm []byte, captureErr error, 
 		return failed(label, cause)
 	}
 	var points string
-	cfg := s.configSnapshot()
+	cfg := s.Config()
 	err := s.runInference(ctx, PriorityExpress, ExpressRecognizing, func(active context.Context) error {
 		var e error
 		points, e = speech.Transcribe(active, cfg, pcm)
@@ -209,7 +201,7 @@ func (s *Session) applyWork(epoch uint64, update func()) {
 		}
 	})
 }
-func (s *Session) configSnapshot() coreconfig.Config { s.mu.Lock(); defer s.mu.Unlock(); return s.cfg }
+func (s *Session) Config() coreconfig.Config { s.mu.Lock(); defer s.mu.Unlock(); return s.cfg }
 
 // resetViewLocked runs with the host state mutex held after the runtime
 // invalidates its epoch. Presentation never survives a canceled partial task.
@@ -229,7 +221,7 @@ func (s *Session) resetWorkLocked() {
 	s.runtime.ResetWork()
 	s.resetViewLocked()
 }
-func (s *Session) setCapturePaused(paused bool) {
+func (s *Session) SetCapturePaused(paused bool) {
 	s.mutate(func() {
 		if !s.runtime.SetPaused(paused) {
 			return
@@ -246,7 +238,7 @@ func (s *Session) setCapturePaused(paused bool) {
 	})
 }
 func (s *Session) saveMeetingConfig(change func(*coreconfig.Config)) error {
-	cfg := s.configSnapshot()
+	cfg := s.Config()
 	change(&cfg)
 	if s.saveConfiguration == nil {
 		return errors.New(MeetingSaveUnavailable)
@@ -264,7 +256,7 @@ func (s *Session) saveMeetingConfig(change func(*coreconfig.Config)) error {
 	}
 	return nil
 }
-func (s *Session) updateProfile(background, terms string) error {
+func (s *Session) UpdateProfile(background, terms string) error {
 	background, terms, err := AcceptProfile(background, terms)
 	if err != nil {
 		return err
@@ -274,7 +266,7 @@ func (s *Session) updateProfile(background, terms string) error {
 		c.MeetingTerms = terms
 	})
 }
-func (s *Session) setASRMode(mode string) error {
+func (s *Session) SetASRMode(mode string) error {
 	if !coreconfig.KnownMeetingASRMode(mode) {
 		return errors.New(UnknownMeetingASRMode)
 	}
@@ -299,7 +291,7 @@ func (s *Session) updateCaption(epoch, id uint64, source, chinese string) {
 	})
 }
 func (s *Session) complete(ctx context.Context, priority int, query Query, emit func(Line)) error {
-	cfg := s.configSnapshot()
+	cfg := s.Config()
 	stage := InferenceStage(query.Mode, priority == PriorityExpress)
 	return s.runInference(ctx, priority, stage, func(active context.Context) error {
 		s.modelMu.Lock()
@@ -362,10 +354,10 @@ func (s *Session) queueReplies(job CaptionTask) {
 		}
 	}()
 }
-func (s *Session) acceptPendingReplies() {
+func (s *Session) AcceptPendingReplies() {
 	s.mutate(func() { s.view.Reply.AcceptPending() })
 }
-func (s *Session) requestReplies() {
+func (s *Session) RequestReplies() {
 	s.mu.Lock()
 	last, hasCaption := LatestCompletedCaption(s.view.Captions)
 	if status, start := ReplyRequest(s.view.CapturePaused, hasCaption); !start {
@@ -382,7 +374,7 @@ func (s *Session) requestReplies() {
 	s.mu.Unlock()
 	s.queueReplies(job)
 }
-func (s *Session) refineReply(index int, instruction string) {
+func (s *Session) RefineReply(index int, instruction string) {
 	instruction, ok := AcceptRefine(index, instruction)
 	if !ok {
 		return
@@ -421,10 +413,10 @@ func (s *Session) applyExpression(epoch, serial uint64, update func()) {
 	})
 }
 
-func (s *Session) start(source audio.FrameSource) {
+func (s *Session) Start(source audio.FrameSource) {
 	s.pipeline = NewPipeline(s.runtime, PipelineHooks{
 		Transcribe: func(ctx context.Context, state *ASRState, turn AudioTurn, emit func(string)) (string, error) {
-			cfg := s.configSnapshot()
+			cfg := s.Config()
 			priority := PriorityPreview
 			if turn.Final {
 				priority = PriorityASR

@@ -108,9 +108,7 @@ type meetingView = meetingcore.View
 type meetingMetrics = meetingcore.Metrics
 
 func newMeetingSession(app *appState, demo bool) *meetingSession {
-	s := meetingcore.NewSession(app.cfg, app.logger.Printf, saveConfig)
-	s.SetDemo(demo)
-	s.SetOnConfig(func(cfg Config) { app.cfg = cfg })
+	s := meetingcore.NewSession(app.cfg, app.logger.Printf, saveConfig, func(cfg Config) { app.cfg = cfg }, demo)
 	return s
 }
 

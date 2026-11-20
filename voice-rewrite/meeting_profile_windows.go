@@ -64,9 +64,7 @@ func (p *meetingHUD) openProfile() {
 		}
 	}
 	session := p.app.meeting
-	session.mu.Lock()
-	cfg := session.cfg
-	session.mu.Unlock()
+	cfg := session.Config()
 	uxSetText(p.profileBackground, cfg.MeetingBackground)
 	uxSetText(p.profileTerms, cfg.MeetingTerms)
 	procSendMessage.Call(p.profileMode, uxCBSetCurSel, uintptr(config.MeetingASRModeIndex(cfg.MeetingASRMode)), 0)
