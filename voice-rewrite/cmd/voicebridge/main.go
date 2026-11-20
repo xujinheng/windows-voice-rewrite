@@ -218,9 +218,6 @@ func processRequest(ctx context.Context, req request) response {
 				return failure(req.ID, "invalid_pcm", "invalid PCM base64")
 			}
 		}
-		if len(pcm) > maxPCMBytes {
-			return failure(req.ID, "invalid_pcm", "PCM exceeds size limit")
-		}
 		outcome, err := voice.Run(ctx, cfg, pcm, req.SelectedText, rewrite, req.AfterASR)
 		if err != nil {
 			var capture *voice.PCMError
