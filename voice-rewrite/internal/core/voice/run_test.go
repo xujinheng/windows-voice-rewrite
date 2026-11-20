@@ -52,3 +52,23 @@ func TestRunRejectsSelectionBeforeASR(t *testing.T) {
 		}
 	}
 }
+
+func TestDeliveryActionUsesIdenticalNativeFacts(t *testing.T) {
+	for _, tc := range []struct {
+		route string
+		valid bool
+		want  int
+	}{
+		{"insert", true, Insert},
+		{"replace", true, Replace},
+		{"preview", true, Retain},
+		{"insert", false, Retain},
+		{"replace", false, Retain},
+		{"preview", false, Retain},
+		{"unexpected", true, Retain},
+	} {
+		if got := DeliveryAction(tc.route, tc.valid); got != tc.want {
+			t.Fatalf("route=%q valid=%v: got=%d want=%d", tc.route, tc.valid, got, tc.want)
+		}
+	}
+}

@@ -19,6 +19,7 @@ import (
 	"voicerewrite/internal/core/indicator"
 	"voicerewrite/internal/core/input"
 	"voicerewrite/internal/core/session"
+	"voicerewrite/internal/core/voice"
 )
 
 var nativeEpoch session.Epoch
@@ -191,6 +192,14 @@ func VRProfile(config *C.char) *C.char {
 		nativeRole[codes[profile["rewrite"].(string)]] = 2
 	}
 	return nativeJSON(reply)
+}
+
+//export VRDelivery
+func VRDelivery(route *C.char, sameTarget C.int) C.int {
+	if route == nil {
+		return C.int(voice.Retain)
+	}
+	return C.int(voice.DeliveryAction(C.GoString(route), sameTarget != 0))
 }
 
 //export VRRun

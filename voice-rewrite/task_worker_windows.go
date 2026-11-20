@@ -136,7 +136,7 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	}
 	// ASR Core rejects empty speech. The native target owns focus at delivery.
 	app.history.Remember(ux.DictationHistoryTitle, text)
-	if !isSameForegroundWindow(expectedWindow) {
+	if voice.DeliveryAction(outcome.Route, isSameForegroundWindow(expectedWindow)) != voice.Insert {
 		app.showAnswer(ux.DictationNotInserted, text, currentCursorPoint(), nil, false, generation)
 		app.postHandyPhase(indicator.Fallback, generation)
 		return
@@ -239,7 +239,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	}
 	app.logger.Printf("route=%s intent=%s", answer.Route, answer.Intent)
 	app.history.Remember(ux.HistoryTitle(answer.Intent), answer.Text)
-	if answer.Route == "replace" {
+	if voice.DeliveryAction(answer.Route, isSameForegroundWindow(sel.TargetWindow)) == voice.Replace {
 		app.postHandyPhase(indicator.Applying, generation)
 		startedPaste := time.Now()
 		// Native editability determines whether to verify the pasted selection.

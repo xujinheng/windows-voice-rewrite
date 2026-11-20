@@ -439,14 +439,22 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     case .success(let value):
                         guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
                         self.lastResult = text
-                        guard value.route == "replace" || value.route == "insert" else {
-                            self.reset(self.config.profile.pill.fallbackLabel, phase: .fallback); return
+                        let targetValid = self.targetStillValid()
+                        let delivery = (value.route ?? "").withCString {
+                            VRDelivery($0, targetValid ? 1 : 0)
                         }
-                        guard self.targetStillValid() else { self.reset("Focus changed"); return }
-                        if action == .rewrite && selectedValue?.matches(self.selectionFromAX()) != true {
-                            self.reset("Selection changed"); return
+                        guard delivery != 0 else {
+                            self.reset(targetValid ? self.config.profile.pill.fallbackLabel : "Focus changed",
+                                       phase: targetValid ? .fallback : .error)
+                            return
                         }
-                        if value.route == "replace" { self.pill.working(.applying); self.show(self.config.profile.pill.applyingLabel) }
+                        if delivery == 2 {
+                            guard selectedValue?.matches(self.selectionFromAX()) == true else {
+                                self.reset("Selection changed"); return
+                            }
+                            self.pill.working(.applying)
+                            self.show(self.config.profile.pill.applyingLabel)
+                        }
                         self.paste(text)
                     }
                 }

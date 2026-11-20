@@ -21,6 +21,27 @@ type Result struct {
 	Route       string `json:"route"`
 }
 
+// DeliveryAction converts a task route and the native target's identity into
+// one portable delivery decision. Selection freshness and clipboard ownership
+// are OS facts checked by the native paste operation.
+const (
+	Retain = iota
+	Insert
+	Replace
+)
+
+func DeliveryAction(route string, sameTarget bool) int {
+	if sameTarget {
+		switch route {
+		case "insert":
+			return Insert
+		case "replace":
+			return Replace
+		}
+	}
+	return Retain
+}
+
 // PCMError marks audio admission failures, distinct from provider failures.
 // The native hosts retain their own error presentation and OS recovery actions.
 type PCMError struct{ message string }

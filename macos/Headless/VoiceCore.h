@@ -22,6 +22,7 @@ void VRDuration(long long seconds, char *buffer, int capacity);
 void VRFree(void *ptr);
 char *VRProfile(const char *config);
 typedef void (*VRTranscribedCallback)(unsigned long long token);
+int VRDelivery(const char *route, int sameTarget);
 char *VRRun(const char *config, const char *operation, const unsigned char *audio,
             int length, const char *selection, unsigned long long token, VRTranscribedCallback onTranscribed);
 #endif
