@@ -129,7 +129,7 @@ func (s *Holds) Release(code int) (held, active, primary bool) {
 	return
 }
 
-func (s *Holds) Abandon() { s.owner = 0 }
+func (s *Holds) Abandon()    { s.owner = 0 }
 func (s *Holds) Armed() bool { return s.owner != 0 }
 
 // Cancel invalidates every late timer without resetting its generation.
