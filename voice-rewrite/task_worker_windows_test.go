@@ -3,6 +3,7 @@
 package main
 
 import (
+	"github.com/xujinheng/windows-voice-rewrite/voice-rewrite/voice"
 	"io"
 	"log"
 	"runtime"
@@ -21,7 +22,7 @@ func TestCanceledVoiceWorkerReleasesBusy(t *testing.T) {
 		app := &appState{}
 		generation := app.core.Apply(voice.Command{Kind: voice.CommandStart}).Token
 		app.busy.Store(true)
-		app.core.Apply(voice.Command{Kind: voice.CommandStart}).Token // cancel before starting the worker
+		app.core.Apply(voice.Command{Kind: voice.CommandStart}) // cancel before starting the worker
 		rec := &audioRecorder{done: make(chan struct{})}
 		processRecording(app, rec, task, generation)
 		if app.busy.Load() {
