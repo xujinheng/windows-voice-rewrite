@@ -80,9 +80,9 @@ func VRDelivery(token C.uint64_t, route *C.char, targetCurrent, selectionAvailab
 	return C.int(nativeCore.DecideDelivery(uint64(token),
 		voice.Result{Route: C.GoString(route)},
 		voice.DeliveryFacts{
-			TargetCurrent:    targetCurrent != 0,
+			TargetCurrent:      targetCurrent != 0,
 			SelectionAvailable: selectionAvailable != 0,
-			Failed:           failed != 0,
+			Failed:             failed != 0,
 		}))
 }
 
