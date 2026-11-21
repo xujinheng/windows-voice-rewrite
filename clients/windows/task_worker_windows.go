@@ -225,7 +225,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 		time.Since(started).Milliseconds(), answer.Intent, answer.Route)
 	delivery := app.core.DecideDelivery(generation, answer, voice.DeliveryFacts{
 		TargetCurrent: isSameForegroundWindow(sel.TargetWindow),
-		SelectionCurrent: sel.Text != "",
+		SelectionAvailable: sel.Text != "",
 	})
 	if delivery == voice.DeliveryDrop {
 		return
