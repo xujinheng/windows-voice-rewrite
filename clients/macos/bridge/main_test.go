@@ -2,10 +2,11 @@ package main
 
 import (
 	"encoding/json"
-	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
-	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 	"strings"
 	"testing"
+
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
+	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 )
 
 func TestHeadlessProfileValidatesSettingsAndNeverLeaksKeys(t *testing.T) {
