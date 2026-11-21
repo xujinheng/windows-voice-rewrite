@@ -182,6 +182,7 @@ private struct BridgeReply: Decodable {
         let route: String?
         let title: String?
         let profile: HostProfile?
+        let defaultConfig: String?
     }
     struct Failure: Decodable { let code: String; let message: String }
 }
@@ -272,16 +273,16 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             } catch {
                 let failure = error as NSError
                 guard failure.domain == NSCocoaErrorDomain && failure.code == NSFileReadNoSuchFileError else { throw error }
-                json = "{}" // Go Core supplies the defaults, including macOS shortcut bindings.
+                json = "{}" // Go Core owns the persisted defaults and macOS shortcut bindings.
                 firstRun = true
             }
-            guard let profile = try GoCore.request(config: json,
-                                                   audio: Data(), selection: nil).profile
-            else { throw HostError.config("missing Go host profile") }
+            let output = try GoCore.request(config: json, audio: Data(), selection: nil)
+            guard let profile = output.profile else { throw HostError.config("missing Go host profile") }
             if firstRun {
+                guard let defaults = output.defaultConfig else { throw HostError.config("missing Go defaults") }
                 try FileManager.default.createDirectory(at: configURL.deletingLastPathComponent(),
                                                         withIntermediateDirectories: true)
-                try json.write(to: configURL, atomically: true, encoding: .utf8)
+                try defaults.write(to: configURL, atomically: true, encoding: .utf8)
             }
             config = profile
             pill.configure(profile.pill)
