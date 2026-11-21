@@ -516,9 +516,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                             guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
                             // Go Core already owns the result route. Native AX
                             // checks decide whether the requested paste is possible.
-                            let editable = !rewrite || selected?.matches(self.selectionFromAX()) == true
-                            if (value.route == "insert" || value.route == "replace") &&
-                               self.targetStillValid() && editable {
+                            if (value.route == "insert" ||
+                                (value.route == "replace" && selected?.matches(self.selectionFromAX()) == true)) &&
+                                self.targetStillValid() {
                                 if value.route == "replace" {
                                     self.pill.working(.applying)
                                     self.show(self.config.pill.applyingLabel)
