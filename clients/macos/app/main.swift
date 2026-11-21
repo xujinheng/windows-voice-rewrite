@@ -363,7 +363,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             if eventTapRetry == nil {
                 eventTapRetry = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] timer in
                     guard let self else { timer.invalidate(); return }
-                    self.startEventTap()
+                    MainActor.assumeIsolated { self.startEventTap() }
                 }
             }
             return
