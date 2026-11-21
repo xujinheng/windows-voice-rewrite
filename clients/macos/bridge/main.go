@@ -75,6 +75,7 @@ func headlessProfile(raw json.RawMessage) response {
 		"pasteRestoreMS": ux.PasteReceiptMinimumMilliseconds,
 		"mouseDelayMS":   int(voice.SideHoldThreshold / time.Millisecond),
 		"pill":           indicator.HostSpec(),
+		"copyLabel":      ux.CopyAction,
 	}})
 	reply.cfg = cfg
 	return reply
