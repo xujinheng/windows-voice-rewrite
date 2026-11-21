@@ -23,7 +23,6 @@ func TestMeetingStream(t *testing.T) {
 	}
 }
 
-
 func TestMeetingStreamSharesAccumulatedResponseWithConsumer(t *testing.T) {
 	body := "data: {\"choices\":[{\"delta\":{\"content\":\"ONE\\tI would\"}}]}\n\n" +
 		"data: {\"choices\":[{\"delta\":{\"content\":\" confirm.\\t我会确认。\\n\"}}]}\n\n" +
