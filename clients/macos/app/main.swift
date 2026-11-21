@@ -48,6 +48,7 @@ struct PillSpec: Decodable {
 
 private struct HostProfile: Decodable {
     let maximumSeconds, modifierDelayMS, mouseDelayMS, pasteRestoreMS: Int
+    let copyLabel: String
     let pill: PillSpec
 }
 
@@ -485,7 +486,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             view.isSelectable = true
             view.font = .systemFont(ofSize: 14)
         }
-        let copy = NSButton(title: "Copy result", target: self, action: #selector(copyResult))
+        let copy = NSButton(title: config.copyLabel, target: self, action: #selector(copyResult))
         copy.frame = NSRect(x: 16, y: 14, width: 120, height: 30)
         panel.contentView?.addSubview(scroll)
         panel.contentView?.addSubview(copy)
