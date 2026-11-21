@@ -42,6 +42,8 @@ type Control struct {
 	Platform Platform
 	// Stacked controls occupy successive form rows. Actions and notes do not.
 	Stacked bool
+	// NativeMac is set only for input controls this macOS host can actually apply.
+	NativeMac bool
 	// StaleProbe is the macOS connection check marked stale when this field changes.
 	StaleProbe string
 	// Gap is required when Platform is not both hosts. It cites the open issues.
@@ -76,15 +78,15 @@ func Controls() []Control {
 		{ID: "probe_llm", Page: "writing", Label: "测试连接", Kind: Button},
 		{ID: "probe_llm_status", Page: "writing", Kind: Status},
 
-		{ID: "rewrite_shortcut", Page: "input", Label: "语音指令", Kind: Shortcut, Stacked: true},
-		{ID: "capture_rewrite", Page: "input", Label: "录入按键", Hint: "请按下要使用的按键（Esc 取消）", Kind: Button},
-		{ID: "dictation_shortcut", Page: "input", Label: "听写快捷键", Kind: Shortcut, Stacked: true},
-		{ID: "capture_dictation", Page: "input", Label: "录入按键", Kind: Button},
+		{ID: "rewrite_shortcut", Page: "input", Label: "语音指令", Kind: Shortcut, Stacked: true, NativeMac: true},
+		{ID: "capture_rewrite", Page: "input", Label: "录入按键", Hint: "请按下要使用的按键（Esc 取消）", Kind: Button, NativeMac: true},
+		{ID: "dictation_shortcut", Page: "input", Label: "听写快捷键", Kind: Shortcut, Stacked: true, NativeMac: true},
+		{ID: "capture_dictation", Page: "input", Label: "录入按键", Kind: Button, NativeMac: true},
 		{ID: "microphone", Page: "input", Label: "麦克风", Kind: Choice, Stacked: true},
 		{ID: "record_mode", Page: "input", Label: "录音模式", Kind: Choice, Platform: MacOS, Gap: "#138"},
 		{ID: "exit_shortcut", Page: "input", Label: "全局退出快捷键（不是语音操作）", Kind: Shortcut, Platform: MacOS, Gap: "#139"},
 		{ID: "capture_exit", Page: "input", Label: "录入按键", Kind: Button, Platform: MacOS, Gap: "#139"},
-		{ID: "max_record_seconds", Page: "input", Label: "最长录音", Kind: Stepper, Stacked: true},
+		{ID: "max_record_seconds", Page: "input", Label: "最长录音", Kind: Stepper, Stacked: true, NativeMac: true},
 		{ID: "record_note", Page: "input", Label: "录音数据为 16 kHz 单声道 PCM16，最长 180 秒。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
 		{ID: "meeting_asr_mode", Page: "input", Label: "会议语音识别方式", Kind: Choice, Platform: MacOS, Gap: "#61 #69"},
 		{ID: "system_prompt", Page: "input", Label: "System Prompt", Kind: Text, Platform: MacOS, Gap: "#145"},
@@ -93,7 +95,7 @@ func Controls() []Control {
 		{ID: "selection_copy_attempts", Page: "input", Label: "选区复制重试次数（Windows 专用）", Kind: Note, Platform: MacOS, Gap: "#148"},
 		{ID: "selection_copy_timeout_ms", Page: "input", Label: "选区复制超时由 Windows 剪贴板适配器使用；macOS 使用 AX 和原生粘贴板时序。", Kind: Note, Platform: MacOS, Gap: "#148"},
 		{ID: "input_note_windows", Page: "input", Label: "语音指令用于改写/解释/问答；更换按键或设备后需重启软件。", Kind: Note, Platform: Windows, Gap: "#61 #69"},
-		{ID: "input_note_macos", Page: "input", Label: "支持右 Command、右 Option、Mouse4 和 Mouse5；按住开始、松开结束。当前仅支持系统默认麦克风与按住录音模式。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
+		{ID: "input_note_macos", Page: "input", Label: "支持右 Command、右 Option、Mouse4 和 Mouse5；按住开始、松开结束。当前仅支持系统默认麦克风与按住录音模式。", Kind: Note, Platform: MacOS, NativeMac: true, Gap: "#61 #69"},
 
 		{ID: "save", Page: "save", Label: "保存设置", Kind: Button},
 		{ID: "advanced", Page: "save", Label: "高级配置", Kind: Button},
