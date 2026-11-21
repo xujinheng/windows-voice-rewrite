@@ -51,7 +51,7 @@ enum {
     VR_DELIVERY_PREVIEW
 };
 int VRDelivery(uint64_t token, const char *route,
-               int target_current, int selection_current, int failed);
+               int target_current, int selection_available, int failed);
 int VRClipboardSnapshotFits(unsigned long long size, unsigned long long total);
 double VRLevel(double previous, double raw);
 int VRWave(int index, double level, unsigned int tick);
