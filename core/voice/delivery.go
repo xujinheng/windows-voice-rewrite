@@ -11,12 +11,14 @@ const (
 	DeliveryPreview
 )
 
-// DeliveryFacts are observations from the native editor adapter. Failed means
-// an insertion/replacement was attempted but could not be confirmed as sent;
-// no second attempt is authorized.
+// DeliveryFacts are observations from the native editor adapter. SelectionAvailable
+// means text was captured, not that the live selection is still identical:
+// each OS adapter must recheck its editor immediately before replacement.
+// Failed means native delivery was rejected, or a paste could not be confirmed
+// as sent; an uncertain paste must never be retried automatically.
 type DeliveryFacts struct {
 	TargetCurrent    bool
-	SelectionCurrent bool
+	SelectionAvailable bool
 	Failed           bool
 }
 
@@ -34,7 +36,7 @@ func (c *Core) DecideDelivery(token uint64, result Result, facts DeliveryFacts) 
 	case RouteInsert:
 		return DeliveryInsert
 	case RouteReplace:
-		if facts.SelectionCurrent {
+		if facts.SelectionAvailable {
 			return DeliveryReplace
 		}
 	}
