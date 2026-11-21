@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -81,7 +80,7 @@ func DiscoverModel(ctx context.Context, cfg coreconfig.Config) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var candidates []string
+	best, bestScore := "", 0
 	for _, id := range models {
 		x := strings.ToLower(id)
 		if strings.Contains(x, "asr") || strings.Contains(x, "whisper") ||
@@ -89,13 +88,14 @@ func DiscoverModel(ctx context.Context, cfg coreconfig.Config) (string, error) {
 			strings.Contains(x, "tts") {
 			continue
 		}
-		candidates = append(candidates, id)
+		if score := textModelScore(id); best == "" || score > bestScore {
+			best, bestScore = id, score
+		}
 	}
-	if len(candidates) == 0 {
+	if best == "" {
 		return "", errors.New("没有发现可用的文本模型；请在连接设置中填写明确的文本模型 ID，或确认 API 提供 /v1/models")
 	}
-	sort.SliceStable(candidates, func(i, j int) bool { return textModelScore(candidates[i]) > textModelScore(candidates[j]) })
-	return candidates[0], nil
+	return best, nil
 }
 
 func textModelScore(s string) int {
