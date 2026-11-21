@@ -2,6 +2,13 @@
 // It is never linked into the production app.
 // Same-file extension can exercise private host state without widening production access.
 extension HeadlessApp {
+    func verifyClipboardSnapshot() {
+        let board = NSPasteboard(name: NSPasteboard.Name("VoiceRewriteScopeTest"))
+        board.clearContents()
+        precondition(board.setString("keep clipboard", forType: .string))
+        precondition(snapshotClipboard(board)?.first?.string(forType: .string) == "keep clipboard")
+    }
+
     func verifyReboundRelease(code: Int64, before: String,
                               after: String, modifier: Bool) {
         let initial = try! GoCore.request(config: before, audio: Data(), selection: nil)
@@ -95,13 +102,6 @@ MainActor.assumeIsolated {
     precondition(VRClipboardSnapshotFits(16 << 20, 32 << 20) == 1)
     precondition(VRClipboardSnapshotFits((16 << 20) + 1, 0) == 0)
     precondition(VRClipboardSnapshotFits(1, 48 << 20) == 0)
-    // Clipboard reads for browser selections and native paste share one
-    // multi-format snapshot path; it must retain the original contents.
-    let testBoard = NSPasteboard(name: NSPasteboard.Name("VoiceRewriteScopeTest"))
-    testBoard.clearContents()
-    precondition(testBoard.setString("keep clipboard", forType: .string))
-    let snapshot = HeadlessApp().snapshotClipboard(testBoard)
-    precondition(snapshot?.first?.string(forType: .string) == "keep clipboard")
     // The native PCM conversion can run after recording is stopped without
     // accessing AVAudioEngine on a worker or requiring a physical microphone.
     let pcm = try! Microphone.pcm((samples: Array(repeating: Float(0.01), count: 19200), rate: 48000))
@@ -116,6 +116,7 @@ MainActor.assumeIsolated {
         String(decoding: try! JSONSerialization.data(withJSONObject: raw), as: UTF8.self)
     }
     let hostApp = HeadlessApp()
+    hostApp.verifyClipboardSnapshot()
     hostApp.verifyReboundRelease(code: 103, before: host(mouseBound),
                                  after: host(original), modifier: false)
     hostApp.verifyReboundRelease(code: 54, before: host(original),
