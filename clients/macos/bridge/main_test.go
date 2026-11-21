@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"strings"
 	"testing"
 )
@@ -49,5 +50,26 @@ func TestHostProfileUsesSharedPasteMinimum(t *testing.T) {
 	profile := reply.Result.(map[string]any)["profile"].(map[string]any)
 	if got := profile["pasteRestoreMS"]; got != 700 {
 		t.Fatalf("paste dwell must match shared minimum, got %v", got)
+	}
+}
+
+func TestFreshMacConfigUsesCoreMarshalWithoutEchoingUserSettings(t *testing.T) {
+	fresh := headlessProfile(json.RawMessage(`{}`))
+	if !fresh.OK {
+		t.Fatal(fresh.Error)
+	}
+	want, err := coreconfig.Marshal(fresh.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fresh.Result.(map[string]any)["defaultConfig"]; got != string(want) {
+		t.Fatalf("generated config differs from Go Core Marshal")
+	}
+	user := headlessProfile(json.RawMessage(`{"asr_api_key":"hidden-secret"}`))
+	if !user.OK {
+		t.Fatal(user.Error)
+	}
+	if _, exposed := user.Result.(map[string]any)["defaultConfig"]; exposed {
+		t.Fatal("existing user config must not be echoed")
 	}
 }

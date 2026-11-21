@@ -69,14 +69,23 @@ func headlessProfile(raw json.RawMessage) response {
 	if err != nil || cfg.RecordMode != "hold" || cfg.AudioDeviceID != -1 {
 		return failure("invalid_config", msgInvalidConfig)
 	}
-	reply := success(map[string]any{"profile": map[string]any{
+	result := map[string]any{"profile": map[string]any{
 		"dictation": cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
 		"maximumSeconds": cfg.MaxRecordSeconds, "modifierDelayMS": 200,
 		"pasteRestoreMS": ux.PasteReceiptMinimumMilliseconds,
 		"mouseDelayMS":   int(voice.SideHoldThreshold / time.Millisecond),
 		"pill":           indicator.HostSpec(),
 		"copyLabel":      ux.CopyAction,
-	}})
+	}}
+	if len(provided) == 0 {
+		// Only a new install receives generated defaults. Never echo user credentials.
+		data, err := coreconfig.Marshal(cfg)
+		if err != nil {
+			return failure("invalid_config", msgInvalidConfig)
+		}
+		result["defaultConfig"] = string(data)
+	}
+	reply := success(result)
 	reply.cfg = cfg
 	return reply
 }

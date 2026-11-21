@@ -9,8 +9,13 @@ extension HeadlessApp {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         configURL = temp.appendingPathComponent("nested/config.json")
         reload()
-        precondition((try? String(contentsOf: configURL, encoding: .utf8)) == "{}")
+        let defaults = try! String(contentsOf: configURL, encoding: .utf8)
+        let coreDefaults = try! GoCore.request(config: "{}", audio: Data(), selection: nil).defaultConfig
+        precondition(defaults == coreDefaults)
         precondition(VRSnapshot(54, 0).role == 1 && VRSnapshot(61, 0).role == 2)
+        try! "  {}\n".write(to: configURL, atomically: true, encoding: .utf8)
+        reload()
+        precondition((try? String(contentsOf: configURL, encoding: .utf8)) == defaults)
 
         let custom = #"{"dictation_hotkey":"Mouse4","hotkey_record":"Mouse5"}"#
         try! custom.write(to: configURL, atomically: true, encoding: .utf8)
@@ -65,7 +70,7 @@ extension HeadlessApp {
         let finishedToken = VRCommand(Int32(VR_COMMAND_START), 0, 0, 0).token
         cancelFromPill()
         precondition(VRSnapshot(0, finishedToken).valid == 1) // Dismissing a result is not cancellation.
-        precondition(item.button?.title == "VR")
+        precondition(item.button?.title == "VoiceRewrite")
         let key: Int32 = 61
         precondition(VRSnapshot(key, 0).role == 2)
         let held = VRCommand(Int32(VR_COMMAND_PRESS), key, 0, 0).token
@@ -131,8 +136,8 @@ MainActor.assumeIsolated {
     precondition(pcm.count > 3200 && pcm.count % 2 == 0)
     // Exercise the production Swift -> native Go Hold path without posting HID events.
     // A shortcut can be rebound while its old physical key is still down.
-    let configData = try! Data(contentsOf: URL(fileURLWithPath: "clients/macos/app/config.example.json"))
-    let original = try! JSONSerialization.jsonObject(with: configData) as! [String: Any]
+    let defaults = try! GoCore.request(config: "{}", audio: Data(), selection: nil).defaultConfig!
+    let original = try! JSONSerialization.jsonObject(with: Data(defaults.utf8)) as! [String: Any]
     var mouseBound = original
     mouseBound["dictation_hotkey"] = "Mouse4"
     func host(_ raw: [String: Any]) -> String {

@@ -182,6 +182,7 @@ private struct BridgeReply: Decodable {
         let route: String?
         let title: String?
         let profile: HostProfile?
+        let defaultConfig: String?
     }
     struct Failure: Decodable { let code: String; let message: String }
 }
@@ -220,6 +221,7 @@ private enum GoCore {
 private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var item: NSStatusItem!
     private var tap: CFMachPort?
+    private var eventTapRetry: Timer?
     private var microphone = Microphone()
     private let pill = RecordingPill()
     private var resultPanel: NSPanel?
@@ -234,7 +236,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "VR"
+        item.button?.title = "VoiceRewrite"
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Copy last result", action: #selector(copyResult), keyEquivalent: "c"))
         menu.addItem(NSMenuItem(title: "Reload config", action: #selector(reload), keyEquivalent: "r"))
@@ -266,26 +268,27 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard VRSnapshot(0, 0).armed == 0 && !pending else { show("Reload after current task"); return }
         do {
             let json: String
-            var firstRun = false
+            var needsDefaults = false
             do {
                 json = try String(contentsOf: configURL, encoding: .utf8)
+                needsDefaults = json.trimmingCharacters(in: .whitespacesAndNewlines) == "{}"
             } catch {
                 let failure = error as NSError
                 guard failure.domain == NSCocoaErrorDomain && failure.code == NSFileReadNoSuchFileError else { throw error }
-                json = "{}" // Go Core supplies the defaults, including macOS shortcut bindings.
-                firstRun = true
+                json = "{}" // Go Core owns the persisted defaults and macOS shortcut bindings.
+                needsDefaults = true
             }
-            guard let profile = try GoCore.request(config: json,
-                                                   audio: Data(), selection: nil).profile
-            else { throw HostError.config("missing Go host profile") }
-            if firstRun {
+            let output = try GoCore.request(config: json, audio: Data(), selection: nil)
+            guard let profile = output.profile else { throw HostError.config("missing Go host profile") }
+            if needsDefaults {
+                guard let defaults = output.defaultConfig else { throw HostError.config("missing Go defaults") }
                 try FileManager.default.createDirectory(at: configURL.deletingLastPathComponent(),
                                                         withIntermediateDirectories: true)
-                try json.write(to: configURL, atomically: true, encoding: .utf8)
+                try defaults.write(to: configURL, atomically: true, encoding: .utf8)
             }
             config = profile
             pill.configure(profile.pill)
-            show("VR")
+            if eventTapRetry == nil { show("VoiceRewrite") }
         } catch {
             show("Config error")
             fputs("VoiceRewrite config: \(error)\n", stderr)
@@ -353,11 +356,25 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                 options: .defaultTap, eventsOfInterest: eventMask,
                                 callback: callback,
                                 userInfo: Unmanaged.passUnretained(self).toOpaque())
-        guard let tap else { show("Input denied"); return }
+        guard let tap else {
+            show(AXIsProcessTrusted() ? "Input unavailable" : "Allow Accessibility")
+            // TCC permission may be granted after this first attempt. Retry the
+            // native event tap without restarting the app or rebinding Go Core.
+            if eventTapRetry == nil {
+                eventTapRetry = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] timer in
+                    guard let self else { timer.invalidate(); return }
+                    MainActor.assumeIsolated { self.startEventTap() }
+                }
+            }
+            return
+        }
+        eventTapRetry?.invalidate()
+        eventTapRetry = nil
         if let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) {
             CFRunLoopAddSource(CFRunLoopGetMain(), source, CFRunLoopMode.commonModes)
         }
         CGEvent.tapEnable(tap: tap, enable: true)
+        show("VoiceRewrite")
     }
 
     private func handleModifier(code: Int64, flags: CGEventFlags) {
@@ -720,7 +737,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func cancelFromPill() {
-        if VRSnapshot(0, 0).armed == 0 && !pending && !microphone.running { pill.dismiss(); show("VR"); return }
+        if VRSnapshot(0, 0).armed == 0 && !pending && !microphone.running { pill.dismiss(); show("VoiceRewrite"); return }
         VRCommand(Int32(VR_COMMAND_CANCEL), 0, 0, 0)
         if microphone.running { _ = try? microphone.stop(discard: true) }
         clearSession()
