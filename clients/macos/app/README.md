@@ -15,10 +15,12 @@ bash scripts/build-macos-headless.sh "$(uname -m)" "$PWD/dist" 0.1.0
 open dist/VoiceRewrite.app
 ```
 
-The first launch creates `~/.config/voicerewrite/config.json` containing `{}` if
-it does not exist. Go Core applies the default model endpoints and macOS shortcuts;
-existing or invalid config files are never replaced. ASR (and LLM for rewriting)
-must still run separately; the default localhost URLs do not start those servers.
+The first launch writes a readable `~/.config/voicerewrite/config.json` when it
+is absent. It serializes the normalized shared Go Core configuration, including
+the supported macOS shortcut bindings; Swift does not maintain its own settings
+schema or defaults. Existing or invalid config files are never overwritten.
+ASR (and LLM for rewriting) must still run separately; the default localhost
+URLs do not start those servers.
 Use the menu-bar **Show config in Finder** to locate the file and **Reload config**
 after edits. The optional first process argument specifies another config file path.
 
@@ -41,6 +43,12 @@ with a Copy action; the app never pastes into an unverified editor. It skips the
 clipboard fallback if it cannot back up the clipboard safely or the target
 changed. The app does not retry an uncertain paste. `Sent ✓` means an input
 event was sent, **not** that insertion was confirmed.
+
+Development downloads from GitHub Actions contain one DMG in the GitHub artifact
+ZIP. Extract the download once, open the DMG, and drag `VoiceRewrite.app` into
+Applications. Tagged Release ZIPs are already standalone direct downloads.
+Developer packages remain ad-hoc signed and may require manual Gatekeeper
+approval; only Developer ID signing and Apple notarization can fix that.
 
 ## Scope and validation
 
