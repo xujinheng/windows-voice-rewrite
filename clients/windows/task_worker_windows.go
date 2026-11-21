@@ -251,7 +251,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 		return
 	}
 	selectionCopy := sel
-	app.showAnswer(ux.ResultCardTitle(answer.Intent), answer.Text, sel.Anchor,
+	app.showAnswer(answer.Title, answer.Text, sel.Anchor,
 		&selectionCopy, answer.Route == voice.RouteReplace, generation)
 	app.setStatus(traySuccess)
 	app.logger.Printf("popup result queued; chars=%d", utf8.RuneCountInString(answer.Text))
