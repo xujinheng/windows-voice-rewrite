@@ -472,7 +472,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                             guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
                             // Go Core already owns the result route. Native AX
                             // checks decide whether the requested paste is possible.
-                            let editable = !rewrite || (self.canEditSelection() &&
+                            let verify = rewrite ? self.replacementNeedsVerification() : false
+                            let editable = !rewrite || (verify != nil &&
                                               selected?.matches(self.selectionFromAX()) == true)
                             if (value.route == "insert" || value.route == "replace") &&
                                self.targetStillValid() && editable {
@@ -480,7 +481,24 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                     self.pill.working(.applying)
                                     self.show(self.config.pill.applyingLabel)
                                 }
-                                if !self.paste(text) { self.presentPreview(text, title: value.title) }
+                                if !self.paste(text) {
+                                    self.presentPreview(text, title: value.title)
+                                } else if let selected, verify == true {
+                                    // Unknown browser editors get the same best-effort
+                                    // post-paste selection check as Windows.
+                                    let pid = self.targetPID
+                                    let focus = self.targetFocus
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.27) { [weak self] in
+                                        guard let self, VRSnapshot(0, token).valid == 1,
+                                              self.targetPID == pid,
+                                              NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+                                              focus?.matches(window: focus?.window == nil ? nil : self.focusedWindow(),
+                                                             element: focus?.element == nil ? nil : self.focusedElement(),
+                                                             title: nil) == true,
+                                              selected.matches(self.selectionFromAX()) else { return }
+                                        self.presentPreview(text, title: value.title)
+                                    }
+                                }
                             } else {
                                 self.presentPreview(text, title: value.title)
                             }
@@ -587,12 +605,20 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         return AXSelection(text: string, range: range)
     }
 
-    // A visible selection need not be editable (web pages, PDFs and readers).
-    private func canEditSelection() -> Bool {
-        guard let focused = focusedElement() else { return false }
+    // nil: not an editor; false: known editable; true: browser-style text
+    // control whose value cannot be set through AX, so verify after paste.
+    private func replacementNeedsVerification() -> Bool? {
+        guard let focused = focusedElement() else { return nil }
+        var enabled: CFTypeRef?
+        if AXUIElementCopyAttributeValue(focused, kAXEnabledAttribute as CFString, &enabled) == .success,
+           (enabled as? Bool) == false { return nil }
         var settable = DarwinBoolean(false)
-        return AXUIElementIsAttributeSettable(focused, kAXValueAttribute as CFString, &settable) == .success
-            && settable.boolValue
+        if AXUIElementIsAttributeSettable(focused, kAXValueAttribute as CFString, &settable) == .success,
+           settable.boolValue { return false }
+        var role: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(focused, kAXRoleAttribute as CFString, &role) == .success,
+              let name = role as? String, ["AXTextField", "AXTextArea"].contains(name) else { return nil }
+        return true
     }
 
     // Copy selected browser text without adopting it as a paste target.
