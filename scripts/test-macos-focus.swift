@@ -75,7 +75,7 @@ extension HeadlessApp {
         let finishedToken = VRCommand(Int32(VR_COMMAND_START), 0, 0, 0).token
         cancelFromPill()
         precondition(VRSnapshot(0, finishedToken).valid == 1) // Dismissing a result is not cancellation.
-        precondition(item.button?.title == "VR")
+        precondition(item.button?.title == "VoiceRewrite")
         let key: Int32 = 61
         precondition(VRSnapshot(key, 0).role == 2)
         let held = VRCommand(Int32(VR_COMMAND_PRESS), key, 0, 0).token
