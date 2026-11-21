@@ -12,15 +12,15 @@ On macOS 13+ with Xcode command line tools and Go 1.23:
 
 ```sh
 bash scripts/build-macos-headless.sh "$(uname -m)" "$PWD/dist" 0.1.0
-mkdir -p ~/.config/voicerewrite
-cp clients/macos/app/config.example.json ~/.config/voicerewrite/config.json
 open dist/VoiceRewrite.app
 ```
 
-ASR and LLM endpoints must be running. Loopback URLs in the example are only
-placeholders, not bundled servers. The optional first process argument specifies
-another config file path. Default: `~/.config/voicerewrite/config.json`.
-Reload the file with the menu-bar **Reload config** action.
+The first launch creates `~/.config/voicerewrite/config.json` containing `{}` if
+it does not exist. Go Core applies the default model endpoints and macOS shortcuts;
+existing or invalid config files are never replaced. ASR (and LLM for rewriting)
+must still run separately; the default localhost URLs do not start those servers.
+Use the menu-bar **Show config in Finder** to locate the file and **Reload config**
+after edits. The optional first process argument specifies another config file path.
 
 Hold **RightCommand** to dictate; hold **RightOption** over selected text to
 speak a rewrite instruction. Both keys use a 200 ms arm delay; configured mouse
@@ -28,7 +28,9 @@ side buttons use 250 ms. Configure either shortcut as `Mouse4` or `Mouse5`.
 Mouse button events assigned to voice shortcuts are intercepted to avoid
 accidental browser navigation.
 
-Grant microphone, Accessibility and Input Monitoring permissions when prompted.
+Grant Microphone and Accessibility permissions when prompted. The app uses a
+modifying Quartz event tap for shortcuts; it does not explicitly request Input
+Monitoring access. Verify shortcut permissions on the target macOS version.
 The rewrite shortcut first snapshots available AX selected text when pressed,
 using `AXSelectedText` or `AXSelectedTextRange` with `AXStringForRange`.
 When the selection is inaccessible through AX, the app tries Cmd+C on release
