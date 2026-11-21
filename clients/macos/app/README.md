@@ -42,14 +42,13 @@ event was sent, **not** that insertion was confirmed.
 
 ## Scope and validation
 
-No settings GUI, Meeting, or full history panel. Go Core decides whether
-a result should insert, replace, be previewed, or be dropped when stale. If an
-answer/summary is preview-only or native insertion cannot proceed safely, a
-small AppKit result window displays the text with a **Copy result** action.
-The menu-bar **Copy last result** also retrieves the latest Core history entry.
-Unlike Windows, the preview does not yet offer **Apply to original**.
-This host uses `VRCommand`, `VRSnapshot`, `VRRun`, and `VRDelivery` through the
-native C ABI; it does not introduce another Go task reducer.
+No settings GUI, Meeting or full history panel. Go Core supplies the
+result text, title and `insert`/`replace`/`preview` route. macOS checks the
+actual editor and attempts the native paste; if it cannot, the result remains
+available in a small selectable AppKit preview with a **Copy result** button.
+The menu-bar **Copy last result** uses the same Go Core history. Unlike Windows,
+the preview has no **Apply to original** button. No second delivery reducer or
+separate ABI protocol is needed.
 
 CI compilation is not physical end-to-end acceptance. Validate both modifier
 keys, Mouse4/Mouse5, microphone permissions, dictation and rewritten selections
