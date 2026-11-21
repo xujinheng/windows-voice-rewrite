@@ -18,17 +18,6 @@ struct AXSelection {
     }
 }
 
-// Match available AX identities; ordinary dictation need not have AX attributes.
-struct FocusIdentity {
-    let window: AXUIElement?
-    let element: AXUIElement?
-
-    func matches(window: AXUIElement?, element: AXUIElement?) -> Bool {
-        if let saved = self.window, window.map({ CFEqual(saved, $0) }) != true { return false }
-        if let saved = self.element, element.map({ CFEqual(saved, $0) }) != true { return false }
-        return true
-    }
-}
 private enum HostError: Error {
     case config(String), microphone(String), conversion, bridge(String)
 }
@@ -223,12 +212,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var microphone = Microphone()
     private let pill = RecordingPill()
     private var resultPanel: NSPanel?
-    private var previewApply: (pid: pid_t, focus: FocusIdentity, selection: AXSelection, token: UInt64, text: String)?
+    private var previewApply: (pid: pid_t, window: AXUIElement?, selection: AXSelection, token: UInt64, text: String)?
     private var config: HostProfile!
     private var configURL: URL!
     private var taskID: UInt64 = 0
     private var targetPID: pid_t = 0
-    private var targetFocus: FocusIdentity?
+    private var targetWindow: AXUIElement?
     private var selectedAtPress: AXSelection?
     private var pending: Bool { VRSnapshot(0, 0).armed == 0 && taskID != 0 }
 
@@ -312,7 +301,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             guard let self, self.previewApply?.token == request.token,
                   self.taskID == 0, VRSnapshot(0, request.token).valid == 1 else { return }
             self.targetPID = request.pid
-            self.targetFocus = request.focus
+            self.targetWindow = request.window
             self.taskID = request.token
             defer { self.clearSession() }
             guard self.targetStillValid(),
@@ -428,7 +417,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             let token = press.token
             guard token != 0 else { return false }
             targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
-            targetFocus = FocusIdentity(window: focusedWindow(), element: nil)
+            targetWindow = focusedWindow()
             selectedAtPress = nil
             taskID = 0
             do { try microphone.start(maximumSeconds: config.maximumSeconds) }
@@ -439,10 +428,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async { [weak self] in
                     guard let self, VRSnapshot(key, token).can_activate == 1 else { return }
                     self.selectedAtPress = self.selectionFromAX()
-                    if self.selectedAtPress != nil {
-                        self.targetFocus = FocusIdentity(window: self.targetFocus?.window,
-                                                         element: self.focusedElement())
-                    }
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -566,8 +551,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func presentPreview(_ text: String, title: String?, selection: AXSelection? = nil) {
         resultPanel?.close()
         previewApply = nil
-        if let selection, let targetFocus, taskID != 0 {
-            previewApply = (targetPID, targetFocus, selection, taskID, text)
+        if let selection, taskID != 0 {
+            previewApply = (targetPID, targetWindow, selection, taskID, text)
         }
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 500, height: 310),
                             styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
@@ -704,11 +689,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
 
     private func targetStillValid() -> Bool {
         guard VRSnapshot(0, taskID).valid == 1,
-              NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID,
-              let targetFocus else { return false }
-        let window = targetFocus.window == nil ? nil : focusedWindow()
-        return targetFocus.matches(window: window,
-                                   element: targetFocus.element == nil ? nil : focusedElement())
+              NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { return false }
+        guard let targetWindow else { return true }
+        return focusedWindow().map { CFEqual(targetWindow, $0) } == true
     }
 
     private func paste(_ text: String) -> Bool {
@@ -790,7 +773,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
 
     private func clearSession() {
         VRCommand(Int32(VR_COMMAND_ABANDON), 0, 0, 0)
-        targetFocus = nil
+        targetWindow = nil
         selectedAtPress = nil
         taskID = 0
     }
