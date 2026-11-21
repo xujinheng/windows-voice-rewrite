@@ -44,9 +44,11 @@ When the selection is inaccessible through AX, the app tries Cmd+C on release
 and restores the original clipboard contents when its snapshot is supported and
 the copied clipboard entry is still current. Browser page text, PDFs and other
 noneditable selections can still be rewritten or explained in the result preview
-with a Copy action; the app never pastes into an unverified editor. It skips the
-clipboard fallback if it cannot back up the clipboard safely or the target
-changed. The app does not retry an uncertain paste. `Sent ✓` means an input
+with a Copy action. For requested replacement, the native host attempts paste
+only into the original focused app and still-matching selection, even when AX
+does not report a writable value. A paste event does not prove the editor
+accepted it. It skips clipboard fallback if it cannot safely snapshot the
+clipboard or the original target changed. The app does not retry an uncertain paste. `Sent ✓` means an input
 event was sent, **not** that insertion was confirmed.
 
 Development downloads from GitHub Actions contain one DMG in the GitHub artifact
