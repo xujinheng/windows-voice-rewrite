@@ -10,7 +10,8 @@ func TestVoiceShortcutNormalization(t *testing.T) {
 		raw, want string
 		ok        bool
 	}{
-		{"Mouse4", "Mouse4", true}, {"xbutton2", "Mouse5", true},
+		{"Mouse4", "Mouse4", true}, {"xbutton1", "Mouse4", true},
+		{"mOuSe5", "Mouse5", true}, {" XBUTTON2 ", "Mouse5", true},
 		{"f8", "F8", true}, {"F24", "F24", true},
 		{"Ctrl+p", "Ctrl+P", true}, {"ctrl+alt+shift+f8", "Ctrl+Alt+Shift+F8", true},
 		{"Alt+PageDown", "Alt+PageDown", true},
@@ -62,6 +63,10 @@ func TestDictationAndRewriteShortcutCollisions(t *testing.T) {
 }
 
 func TestStartupHotkeyRulesKeepWindowsOrder(t *testing.T) {
+	alias, err := ValidateStartup("hold", "xbutton1", "mOuSe5", "Ctrl+Alt+F10")
+	if err != nil || !alias.DictationMouse || alias.DictationButton != 1 || !alias.RewriteMouse || alias.RewriteButton != 2 {
+		t.Fatalf("aliases %#v %v", alias, err)
+	}
 	ready, err := ValidateStartup("hold", "Mouse4", "Mouse5", "Ctrl+Alt+F10")
 	if err != nil || !ready.DictationMouse || !ready.RewriteMouse || ready.DictationButton != 1 || ready.RewriteButton != 2 {
 		t.Fatalf("defaults %#v %v", ready, err)
