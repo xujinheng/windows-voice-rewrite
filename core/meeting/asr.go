@@ -1,7 +1,6 @@
 package meeting
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -181,42 +180,21 @@ func (s *ASRState) Transcribe(ctx context.Context, cfg coreconfig.Config, pcm []
 			raw.WriteString(result.Choices[0].Message.Content)
 			publish()
 		}
-	} else {
-		scanner := bufio.NewScanner(io.LimitReader(resp.Body, 1<<20))
-		scanner.Buffer(make([]byte, 8192), 128<<10)
-		done := false
-		for scanner.Scan() {
-			data, ok := strings.CutPrefix(scanner.Text(), "data:")
-			if !ok {
-				continue
-			}
-			data = strings.TrimSpace(data)
-			if data == "[DONE]" {
-				done = true
-				break
-			}
-			var chunk completion
-			if err = json.Unmarshal([]byte(data), &chunk); err != nil {
-				return "", errors.New("ASR 流式响应格式错误")
-			}
-			if chunk.Error != nil {
-				return "", errors.New("ASR 服务返回流式错误")
-			}
-			if len(chunk.Choices) > 0 {
-				observed = observed || chunk.Choices[0].Delta.Content != "" || chunk.Choices[0].FinishReason == "stop"
-				if chunk.Choices[0].FinishReason == "length" {
-					return "", errors.New("ASR 输出达到长度限制，请缩短音频段")
-				}
-				raw.WriteString(chunk.Choices[0].Delta.Content)
-				publish()
-			}
+	} else if err = scanCompletions(resp.Body, "ASR 流式响应格式错误", "ASR 响应提前结束", func(chunk completion) error {
+		if chunk.Error != nil {
+			return errors.New("ASR 服务返回流式错误")
 		}
-		if err = scanner.Err(); err != nil {
-			return "", err
+		if len(chunk.Choices) > 0 {
+			observed = observed || chunk.Choices[0].Delta.Content != "" || chunk.Choices[0].FinishReason == "stop"
+			if chunk.Choices[0].FinishReason == "length" {
+				return errors.New("ASR 输出达到长度限制，请缩短音频段")
+			}
+			raw.WriteString(chunk.Choices[0].Delta.Content)
+			publish()
 		}
-		if !done {
-			return "", errors.New("ASR 响应提前结束")
-		}
+		return nil
+	}); err != nil {
+		return "", err
 	}
 	if ctx.Err() != nil {
 		return "", ctx.Err()

@@ -90,6 +90,35 @@ type completion struct {
 	} `json:"choices"`
 }
 
+// scanCompletions owns the SSE frame limit, JSON decoding and [DONE] state
+// for both Meeting ASR and text-model streams. Each consumer owns its own
+// completion semantics and recovery wording.
+func scanCompletions(r io.Reader, malformed, incomplete string, consume func(completion) error) error {
+	scanner := bufio.NewScanner(io.LimitReader(r, 1<<20))
+	scanner.Buffer(make([]byte, 8192), 128<<10)
+	for scanner.Scan() {
+		data, ok := strings.CutPrefix(scanner.Text(), "data:")
+		if !ok {
+			continue
+		}
+		data = strings.TrimSpace(data)
+		if data == "[DONE]" {
+			return nil
+		}
+		var chunk completion
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			return errors.New(malformed)
+		}
+		if err := consume(chunk); err != nil {
+			return err
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	return errors.New(incomplete)
+}
+
 func VisibleText(text string) string {
 	text = provider.ThinkingTag.ReplaceAllString(text, "")
 	if at := strings.Index(text, "<think>"); at >= 0 {
@@ -106,30 +135,14 @@ func VisibleText(text string) string {
 }
 
 func ReadStream(r io.Reader, emit func(Line), textSink ...func(string)) error {
-	scan := bufio.NewScanner(io.LimitReader(r, 1<<20))
-	scan.Buffer(make([]byte, 8192), 128<<10)
 	var content strings.Builder
 	emitted := 0
-	done := false
-	for scan.Scan() {
-		data, ok := strings.CutPrefix(scan.Text(), "data:")
-		if !ok {
-			continue
-		}
-		data = strings.TrimSpace(data)
-		if data == "[DONE]" {
-			done = true
-			break
-		}
-		var chunk completion
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			return errors.New("无法解析会议模型的流式响应")
-		}
+	err := scanCompletions(r, "无法解析会议模型的流式响应", "会议模型响应提前结束", func(chunk completion) error {
 		if chunk.Error != nil {
 			return errors.New("会议模型返回流式错误")
 		}
 		if len(chunk.Choices) == 0 {
-			continue
+			return nil
 		}
 		if reason := chunk.Choices[0].FinishReason; reason != "" && reason != "stop" {
 			return errors.New("会议模型输出未完整结束")
@@ -149,12 +162,10 @@ func ReadStream(r io.Reader, emit func(Line), textSink ...func(string)) error {
 		if len(lines[len(lines)-1]) > 16<<10 {
 			return errors.New("会议模型返回的单行过长")
 		}
-	}
-	if err := scan.Err(); err != nil {
+		return nil
+	})
+	if err != nil {
 		return err
-	}
-	if !done {
-		return errors.New("会议模型响应提前结束")
 	}
 	lines := strings.Split(VisibleText(content.String()), "\n")
 	for emitted < len(lines) {
