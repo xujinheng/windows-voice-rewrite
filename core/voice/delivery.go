@@ -17,9 +17,9 @@ const (
 // Failed means native delivery was rejected, or a paste could not be confirmed
 // as sent; an uncertain paste must never be retried automatically.
 type DeliveryFacts struct {
-	TargetCurrent    bool
+	TargetCurrent      bool
 	SelectionAvailable bool
-	Failed           bool
+	Failed             bool
 }
 
 // DecideDelivery is the single policy for insert, replace and recoverable
