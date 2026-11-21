@@ -41,7 +41,8 @@ func ListModels(ctx context.Context, baseURL, apiKey string) ([]string, error) {
 		return nil, fmt.Errorf("无法连接模型 API: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
+	// A 204 response has no JSON model list; preserve the HTTP status for probes.
+	if resp.StatusCode == http.StatusNoContent || resp.StatusCode/100 != 2 {
 		return nil, HTTPError("查询模型列表失败", resp.StatusCode)
 	}
 	var response struct {
