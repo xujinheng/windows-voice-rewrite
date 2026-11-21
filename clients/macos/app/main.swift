@@ -238,6 +238,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Copy last result", action: #selector(copyResult), keyEquivalent: "c"))
         menu.addItem(NSMenuItem(title: "Reload config", action: #selector(reload), keyEquivalent: "r"))
+        menu.addItem(NSMenuItem(title: "Show config in Finder", action: #selector(showConfig), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         for entry in menu.items where entry.action != nil { entry.target = self }
         item.menu = menu
@@ -264,10 +265,24 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     @objc private func reload() {
         guard VRSnapshot(0, 0).armed == 0 && !pending else { show("Reload after current task"); return }
         do {
-            let json = try String(contentsOf: configURL, encoding: .utf8)
+            let json: String
+            var firstRun = false
+            do {
+                json = try String(contentsOf: configURL, encoding: .utf8)
+            } catch {
+                let failure = error as NSError
+                guard failure.domain == NSCocoaErrorDomain && failure.code == NSFileReadNoSuchFileError else { throw error }
+                json = "{}" // Go Core supplies the defaults, including macOS shortcut bindings.
+                firstRun = true
+            }
             guard let profile = try GoCore.request(config: json,
                                                    audio: Data(), selection: nil).profile
             else { throw HostError.config("missing Go host profile") }
+            if firstRun {
+                try FileManager.default.createDirectory(at: configURL.deletingLastPathComponent(),
+                                                        withIntermediateDirectories: true)
+                try json.write(to: configURL, atomically: true, encoding: .utf8)
+            }
             config = profile
             pill.configure(profile.pill)
             show("VR")
@@ -276,6 +291,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             fputs("VoiceRewrite config: \(error)\n", stderr)
         }
     }
+    @objc private func showConfig() { NSWorkspace.shared.activateFileViewerSelecting([configURL]) }
     @objc private func copyResult() {
         guard let result = VRLatestResult() else { show("No result"); return }
         defer { VRFree(result) }
