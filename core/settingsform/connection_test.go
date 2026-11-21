@@ -57,12 +57,18 @@ func TestMacOSInputFormShowsOnlySupportedControls(t *testing.T) {
 	form := ConnectionForm()
 	visible := map[string]bool{}
 	for _, field := range form.Controls {
-		if field.Page == "input" { visible[field.ID] = true }
+		if field.Page == "input" {
+			visible[field.ID] = true
+		}
 	}
 	for _, id := range []string{"rewrite_shortcut", "dictation_shortcut", "capture_rewrite", "capture_dictation", "max_record_seconds", "input_note_macos"} {
-		if !visible[id] { t.Fatalf("missing supported setting %s", id) }
+		if !visible[id] {
+			t.Fatalf("missing supported setting %s", id)
+		}
 	}
 	for _, id := range []string{"microphone", "record_mode", "meeting_asr_mode", "exit_shortcut"} {
-		if visible[id] { t.Fatalf("unsupported native field %s", id) }
+		if visible[id] {
+			t.Fatalf("unsupported native field %s", id)
+		}
 	}
 }
