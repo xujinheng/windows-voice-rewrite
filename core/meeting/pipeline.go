@@ -53,7 +53,6 @@ type Pipeline struct {
 	mu             sync.Mutex
 	epoch          uint64
 	latestFinal    uint64
-	revision       uint64
 	latestRevision map[uint64]uint64
 	activeCancel   context.CancelFunc
 	activeID       uint64
@@ -215,9 +214,9 @@ func (p *Pipeline) transcribeTurn(turn AudioTurn, state *ASRState) {
 	}
 	var job CaptionTask
 	if err == nil {
-		p.revision++
+		// The revision belongs to this turn; epoch and ID reject other turns.
 		// Only a bounded number of recent utterances can receive translations.
-		p.latestRevision[turn.ID] = p.revision
+		p.latestRevision[turn.ID]++
 		if turn.ID > 64 {
 			delete(p.latestRevision, turn.ID-64)
 		}
@@ -227,7 +226,7 @@ func (p *Pipeline) transcribeTurn(turn AudioTurn, state *ASRState) {
 			prior = p.hooks.OnTranscript(turn, latest, state.StablePrefix())
 		}
 		job = CaptionTask{
-			ID: turn.ID, Epoch: turn.Epoch, Version: p.revision, Final: turn.Final,
+			ID: turn.ID, Epoch: turn.Epoch, Version: p.latestRevision[turn.ID], Final: turn.Final,
 			Latest: latest, Prior: prior, Ended: turn.Ended, Context: turn.Context,
 		}
 	}

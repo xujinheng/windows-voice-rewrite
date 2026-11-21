@@ -20,6 +20,36 @@ func receivePipeline[T any](t *testing.T, ch <-chan T) T {
 	}
 }
 
+// Translation versions are scoped to a turn. A newer revision of turn A
+// must not invalidate the current translation of independent turn B.
+func TestPipelineRevisionOwnershipPerTurn(t *testing.T) {
+	runtime := NewSessionRuntime()
+	defer runtime.Stop()
+	work, epoch, _ := runtime.Snapshot()
+	firstID, _ := runtime.NextTurn(epoch)
+	secondID, _ := runtime.NextTurn(epoch)
+	p := NewPipeline(runtime, PipelineHooks{
+		Transcribe: func(context.Context, *ASRState, AudioTurn, func(string)) (string, error) {
+			return "transcript", nil
+		},
+	})
+	capture := func(id uint64) CaptionTask {
+		turn := AudioTurn{Context: work, Epoch: epoch, ID: id}
+		p.QueueAudio(turn)
+		p.transcribeTurn(turn, &ASRState{})
+		return <-p.captions
+	}
+	first := capture(firstID)
+	second := capture(secondID)
+	revised := capture(firstID)
+	p.mu.Lock()
+	oldValid, secondValid, revisedValid := p.currentLocked(first), p.currentLocked(second), p.currentLocked(revised)
+	p.mu.Unlock()
+	if first.Version != 1 || second.Version != 1 || revised.Version != 2 || oldValid || !secondValid || !revisedValid {
+		t.Fatalf("versions first=%d second=%d revised=%d valid=(%t,%t,%t)", first.Version, second.Version, revised.Version, oldValid, secondValid, revisedValid)
+	}
+}
+
 func TestPipelineFinalCancelsActivePreview(t *testing.T) {
 	r := NewSessionRuntime()
 	defer r.Stop()
