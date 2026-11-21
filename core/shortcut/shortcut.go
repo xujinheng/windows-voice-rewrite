@@ -294,7 +294,7 @@ func ValidateStartup(mode, dictation, rewrite, exit string) (Startup, error) {
 		}
 		out.DictationMods, out.DictationVK = dictationMods, dictationVK
 	}
-	if dictationMouse && rewriteMouse && dictationButton == rewriteButton {
+	if dictationMouse && rewriteMouse && out.DictationButton == out.RewriteButton {
 		return Startup{}, errors.New(SameMouseMessage)
 	}
 	if mode != "hold" && !dictationMouse {
