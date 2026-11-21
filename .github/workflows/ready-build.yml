@@ -99,10 +99,22 @@ jobs:
           test "$(uname -m)" = '${{ matrix.arch }}'
           bash scripts/build-macos-headless.sh '${{ matrix.arch }}' "$RUNNER_TEMP/ready"
           codesign --verify --deep --strict "$RUNNER_TEMP/ready/VoiceRewrite.app"
-      - name: Upload developer app (no DMG or ZIP)
+      - name: Package and verify complete developer app
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/ready/VoiceRewrite.app"
+          archive="$RUNNER_TEMP/ready/VoiceRewrite-Ready-macOS-${{ matrix.arch }}.zip"
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
+          unpacked="$(mktemp -d)"
+          trap 'rm -rf "$unpacked"' EXIT
+          /usr/bin/ditto -x -k "$archive" "$unpacked"
+          test -x "$unpacked/VoiceRewrite.app/Contents/MacOS/VoiceRewrite"
+          /usr/bin/codesign --verify --deep --strict "$unpacked/VoiceRewrite.app"
+      - name: Upload developer app ZIP
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: VoiceRewrite-Ready-macOS-${{ matrix.arch }}
-          path: ${{ runner.temp }}/ready/VoiceRewrite.app
+          path: ${{ runner.temp }}/ready/VoiceRewrite-Ready-macOS-${{ matrix.arch }}.zip
           retention-days: 14
           if-no-files-found: error
