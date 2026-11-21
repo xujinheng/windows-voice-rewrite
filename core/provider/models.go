@@ -19,6 +19,10 @@ type modelItem struct {
 	ID string `json:"id"`
 }
 
+// ErrInvalidModelsResponse distinguishes a malformed 200 response from a
+// transport or HTTP status failure without a second response parser.
+var ErrInvalidModelsResponse = errors.New("无效的模型列表 JSON")
+
 // ListModels is the single model-list reader for both native hosts.
 // Keep provider response order, deduplicate IDs and bound untrusted results.
 func ListModels(ctx context.Context, baseURL, apiKey string) ([]string, error) {
@@ -44,7 +48,7 @@ func ListModels(ctx context.Context, baseURL, apiKey string) ([]string, error) {
 		Data []modelItem `json:"data"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&response); err != nil {
-		return nil, fmt.Errorf("无效的模型列表 JSON: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrInvalidModelsResponse, err)
 	}
 	seen := make(map[string]struct{})
 	models := make([]string, 0, len(response.Data))
