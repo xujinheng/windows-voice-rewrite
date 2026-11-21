@@ -63,9 +63,11 @@ No settings GUI, Meeting or full history panel. Go Core supplies the
 result text, title and `insert`/`replace`/`preview` route. macOS checks the
 actual editor and attempts the native paste; if it cannot, the result remains
 available in a small selectable AppKit preview with a **Copy result** button.
-The menu-bar **Copy last result** uses the same Go Core history. Unlike Windows,
-the preview has no **Apply to original** button. No second delivery reducer or
-separate ABI protocol is needed.
+The menu-bar **Copy last result** uses the same Go Core history. Failed or
+unavailable replacement also offers **Apply to original**, which requires the
+original app and selected text to remain verifiably unchanged. The preview
+stays visible above background apps. No separate delivery reducer or protocol
+is needed.
 
 CI compilation is not physical end-to-end acceptance. Validate both modifier
 keys, Mouse4/Mouse5, microphone permissions, dictation and rewritten selections
