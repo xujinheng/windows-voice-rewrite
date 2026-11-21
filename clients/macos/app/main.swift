@@ -523,7 +523,23 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                     self.pill.working(.applying)
                                     self.show(self.config.pill.applyingLabel)
                                 }
-                                if !self.paste(text) { self.presentPreview(text, title: value.title, selection: selected) }
+                                if !self.paste(text) {
+                                    self.presentPreview(text, title: value.title)
+                                } else if value.route == "replace", let selected, let focus = self.targetFocus {
+                                    let pid = self.targetPID
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.27) { [weak self] in
+                                        guard let self, VRSnapshot(0, token).valid == 1,
+                                              VRSnapshot(0, 0).armed == 0,
+                                              self.targetPID == pid,
+                                              NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+                                              focus.matches(window: focus.window == nil ? nil : self.focusedWindow(),
+                                                            element: focus.element == nil ? nil : self.focusedElement()),
+                                              selected.matches(self.selectionFromAX()) else { return }
+                                        // An unchanged selection suggests the editor ignored Cmd+V.
+                                        // Never send an uncertain paste a second time.
+                                        self.presentPreview(text, title: value.title)
+                                    }
+                                }
                             } else {
                                 self.presentPreview(text, title: value.title,
                                                     selection: value.route == "replace" ? selected : nil)
