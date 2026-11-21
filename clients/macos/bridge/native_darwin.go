@@ -73,7 +73,7 @@ func VRSnapshot(code C.int, token C.uint64_t) C.VRCoreState {
 }
 
 //export VRDelivery
-func VRDelivery(token C.uint64_t, route *C.char, targetCurrent, selectionCurrent, failed C.int) C.int {
+func VRDelivery(token C.uint64_t, route *C.char, targetCurrent, selectionAvailable, failed C.int) C.int {
 	if route == nil {
 		return C.int(voice.DeliveryDrop)
 	}
@@ -81,7 +81,7 @@ func VRDelivery(token C.uint64_t, route *C.char, targetCurrent, selectionCurrent
 		voice.Result{Route: C.GoString(route)},
 		voice.DeliveryFacts{
 			TargetCurrent:    targetCurrent != 0,
-			SelectionCurrent: selectionCurrent != 0,
+			SelectionAvailable: selectionAvailable != 0,
 			Failed:           failed != 0,
 		}))
 }
