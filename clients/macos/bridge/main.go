@@ -76,6 +76,8 @@ func headlessProfile(raw json.RawMessage) response {
 		"mouseDelayMS":   int(voice.SideHoldThreshold / time.Millisecond),
 		"pill":           indicator.HostSpec(),
 		"copyLabel":      ux.CopyAction,
+		"applyLabel":     ux.ApplyAction,
+		"applyUnsafeLabel": ux.ApplyUnsafe,
 	}}
 	if len(provided) == 0 {
 		// Only a new install receives generated defaults. Never echo user credentials.
