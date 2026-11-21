@@ -63,6 +63,21 @@ func TestMeetingReadingPanelsKeepActiveTurnOutOfHistory(t *testing.T) {
 	}
 }
 
+// Empty captions and a zero-ID demo entry must not alter the reading order.
+// Only completed turns before the most recent readable caption enter history.
+func TestMeetingReadingPanelsSkipEmptyAndUnfinishedHistory(t *testing.T) {
+	captions := []Caption{
+		{Source: "  first  ", Chinese: "  第一  ", Final: true},
+		{Source: "  ", Final: true},
+		{Source: "unfinished", Final: false},
+		{Source: "last", Final: true},
+	}
+	view := BuildReadingPanels(captions)
+	if view.English != "last" || view.HistoryCount != 1 || view.History != "第一\r\nfirst" {
+		t.Fatalf("unexpected history or active turn: %#v", view)
+	}
+}
+
 func TestMeetingReadingPanelsEmptyOrLongSession(t *testing.T) {
 	if got := BuildReadingPanels(nil); got.HistoryCount != 0 || got.English == "" || got.Chinese == "" {
 		t.Fatalf("empty layout did not provide placeholders: %#v", got)
