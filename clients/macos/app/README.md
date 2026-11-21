@@ -18,7 +18,8 @@ open dist/VoiceRewrite.app
 The first launch writes a readable `~/.config/voicerewrite/config.json` when it
 is absent. It serializes the normalized shared Go Core configuration, including
 the supported macOS shortcut bindings; Swift does not maintain its own settings
-schema or defaults. Existing or invalid config files are never overwritten.
+schema or defaults. A legacy file containing only `{}` is expanded once
+using Go Core's serializer; custom settings and invalid files are never overwritten.
 ASR (and LLM for rewriting) must still run separately; the default localhost
 URLs do not start those servers.
 Use the menu-bar **Show config in Finder** to locate the file and **Reload config**
