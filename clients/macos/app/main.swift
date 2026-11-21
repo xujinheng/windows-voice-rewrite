@@ -700,20 +700,18 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let source = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {
-            reset("Paste unavailable")
             return false
         }
         let board = NSPasteboard.general
         let stamp = board.changeCount
         guard let saved = snapshotClipboard(board) else { return pasteUnicode(text) }
-        guard board.changeCount == stamp else { reset("Clipboard changed"); return false }
-        guard targetStillValid() else { reset("Focus changed"); return false }
+        guard board.changeCount == stamp else { return false }
+        guard targetStillValid() else { return false }
         board.clearContents()
         let cleared = board.changeCount
         guard board.setString(text, forType: .string) else {
             // Failed writes must not erase a newer clipboard owner.
             if board.changeCount == cleared && !saved.isEmpty { _ = board.writeObjects(saved) }
-            reset("Paste failed")
             return false
         }
         let lease = board.changeCount
@@ -721,7 +719,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         up.flags = .maskCommand
         guard board.changeCount == lease, targetStillValid() else {
             if board.changeCount == lease { board.clearContents(); _ = board.writeObjects(saved) }
-            reset("Focus or clipboard changed"); return false
+            return false
         }
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
@@ -739,11 +737,11 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let source = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: false)
-        else { reset("Paste unavailable"); return false }
+        else { return false }
         let units = Array(text.utf16)
         var start = 0
         while start < units.count {
-            guard targetStillValid() else { reset("Focus changed"); return false }
+            guard targetStillValid() else { return false }
             var end = min(start + 20, units.count)
             if end < units.count && (0xD800...0xDBFF).contains(units[end - 1]) { end -= 1 }
             for event in [down, up] {
