@@ -128,19 +128,6 @@ func FromKey(vk, modifiers uint32) (string, error) {
 	return strings.Join(append(parts, name), "+"), nil
 }
 
-// WindowsSideButton maps a stored shortcut to the XBUTTON id used by the mouse hook.
-// Mouse4 is XBUTTON1 (1) and Mouse5 is XBUTTON2 (2).
-func WindowsSideButton(s string) (uint16, bool) {
-	name, _, _, mouse, _ := Parse(s)
-	if !mouse {
-		return 0, false
-	}
-	if name == "Mouse4" {
-		return 1, true
-	}
-	return 2, true
-}
-
 // Parse returns the canonical shortcut, modifier bits, virtual key, and whether
 // the value is a mouse side button. Keyboard modifiers include the no-repeat bit.
 func Parse(raw string) (string, uint32, uint32, bool, error) {
@@ -286,18 +273,26 @@ type Startup struct {
 // keep the parser's own message. An exit shortcut cannot be a mouse button.
 func ValidateStartup(mode, dictation, rewrite, exit string) (Startup, error) {
 	var out Startup
-	dictationButton, dictationMouse := WindowsSideButton(dictation)
-	rewriteButton, rewriteMouse := WindowsSideButton(rewrite)
-	out.DictationMouse = dictationMouse
-	out.DictationButton = dictationButton
-	out.RewriteMouse = rewriteMouse
-	out.RewriteButton = rewriteButton
+	dictationName, dictationMods, dictationVK, dictationMouse, dictationErr := Parse(dictation)
+	rewriteName, rewriteMods, rewriteVK, rewriteMouse, rewriteErr := Parse(rewrite)
+	out.DictationMouse, out.RewriteMouse = dictationMouse, rewriteMouse
+	if dictationMouse {
+		out.DictationButton = 1
+		if dictationName == "Mouse5" {
+			out.DictationButton = 2
+		}
+	}
+	if rewriteMouse {
+		out.RewriteButton = 1
+		if rewriteName == "Mouse5" {
+			out.RewriteButton = 2
+		}
+	}
 	if !dictationMouse {
-		_, mods, vk, _, err := Parse(dictation)
-		if err != nil || vk == 0 || vk == pauseVK {
+		if dictationErr != nil || dictationVK == 0 || dictationVK == pauseVK {
 			return Startup{}, errors.New(DictationInvalidMessage)
 		}
-		out.DictationMods, out.DictationVK = mods, vk
+		out.DictationMods, out.DictationVK = dictationMods, dictationVK
 	}
 	if dictationMouse && rewriteMouse && dictationButton == rewriteButton {
 		return Startup{}, errors.New(SameMouseMessage)
@@ -310,14 +305,13 @@ func ValidateStartup(mode, dictation, rewrite, exit string) (Startup, error) {
 			return Startup{}, errors.New(MouseHoldMessage)
 		}
 	} else {
-		_, mods, vk, _, err := Parse(rewrite)
-		if err != nil {
-			return Startup{}, err
+		if rewriteErr != nil {
+			return Startup{}, rewriteErr
 		}
-		if vk == 0 {
+		if rewriteVK == 0 {
 			return Startup{}, errors.New(KeyRejectedMessage)
 		}
-		out.RewriteMods, out.RewriteVK = mods, vk
+		out.RewriteMods, out.RewriteVK = rewriteMods, rewriteVK
 	}
 	_, exitMods, exitVK, exitMouse, err := Parse(exit)
 	if err != nil {
