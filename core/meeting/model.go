@@ -177,7 +177,7 @@ func ReadStream(r io.Reader, emit func(Line), onContent ...func(string)) error {
 				}
 				skipSpace = false
 			}
-			tag += string(b)
+			tag += delta[i : i+1]
 			for len(tag) > 0 {
 				if thinking {
 					if strings.HasPrefix("</think>", tag) {
