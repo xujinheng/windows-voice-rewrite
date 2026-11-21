@@ -138,7 +138,19 @@ func VisibleText(text string) string {
 // SSE deltas a second time.
 func ReadStream(r io.Reader, emit func(Line), onContent ...func(string)) error {
 	var content strings.Builder
-	emitted := 0
+	var line []byte
+	var tag string // At most a partial <think> or </think> across SSE deltas.
+	thinking, skipSpace := false, false
+	appendVisible := func(b byte) {
+		if b == '\n' {
+			if parsed, ok := ParseLine(string(line)); ok {
+				emit(parsed)
+			}
+			line = line[:0]
+		} else {
+			line = append(line, b)
+		}
+	}
 	err := scanCompletions(r, "无法解析会议模型的流式响应", "会议模型响应提前结束", func(chunk completion) error {
 		if chunk.Error != nil {
 			return errors.New("会议模型返回流式错误")
@@ -154,14 +166,43 @@ func ReadStream(r io.Reader, emit func(Line), onContent ...func(string)) error {
 		if len(onContent) > 0 {
 			onContent[0](content.String())
 		}
-		lines := strings.Split(VisibleText(content.String()), "\n")
-		for emitted < len(lines)-1 {
-			if line, ok := ParseLine(lines[emitted]); ok {
-				emit(line)
+		// Do not rescan earlier completions or thought text: only unfinished
+		// tag prefixes and the current visible line survive across deltas.
+		for i := 0; i < len(delta); i++ {
+			b := delta[i]
+			if skipSpace {
+				switch b {
+				case ' ', '\t', '\r', '\n', '\f':
+					continue
+				}
+				skipSpace = false
 			}
-			emitted++
+			tag += delta[i : i+1]
+			for len(tag) > 0 {
+				if thinking {
+					if strings.HasPrefix("</think>", tag) {
+						if tag == "</think>" {
+							tag, thinking, skipSpace = "", false, true
+						}
+						break
+					}
+					tag = tag[1:]
+					continue
+				}
+				if strings.HasPrefix("<think>", tag) {
+					if tag == "<think>" {
+						thinking, tag = true, ""
+					}
+					break
+				}
+				if strings.HasPrefix("</think>", tag) && tag != "</think>" {
+					break
+				}
+				appendVisible(tag[0])
+				tag = tag[1:]
+			}
 		}
-		if len(lines[len(lines)-1]) > 16<<10 {
+		if len(line) > 16<<10 {
 			return errors.New("会议模型返回的单行过长")
 		}
 		return nil
@@ -169,12 +210,8 @@ func ReadStream(r io.Reader, emit func(Line), onContent ...func(string)) error {
 	if err != nil {
 		return err
 	}
-	lines := strings.Split(VisibleText(content.String()), "\n")
-	for emitted < len(lines) {
-		if line, ok := ParseLine(lines[emitted]); ok {
-			emit(line)
-		}
-		emitted++
+	if parsed, ok := ParseLine(string(line)); ok {
+		emit(parsed)
 	}
 	return nil
 }

@@ -231,3 +231,76 @@ func TestMeetingStreamRejectsTruncationAndHidesThoughtLines(t *testing.T) {
 		t.Fatalf("thoughts leaked: %#v", got)
 	}
 }
+
+func TestMeetingStreamIncrementalThinkingAcrossEveryChunkBoundary(t *testing.T) {
+	cases := []string{
+		"ONE\tReady\t好了\nTWO\tAnother\t另一个\n",
+		"<think>analysis\nONE\tHidden\t隐藏\n</think> \r\nONE\tDone\t完成\n",
+		"ONE\tPrefix<think>hidden\n</think> after\t原文\n",
+		"ONE\tA\t前\n<think>thinking</think> \nTWO\tB\t后\n",
+		"ONE\tPartial\t中文<thi",
+		"ONE\tPartial\t中文</thi",
+		"ONE\tVisible\t保留\n<think>unfinished\nTWO\tHidden\t不显示",
+		"ONE\tStandalone\t中文\n</think>\nTWO\tAfter\t之后\n",
+		"<think></think>ONE\tClean\t中文",
+		"ONE<TAB>English<TAB>中文\nTHREE<TAB>Later<TAB>以后",
+	}
+	for n, input := range cases {
+		var want []Line
+		for _, raw := range strings.Split(VisibleText(input), "\n") {
+			if line, ok := ParseLine(raw); ok {
+				want = append(want, line)
+			}
+		}
+		runes := []rune(input)
+		for _, width := range []int{1, 2, 3, 5, 7, len(runes)} {
+			var stream strings.Builder
+			for i := 0; i < len(runes); i += width {
+				end := min(i+width, len(runes))
+				chunk, err := json.Marshal(map[string]any{
+					"choices": []any{map[string]any{"delta": map[string]string{"content": string(runes[i:end])}}},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				fmt.Fprintf(&stream, "data: %s\n\n", chunk)
+			}
+			stream.WriteString("data: [DONE]\n\n")
+			var got []Line
+			if err := ReadStream(strings.NewReader(stream.String()), func(line Line) { got = append(got, line) }); err != nil {
+				t.Fatalf("case %d, width %d: %v", n, width, err)
+			}
+			if len(got) != len(want) {
+				t.Fatalf("case %d, width %d: lines %#v, want %#v", n, width, got, want)
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Fatalf("case %d, width %d, line %d: %#v, want %#v", n, width, i, got[i], want[i])
+				}
+			}
+		}
+	}
+}
+
+func TestMeetingStreamLongLineBoundsOnlyUnfinishedTail(t *testing.T) {
+	long := "ONE\t" + strings.Repeat("x", 16<<10) + "\t中文"
+	frame, err := json.Marshal(map[string]any{
+		"choices": []any{map[string]any{"delta": map[string]string{"content": long}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ReadStream(strings.NewReader(fmt.Sprintf("data: %s\n\ndata: [DONE]\n\n", frame)), func(Line) {}); err == nil {
+		t.Fatal("long unfinished line was accepted")
+	}
+	frame, err = json.Marshal(map[string]any{
+		"choices": []any{map[string]any{"delta": map[string]string{"content": long + "\n"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []Line
+	if err := ReadStream(strings.NewReader(fmt.Sprintf("data: %s\n\ndata: [DONE]\n\n", frame)), func(line Line) { got = append(got, line) }); err != nil || len(got) != 1 {
+		t.Fatalf("completed line was rejected: lines=%d err=%v", len(got), err)
+	}
+}
