@@ -472,7 +472,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     }
                 }
             }
-            let selected = rewrite ? (selectedAtPress ?? selectionFromAX()) : nil
+            // Prefer the press-time selection; never adopt another app's
+            // selection after focus changed during recording.
+            let selected = rewrite ? (selectedAtPress ?? (targetStillValid() ? selectionFromAX() : nil)) : nil
             if rewrite && selected == nil && targetStillValid() {
                 // Browser text can be copyable even when AXSelectedText is absent.
                 copySelection(token: token) { text in
