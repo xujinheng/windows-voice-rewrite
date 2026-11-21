@@ -44,12 +44,14 @@ When the selection is inaccessible through AX, the app tries Cmd+C on release
 and restores the original clipboard contents when its snapshot is supported and
 the copied clipboard entry is still current. Browser page text, PDFs and other
 noneditable selections can still be rewritten or explained in the result preview
-with a Copy action. For requested replacement, the native host attempts paste
-only into the original focused app and still-matching selection, even when AX
-does not report a writable value. A paste event does not prove the editor
-accepted it. It skips clipboard fallback if it cannot safely snapshot the
-clipboard or the original target changed. The app does not retry an uncertain paste. `Sent ✓` means an input
-event was sent, **not** that insertion was confirmed.
+with a Copy action. For requested replacement, the native host checks the original application
+and window, then confirms the selected text. If the browser no longer exposes
+its AX selection, it reuses native Cmd+C to verify the original selection before
+pasting. It does not require the AX focused element to retain the same proxy
+identity or infer paste failure from a possibly stale post-paste AX snapshot.
+If neither AX nor clipboard can verify the selection, the result stays in the
+preview. A paste event is not proof that the editor accepted the text and the
+app never retries an uncertain paste. `Sent ✓` means the input event was sent.
 
 Development downloads from GitHub Actions contain one DMG in the GitHub artifact
 ZIP. Extract the download once, open the DMG, and drag `VoiceRewrite.app` into

@@ -18,17 +18,6 @@ struct AXSelection {
     }
 }
 
-// Match available AX identities; ordinary dictation need not have AX attributes.
-struct FocusIdentity {
-    let window: AXUIElement?
-    let element: AXUIElement?
-
-    func matches(window: AXUIElement?, element: AXUIElement?) -> Bool {
-        if let saved = self.window, window.map({ CFEqual(saved, $0) }) != true { return false }
-        if let saved = self.element, element.map({ CFEqual(saved, $0) }) != true { return false }
-        return true
-    }
-}
 private enum HostError: Error {
     case config(String), microphone(String), conversion, bridge(String)
 }
@@ -223,12 +212,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var microphone = Microphone()
     private let pill = RecordingPill()
     private var resultPanel: NSPanel?
-    private var previewApply: (pid: pid_t, focus: FocusIdentity, selection: AXSelection, token: UInt64, text: String)?
+    private var previewApply: (pid: pid_t, window: AXUIElement?, selection: AXSelection, token: UInt64, text: String)?
     private var config: HostProfile!
     private var configURL: URL!
     private var taskID: UInt64 = 0
     private var targetPID: pid_t = 0
-    private var targetFocus: FocusIdentity?
+    private var targetWindow: AXUIElement?
     private var selectedAtPress: AXSelection?
     private var pending: Bool { VRSnapshot(0, 0).armed == 0 && taskID != 0 }
 
@@ -312,18 +301,18 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             guard let self, self.previewApply?.token == request.token,
                   self.taskID == 0, VRSnapshot(0, request.token).valid == 1 else { return }
             self.targetPID = request.pid
-            self.targetFocus = request.focus
+            self.targetWindow = request.window
             self.taskID = request.token
-            defer { self.clearSession() }
-            guard self.targetStillValid(),
-                  request.selection.matches(self.selectionFromAX()) else {
-                self.show(self.config.applyUnsafeLabel)
-                return
-            }
-            if self.paste(request.text) {
-                self.resultPanel?.close()
-                self.resultPanel = nil
-                self.previewApply = nil
+            self.pasteSelection(request.selection, with: request.text, token: request.token) { [weak self] sent in
+                guard let self, self.taskID == request.token else { return }
+                if sent {
+                    self.resultPanel?.close()
+                    self.resultPanel = nil
+                    self.previewApply = nil
+                } else {
+                    self.show(self.config.applyUnsafeLabel)
+                }
+                self.clearSession()
             }
         }
     }
@@ -428,7 +417,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             let token = press.token
             guard token != 0 else { return false }
             targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
-            targetFocus = FocusIdentity(window: focusedWindow(), element: nil)
+            targetWindow = focusedWindow()
             selectedAtPress = nil
             taskID = 0
             do { try microphone.start(maximumSeconds: config.maximumSeconds) }
@@ -439,10 +428,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async { [weak self] in
                     guard let self, VRSnapshot(key, token).can_activate == 1 else { return }
                     self.selectedAtPress = self.selectionFromAX()
-                    if self.selectedAtPress != nil {
-                        self.targetFocus = FocusIdentity(window: self.targetFocus?.window,
-                                                         element: self.focusedElement())
-                    }
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -507,43 +492,28 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     }
                     DispatchQueue.main.async {
                         guard let self, VRSnapshot(0, token).valid == 1 else { return }
-                        defer { self.clearSession() }
                         switch result {
                         case .failure(let error):
                             self.reset(self.config.pill.errorLabel)
                             fputs("VoiceRewrite: \(error)\n", stderr)
                         case .success(let value):
                             guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
-                            // Go Core already owns the result route. Native AX
-                            // checks decide whether the requested paste is possible.
-                            if (value.route == "insert" ||
-                                (value.route == "replace" && selected?.matches(self.selectionFromAX()) == true)) &&
-                                self.targetStillValid() {
-                                if value.route == "replace" {
-                                    self.pill.working(.applying)
-                                    self.show(self.config.pill.applyingLabel)
+                            if value.route == "replace", let selected {
+                                self.pill.working(.applying)
+                                self.show(self.config.pill.applyingLabel)
+                                self.pasteSelection(selected, with: text, token: token) { [weak self] sent in
+                                    guard let self, self.taskID == token else { return }
+                                    if !sent { self.presentPreview(text, title: value.title, selection: selected) }
+                                    self.clearSession()
                                 }
-                                if !self.paste(text) {
-                                    self.presentPreview(text, title: value.title)
-                                } else if value.route == "replace", let selected, let focus = self.targetFocus {
-                                    let pid = self.targetPID
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.27) { [weak self] in
-                                        guard let self, VRSnapshot(0, token).valid == 1,
-                                              VRSnapshot(0, 0).armed == 0,
-                                              self.targetPID == pid,
-                                              NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
-                                              focus.matches(window: focus.window == nil ? nil : self.focusedWindow(),
-                                                            element: focus.element == nil ? nil : self.focusedElement()),
-                                              selected.matches(self.selectionFromAX()) else { return }
-                                        // An unchanged selection suggests the editor ignored Cmd+V.
-                                        // Never send an uncertain paste a second time.
-                                        self.presentPreview(text, title: value.title)
-                                    }
-                                }
-                            } else {
-                                self.presentPreview(text, title: value.title,
-                                                    selection: value.route == "replace" ? selected : nil)
+                                return
                             }
+                            if value.route == "insert" && self.targetStillValid() {
+                                if !self.paste(text) { self.presentPreview(text, title: value.title) }
+                            } else {
+                                self.presentPreview(text, title: value.title)
+                            }
+                            self.clearSession()
                         }
                     }
                 }
@@ -567,8 +537,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func presentPreview(_ text: String, title: String?, selection: AXSelection? = nil) {
         resultPanel?.close()
         previewApply = nil
-        if let selection, let targetFocus, taskID != 0 {
-            previewApply = (targetPID, targetFocus, selection, taskID, text)
+        if let selection, taskID != 0 {
+            previewApply = (targetPID, targetWindow, selection, taskID, text)
         }
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 500, height: 310),
                             styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
@@ -705,11 +675,24 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
 
     private func targetStillValid() -> Bool {
         guard VRSnapshot(0, taskID).valid == 1,
-              NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID,
-              let targetFocus else { return false }
-        let window = targetFocus.window == nil ? nil : focusedWindow()
-        return targetFocus.matches(window: window,
-                                   element: targetFocus.element == nil ? nil : focusedElement())
+              NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { return false }
+        guard let targetWindow else { return true }
+        return focusedWindow().map { CFEqual(targetWindow, $0) } == true
+    }
+
+    // One native replacement path for automatic delivery and the result's Apply button.
+    // Windows likewise checks the current selection by copying before replacing.
+    private func pasteSelection(_ selected: AXSelection, with text: String,
+                                token: UInt64, completed: @escaping (Bool) -> Void) {
+        guard targetStillValid() else { completed(false); return }
+        if selected.matches(selectionFromAX()) {
+            completed(paste(text))
+        } else {
+            copySelection(token: token) { [weak self] current in
+                guard let self, self.taskID == token, VRSnapshot(0, token).valid == 1 else { return }
+                completed(current == selected.text && self.targetStillValid() && self.paste(text))
+            }
+        }
     }
 
     private func paste(_ text: String) -> Bool {
@@ -791,7 +774,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
 
     private func clearSession() {
         VRCommand(Int32(VR_COMMAND_ABANDON), 0, 0, 0)
-        targetFocus = nil
+        targetWindow = nil
         selectedAtPress = nil
         taskID = 0
     }

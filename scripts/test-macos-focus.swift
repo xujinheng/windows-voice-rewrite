@@ -90,31 +90,11 @@ extension HeadlessApp {
 MainActor.assumeIsolated {
     // The shipped status-bar app creates NSApplication before querying AppKit/Quartz.
     _ = NSApplication.shared
-    let window = AXUIElementCreateApplication(90001)
-    let otherWindow = AXUIElementCreateApplication(90002)
-    let editor = AXUIElementCreateApplication(90003)
-    let otherEditor = AXUIElementCreateApplication(90004)
-    // AX focused elements have an owning PID; never accept another app's
-    // selected text even when the system-wide focus changes mid-capture.
-    var owner: pid_t = 0
-    precondition(AXUIElementGetPid(editor, &owner) == .success && owner == 90003)
-    precondition(AXUIElementGetPid(otherEditor, &owner) == .success && owner != 90003)
-    let focus = FocusIdentity(window: window, element: editor)
-    precondition(focus.matches(window: window, element: editor))
-    precondition(!focus.matches(window: nil, element: editor))
-    precondition(!focus.matches(window: window, element: nil))
-    precondition(!focus.matches(window: otherWindow, element: editor))
-    precondition(!focus.matches(window: window, element: otherEditor))
     let initial = AXSelection(text: "repeat", range: CFRange(location: 5, length: 6))
     precondition(initial.matches(AXSelection(text: "repeat", range: CFRange(location: 5, length: 6))))
     precondition(!initial.matches(AXSelection(text: "repeat", range: CFRange(location: 30, length: 6))))
     precondition(initial.matches(AXSelection(text: "repeat", range: nil)))
     precondition(!initial.matches(AXSelection(text: "changed", range: nil)))
-    let noAX = FocusIdentity(window: nil, element: nil)
-    precondition(noAX.matches(window: nil, element: nil))
-    // Plain dictation may lack AX identity even if the editor remains usable.
-    precondition(FocusIdentity(window: window, element: nil).matches(window: window, element: editor))
-    precondition(!FocusIdentity(window: window, element: nil).matches(window: otherWindow, element: editor))
     // Exercise the actual native C ABI over the Go clipboard ownership budget.
     precondition(VRClipboardSnapshotFits(1, 0) == 1)
     precondition(VRClipboardSnapshotFits(16 << 20, 32 << 20) == 1)
@@ -142,5 +122,5 @@ MainActor.assumeIsolated {
     hostApp.verifyPillCancelLifecycle()
     hostApp.verifyPressTargetSurvivesDelayedActivation()
     HeadlessApp().verifyFirstRunConfig()
-    print("AX focus, selection, clipboard budget, shortcut rebind, first-run config, pill cancel and press-target smoke passed")
+    print("AX selection, clipboard budget, shortcut rebind, first-run config, pill cancel and press-target smoke passed")
 }
