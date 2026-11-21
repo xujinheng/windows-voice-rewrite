@@ -443,13 +443,21 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     case .success(let value):
                         guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
                         let route = value.route ?? ""
-                        let selectionCurrent = !rewrite || selectedValue?.matches(self.selectionFromAX()) == true
                         let action = route.withCString {
                             VRDelivery(token, $0, self.targetStillValid() ? 1 : 0,
-                                       selectionCurrent ? 1 : 0, 0)
+                                       selectedValue != nil ? 1 : 0, 0)
                         }
                         switch action {
                         case Int32(VR_DELIVERY_INSERT), Int32(VR_DELIVERY_REPLACE):
+                            // Core knows whether selection was captured; only AX can
+                            // verify whether the original editor still selects it.
+                            if action == Int32(VR_DELIVERY_REPLACE) &&
+                               selectedValue?.matches(self.selectionFromAX()) != true {
+                                if route.withCString({ VRDelivery(token, $0, 0, 0, 1) }) == Int32(VR_DELIVERY_PREVIEW) {
+                                    self.presentPreview(text, title: value.title)
+                                }
+                                break
+                            }
                             if action == Int32(VR_DELIVERY_REPLACE) {
                                 self.pill.working(.applying)
                                 self.show(self.config.pill.applyingLabel)
