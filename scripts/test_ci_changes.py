@@ -8,6 +8,11 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(classify(["README.md", "docs/ui/screen.png"]), {
             "core": False, "macos": False, "windows": False, "oneclick": False, "ui": False, "direct2d": False})
 
+    def test_svg_icon_rebuilds_macos(self):
+        affected = classify(["assets/VoiceRewrite.svg"])
+        self.assertTrue(affected["macos"])
+        self.assertFalse(affected["windows"])
+
     def test_native_macos(self):
         self.assertEqual(classify(["clients/macos/app/main.swift"]), {
             "core": False, "macos": True, "windows": False, "oneclick": False, "ui": False, "direct2d": False})
