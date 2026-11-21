@@ -100,7 +100,7 @@ MainActor.assumeIsolated {
     let testBoard = NSPasteboard(name: NSPasteboard.Name("VoiceRewriteScopeTest"))
     testBoard.clearContents()
     precondition(testBoard.setString("keep clipboard", forType: .string))
-    let snapshot = hostApp.snapshotClipboard(testBoard)
+    let snapshot = HeadlessApp().snapshotClipboard(testBoard)
     precondition(snapshot?.first?.string(forType: .string) == "keep clipboard")
     // The native PCM conversion can run after recording is stopped without
     // accessing AVAudioEngine on a worker or requiring a physical microphone.
