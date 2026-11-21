@@ -309,8 +309,8 @@ func TestMeetingPartialReplyNeverPublishesSplitThoughtText(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		for _, delta := range []string{
-			"<thi", "nk>ONE\\tPrivate\\t内部\\n</thi", "nk>  ONE\\tThe fix is",
-			" tested.\\t已验证。\\n",
+			"<thi", "nk>ONE\tPrivate\t内部\n</thi", "nk>  ONE\tThe fix is",
+			" tested.\t已验证。\n",
 		} {
 			chunk, err := json.Marshal(map[string]any{
 				"choices": []any{map[string]any{"delta": map[string]string{"content": delta}}},
@@ -319,9 +319,9 @@ func TestMeetingPartialReplyNeverPublishesSplitThoughtText(t *testing.T) {
 				t.Error(err)
 				return
 			}
-			fmt.Fprintf(w, "data: %s\\n\\n", chunk)
+			fmt.Fprintf(w, "data: %s\n\n", chunk)
 		}
-		fmt.Fprint(w, "data: [DONE]\\n\\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer server.Close()
 	cfg := coreconfig.Defaults()
