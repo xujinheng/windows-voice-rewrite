@@ -72,20 +72,31 @@ type ReadingPanels struct {
 
 func BuildReadingPanels(captions []Caption) ReadingPanels {
 	var result ReadingPanels
-	var entries []Caption
+	var history strings.Builder
+	var current Caption
+	seen := false
 	for _, line := range captions {
-		if strings.TrimSpace(line.Source) != "" {
-			entries = append(entries, line)
+		if strings.TrimSpace(line.Source) == "" {
+			continue
 		}
+		if seen && current.Final {
+			result.HistoryCount++
+			if text := strings.TrimSpace(current.Chinese); text != "" {
+				history.WriteString(text)
+				history.WriteString("\r\n")
+			}
+			history.WriteString(strings.TrimSpace(current.Source))
+			history.WriteString("\r\n\r\n")
+		}
+		current, seen = line, true
 	}
-	if len(entries) == 0 {
+	if !seen {
 		result.English = "等待对方发言…"
 		result.Chinese = "中文释义会显示在这里。"
 		result.History = "之前的对话会保留在这里，阅读时不会被新字幕打断。"
 		result.Hint = WaitingHint
 		return result
 	}
-	current := entries[len(entries)-1]
 	result.CurrentID = current.ID
 	result.English = strings.TrimSpace(current.Source)
 	result.Chinese = strings.TrimSpace(current.Chinese)
@@ -103,17 +114,7 @@ func BuildReadingPanels(captions []Caption) ReadingPanels {
 	if result.Chinese == "" {
 		result.Chinese = "正在准备中文释义…"
 	}
-	for _, item := range entries[:len(entries)-1] {
-		if !item.Final {
-			continue
-		}
-		result.HistoryCount++
-		if text := strings.TrimSpace(item.Chinese); text != "" {
-			result.History += text + "\r\n"
-		}
-		result.History += strings.TrimSpace(item.Source) + "\r\n\r\n"
-	}
-	result.History = strings.TrimSpace(result.History)
+	result.History = strings.TrimSpace(history.String())
 	if result.HistoryCount == 0 {
 		result.History = "已完成的上一句会出现在这里。"
 	}
