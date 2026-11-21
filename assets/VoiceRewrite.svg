@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="VoiceRewrite: voice waveform becomes editable text">
+  <!-- Single shared vector artwork for the macOS application icon. -->
+  <rect x="56" y="56" width="912" height="912" rx="218" fill="#17283B"/>
+  <!-- Voice: three clean amplitude bars. -->
+  <g fill="#F8FAFC">
+    <rect x="220" y="416" width="64" height="192" rx="32"/>
+    <rect x="326" y="338" width="64" height="348" rx="32"/>
+    <rect x="432" y="390" width="64" height="244" rx="32"/>
+  </g>
+  <!-- Rewrite: polished lines of text, with a distinctive mint accent. -->
+  <g fill="none" stroke="#62E0BC" stroke-width="54" stroke-linecap="round">
+    <path d="M613 411H790"/>
+    <path d="M613 512H746"/>
+    <path d="M613 613H790"/>
+  </g>
+</svg>

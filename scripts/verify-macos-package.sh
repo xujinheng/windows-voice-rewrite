@@ -27,6 +27,9 @@ verify_app() {
   [[ -f "$app/Contents/Info.plist" ]] || fail "missing Info.plist"
   [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" == "com.xujinheng.VoiceRewrite" ]] ||
     fail "unexpected bundle identifier"
+  [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$app/Contents/Info.plist")" == "VoiceRewrite.icns" ]] ||
+    fail "application icon not declared"
+  [[ -s "$app/Contents/Resources/VoiceRewrite.icns" ]] || fail "application icon missing"
   found="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
   [[ "$found" == "$version" ]] || fail "expected version $version, found $found"
 
