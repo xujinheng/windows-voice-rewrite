@@ -53,8 +53,7 @@ func ConnectionForm() NativeForm {
 		if page.ID == "input" {
 			controls = nil
 			for _, control := range contract.PageControls(page.ID, contract.MacOS) {
-				switch control.ID {
-				case "rewrite_shortcut", "dictation_shortcut", "capture_rewrite", "capture_dictation", "max_record_seconds", "input_note_macos":
+				if control.NativeMac {
 					controls = append(controls, control)
 				}
 			}
@@ -135,13 +134,9 @@ func ConnectionAction(ctx context.Context, raw []byte) (any, error) {
 		}}, nil
 	}
 	fields := [6]string{cfg.ASRBaseURL, cfg.ASRModel, cfg.ASRAPIKey, cfg.LLMBaseURL, cfg.TextModel, cfg.LLMAPIKey}
-	index := 0
-	for _, page := range contract.Pages()[:2] {
-		for _, ctl := range contract.Stacked(page.ID, contract.Both) {
-			if value, ok := req.Values[ctl.ID]; ok {
-				fields[index] = value
-			}
-			index++
+	for id, value := range req.Values {
+		if index, ok := contract.InputIndex(id); ok {
+			fields[index] = value
 		}
 	}
 	cfg, err = coreconfig.WithConnectionFields(cfg, fields)
