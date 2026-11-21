@@ -110,6 +110,10 @@ func TestMeetingPauseInvalidatesOldWork(t *testing.T) {
 	defer s.runtime.Stop()
 	ctx, epoch, _ := s.runtime.Snapshot()
 	s.SetCapturePaused(true)
+	pausedView, _, changed := s.Refresh()
+	if !changed || !pausedView.CapturePaused || s.view.CapturePaused {
+		t.Fatal("pause must be projected from runtime, not stored twice in the view")
+	}
 	if ctx.Err() == nil {
 		t.Fatal("capture/request context not canceled")
 	}
@@ -118,6 +122,10 @@ func TestMeetingPauseInvalidatesOldWork(t *testing.T) {
 		t.Fatal("stale work overwrote pause")
 	}
 	s.SetCapturePaused(false)
+	resumedView, _, changed := s.Refresh()
+	if !changed || resumedView.CapturePaused {
+		t.Fatal("resume snapshot still shows capture paused")
+	}
 	next, e, _ := s.runtime.Snapshot()
 	if next.Err() != nil || e == epoch {
 		t.Fatal("resume failed")
