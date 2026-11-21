@@ -23,6 +23,22 @@ func TestMeetingStream(t *testing.T) {
 	}
 }
 
+
+func TestMeetingStreamSharesAccumulatedResponseWithConsumer(t *testing.T) {
+	body := "data: {\"choices\":[{\"delta\":{\"content\":\"ONE\\tI would\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\" confirm.\\t我会确认。\\n\"}}]}\n\n" +
+		"data: [DONE]\n\n"
+	var snapshots []string
+	var got []Line
+	err := ReadStream(strings.NewReader(body), func(line Line) { got = append(got, line) },
+		func(content string) { snapshots = append(snapshots, content) })
+	if err != nil || len(snapshots) != 2 || snapshots[0] != "ONE\tI would" ||
+		snapshots[1] != "ONE\tI would confirm.\t我会确认。\n" ||
+		len(got) != 1 || got[0].English != "I would confirm." {
+		t.Fatalf("stream content=%q lines=%#v err=%v", snapshots, got, err)
+	}
+}
+
 func TestMeetingCaptionPlainText(t *testing.T) {
 	for input, want := range map[string]string{
 		"这是翻译。":                         "这是翻译。",
