@@ -39,12 +39,25 @@ cat > "$app/Contents/Info.plist" <<EOF
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>$version</string>
 <key>CFBundleVersion</key><string>1</string>
+<key>CFBundleIconFile</key><string>VoiceRewrite.icns</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>LSUIElement</key><true/>
 <key>NSMicrophoneUsageDescription</key><string>VoiceRewrite records microphone audio while a configured shortcut is held.</string>
 </dict></plist>
 EOF
 plutil -lint "$app/Contents/Info.plist"
+# The same SVG drives every Finder icon size; render before code signing.
+master="$out/VoiceRewrite-icon.png"
+iconset="$out/VoiceRewrite.iconset"
+swift scripts/render-macos-icon.swift assets/VoiceRewrite.svg "$master"
+mkdir -p "$iconset"
+for size in 16 32 128 256 512; do
+  /usr/bin/sips -z "$size" "$size" "$master" --out "$iconset/icon_${size}x${size}.png" >/dev/null
+  double=$((size * 2))
+  /usr/bin/sips -z "$double" "$double" "$master" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+done
+/usr/bin/iconutil -c icns "$iconset" -o "$app/Contents/Resources/VoiceRewrite.icns"
+rm -rf "$master" "$iconset"
 test -x "$app/Contents/MacOS/VoiceRewrite"
 test "$(lipo -archs "$app/Contents/MacOS/VoiceRewrite")" = "$arch"
 if [[ "${CODESIGN_ADHOC:-1}" == 1 ]]; then
