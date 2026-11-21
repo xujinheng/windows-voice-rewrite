@@ -194,12 +194,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 	if task.dictation {
 		app.logger.Printf("stage=asr flow=dictation ms=%d", time.Since(started).Milliseconds())
 		text := answer.Text
-		switch app.core.DecideDelivery(generation, answer, voice.DeliveryFacts{
-			TargetCurrent: isSameForegroundWindow(task.target),
-		}) {
-		case voice.DeliveryDrop:
-			return
-		case voice.DeliveryPreview:
+		if !isSameForegroundWindow(task.target) {
 			app.showAnswer(ux.DictationNotInserted, text, currentCursorPoint(), nil, false, generation)
 			app.postHandyPhase(indicator.Fallback, generation)
 			return
@@ -208,10 +203,8 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 		err = insertDictationText(app.Window, task.target, text, func() bool { return app.core.Snapshot(0, generation).Valid })
 		if err != nil {
 			app.fail(err)
-			if app.core.DecideDelivery(generation, answer, voice.DeliveryFacts{Failed: true}) == voice.DeliveryPreview {
-				app.showAnswer(ux.DictationCopyManually, text, currentCursorPoint(), nil, false, generation)
-				app.postHandyPhase(indicator.Fallback, generation)
-			}
+			app.showAnswer(ux.DictationCopyManually, text, currentCursorPoint(), nil, false, generation)
+			app.postHandyPhase(indicator.Fallback, generation)
 			return
 		}
 		app.logger.Printf("stage=paste flow=dictation ms=%d chars=%d status=unverified",
@@ -223,14 +216,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 
 	app.logger.Printf("stage=spoken_selection ms=%d intent=%s route=%s",
 		time.Since(started).Milliseconds(), answer.Intent, answer.Route)
-	delivery := app.core.DecideDelivery(generation, answer, voice.DeliveryFacts{
-		TargetCurrent: isSameForegroundWindow(sel.TargetWindow),
-		SelectionAvailable: sel.Text != "",
-	})
-	if delivery == voice.DeliveryDrop {
-		return
-	}
-	if delivery == voice.DeliveryReplace {
+	if answer.Route == voice.RouteReplace {
 		app.postHandyPhase(indicator.Applying, generation)
 		started = time.Now()
 		// Native editability determines whether to verify the pasted selection.
@@ -245,13 +231,9 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 			return
 		}
 		app.logger.Printf("auto replacement failed; preview instead: %v", err)
-		delivery = app.core.DecideDelivery(generation, answer, voice.DeliveryFacts{Failed: true})
-	}
-	if delivery != voice.DeliveryPreview {
-		return
 	}
 	selectionCopy := sel
-	app.showAnswer(answer.Title, answer.Text, sel.Anchor,
+	app.showAnswer(ux.ResultCardTitle(answer.Intent), answer.Text, sel.Anchor,
 		&selectionCopy, answer.Route == voice.RouteReplace, generation)
 	app.setStatus(traySuccess)
 	app.logger.Printf("popup result queued; chars=%d", utf8.RuneCountInString(answer.Text))
