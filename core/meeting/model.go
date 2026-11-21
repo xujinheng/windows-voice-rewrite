@@ -134,7 +134,9 @@ func VisibleText(text string) string {
 	return text
 }
 
-func ReadStream(r io.Reader, emit func(Line), textSink ...func(string)) error {
+// onContent sees the accumulated response; callers need not buffer the same
+// SSE deltas a second time.
+func ReadStream(r io.Reader, emit func(Line), onContent ...func(string)) error {
 	var content strings.Builder
 	emitted := 0
 	err := scanCompletions(r, "无法解析会议模型的流式响应", "会议模型响应提前结束", func(chunk completion) error {
@@ -148,10 +150,10 @@ func ReadStream(r io.Reader, emit func(Line), textSink ...func(string)) error {
 			return errors.New("会议模型输出未完整结束")
 		}
 		delta := chunk.Choices[0].Delta.Content
-		if len(textSink) > 0 {
-			textSink[0](delta)
-		}
 		content.WriteString(delta)
+		if len(onContent) > 0 {
+			onContent[0](content.String())
+		}
 		lines := strings.Split(VisibleText(content.String()), "\n")
 		for emitted < len(lines)-1 {
 			if line, ok := ParseLine(lines[emitted]); ok {
@@ -232,7 +234,7 @@ func Complete(ctx context.Context, cfg coreconfig.Config, query Query, emit func
 		return provider.HTTPError("LLM", resp.StatusCode)
 	}
 
-	var caption strings.Builder
+	var responseText string
 	seen := map[string]bool{}
 	last := map[string]Line{}
 	handle := func(line Line) {
@@ -259,7 +261,7 @@ func Complete(ctx context.Context, cfg coreconfig.Config, query Query, emit func
 			if reason := data.Choices[0].FinishReason; reason != "" && reason != "stop" {
 				return errors.New("会议模型输出未完整结束")
 			}
-			caption.WriteString(data.Choices[0].Message.Content)
+			responseText = data.Choices[0].Message.Content
 			if query.Mode != "caption" && query.Mode != "express" && query.Mode != "compose" {
 				for _, raw := range strings.Split(VisibleText(data.Choices[0].Message.Content), "\n") {
 					if line, ok := ParseLine(raw); ok {
@@ -272,10 +274,9 @@ func Complete(ctx context.Context, cfg coreconfig.Config, query Query, emit func
 		if query.Mode != "caption" && query.Mode != "express" && query.Mode != "compose" {
 			handle(line)
 		}
-	}, func(delta string) {
-		caption.WriteString(delta)
+	}, func(text string) {
+		responseText = text
 		if query.Mode != "caption" && query.Mode != "express" && query.Mode != "compose" {
-			text := caption.String()
 			if !strings.Contains(text, "<think>") || strings.Contains(text, "</think>") {
 				text = provider.ThinkingTag.ReplaceAllString(text, "")
 				tail := text[strings.LastIndex(text, "\n")+1:]
@@ -301,13 +302,13 @@ func Complete(ctx context.Context, cfg coreconfig.Config, query Query, emit func
 	// tokens are repeatedly decoded from the beginning and must never replace
 	// text that somebody is in the middle of reading.
 	if query.Mode == "caption" && !seen["ZH"] {
-		text := CleanCaption(caption.String())
+		text := CleanCaption(responseText)
 		if text != "" {
 			handle(Line{Kind: "ZH", Chinese: text})
 		}
 	}
 	if query.Mode == "express" || query.Mode == "compose" {
-		if english := EnglishExpression(caption.String()); english != "" {
+		if english := EnglishExpression(responseText); english != "" {
 			handle(Line{Kind: "SAY", English: english, Complete: true})
 		} else {
 			return errors.New("LLM 没有返回可用英文，请检查文本模型或切换到 Instruct 模型")
