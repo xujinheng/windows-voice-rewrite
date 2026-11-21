@@ -27,14 +27,18 @@ func TestMeetingStreamSharesAccumulatedResponseWithConsumer(t *testing.T) {
 	body := "data: {\"choices\":[{\"delta\":{\"content\":\"ONE\\tI would\"}}]}\n\n" +
 		"data: {\"choices\":[{\"delta\":{\"content\":\" confirm.\\t我会确认。\\n\"}}]}\n\n" +
 		"data: [DONE]\n\n"
-	var snapshots []string
+	var snapshots, visibleTails []string
 	var got []Line
 	err := ReadStream(strings.NewReader(body), func(line Line) { got = append(got, line) },
-		func(content string) { snapshots = append(snapshots, content) })
+		func(content, tail string) {
+			snapshots = append(snapshots, content)
+			visibleTails = append(visibleTails, tail)
+		})
 	if err != nil || len(snapshots) != 2 || snapshots[0] != "ONE\tI would" ||
 		snapshots[1] != "ONE\tI would confirm.\t我会确认。\n" ||
+		len(visibleTails) != 2 || visibleTails[0] != "ONE\tI would" || visibleTails[1] != "" ||
 		len(got) != 1 || got[0].English != "I would confirm." {
-		t.Fatalf("stream content=%q lines=%#v err=%v", snapshots, got, err)
+		t.Fatalf("stream content=%q tails=%q lines=%#v err=%v", snapshots, visibleTails, got, err)
 	}
 }
 
