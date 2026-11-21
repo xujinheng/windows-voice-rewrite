@@ -47,16 +47,15 @@ When an agent has finished a PR and the head commit is ready for device testing,
 edit the PR title to include `[ready-to-test]`. The **Ready-to-test builds**
 workflow fires on that title edit and uploads one runnable payload per platform:
 - `VoiceRewrite-Ready-Windows-x64`: only `VoiceRewrite.exe`.
-- `VoiceRewrite-Ready-macOS-arm64`: one inner ZIP containing `VoiceRewrite.app`.
-- `VoiceRewrite-Ready-macOS-x86_64`: one inner ZIP containing `VoiceRewrite.app`.
+- `VoiceRewrite-Ready-macOS-arm64`: one drag-install DMG.
+- `VoiceRewrite-Ready-macOS-x86_64`: one drag-install DMG.
 
-A macOS `.app` is a directory bundle. Downloading a directory directly
-flattens its contents and may lose executable bits, so the build first creates
-and checks a `ditto` ZIP preserving the bundle, executability, resources and
-ad-hoc signature. GitHub Actions wraps that ZIP in an artifact archive: extract
-the outer download, then extract the contained macOS ZIP to get `VoiceRewrite.app`. These development apps are **not Apple-notarized**; the user may
-need to explicitly allow opening the app. There are no DMGs, additional
-portable Windows ZIPs, installers or duplicate checksum files in this workflow.
+A macOS `.app` is a directory bundle. A bare Actions directory artifact would
+flatten it and lose executable bits. The existing DMG packager preserves the
+bundle and signature and adds an Applications drag target. Actions downloads are
+ZIP-wrapped by GitHub: extract once, open the DMG, then drag the app. There is
+no nested ZIP or extra macOS test archive. Development apps remain ad-hoc signed,
+not notarized, and macOS may require explicit approval.
 
 Adding subsequent commits does **not** rerun the ready-build workflow;
 remove and re-add the `[ready-to-test]` title marker to request fresh artifacts.
@@ -66,8 +65,8 @@ Always confirm the workflow's recorded source SHA matches the desired PR
 version; a passing CI Gate is still required for release/merge readiness.
 
 Each push to `main` publishes one Windows EXE and one verified VoiceRewrite
-developer app ZIP per macOS architecture. Version tags upload the separate
-experimental Mac ZIP assets rather than a duplicate developer app artifact.
+developer DMG per macOS architecture. Version tags upload the existing standalone
+experimental Mac ZIP release assets rather than a duplicate developer artifact.
 These builds are ad-hoc signed, not Developer ID signed or notarized.
 The signed/notarized macOS distribution pipeline remains separate.
 
