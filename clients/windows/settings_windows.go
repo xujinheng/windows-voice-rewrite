@@ -690,11 +690,11 @@ func (p *uxSettings) bumpProbe(idx int) uint64 {
 }
 
 func (p *uxSettings) probe(kind string) {
-	field, url, key, model, ok := contract.ProbeInputs(kind)
+	url, key, model, ok := contract.ProbeInputs(kind)
 	if !ok {
 		return
 	}
-	p.check(kind, p.inputValue(url), p.inputValue(key), p.inputValue(model), field)
+	p.check(kind, p.inputValue(url), p.inputValue(key), p.inputValue(model), url)
 }
 
 func (p *uxSettings) check(kind, base, key, model, field string) {
@@ -756,11 +756,11 @@ func (p *uxSettings) discoverModels(kind string) {
 	if p == nil || p.window == 0 {
 		return
 	}
-	field, baseField, keyField, _, ok := contract.ProbeInputs(kind)
+	baseField, keyField, _, ok := contract.ProbeInputs(kind)
 	if !ok {
 		return
 	}
-	slot, ok := contract.ProbeSlot(field)
+	slot, ok := contract.ProbeSlot(baseField)
 	if !ok || slot != p.page {
 		return
 	}
