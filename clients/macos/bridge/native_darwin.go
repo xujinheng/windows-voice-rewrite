@@ -72,20 +72,6 @@ func VRSnapshot(code C.int, token C.uint64_t) C.VRCoreState {
 	return r
 }
 
-//export VRDelivery
-func VRDelivery(token C.uint64_t, route *C.char, targetCurrent, selectionAvailable, failed C.int) C.int {
-	if route == nil {
-		return C.int(voice.DeliveryDrop)
-	}
-	return C.int(nativeCore.DecideDelivery(uint64(token),
-		voice.Result{Route: C.GoString(route)},
-		voice.DeliveryFacts{
-			TargetCurrent:      targetCurrent != 0,
-			SelectionAvailable: selectionAvailable != 0,
-			Failed:             failed != 0,
-		}))
-}
-
 //export VRClipboardSnapshotFits
 func VRClipboardSnapshotFits(size, total C.ulonglong) C.int {
 	if clipboard.SnapshotFits(uintptr(size), uintptr(total)) {
