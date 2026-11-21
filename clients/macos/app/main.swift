@@ -346,6 +346,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             return
         }
         settingsCapture = nil
+        settingsSerial += 1
         do {
             let json = try String(contentsOf: configURL, encoding: .utf8)
             let output = try GoCore.settings("form", config: json)
@@ -490,7 +491,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                 menu.addItem(choice)
                             }
                             if models.isEmpty {
-                                self.settingsHint?.stringValue = "未发现可用模型"
+                                self.settingsHint?.stringValue = output.status ?? ""
                             } else {
                                 menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height), in: sender)
                             }
