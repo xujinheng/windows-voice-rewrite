@@ -47,12 +47,14 @@ When an agent has finished a PR and the head commit is ready for device testing,
 edit the PR title to include `[ready-to-test]`. The **Ready-to-test builds**
 workflow fires on that title edit and uploads one runnable payload per platform:
 - `VoiceRewrite-Ready-Windows-x64`: only `VoiceRewrite.exe`.
-- `VoiceRewrite-Ready-macOS-arm64-Dev`: one ZIP containing `VoiceRewrite.app`.
-- `VoiceRewrite-Ready-macOS-x64-Dev`: one ZIP containing `VoiceRewrite.app`.
+- `VoiceRewrite-Ready-macOS-arm64`: one inner ZIP containing `VoiceRewrite.app`.
+- `VoiceRewrite-Ready-macOS-x86_64`: one inner ZIP containing `VoiceRewrite.app`.
 
-A macOS `.app` is a directory bundle. The smallest practical GitHub-download
-artifact is a `ditto` ZIP preserving its executability, resources and ad-hoc
-signature. These development apps are **not Apple-notarized**; the user may
+A macOS `.app` is a directory bundle. Downloading a directory directly
+flattens its contents and may lose executable bits, so the build first creates
+and checks a `ditto` ZIP preserving the bundle, executability, resources and
+ad-hoc signature. GitHub Actions wraps that ZIP in an artifact archive: extract
+the outer download, then extract the contained macOS ZIP to get `VoiceRewrite.app`. These development apps are **not Apple-notarized**; the user may
 need to explicitly allow opening the app. There are no DMGs, additional
 portable Windows ZIPs, installers or duplicate checksum files in this workflow.
 
@@ -63,13 +65,11 @@ Ordinary PR label events do not launch empty build runs. Alternatively, use
 Always confirm the workflow's recorded source SHA matches the desired PR
 version; a passing CI Gate is still required for release/merge readiness.
 
-Each push to `main` publishes one Windows EXE and one VoiceRewrite app-bundle ZIP per macOS
-architecture. The same existing ARM64/Intel native jobs also compile the separate
-Mac OneClick launcher and upload one architecture-checked, ad-hoc signed **Dev** app ZIP
-for each; `[ready-to-test]` PRs can fetch these launchers as well. This is not
-Developer ID signing or Apple notarization. **Only version tags** produce the full Windows installer, Windows
-portable archive and macOS developer ZIP/DMG release assets. The separately
-signed/notarized release pipeline is unchanged.
+Each push to `main` publishes one Windows EXE and one verified VoiceRewrite
+developer app ZIP per macOS architecture. Version tags upload the separate
+experimental Mac ZIP assets rather than a duplicate developer app artifact.
+These builds are ad-hoc signed, not Developer ID signed or notarized.
+The signed/notarized macOS distribution pipeline remains separate.
 
 Native macOS Swift adapter suites, real-macOS Go Core tests, two Darwin
 cross-build checks, and the Swift-to-Go handshake share a separate required
