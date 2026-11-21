@@ -136,8 +136,8 @@ MainActor.assumeIsolated {
     precondition(pcm.count > 3200 && pcm.count % 2 == 0)
     // Exercise the production Swift -> native Go Hold path without posting HID events.
     // A shortcut can be rebound while its old physical key is still down.
-    let configData = try! Data(contentsOf: URL(fileURLWithPath: "clients/macos/app/config.example.json"))
-    let original = try! JSONSerialization.jsonObject(with: configData) as! [String: Any]
+    let defaults = try! GoCore.request(config: "{}", audio: Data(), selection: nil).defaultConfig!
+    let original = try! JSONSerialization.jsonObject(with: Data(defaults.utf8)) as! [String: Any]
     var mouseBound = original
     mouseBound["dictation_hotkey"] = "Mouse4"
     func host(_ raw: [String: Any]) -> String {
