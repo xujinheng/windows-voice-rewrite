@@ -185,6 +185,9 @@ func ConnectionAction(ctx context.Context, raw []byte) (any, error) {
 		if err != nil {
 			return nil, err
 		}
+		if len(models) == 0 {
+			return map[string]any{"models": []string{}, "status": ux.NoModelsFound}, nil
+		}
 		if len(models) > MaxModelMenuChoices {
 			models = models[:MaxModelMenuChoices]
 		}
