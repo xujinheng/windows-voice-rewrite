@@ -12,7 +12,7 @@ extension HeadlessApp {
         precondition((try? String(contentsOf: configURL, encoding: .utf8)) == "{}")
         precondition(VRSnapshot(54, 0).role == 1 && VRSnapshot(61, 0).role == 2)
 
-        let custom = #"{\"dictation_hotkey\":\"Mouse4\",\"hotkey_record\":\"Mouse5\"}"#
+        let custom = #"{"dictation_hotkey":"Mouse4","hotkey_record":"Mouse5"}"#
         try! custom.write(to: configURL, atomically: true, encoding: .utf8)
         reload()
         precondition((try? String(contentsOf: configURL, encoding: .utf8)) == custom)
