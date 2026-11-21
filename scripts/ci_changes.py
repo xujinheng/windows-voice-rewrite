@@ -53,6 +53,8 @@ def classify(paths):
                 scope.update(core=True, windows=True)
             else:
                 scope.update(core=True, macos=True, windows=True)
+        elif path == "assets/VoiceRewrite.svg":
+            scope["macos"] = True
         elif path.startswith("clients/macos/bridge/"):
             scope.update(core=True, macos=True)
         elif path.startswith("clients/macos/"):
