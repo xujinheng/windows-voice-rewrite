@@ -37,9 +37,14 @@ sent, **not** confirmed insertion.
 
 ## Scope and validation
 
-No settings GUI, Meeting, history panel or result cards. This host reuses the
-Go `VRCommand`, `VRSnapshot`, and `VRRun` operations via native C calls; it does not introduce
-another Go task reducer or duplicate portable ASR/LLM logic.
+No settings GUI, Meeting, or full history panel. Go Core decides whether
+a result should insert, replace, be previewed, or be dropped when stale. If an
+answer/summary is preview-only or native insertion cannot proceed safely, a
+small AppKit result window displays the text with a **Copy result** action.
+The menu-bar **Copy last result** also retrieves the latest Core history entry.
+Unlike Windows, the preview does not yet offer **Apply to original**.
+This host uses `VRCommand`, `VRSnapshot`, `VRRun`, and `VRDelivery` through the
+native C ABI; it does not introduce another Go task reducer.
 
 CI compilation is not physical end-to-end acceptance. Validate both modifier
 keys, Mouse4/Mouse5, microphone permissions, dictation and rewritten selections
