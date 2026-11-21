@@ -75,7 +75,9 @@ func (s *Session) Initialize(source string, demo *View) View {
 	if demo != nil {
 		s.view = *demo
 	}
-	return s.view
+	view := s.view
+	_, _, view.CapturePaused = s.runtime.Snapshot()
+	return view
 }
 
 // Refresh returns an immutable native presentation snapshot; the native host
@@ -88,6 +90,7 @@ func (s *Session) Refresh() (View, error, bool) {
 	}
 	s.dirty = false
 	view := s.view
+	_, _, view.CapturePaused = s.runtime.Snapshot()
 	view.Captions = append([]Caption(nil), view.Captions...)
 	return view, s.captureErr, true
 }
@@ -234,7 +237,6 @@ func (s *Session) SetCapturePaused(paused bool) {
 		if !s.runtime.SetPaused(paused) {
 			return
 		}
-		s.view.CapturePaused = paused
 		s.resetViewLocked()
 		if paused {
 			s.view.Status = CapturePausedStatus
@@ -285,8 +287,11 @@ func (s *Session) runInference(ctx context.Context, priority int, stage string, 
 		s.mutate(func() {
 			if running {
 				s.view.Metrics.Stage = stage
-			} else if !s.view.CapturePaused {
-				s.view.Metrics.Stage = ListeningStage
+			} else {
+				_, _, paused := s.runtime.Snapshot()
+				if !paused {
+					s.view.Metrics.Stage = ListeningStage
+				}
 			}
 			s.view.Metrics.Pending = s.scheduler.Pending()
 		})
@@ -368,7 +373,8 @@ func (s *Session) AcceptPendingReplies() {
 func (s *Session) RequestReplies() {
 	s.mu.Lock()
 	last, hasCaption := LatestCompletedCaption(s.view.Captions)
-	if status, start := ReplyRequest(s.view.CapturePaused, hasCaption); !start {
+	work, epoch, paused := s.runtime.Snapshot()
+	if status, start := ReplyRequest(paused, hasCaption); !start {
 		if status != "" {
 			s.view.Status = status
 			s.dirty = true
@@ -377,7 +383,6 @@ func (s *Session) RequestReplies() {
 		return
 	}
 	prior := ReplyPrior(s.prior, last.Source)
-	work, epoch, _ := s.runtime.Snapshot()
 	job := CaptionTask{Latest: last.Source, ID: last.ID, Epoch: epoch, Context: work, Prior: prior, Ended: time.Now()}
 	s.mu.Unlock()
 	s.queueReplies(job)
@@ -389,7 +394,8 @@ func (s *Session) RefineReply(index int, instruction string) {
 	}
 	s.mu.Lock()
 	selected := s.view.Reply.Displayed.Lines[index].English
-	if selected == "" || s.view.CapturePaused {
+	_, _, paused := s.runtime.Snapshot()
+	if selected == "" || paused {
 		s.mu.Unlock()
 		return
 	}
