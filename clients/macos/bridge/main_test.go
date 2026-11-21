@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
+	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 	"strings"
 	"testing"
 )
@@ -50,6 +51,9 @@ func TestHostProfileUsesSharedPasteMinimum(t *testing.T) {
 	profile := reply.Result.(map[string]any)["profile"].(map[string]any)
 	if got := profile["pasteRestoreMS"]; got != 700 {
 		t.Fatalf("paste dwell must match shared minimum, got %v", got)
+	}
+	if profile["applyLabel"] != ux.ApplyAction || profile["applyUnsafeLabel"] != ux.ApplyUnsafe {
+		t.Fatal("preview action labels must come from Go Core")
 	}
 }
 
