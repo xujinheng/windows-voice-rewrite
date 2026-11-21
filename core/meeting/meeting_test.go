@@ -38,6 +38,35 @@ func TestMeetingStreamSharesAccumulatedResponseWithConsumer(t *testing.T) {
 	}
 }
 
+// Each finished line is emitted exactly once. Thinking markers split across
+// SSE chunks may remove hidden newlines, but must not skip later visible lines.
+func TestMeetingStreamCursorAcrossSplitThinkingAndManyLines(t *testing.T) {
+	var stream strings.Builder
+	for _, delta := range []string{
+		"ONE\tFirst\t第一\n<", "think>\nTWO\tHidden\t秘密\n</th",
+		"ink>\nTWO\tSecond\t第二\n", "TH", "REE\tThird\t第三\n",
+	} {
+		fmt.Fprintf(&stream, "data: {\"choices\":[{\"delta\":{\"content\":%q}}]}\n\n", delta)
+	}
+	for i := 0; i < 80; i++ {
+		fmt.Fprintf(&stream, "data: {\"choices\":[{\"delta\":{\"content\":%q}}]}\n\n",
+			fmt.Sprintf("ONE\tLine %d\t第%d句\n", i, i))
+	}
+	stream.WriteString("data: [DONE]\n\n")
+	var got []Line
+	err := ReadStream(strings.NewReader(stream.String()), func(line Line) { got = append(got, line) })
+	if err != nil || len(got) != 83 || got[0].English != "First" ||
+		got[1].English != "Second" || got[2].English != "Third" ||
+		got[82].English != "Line 79" {
+		t.Fatalf("stream lines=%d first=%#v err=%v", len(got), got[:min(len(got), 3)], err)
+	}
+	for _, line := range got {
+		if line.English == "Hidden" {
+			t.Fatal("hidden thinking line escaped the stream")
+		}
+	}
+}
+
 func TestMeetingCaptionPlainText(t *testing.T) {
 	for input, want := range map[string]string{
 		"这是翻译。":                         "这是翻译。",
