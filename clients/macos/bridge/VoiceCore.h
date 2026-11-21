@@ -52,6 +52,7 @@ void VRDuration(long long seconds, char *buffer, int capacity);
 void VRFree(void *ptr);
 char *VRLatestResult(void);
 char *VRProfile(const char *config);
+char *VRSettings(const char *request);
 typedef void (*VREventCallback)(int kind, uint64_t token);
 char *VRRun(int rewrite, const unsigned char *audio,
             int length, const char *selection, uint64_t token, VREventCallback onEvent);

@@ -7,18 +7,19 @@ import (
 	"strconv"
 	"testing"
 
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/contract"
 )
 
 func TestWindowsRecordingDurationValidation(t *testing.T) {
 	for _, good := range []string{"1", "60", "120", "180", " 180 "} {
-		v, err := uxRecordingSeconds(good)
+		v, err := coreconfig.RecordingSeconds(good)
 		if err != nil || v < 1 || v > 180 {
 			t.Fatalf("valid duration %q: %d %v", good, v, err)
 		}
 	}
 	for _, bad := range []string{"", "0", "181", "-1", "abc", "60.5"} {
-		if _, err := uxRecordingSeconds(bad); err == nil {
+		if _, err := coreconfig.RecordingSeconds(bad); err == nil {
 			t.Fatalf("accepted invalid duration %q", bad)
 		}
 	}

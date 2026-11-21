@@ -10,6 +10,13 @@ extension HeadlessApp {
         configURL = temp.appendingPathComponent("nested/config.json")
         reload()
         let defaults = try! String(contentsOf: configURL, encoding: .utf8)
+        openSettings()
+        let catalog = try! GoCore.settings("form", config: defaults)
+        precondition(settingsPanel?.isVisible == true && settingsPages.count == 3)
+        precondition(settingsInputs["asr_base_url"]?.stringValue == catalog.values?["asr_base_url"])
+        precondition(settingsInputs["max_record_seconds"]?.stringValue == catalog.values?["max_record_seconds"])
+        settingsPanel?.close()
+        settingsPanel = nil
         let coreDefaults = try! GoCore.request(config: "{}", audio: Data(), selection: nil).defaultConfig
         precondition(defaults == coreDefaults)
         precondition(VRSnapshot(54, 0).role == 1 && VRSnapshot(61, 0).role == 2)

@@ -160,6 +160,28 @@ private final class Microphone {
     }
 }
 
+private struct SettingsRect: Decodable {
+    let X, Y, W, H: Int
+    func native(_ height: Int) -> NSRect {
+        NSRect(x: CGFloat(X), y: CGFloat(height - Y - H), width: CGFloat(W), height: CGFloat(H))
+    }
+}
+private struct SettingsForm: Decodable {
+    let width, height: Int
+    let hint: SettingsRect
+    let running, busy, captureHint: String
+    let pages: [SettingsPage]
+    let controls: [SettingsControl]
+}
+private struct SettingsPage: Decodable {
+    let id, title, subtitle: String
+    let nav, subtitleRect: SettingsRect
+}
+private struct SettingsControl: Decodable {
+    let id, page, label, kind: String
+    let rect, labelRect: SettingsRect
+}
+
 private struct BridgeReply: Decodable {
     let ok: Bool
     let result: Output?
@@ -170,6 +192,12 @@ private struct BridgeReply: Decodable {
         let title: String?
         let profile: HostProfile?
         let defaultConfig: String?
+        let form: SettingsForm?
+        let values: [String: String]?
+        let config: String?
+        let status: String?
+        let models: [String]?
+        let capture: [String: String]?
     }
     struct Failure: Decodable { let code: String; let message: String }
 }
@@ -193,6 +221,18 @@ private enum GoCore {
         } else {
             result = (config ?? "").withCString { VRProfile($0) }
         }
+        return try decode(result)
+    }
+
+    static func settings(_ action: String, config: String, values: [String: String] = [:],
+                         kind: String = "") throws -> BridgeReply.Output {
+        let current = try JSONSerialization.jsonObject(with: Data(config.utf8))
+        let payload: [String: Any] = ["action": action, "config": current, "values": values, "kind": kind]
+        let json = String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self)
+        return try decode(json.withCString { VRSettings($0) })
+    }
+
+    private static func decode(_ result: UnsafeMutablePointer<CChar>?) throws -> BridgeReply.Output {
         guard let result else { throw HostError.bridge("Go Core returned no response") }
         defer { VRFree(result) }
         let reply = try JSONDecoder().decode(BridgeReply.self,
@@ -212,6 +252,19 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var microphone = Microphone()
     private let pill = RecordingPill()
     private var resultPanel: NSPanel?
+    private var settingsPanel: NSPanel?
+    private var settingsInputs: [String: NSTextField] = [:]
+    private var settingsPages: [String: NSView] = [:]
+    private var settingsStatuses: [String: NSTextField] = [:]
+    private var settingsHint: NSTextField?
+    private var settingsRunning = ""
+    private var settingsBusy = ""
+    private var settingsCaptureHint = ""
+    private var settingsSerial = 0
+    private var settingsCapture: String?
+    private var settingsCaptureCodes: [String: String] = [:]
+    private var swallowMouseUp: Int64?
+    private var firstRun = false
     private var previewApply: (pid: pid_t, window: AXUIElement?, selection: AXSelection, token: UInt64, text: String)?
     private var config: HostProfile!
     private var configURL: URL!
@@ -227,6 +280,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         item.button?.title = "VoiceRewrite"
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Copy last result", action: #selector(copyResult), keyEquivalent: "c"))
+        menu.addItem(NSMenuItem(title: "设置…", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Reload config", action: #selector(reload), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Show config in Finder", action: #selector(showConfig), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
@@ -242,6 +296,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         } ?? defaultPath
         reload()
         guard config != nil else { return }
+        if firstRun { DispatchQueue.main.async { [weak self] in self?.openSettings() } }
         _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] allowed in
             DispatchQueue.main.async {
@@ -269,6 +324,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             let output = try GoCore.request(config: json, audio: Data(), selection: nil)
             guard let profile = output.profile else { throw HostError.config("missing Go host profile") }
             if needsDefaults {
+                firstRun = true
                 guard let defaults = output.defaultConfig else { throw HostError.config("missing Go defaults") }
                 try FileManager.default.createDirectory(at: configURL.deletingLastPathComponent(),
                                                         withIntermediateDirectories: true)
@@ -283,6 +339,175 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         }
     }
     @objc private func showConfig() { NSWorkspace.shared.activateFileViewerSelecting([configURL]) }
+    @objc private func openSettings() {
+        if let panel = settingsPanel, panel.isVisible {
+            NSApp.activate(ignoringOtherApps: true)
+            panel.makeKeyAndOrderFront(nil)
+            return
+        }
+        settingsCapture = nil
+        settingsSerial += 1
+        do {
+            let json = try String(contentsOf: configURL, encoding: .utf8)
+            let output = try GoCore.settings("form", config: json)
+            guard let form = output.form, let values = output.values else { return }
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: CGFloat(form.width), height: CGFloat(form.height)),
+                                styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            panel.title = "VoiceRewrite"
+            panel.isReleasedWhenClosed = false
+            let height = form.height
+            let content = panel.contentView!
+            settingsInputs = [:]
+            settingsPages = [:]
+            settingsStatuses = [:]
+            settingsRunning = form.running
+            settingsBusy = form.busy
+            settingsCaptureHint = form.captureHint
+            settingsCaptureCodes = output.capture ?? [:]
+            for page in form.pages {
+                let pageView = NSView(frame: content.bounds)
+                pageView.isHidden = page.id != form.pages.first?.id
+                content.addSubview(pageView)
+                settingsPages[page.id] = pageView
+                let subtitle = NSTextField(labelWithString: page.subtitle)
+                subtitle.frame = page.subtitleRect.native(height)
+                subtitle.textColor = .secondaryLabelColor
+                pageView.addSubview(subtitle)
+            }
+            for page in form.pages {
+                let button = NSButton(title: page.title, target: self, action: #selector(settingsPage))
+                button.identifier = NSUserInterfaceItemIdentifier(page.id)
+                button.frame = page.nav.native(height)
+                content.addSubview(button)
+            }
+            for entry in form.controls {
+                let parent = settingsPages[entry.page] ?? content
+                switch entry.kind {
+                case "text", "secret", "shortcut", "stepper":
+                    let label = NSTextField(labelWithString: entry.label)
+                    label.frame = entry.labelRect.native(height)
+                    parent.addSubview(label)
+                    let field: NSTextField = entry.kind == "secret" ? NSSecureTextField() : NSTextField()
+                    field.frame = entry.rect.native(height)
+                    field.stringValue = values[entry.id] ?? ""
+                    field.identifier = NSUserInterfaceItemIdentifier(entry.id)
+                    parent.addSubview(field)
+                    settingsInputs[entry.id] = field
+                case "note":
+                    let note = NSTextField(wrappingLabelWithString: entry.label)
+                    note.frame = entry.rect.native(height)
+                    note.textColor = .secondaryLabelColor
+                    parent.addSubview(note)
+                case "status":
+                    let field = NSTextField(labelWithString: entry.label)
+                    field.frame = entry.rect.native(height)
+                    field.maximumNumberOfLines = 2
+                    field.lineBreakMode = .byWordWrapping
+                    field.textColor = .secondaryLabelColor
+                    parent.addSubview(field)
+                    settingsStatuses[entry.id] = field
+                case "button":
+                    let button = NSButton(title: entry.label, target: self, action: #selector(settingsAction))
+                    button.identifier = NSUserInterfaceItemIdentifier(entry.id)
+                    button.frame = entry.rect.native(height)
+                    parent.addSubview(button)
+                default: break
+                }
+            }
+            let hint = NSTextField(labelWithString: "")
+            hint.frame = form.hint.native(height)
+            hint.textColor = .secondaryLabelColor
+            content.addSubview(hint)
+            settingsHint = hint
+            settingsPanel = panel
+            panel.center()
+            NSApp.activate(ignoringOtherApps: true)
+            panel.makeKeyAndOrderFront(nil)
+        } catch {
+            show("Config error")
+            fputs("VoiceRewrite settings: \(error)\n", stderr)
+        }
+    }
+
+    @objc private func settingsPage(_ sender: NSButton) {
+        let selected = sender.identifier?.rawValue
+        settingsCapture = nil
+        settingsSerial += 1
+        for (id, view) in settingsPages { view.isHidden = id != selected }
+    }
+
+    @objc private func settingsAction(_ sender: NSButton) {
+        guard let id = sender.identifier?.rawValue else { return }
+        switch id {
+        case "close":
+            settingsCapture = nil
+            settingsPanel?.close()
+        case "capture_rewrite", "capture_dictation":
+            settingsCapture = id == "capture_rewrite" ? "rewrite_shortcut" : "dictation_shortcut"
+            settingsHint?.stringValue = settingsCaptureHint
+        case "advanced":
+            showConfig()
+        case "save", "probe_asr", "probe_llm", "discover_asr_models", "discover_llm_models":
+            guard let json = try? String(contentsOf: configURL, encoding: .utf8) else { return }
+            let values = settingsInputs.mapValues { $0.stringValue }
+            settingsSerial += 1
+            let serial = settingsSerial
+            if id == "save" {
+                guard VRSnapshot(0, 0).armed == 0 && !pending else {
+                    settingsHint?.stringValue = settingsBusy
+                    return
+                }
+                do {
+                    let output = try GoCore.settings("save", config: json, values: values)
+                    guard let updated = output.config else { return }
+                    try updated.write(to: configURL, atomically: true, encoding: .utf8)
+                    reload()
+                    firstRun = false
+                    settingsHint?.stringValue = output.status ?? ""
+                } catch { settingsHint?.stringValue = String(describing: error) }
+                return
+            }
+            let kind = id.contains("asr") ? "ASR" : "LLM"
+            let statusID = kind == "ASR" ? "probe_asr_status" : "probe_llm_status"
+            let action = id.hasPrefix("probe") ? "probe" : "discover"
+            if action == "probe" { settingsStatuses[statusID]?.stringValue = settingsRunning }
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let result = Result { try GoCore.settings(action, config: json, values: values, kind: kind) }
+                DispatchQueue.main.async {
+                    guard let self, self.settingsSerial == serial, self.settingsPanel?.isVisible == true else { return }
+                    switch result {
+                    case .failure(let error):
+                        self.settingsHint?.stringValue = String(describing: error)
+                    case .success(let output):
+                        if action == "probe" {
+                            self.settingsStatuses[statusID]?.stringValue = output.status ?? ""
+                        } else if let models = output.models {
+                            let fieldID = kind == "ASR" ? "asr_model" : "text_model"
+                            let menu = NSMenu()
+                            for model in models {
+                                let choice = NSMenuItem(title: model, action: #selector(self.settingsPickModel), keyEquivalent: "")
+                                choice.identifier = NSUserInterfaceItemIdentifier(fieldID)
+                                choice.target = self
+                                menu.addItem(choice)
+                            }
+                            if models.isEmpty {
+                                self.settingsHint?.stringValue = output.status ?? ""
+                            } else {
+                                menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height), in: sender)
+                            }
+                        }
+                    }
+                }
+            }
+        default: break
+        }
+    }
+
+    @objc private func settingsPickModel(_ item: NSMenuItem) {
+        guard let id = item.identifier?.rawValue else { return }
+        settingsInputs[id]?.stringValue = item.title
+    }
+
     @objc private func copyResult() {
         guard let result = VRLatestResult() else { show("No result"); return }
         defer { VRFree(result) }
@@ -342,6 +567,28 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             }
             let code = event.getIntegerValueField(.keyboardEventKeycode)
             let mouse = event.getIntegerValueField(.mouseEventButtonNumber)
+            if type == .otherMouseUp && app.swallowMouseUp == mouse {
+                app.swallowMouseUp = nil
+                return nil
+            }
+            if let field = app.settingsCapture, app.settingsPanel?.isVisible == true {
+                let key = type == .flagsChanged ? code : type == .otherMouseDown ? 100 + mouse : -1
+                if let name = app.settingsCaptureCodes[String(key)] {
+                    app.settingsInputs[field]?.stringValue = name
+                    app.settingsCapture = nil
+                    app.settingsHint?.stringValue = ""
+                    if type == .otherMouseDown {
+                        app.swallowMouseUp = mouse
+                        return nil
+                    }
+                    return Unmanaged.passUnretained(event)
+                }
+                if type == .keyDown && code == 53 {
+                    app.settingsCapture = nil
+                    app.settingsHint?.stringValue = ""
+                    return nil
+                }
+            }
             if type == .flagsChanged {
                 app.handleModifier(code: code, flags: event.flags)
             } else if type == .keyDown {

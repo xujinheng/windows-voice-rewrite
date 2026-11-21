@@ -22,8 +22,10 @@ schema or defaults. A legacy file containing only `{}` is expanded once
 using Go Core's serializer; custom settings and invalid files are never overwritten.
 ASR (and LLM for rewriting) must still run separately; the default localhost
 URLs do not start those servers.
-Use the menu-bar **Show config in Finder** to locate the file and **Reload config**
-after edits. The optional first process argument specifies another config file path.
+Use the menu-bar **设置…** entry to edit ASR/LLM endpoints and credentials,
+test connections, discover model IDs, capture supported shortcuts, and set the
+recording duration. The **高级配置** action reveals the JSON file in Finder.
+The optional first process argument specifies another config file path.
 
 Hold **RightCommand** to dictate; hold **RightOption** over selected text to
 speak a rewrite instruction. Both keys use a 200 ms arm delay; configured mouse
@@ -61,7 +63,12 @@ approval; only Developer ID signing and Apple notarization can fix that.
 
 ## Scope and validation
 
-No settings GUI, Meeting or full history panel. Go Core supplies the
+Settings are rendered from the shared Windows Go Core catalog and geometry.
+AppKit owns only native input widgets, local file persistence and Quartz events.
+The current macOS adapter supports RightCommand/RightOption and Mouse4/Mouse5,
+the default microphone, and hold-to-record; other input options are not editable
+because this native host cannot yet apply them. No Meeting or full history panel.
+Go Core supplies the
 result text, title and `insert`/`replace`/`preview` route. macOS checks the
 actual editor and attempts the native paste; if it cannot, the result remains
 available in a small selectable AppKit preview with a **Copy result** button.

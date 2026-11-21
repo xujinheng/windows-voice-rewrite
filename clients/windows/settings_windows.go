@@ -15,6 +15,7 @@ import (
 	"time"
 	"unsafe"
 
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/contract"
 	"github.com/xujinheng/windows-voice-rewrite/core/desktop"
 	"github.com/xujinheng/windows-voice-rewrite/core/provider"
@@ -635,7 +636,7 @@ func (p *uxSettings) save() error {
 	for i, h := range p.inputs {
 		fields[i] = uxWinText(h)
 	}
-	cfg, err := uxUpdatedConfig(p.app.cfg, fields)
+	cfg, err := coreconfig.WithConnectionFields(p.app.cfg, fields)
 	if err != nil {
 		return err
 	}
@@ -647,7 +648,7 @@ func (p *uxSettings) save() error {
 		return err
 	}
 	cfg.HotkeyRecord, cfg.DictationHotkey = newRewrite, newDictation
-	seconds, err := uxRecordingSeconds(uxWinText(p.recordDuration))
+	seconds, err := coreconfig.RecordingSeconds(uxWinText(p.recordDuration))
 	if err != nil {
 		return err
 	}
@@ -814,7 +815,7 @@ func (p *uxSettings) completeModelDiscovery(slot int, token uint64) {
 		return
 	}
 	if len(result.models) == 0 {
-		uxSetText(p.hint, "未发现可用模型，请检查 API 地址或手动输入模型 ID")
+		uxSetText(p.hint, ux.NoModelsFound)
 		return
 	}
 	uxSetText(p.hint, fmt.Sprintf("已发现 %d 个模型，点击“选择模型”查看", len(result.models)))
