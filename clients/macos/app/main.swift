@@ -267,18 +267,19 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard VRSnapshot(0, 0).armed == 0 && !pending else { show("Reload after current task"); return }
         do {
             let json: String
-            var firstRun = false
+            var needsDefaults = false
             do {
                 json = try String(contentsOf: configURL, encoding: .utf8)
+                needsDefaults = json.trimmingCharacters(in: .whitespacesAndNewlines) == "{}"
             } catch {
                 let failure = error as NSError
                 guard failure.domain == NSCocoaErrorDomain && failure.code == NSFileReadNoSuchFileError else { throw error }
                 json = "{}" // Go Core owns the persisted defaults and macOS shortcut bindings.
-                firstRun = true
+                needsDefaults = true
             }
             let output = try GoCore.request(config: json, audio: Data(), selection: nil)
             guard let profile = output.profile else { throw HostError.config("missing Go host profile") }
-            if firstRun {
+            if needsDefaults {
                 guard let defaults = output.defaultConfig else { throw HostError.config("missing Go defaults") }
                 try FileManager.default.createDirectory(at: configURL.deletingLastPathComponent(),
                                                         withIntermediateDirectories: true)
