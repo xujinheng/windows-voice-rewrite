@@ -303,16 +303,16 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             self.targetPID = request.pid
             self.targetWindow = request.window
             self.taskID = request.token
-            defer { self.clearSession() }
-            guard self.targetStillValid(),
-                  request.selection.matches(self.selectionFromAX()) else {
-                self.show(self.config.applyUnsafeLabel)
-                return
-            }
-            if self.paste(request.text) {
-                self.resultPanel?.close()
-                self.resultPanel = nil
-                self.previewApply = nil
+            self.pasteSelection(request.selection, with: request.text, token: request.token) { [weak self] sent in
+                guard let self, self.taskID == request.token else { return }
+                if sent {
+                    self.resultPanel?.close()
+                    self.resultPanel = nil
+                    self.previewApply = nil
+                } else {
+                    self.show(self.config.applyUnsafeLabel)
+                }
+                self.clearSession()
             }
         }
     }
@@ -498,34 +498,20 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                             fputs("VoiceRewrite: \(error)\n", stderr)
                         case .success(let value):
                             guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
-                            // Browsers may expose the selection for the initial capture
-                            // but not on a later AX query. Verify with native Cmd+C
-                            // before replacing; never treat missing AX as changed text.
-                            if value.route == "replace", let selected,
-                               self.targetStillValid(), !selected.matches(self.selectionFromAX()) {
-                                self.copySelection(token: token) { [weak self] copied in
-                                    guard let self, VRSnapshot(0, token).valid == 1 else { return }
-                                    if copied == selected.text && self.targetStillValid() {
-                                        self.pill.working(.applying)
-                                        self.show(self.config.pill.applyingLabel)
-                                        if !self.paste(text) { self.presentPreview(text, title: value.title) }
-                                    } else {
-                                        self.presentPreview(text, title: value.title, selection: selected)
-                                    }
+                            if value.route == "replace", let selected {
+                                self.pill.working(.applying)
+                                self.show(self.config.pill.applyingLabel)
+                                self.pasteSelection(selected, with: text, token: token) { [weak self] sent in
+                                    guard let self, self.taskID == token else { return }
+                                    if !sent { self.presentPreview(text, title: value.title, selection: selected) }
                                     self.clearSession()
                                 }
                                 return
                             }
-                            if (value.route == "insert" || (value.route == "replace" && selected != nil)) &&
-                                self.targetStillValid() {
-                                if value.route == "replace" {
-                                    self.pill.working(.applying)
-                                    self.show(self.config.pill.applyingLabel)
-                                }
+                            if value.route == "insert" && self.targetStillValid() {
                                 if !self.paste(text) { self.presentPreview(text, title: value.title) }
                             } else {
-                                self.presentPreview(text, title: value.title,
-                                                    selection: value.route == "replace" ? selected : nil)
+                                self.presentPreview(text, title: value.title)
                             }
                             self.clearSession()
                         }
@@ -692,6 +678,21 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
               NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { return false }
         guard let targetWindow else { return true }
         return focusedWindow().map { CFEqual(targetWindow, $0) } == true
+    }
+
+    // One native replacement path for automatic delivery and the result's Apply button.
+    // Windows likewise checks the current selection by copying before replacing.
+    private func pasteSelection(_ selected: AXSelection, with text: String,
+                                token: UInt64, completed: @escaping (Bool) -> Void) {
+        guard targetStillValid() else { completed(false); return }
+        if selected.matches(selectionFromAX()) {
+            completed(paste(text))
+        } else {
+            copySelection(token: token) { [weak self] current in
+                guard let self, self.taskID == token, VRSnapshot(0, token).valid == 1 else { return }
+                completed(current == selected.text && self.targetStillValid() && self.paste(text))
+            }
+        }
     }
 
     private func paste(_ text: String) -> Bool {
