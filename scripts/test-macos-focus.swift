@@ -9,15 +9,10 @@ extension HeadlessApp {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         configURL = temp.appendingPathComponent("nested/config.json")
         reload()
-        let saved = try! JSONSerialization.jsonObject(with: Data(contentsOf: configURL)) as! [String: Any]
-        precondition(saved["asr_base_url"] as? String == "http://127.0.0.1:8080/v1")
-        precondition(saved["asr_model"] as? String == "qwen3-asr")
-        precondition(saved["llm_base_url"] as? String == "http://127.0.0.1:1234/v1")
-        precondition(saved["dictation_hotkey"] as? String == "RightCommand")
-        precondition(saved["hotkey_record"] as? String == "RightOption")
-        precondition(saved["max_record_seconds"] as? Int == 180)
-        precondition(VRSnapshot(54, 0).role == 1 && VRSnapshot(61, 0).role == 2)
         let defaults = try! String(contentsOf: configURL, encoding: .utf8)
+        let coreDefaults = try! GoCore.request(config: "{}", audio: Data(), selection: nil).defaultConfig
+        precondition(defaults == coreDefaults)
+        precondition(VRSnapshot(54, 0).role == 1 && VRSnapshot(61, 0).role == 2)
         try! "  {}\n".write(to: configURL, atomically: true, encoding: .utf8)
         reload()
         precondition((try? String(contentsOf: configURL, encoding: .utf8)) == defaults)
