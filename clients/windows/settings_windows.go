@@ -815,7 +815,7 @@ func (p *uxSettings) completeModelDiscovery(slot int, token uint64) {
 		return
 	}
 	if len(result.models) == 0 {
-		uxSetText(p.hint, "未发现可用模型，请检查 API 地址或手动输入模型 ID")
+		uxSetText(p.hint, ux.NoModelsFound)
 		return
 	}
 	uxSetText(p.hint, fmt.Sprintf("已发现 %d 个模型，点击“选择模型”查看", len(result.models)))
