@@ -29,19 +29,20 @@ class HeadlessWorkflowTests(unittest.TestCase):
         ready = (WORKFLOWS / "ready-build.yml").read_text()
         self.assertIn("github.event.changes.title", ready)
 
-    def test_macos_downloads_keep_app_bundle_and_signature(self):
+    def test_macos_artifacts_ship_existing_verified_dmg_packaging(self):
         ready = (WORKFLOWS / "ready-build.yml").read_text()
         main = (WORKFLOWS / "build.yml").read_text()
         for workflow in (ready, main):
             with self.subTest(workflow="ready" if workflow is ready else "main"):
-                self.assertIn("ditto -c -k --sequesterRsrc --keepParent", workflow)
-                self.assertIn("ditto -x -k", workflow)
-                self.assertIn('test -x "$unpacked/VoiceRewrite.app/Contents/MacOS/VoiceRewrite"', workflow)
-                self.assertIn('codesign --verify --deep --strict "$unpacked/VoiceRewrite.app"', workflow)
-        self.assertNotIn("path: ${{ runner.temp }}/ready/VoiceRewrite.app", ready)
-        self.assertNotIn("path: ${{ runner.temp }}/headless/VoiceRewrite.app", main)
-        self.assertIn("VoiceRewrite-Ready-macOS-${{ matrix.arch }}.zip", ready)
-        self.assertIn("VoiceRewrite-Dev-macOS-${{ matrix.arch }}.zip", main)
+                self.assertIn("bash scripts/package-macos-dmg.sh", workflow)
+                self.assertIn("bash scripts/verify-macos-package.sh dmg", workflow)
+                self.assertNotIn("path: ${{ runner.temp }}/ready/VoiceRewrite.app", workflow)
+                self.assertNotIn("path: ${{ runner.temp }}/headless/VoiceRewrite.app", workflow)
+        self.assertIn("VoiceRewrite-Ready-macOS-${{ matrix.arch }}.dmg", ready)
+        self.assertNotIn("VoiceRewrite-Ready-macOS-${{ matrix.arch }}.zip", ready)
+        self.assertIn("VoiceRewrite-Dev-macOS-${{ matrix.arch }}.dmg", main)
+        self.assertIn("VoiceRewrite-*-macOS-${{ matrix.arch }}-Experimental.zip", main)
+        self.assertIn("ditto -c -k --sequesterRsrc --keepParent", main)
 
     def test_release_has_oneclick_and_experimental_mac_downloads(self):
         workflow = (WORKFLOWS / "build.yml").read_text()
