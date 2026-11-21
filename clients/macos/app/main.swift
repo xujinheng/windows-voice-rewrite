@@ -378,9 +378,11 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 // block the CGEvent tap with synchronous Accessibility requests.
                 DispatchQueue.main.async { [weak self] in
                     guard let self, VRSnapshot(key, token).can_activate == 1 else { return }
-                    self.targetFocus = FocusIdentity(window: self.targetFocus?.window,
-                                                     element: self.focusedElement(), title: nil)
                     self.selectedAtPress = self.selectionFromAX()
+                    if self.selectedAtPress != nil {
+                        self.targetFocus = FocusIdentity(window: self.targetFocus?.window,
+                                                         element: self.focusedElement(), title: nil)
+                    }
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -452,31 +454,19 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                             fputs("VoiceRewrite: \(error)\n", stderr)
                         case .success(let value):
                             guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
-                            let route = value.route ?? ""
-                            let action = route.withCString {
-                                VRDelivery(token, $0, self.targetStillValid() ? 1 : 0,
-                                           selected != nil ? 1 : 0, 0)
-                            }
-                            switch action {
-                            case Int32(VR_DELIVERY_INSERT), Int32(VR_DELIVERY_REPLACE):
-                                // Page selections and AX-inaccessible editors are
-                                // still valid inputs, but not verified paste targets.
-                                if action == Int32(VR_DELIVERY_REPLACE) &&
-                                   (!self.canEditSelection() || selected?.matches(self.selectionFromAX()) != true) {
-                                    self.presentPreview(text, title: value.title)
-                                    break
-                                }
-                                if action == Int32(VR_DELIVERY_REPLACE) {
+                            // Go Core already owns the result route. Native AX
+                            // checks decide whether the requested paste is possible.
+                            let editable = !rewrite || (self.canEditSelection() &&
+                                              selected?.matches(self.selectionFromAX()) == true)
+                            if (value.route == "insert" || value.route == "replace") &&
+                               self.targetStillValid() && editable {
+                                if value.route == "replace" {
                                     self.pill.working(.applying)
                                     self.show(self.config.pill.applyingLabel)
                                 }
-                                if !self.paste(text) {
-                                    self.presentPreview(text, title: value.title)
-                                }
-                            case Int32(VR_DELIVERY_PREVIEW):
+                                if !self.paste(text) { self.presentPreview(text, title: value.title) }
+                            } else {
                                 self.presentPreview(text, title: value.title)
-                            default:
-                                break
                             }
                         }
                     }
