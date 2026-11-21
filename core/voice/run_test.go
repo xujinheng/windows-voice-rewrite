@@ -135,7 +135,7 @@ func TestCoreRetainsCompletedResultWithoutHostState(t *testing.T) {
 	var core Core
 	token := core.Apply(Command{Kind: CommandStart}).Token
 	out, err := core.Execute(token, cfg, make([]byte, 3200), "", false, nil)
-	if err != nil || out.Text != "shared transcript" {
+	if err != nil || out.Text != "shared transcript" || out.Title != ux.DictationHistoryTitle {
 		t.Fatalf("execute result: %+v, %v", out, err)
 	}
 	entries := core.History.Snapshot()

@@ -16,6 +16,7 @@ import (
 
 type Result struct {
 	Text        string `json:"text"`
+	Title       string `json:"title,omitempty"`
 	Intent      string `json:"intent,omitempty"`
 	Instruction string `json:"instruction,omitempty"`
 	Route       string `json:"route"`

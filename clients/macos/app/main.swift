@@ -48,6 +48,7 @@ struct PillSpec: Decodable {
 
 private struct HostProfile: Decodable {
     let maximumSeconds, modifierDelayMS, mouseDelayMS, pasteRestoreMS: Int
+    let copyLabel: String
     let pill: PillSpec
 }
 
@@ -179,6 +180,7 @@ private struct BridgeReply: Decodable {
     struct Output: Decodable {
         let text: String?
         let route: String?
+        let title: String?
         let profile: HostProfile?
     }
     struct Failure: Decodable { let code: String; let message: String }
@@ -220,11 +222,13 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var tap: CFMachPort?
     private var microphone = Microphone()
     private let pill = RecordingPill()
+    private var resultPanel: NSPanel?
     private var config: HostProfile!
     private var configURL: URL!
     private var taskID: UInt64 = 0
     private var targetPID: pid_t = 0
     private var targetFocus: FocusIdentity?
+    private var selectedAtPress: AXSelection?
     private var pending: Bool { VRSnapshot(0, 0).armed == 0 && taskID != 0 }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -358,13 +362,29 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                              cursor: CGPoint? = nil) -> Bool {
         let key = Int32(code)
         if down {
-            let token = VRCommand(Int32(VR_COMMAND_PRESS), key, 0, pending ? 1 : 0).token
+            resultPanel?.close()
+            resultPanel = nil
+            let press = VRCommand(Int32(VR_COMMAND_PRESS), key, 0, pending ? 1 : 0)
+            let token = press.token
             guard token != 0 else { return false }
             targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
             targetFocus = FocusIdentity(window: focusedWindow(), element: nil, title: nil)
+            selectedAtPress = nil
             taskID = 0
             do { try microphone.start(maximumSeconds: config.maximumSeconds) }
             catch { VRCommand(Int32(VR_COMMAND_ABANDON), 0, 0, 0); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return true }
+            if press.role == 2 {
+                // Snapshot while the original selection is still active. Do not
+                // block the CGEvent tap with synchronous Accessibility requests.
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, VRSnapshot(key, token).can_activate == 1 else { return }
+                    self.selectedAtPress = self.selectionFromAX()
+                    if self.selectedAtPress != nil {
+                        self.targetFocus = FocusIdentity(window: self.targetFocus?.window,
+                                                         element: self.focusedElement(), title: nil)
+                    }
+                }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, VRCommand(Int32(VR_COMMAND_ACTIVATE), key, token, 0).kind == Int32(VR_EVENT_ACTIVATED) else { return }
                 self.begin(rewrite: VRSnapshot(key, 0).held_role == 2)
@@ -395,9 +415,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func begin(rewrite: Bool) {
         guard targetPID > 0 else { reset("No target"); return }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { reset("Focus changed"); return }
-        // Browser page selections do not necessarily expose an AX focused
-        // window/element. Start the hold UI without requiring either; capture
-        // and recheck the actual selection on release before any replacement.
+        // Do not require an AX editor for a browser selection: recording and
+        // the fallback result must still work without it.
         guard microphone.running else { reset("Mic error"); return }
         taskID = VRCommand(Int32(VR_COMMAND_START), 0, 0, 0).token
         pill.recording(rewrite: rewrite, started: Date(),
@@ -410,44 +429,90 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
     private func finish(rewrite: Bool) {
         guard microphone.running, taskID != 0 else { return }
-        VRCommand(Int32(VR_COMMAND_ABANDON), 0, 0, 0) // timeout also releases Go's primary key; the physical hold remains
+        VRCommand(Int32(VR_COMMAND_ABANDON), 0, 0, 0)
         pill.working(rewrite ? .selection : .processing)
         show(rewrite ? config.pill.selectionLabel : config.pill.processingDictation)
         let token = taskID
         do {
             let capture = try microphone.stop()
-            if rewrite && !targetStillValid() { reset("Focus changed"); return }
-            let selectedValue = rewrite ? selectionFromAX() : nil
-            if rewrite && selectedValue == nil { reset("Select text"); return }
-            if rewrite { pill.working(.processing); show(config.pill.processingRewrite) }
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let result = Result {
-                    let pcm = try Microphone.pcm(capture)
-                    return try GoCore.request(rewrite: rewrite,
-                                             audio: pcm, selection: selectedValue?.text, token: token)
-                }
-                DispatchQueue.main.async {
-                    guard let self, VRSnapshot(0, token).valid == 1 else { return }
-                    defer { self.clearSession() }
-                    switch result {
-                    case .failure(let error):
-                        self.reset(self.config.pill.errorLabel)
-                        fputs("VoiceRewrite: \(error)\n", stderr)
-                    case .success(let value):
-                        guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
-                        guard value.route == "replace" || value.route == "insert" else {
-                            self.reset(self.config.pill.fallbackLabel, phase: .fallback); return
+            let submit: (AXSelection?) -> Void = { [weak self] selected in
+                guard let self, VRSnapshot(0, token).valid == 1 else { return }
+                guard !rewrite || selected != nil else { self.reset("Select text"); return }
+                if rewrite { self.pill.working(.processing); self.show(self.config.pill.processingRewrite) }
+                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                    let result = Result {
+                        let pcm = try Microphone.pcm(capture)
+                        return try GoCore.request(rewrite: rewrite, audio: pcm,
+                                                 selection: selected?.text, token: token)
+                    }
+                    DispatchQueue.main.async {
+                        guard let self, VRSnapshot(0, token).valid == 1 else { return }
+                        defer { self.clearSession() }
+                        switch result {
+                        case .failure(let error):
+                            self.reset(self.config.pill.errorLabel)
+                            fputs("VoiceRewrite: \(error)\n", stderr)
+                        case .success(let value):
+                            guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
+                            // Go Core already owns the result route. Native AX
+                            // checks decide whether the requested paste is possible.
+                            let editable = !rewrite || (self.canEditSelection() &&
+                                              selected?.matches(self.selectionFromAX()) == true)
+                            if (value.route == "insert" || value.route == "replace") &&
+                               self.targetStillValid() && editable {
+                                if value.route == "replace" {
+                                    self.pill.working(.applying)
+                                    self.show(self.config.pill.applyingLabel)
+                                }
+                                if !self.paste(text) { self.presentPreview(text, title: value.title) }
+                            } else {
+                                self.presentPreview(text, title: value.title)
+                            }
                         }
-                        guard self.targetStillValid() else { self.reset("Focus changed"); return }
-                        if rewrite && selectedValue?.matches(self.selectionFromAX()) != true {
-                            self.reset("Selection changed"); return
-                        }
-                        if value.route == "replace" { self.pill.working(.applying); self.show(self.config.pill.applyingLabel) }
-                        self.paste(text)
                     }
                 }
             }
+            // Prefer the press-time selection; never adopt another app's
+            // selection after focus changed during recording.
+            let selected = rewrite ? (selectedAtPress ?? (targetStillValid() ? selectionFromAX() : nil)) : nil
+            if rewrite && selected == nil && targetStillValid() {
+                // Browser text can be copyable even when AXSelectedText is absent.
+                copySelection(token: token) { text in
+                    submit(text.map { AXSelection(text: $0, range: nil) })
+                }
+            } else {
+                submit(selected)
+            }
         } catch { reset("Audio error"); fputs("Audio: \(error)\n", stderr) }
+    }
+
+    // Native presentation only: Go Core retains the result and decides when
+    // a preview is required; no clipboard mutation occurs until Copy is clicked.
+    private func presentPreview(_ text: String, title: String?) {
+        resultPanel?.close()
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 500, height: 310),
+                            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        panel.title = title ?? "VoiceRewrite Result"
+        panel.isReleasedWhenClosed = false
+        panel.minSize = NSSize(width: 360, height: 220)
+        let scroll = NSTextView.scrollableTextView()
+        scroll.frame = NSRect(x: 16, y: 56, width: 468, height: 238)
+        scroll.autoresizingMask = [.width, .height]
+        if let view = scroll.documentView as? NSTextView {
+            view.string = text
+            view.isEditable = false
+            view.isSelectable = true
+            view.font = .systemFont(ofSize: 14)
+        }
+        let copy = NSButton(title: config.copyLabel, target: self, action: #selector(copyResult))
+        copy.frame = NSRect(x: 16, y: 14, width: 120, height: 30)
+        panel.contentView?.addSubview(scroll)
+        panel.contentView?.addSubview(copy)
+        panel.center()
+        panel.orderFrontRegardless()
+        resultPanel = panel
+        pill.result(.fallback)
+        show(config.pill.fallbackLabel)
     }
 
     private func focusedWindow() -> AXUIElement? {
@@ -506,6 +571,65 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         return AXSelection(text: string, range: range)
     }
 
+    // A visible selection need not be editable (web pages, PDFs and readers).
+    private func canEditSelection() -> Bool {
+        guard let focused = focusedElement() else { return false }
+        var settable = DarwinBoolean(false)
+        return AXUIElementIsAttributeSettable(focused, kAXValueAttribute as CFString, &settable) == .success
+            && settable.boolValue
+    }
+
+    // Copy selected browser text without adopting it as a paste target.
+    // Only the clipboard generation created by our copy may be restored.
+    private func copySelection(token: UInt64, completion: @escaping (String?) -> Void) {
+        let board = NSPasteboard.general
+        guard let saved = snapshotClipboard(board),
+              let source = CGEventSource(stateID: .hidSystemState),
+              let down = CGEvent(keyboardEventSource: source, virtualKey: 8, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: 8, keyDown: false)
+        else { completion(nil); return }
+        let before = board.changeCount
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        // Let the physical modifier key-up reach the editor before
+        // synthesizing Cmd+C; otherwise the copy chord can be altered.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self, VRSnapshot(0, token).valid == 1,
+                  self.targetStillValid(), board.changeCount == before else {
+                completion(nil); return
+            }
+            down.post(tap: .cghidEventTap)
+            up.post(tap: .cghidEventTap)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                let lease = board.changeCount
+                let text = lease == before ? nil : board.string(forType: .string)
+                if lease != before && board.changeCount == lease {
+                    board.clearContents()
+                    if !saved.isEmpty { _ = board.writeObjects(saved) }
+                }
+                completion(text?.isEmpty == false ? text : nil)
+            }
+        }
+    }
+
+    private func snapshotClipboard(_ board: NSPasteboard) -> [NSPasteboardItem]? {
+        let originals = board.pasteboardItems
+        if originals == nil && board.types?.isEmpty == false { return nil }
+        var saved: [NSPasteboardItem] = []
+        var totalBytes = 0
+        for item in originals ?? [] {
+            let copy = NSPasteboardItem()
+            for type in item.types {
+                guard let data = item.data(forType: type),
+                      VRClipboardSnapshotFits(UInt64(data.count), UInt64(totalBytes)) != 0,
+                      copy.setData(data, forType: type) else { return nil }
+                totalBytes += data.count
+            }
+            saved.append(copy)
+        }
+        return saved
+    }
+
     private func targetStillValid() -> Bool {
         guard VRSnapshot(0, taskID).valid == 1,
               NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID,
@@ -516,48 +640,32 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                    title: targetFocus.title == nil ? nil : window.flatMap(windowTitle))
     }
 
-    private func paste(_ text: String) {
+    private func paste(_ text: String) -> Bool {
         let source = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {
             reset("Paste unavailable")
-            return
+            return false
         }
         let board = NSPasteboard.general
         let stamp = board.changeCount
-        let originals = board.pasteboardItems
-        if originals == nil && board.types?.isEmpty == false { pasteUnicode(text); return }
-        // NSPasteboardItem is not NSCopying; preserve each advertised data type.
-        var saved: [NSPasteboardItem] = []
-        var totalBytes = 0
-        for item in originals ?? [] {
-            let copy = NSPasteboardItem()
-            for type in item.types {
-                guard let data = item.data(forType: type),
-                      VRClipboardSnapshotFits(UInt64(data.count), UInt64(totalBytes)) != 0,
-                      copy.setData(data, forType: type) else {
-                    pasteUnicode(text); return
-                }
-                totalBytes += data.count
-            }
-            saved.append(copy)
-        }
-        guard board.changeCount == stamp else { reset("Clipboard changed"); return }
-        guard targetStillValid() else { reset("Focus changed"); return }
+        guard let saved = snapshotClipboard(board) else { return pasteUnicode(text) }
+        guard board.changeCount == stamp else { reset("Clipboard changed"); return false }
+        guard targetStillValid() else { reset("Focus changed"); return false }
         board.clearContents()
         let cleared = board.changeCount
         guard board.setString(text, forType: .string) else {
             // Failed writes must not erase a newer clipboard owner.
             if board.changeCount == cleared && !saved.isEmpty { _ = board.writeObjects(saved) }
             reset("Paste failed")
-            return
+            return false
         }
         let lease = board.changeCount
         down.flags = .maskCommand
         up.flags = .maskCommand
         guard board.changeCount == lease, targetStillValid() else {
             if board.changeCount == lease { board.clearContents(); _ = board.writeObjects(saved) }
-            reset("Focus or clipboard changed"); return
+            reset("Focus or clipboard changed"); return false
         }
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
@@ -569,16 +677,17 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             board.clearContents()
             if !saved.isEmpty { _ = board.writeObjects(saved) }
         }
+        return true
     }
-    private func pasteUnicode(_ text: String) {
+    private func pasteUnicode(_ text: String) -> Bool {
         let source = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: false)
-        else { reset("Paste unavailable"); return }
+        else { reset("Paste unavailable"); return false }
         let units = Array(text.utf16)
         var start = 0
         while start < units.count {
-            guard targetStillValid() else { reset("Focus changed"); return }
+            guard targetStillValid() else { reset("Focus changed"); return false }
             var end = min(start + 20, units.count)
             if end < units.count && (0xD800...0xDBFF).contains(units[end - 1]) { end -= 1 }
             for event in [down, up] {
@@ -591,6 +700,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         }
         show(config.pill.sentLabel)
         pill.result(.sent)
+        return true
     }
 
     private func cancelFromPill() {
@@ -612,6 +722,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func clearSession() {
         VRCommand(Int32(VR_COMMAND_ABANDON), 0, 0, 0)
         targetFocus = nil
+        selectedAtPress = nil
         taskID = 0
     }
 }

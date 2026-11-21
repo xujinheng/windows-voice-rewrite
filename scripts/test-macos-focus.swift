@@ -2,6 +2,13 @@
 // It is never linked into the production app.
 // Same-file extension can exercise private host state without widening production access.
 extension HeadlessApp {
+    func verifyClipboardSnapshot() {
+        let board = NSPasteboard(name: NSPasteboard.Name("VoiceRewriteScopeTest"))
+        board.clearContents()
+        precondition(board.setString("keep clipboard", forType: .string))
+        precondition(snapshotClipboard(board)?.first?.string(forType: .string) == "keep clipboard")
+    }
+
     func verifyReboundRelease(code: Int64, before: String,
                               after: String, modifier: Bool) {
         let initial = try! GoCore.request(config: before, audio: Data(), selection: nil)
@@ -109,6 +116,7 @@ MainActor.assumeIsolated {
         String(decoding: try! JSONSerialization.data(withJSONObject: raw), as: UTF8.self)
     }
     let hostApp = HeadlessApp()
+    hostApp.verifyClipboardSnapshot()
     hostApp.verifyReboundRelease(code: 103, before: host(mouseBound),
                                  after: host(original), modifier: false)
     hostApp.verifyReboundRelease(code: 54, before: host(original),

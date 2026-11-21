@@ -312,8 +312,10 @@ func (c *Core) Execute(token uint64, cfg coreconfig.Config, pcm []byte, selected
 	}
 	if err == nil {
 		title := ux.DictationHistoryTitle
+		result.Title = ux.DictationHistoryTitle
 		if rewrite {
 			title = ux.HistoryTitle(result.Intent)
+			result.Title = ux.ResultCardTitle(result.Intent)
 		}
 		c.History.Remember(title, result.Text)
 		if emit != nil {
