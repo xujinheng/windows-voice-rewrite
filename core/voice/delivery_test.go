@@ -13,12 +13,13 @@ func TestDeliveryDecisionSharedAcrossNativeHosts(t *testing.T) {
 		want  DeliveryAction
 	}{
 		{"dictation", RouteInsert, DeliveryFacts{TargetCurrent: true}, DeliveryInsert},
-		{"replacement", RouteReplace, DeliveryFacts{TargetCurrent: true, SelectionCurrent: true}, DeliveryReplace},
-		{"answer", RoutePreview, DeliveryFacts{TargetCurrent: true, SelectionCurrent: true}, DeliveryPreview},
+		{"replacement", RouteReplace, DeliveryFacts{TargetCurrent: true, SelectionAvailable: true}, DeliveryReplace},
+		{"answer", RoutePreview, DeliveryFacts{TargetCurrent: true, SelectionAvailable: true}, DeliveryPreview},
 		{"focus moved", RouteInsert, DeliveryFacts{}, DeliveryPreview},
-		{"selection moved", RouteReplace, DeliveryFacts{TargetCurrent: true}, DeliveryPreview},
+		{"selection absent", RouteReplace, DeliveryFacts{TargetCurrent: true}, DeliveryPreview},
+		{"selection changed at native delivery", RouteReplace, DeliveryFacts{TargetCurrent: true, SelectionAvailable: true, Failed: true}, DeliveryPreview},
 		{"dictation paste failed", RouteInsert, DeliveryFacts{TargetCurrent: true, Failed: true}, DeliveryPreview},
-		{"rewrite paste failed", RouteReplace, DeliveryFacts{TargetCurrent: true, SelectionCurrent: true, Failed: true}, DeliveryPreview},
+		{"rewrite paste failed", RouteReplace, DeliveryFacts{TargetCurrent: true, SelectionAvailable: true, Failed: true}, DeliveryPreview},
 		{"unknown route", "invalid", DeliveryFacts{TargetCurrent: true}, DeliveryPreview},
 	}
 	for _, tc := range cases {
