@@ -44,7 +44,6 @@ cat > "$app/Contents/Info.plist" <<EOF
 <key>NSMicrophoneUsageDescription</key><string>VoiceRewrite records microphone audio while a configured shortcut is held.</string>
 </dict></plist>
 EOF
-cp clients/macos/app/config.example.json "$app/Contents/Resources/config.example.json"
 plutil -lint "$app/Contents/Info.plist"
 test -x "$app/Contents/MacOS/VoiceRewrite"
 test "$(lipo -archs "$app/Contents/MacOS/VoiceRewrite")" = "$arch"
