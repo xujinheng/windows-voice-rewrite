@@ -600,7 +600,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         panel.orderFrontRegardless()
         resultPanel = panel
         pill.result(.fallback)
-        show(config.pill.fallbackLabel)
+        show(panel.title)
     }
 
     private func focusedWindow() -> AXUIElement? {
