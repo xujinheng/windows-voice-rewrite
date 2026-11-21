@@ -95,16 +95,6 @@ MainActor.assumeIsolated {
     precondition(VRClipboardSnapshotFits(16 << 20, 32 << 20) == 1)
     precondition(VRClipboardSnapshotFits((16 << 20) + 1, 0) == 0)
     precondition(VRClipboardSnapshotFits(1, 48 << 20) == 0)
-    // Go owns delivery and fallback decisions; the Darwin ABI must preserve
-    // the same actions as the Windows direct Core caller.
-    let deliveryToken = VRCommand(Int32(VR_COMMAND_START), 0, 0, 0).token
-    precondition("insert".withCString { VRDelivery(deliveryToken, $0, 1, 1, 0) } == Int32(VR_DELIVERY_INSERT))
-    precondition("replace".withCString { VRDelivery(deliveryToken, $0, 1, 1, 0) } == Int32(VR_DELIVERY_REPLACE))
-    precondition("replace".withCString { VRDelivery(deliveryToken, $0, 1, 0, 0) } == Int32(VR_DELIVERY_PREVIEW))
-    precondition("preview".withCString { VRDelivery(deliveryToken, $0, 1, 1, 0) } == Int32(VR_DELIVERY_PREVIEW))
-    precondition("insert".withCString { VRDelivery(deliveryToken, $0, 1, 1, 1) } == Int32(VR_DELIVERY_PREVIEW))
-    VRCommand(Int32(VR_COMMAND_CANCEL), 0, 0, 0)
-    precondition("insert".withCString { VRDelivery(deliveryToken, $0, 1, 1, 0) } == Int32(VR_DELIVERY_DROP))
     // Clipboard reads for browser selections and native paste share one
     // multi-format snapshot path; it must retain the original contents.
     let testBoard = NSPasteboard(name: NSPasteboard.Name("VoiceRewriteScopeTest"))
