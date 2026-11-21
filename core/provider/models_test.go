@@ -93,3 +93,16 @@ func TestListModelsEmptyAndInvalidResponse(t *testing.T) {
 		t.Fatalf("empty model list must be an empty array: %#v %v", got, err)
 	}
 }
+
+func TestDiscoverModelEqualScoreKeepsProviderOrder(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"id":"chat-instruct-first"},{"id":"chat-instruct-second"},{"id":"chat-third"},{"id":"whisper-instruct-ignored"}]}`))
+	}))
+	defer srv.Close()
+	cfg := coreconfig.Defaults()
+	cfg.TextModel = "auto"
+	cfg.LLMBaseURL = srv.URL + "/v1"
+	if got, err := DiscoverModel(context.Background(), cfg); err != nil || got != "chat-instruct-first" {
+		t.Fatalf("single-pass selection must retain stable candidate priority: %q %v", got, err)
+	}
+}
