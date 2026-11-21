@@ -13,8 +13,7 @@ struct AXSelection {
 
     func matches(_ current: AXSelection?) -> Bool {
         guard let current, text == current.text else { return false }
-        guard let range else { return true }
-        guard let other = current.range else { return false }
+        guard let range, let other = current.range else { return true }
         return range.location == other.location && range.length == other.length
     }
 }
@@ -23,12 +22,11 @@ struct AXSelection {
 struct FocusIdentity {
     let window: AXUIElement?
     let element: AXUIElement?
-    let title: String?
 
-    func matches(window: AXUIElement?, element: AXUIElement?, title: String?) -> Bool {
+    func matches(window: AXUIElement?, element: AXUIElement?) -> Bool {
         if let saved = self.window, window.map({ CFEqual(saved, $0) }) != true { return false }
         if let saved = self.element, element.map({ CFEqual(saved, $0) }) != true { return false }
-        return self.title == nil || self.title == title
+        return true
     }
 }
 private enum HostError: Error {
@@ -401,7 +399,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             let token = press.token
             guard token != 0 else { return false }
             targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
-            targetFocus = FocusIdentity(window: focusedWindow(), element: nil, title: nil)
+            targetFocus = FocusIdentity(window: focusedWindow(), element: nil)
             selectedAtPress = nil
             taskID = 0
             do { try microphone.start(maximumSeconds: config.maximumSeconds) }
@@ -414,7 +412,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     self.selectedAtPress = self.selectionFromAX()
                     if self.selectedAtPress != nil {
                         self.targetFocus = FocusIdentity(window: self.targetFocus?.window,
-                                                         element: self.focusedElement(), title: nil)
+                                                         element: self.focusedElement())
                     }
                 }
             }
@@ -489,8 +487,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                             guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
                             // Go Core already owns the result route. Native AX
                             // checks decide whether the requested paste is possible.
-                            let editable = !rewrite || (self.canEditSelection() &&
-                                              selected?.matches(self.selectionFromAX()) == true)
+                            let editable = !rewrite || selected?.matches(self.selectionFromAX()) == true
                             if (value.route == "insert" || value.route == "replace") &&
                                self.targetStillValid() && editable {
                                 if value.route == "replace" {
@@ -527,6 +524,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                             styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         panel.title = title ?? "VoiceRewrite Result"
         panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.minSize = NSSize(width: 360, height: 220)
         let scroll = NSTextView.scrollableTextView()
         scroll.frame = NSRect(x: 16, y: 56, width: 468, height: 238)
@@ -568,13 +568,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         return element
     }
 
-    private func windowTitle(_ window: AXUIElement) -> String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString,
-                                             &value) == .success else { return nil }
-        return value as? String
-    }
-
     private func selectionFromAX() -> AXSelection? {
         guard let focused = focusedElement() else { return nil }
         var value: CFTypeRef?
@@ -602,14 +595,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             rangeValue, &text) == .success, let string = text as? String,
               !string.isEmpty else { return nil }
         return AXSelection(text: string, range: range)
-    }
-
-    // A visible selection need not be editable (web pages, PDFs and readers).
-    private func canEditSelection() -> Bool {
-        guard let focused = focusedElement() else { return false }
-        var settable = DarwinBoolean(false)
-        return AXUIElementIsAttributeSettable(focused, kAXValueAttribute as CFString, &settable) == .success
-            && settable.boolValue
     }
 
     // Copy selected browser text without adopting it as a paste target.
@@ -669,8 +654,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
               let targetFocus else { return false }
         let window = targetFocus.window == nil ? nil : focusedWindow()
         return targetFocus.matches(window: window,
-                                   element: targetFocus.element == nil ? nil : focusedElement(),
-                                   title: targetFocus.title == nil ? nil : window.flatMap(windowTitle))
+                                   element: targetFocus.element == nil ? nil : focusedElement())
     }
 
     private func paste(_ text: String) -> Bool {
