@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -292,6 +293,31 @@ type Endpoints struct {
 	ASRModel   string
 	LLMBaseURL string
 	TextModel  string
+}
+
+// RecordingSeconds validates the user-editable duration for both native hosts.
+func RecordingSeconds(value string) (int, error) {
+	seconds, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || seconds < RecordSecondsMin || seconds > RecordSecondsMax {
+		return 0, fmt.Errorf("最长录音必须是 %d–%d 秒之间的整数", RecordSecondsMin, RecordSecondsMax)
+	}
+	return seconds, nil
+}
+
+// WithConnectionFields applies the six ASR/LLM settings fields identically on
+// Windows and macOS. The order follows contract.Stacked for those two pages.
+func WithConnectionFields(old Config, values [6]string) (Config, error) {
+	endpoints, err := CanonicalEndpoints(values[0], values[1], values[3], values[4])
+	if err != nil {
+		return old, err
+	}
+	asrKey, llmKey := strings.TrimSpace(values[2]), strings.TrimSpace(values[5])
+	if StoredCredentialTooLong(asrKey) || StoredCredentialTooLong(llmKey) {
+		return old, errors.New(CredentialTooLong)
+	}
+	old.ASRBaseURL, old.ASRModel, old.ASRAPIKey = endpoints.ASRBaseURL, endpoints.ASRModel, asrKey
+	old.LLMBaseURL, old.TextModel, old.LLMAPIKey = endpoints.LLMBaseURL, endpoints.TextModel, llmKey
+	return old, nil
 }
 
 // CanonicalEndpoints trims addresses, drops a trailing slash, and fills empty

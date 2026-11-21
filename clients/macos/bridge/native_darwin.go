@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
@@ -31,6 +32,7 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/core/audio"
 	"github.com/xujinheng/windows-voice-rewrite/core/clipboard"
 	"github.com/xujinheng/windows-voice-rewrite/core/indicator"
+	"github.com/xujinheng/windows-voice-rewrite/core/settingsform"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 )
@@ -139,6 +141,46 @@ func VRProfile(config *C.char) *C.char {
 		nativeCore.Apply(voice.Command{Kind: voice.CommandBind, Dictation: []int{macKeyCode(profile["dictation"].(string))}, Rewrite: []int{macKeyCode(profile["rewrite"].(string))}})
 	}
 	return nativeJSON(reply)
+}
+
+//export VRSettings
+func VRSettings(request *C.char) *C.char {
+	if request == nil {
+		return nativeJSON(failure("invalid_request", "missing settings request"))
+	}
+	value, err := settingsform.ConnectionAction(context.Background(), []byte(C.GoString(request)))
+	if err == nil {
+		if output, ok := value.(map[string]any); ok {
+			if _, isForm := output["form"]; isForm {
+				capture := map[string]string{}
+				for name, code := range macShortcutCodes {
+					capture[strconv.Itoa(code)] = name
+				}
+				output["capture"] = capture
+			}
+		}
+		if saved, ok := value.(map[string]string); ok {
+			if raw, isSave := saved["config"]; isSave {
+				profile := headlessProfile(json.RawMessage(raw))
+				if !profile.OK {
+					return nativeJSON(failure("invalid_config", "请选择当前 macOS 支持的不同快捷键"))
+				}
+				data, marshalErr := coreconfig.Marshal(profile.cfg)
+				if marshalErr != nil {
+					return nativeJSON(failure("settings_failed", marshalErr.Error()))
+				}
+				saved["config"] = string(data)
+			}
+		}
+	}
+	if err != nil {
+		message := err.Error()
+		if friendly, ok := ux.Classify(err); ok {
+			message = friendly
+		}
+		return nativeJSON(failure("settings_failed", message))
+	}
+	return nativeJSON(success(value))
 }
 
 const maxPCMBytes = audio.PCMBytesPerSecond * coreconfig.RecordSecondsMax

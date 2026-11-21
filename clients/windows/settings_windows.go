@@ -15,6 +15,7 @@ import (
 	"time"
 	"unsafe"
 
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/contract"
 	"github.com/xujinheng/windows-voice-rewrite/core/desktop"
 	"github.com/xujinheng/windows-voice-rewrite/core/provider"
@@ -635,7 +636,7 @@ func (p *uxSettings) save() error {
 	for i, h := range p.inputs {
 		fields[i] = uxWinText(h)
 	}
-	cfg, err := uxUpdatedConfig(p.app.cfg, fields)
+	cfg, err := coreconfig.WithConnectionFields(p.app.cfg, fields)
 	if err != nil {
 		return err
 	}
@@ -647,7 +648,7 @@ func (p *uxSettings) save() error {
 		return err
 	}
 	cfg.HotkeyRecord, cfg.DictationHotkey = newRewrite, newDictation
-	seconds, err := uxRecordingSeconds(uxWinText(p.recordDuration))
+	seconds, err := coreconfig.RecordingSeconds(uxWinText(p.recordDuration))
 	if err != nil {
 		return err
 	}

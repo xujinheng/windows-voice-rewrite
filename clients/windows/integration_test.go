@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/xujinheng/windows-voice-rewrite/core/asrtext"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/serviceprobe"
 )
 
@@ -35,20 +36,20 @@ func TestOneClickLanguagePrefixAllLanguages(t *testing.T) {
 
 func TestConfigValuesValidation(t *testing.T) {
 	cfg := defaults()
-	cfg2, e := uxUpdatedConfig(cfg, [6]string{" http://127.0.0.1:8081/v1/ ", " qwen3-asr ", "secret", "http://127.0.0.1:1234/v1", "", "llm-secret"})
+	cfg2, e := coreconfig.WithConnectionFields(cfg, [6]string{" http://127.0.0.1:8081/v1/ ", " qwen3-asr ", "secret", "http://127.0.0.1:1234/v1", "", "llm-secret"})
 	if e != nil || cfg2.ASRModel != "qwen3-asr" || cfg2.TextModel != "auto" || cfg2.ASRBaseURL != "http://127.0.0.1:8081/v1" {
 		t.Fatalf("updated=%+v, error=%v", cfg2, e)
 	}
-	_, e = uxUpdatedConfig(cfg, [6]string{"ftp://user:pw@bad/v1", "m", "", "http://localhost:1234/v1", "auto", ""})
+	_, e = coreconfig.WithConnectionFields(cfg, [6]string{"ftp://user:pw@bad/v1", "m", "", "http://localhost:1234/v1", "auto", ""})
 	if e == nil {
 		t.Fatal("must reject unsupported API URL")
 	}
 	longKey := strings.Repeat("k", 4001)
-	_, e = uxUpdatedConfig(cfg, [6]string{"http://127.0.0.1:8081/v1", "m", longKey, "http://127.0.0.1:1234/v1", "auto", "  " + longKey})
+	_, e = coreconfig.WithConnectionFields(cfg, [6]string{"http://127.0.0.1:8081/v1", "m", longKey, "http://127.0.0.1:1234/v1", "auto", "  " + longKey})
 	if e == nil || e.Error() != "输入内容过长" {
 		t.Fatalf("credential length: %v", e)
 	}
-	_, e = uxUpdatedConfig(cfg, [6]string{"http://127.0.0.1:8081/v1", "m", strings.Repeat("k", 4000), "http://127.0.0.1:1234/v1", "auto", ""})
+	_, e = coreconfig.WithConnectionFields(cfg, [6]string{"http://127.0.0.1:8081/v1", "m", strings.Repeat("k", 4000), "http://127.0.0.1:1234/v1", "auto", ""})
 	if e != nil {
 		t.Fatalf("4000-byte key rejected: %v", e)
 	}

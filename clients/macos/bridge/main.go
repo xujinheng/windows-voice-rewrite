@@ -37,10 +37,10 @@ func success(value any) response {
 	return response{OK: true, Result: value}
 }
 
-// Physical Quartz codes are a Mac host fact, not a second voice rule.
-func macKeyCode(s string) int {
-	return map[string]int{macDefaultDictation: 54, macDefaultRewrite: 61, "Mouse4": 103, "Mouse5": 104}[s]
-}
+// Quartz codes remain physical facts owned by the native adapter.
+var macShortcutCodes = map[string]int{macDefaultDictation: 54, macDefaultRewrite: 61, "Mouse4": 103, "Mouse5": 104}
+
+func macKeyCode(s string) int { return macShortcutCodes[s] }
 
 // headlessProfile shares the existing config normalizer and indicator with
 // Windows; only physical Mac shortcut identifiers differ.

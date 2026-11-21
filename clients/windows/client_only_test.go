@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/serviceprobe"
 )
 
@@ -61,7 +62,7 @@ func TestClientOnlyAPIProbeAuthAndNonstandardModels(t *testing.T) {
 }
 
 func TestClientOnlySettingsPersistCredentials(t *testing.T) {
-	cfg, err := uxUpdatedConfig(defaults(), [6]string{"https://asr.example.net/v1", "speech-v2", "asr-token", "https://llm.example.net/v1", "writer-v3", "text-token"})
+	cfg, err := coreconfig.WithConnectionFields(defaults(), [6]string{"https://asr.example.net/v1", "speech-v2", "asr-token", "https://llm.example.net/v1", "writer-v3", "text-token"})
 	if err != nil {
 		t.Fatal(err)
 	}

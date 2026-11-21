@@ -77,7 +77,7 @@ func Controls() []Control {
 		{ID: "probe_llm_status", Page: "writing", Kind: Status},
 
 		{ID: "rewrite_shortcut", Page: "input", Label: "语音指令", Kind: Shortcut, Stacked: true},
-		{ID: "capture_rewrite", Page: "input", Label: "录入按键", Kind: Button},
+		{ID: "capture_rewrite", Page: "input", Label: "录入按键", Hint: "请按下要使用的按键（Esc 取消）", Kind: Button},
 		{ID: "dictation_shortcut", Page: "input", Label: "听写快捷键", Kind: Shortcut, Stacked: true},
 		{ID: "capture_dictation", Page: "input", Label: "录入按键", Kind: Button},
 		{ID: "microphone", Page: "input", Label: "麦克风", Kind: Choice, Stacked: true},
@@ -93,7 +93,7 @@ func Controls() []Control {
 		{ID: "selection_copy_attempts", Page: "input", Label: "选区复制重试次数（Windows 专用）", Kind: Note, Platform: MacOS, Gap: "#148"},
 		{ID: "selection_copy_timeout_ms", Page: "input", Label: "选区复制超时由 Windows 剪贴板适配器使用；macOS 使用 AX 和原生粘贴板时序。", Kind: Note, Platform: MacOS, Gap: "#148"},
 		{ID: "input_note_windows", Page: "input", Label: "语音指令用于改写/解释/问答；更换按键或设备后需重启软件。", Kind: Note, Platform: Windows, Gap: "#61 #69"},
-		{ID: "input_note_macos", Page: "input", Label: "快捷键可直接录入左/右 Control、左/右 Option、左/右 Command 六个单键；单独按住 200ms 开始、松开结束，正常组合键不被拦截。Mouse4 听写、Mouse5 改写保留，亦可配置 Ctrl+Option 组合键。默认右 Command 听写、右 Option 改写，MacBook Pro/Air 内建键盘均可使用。录入时能区分左/右修饰键；外接键盘仍可自定义右 Control。退出快捷键必须使用功能键或组合键。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
+		{ID: "input_note_macos", Page: "input", Label: "支持右 Command、右 Option、Mouse4 和 Mouse5；按住开始、松开结束。当前仅支持系统默认麦克风与按住录音模式。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
 
 		{ID: "save", Page: "save", Label: "保存设置", Kind: Button},
 		{ID: "advanced", Page: "save", Label: "高级配置", Kind: Button},
