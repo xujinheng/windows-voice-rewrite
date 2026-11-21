@@ -72,11 +72,11 @@ func headlessProfile(raw json.RawMessage) response {
 	result := map[string]any{"profile": map[string]any{
 		"dictation": cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
 		"maximumSeconds": cfg.MaxRecordSeconds, "modifierDelayMS": 200,
-		"pasteRestoreMS": ux.PasteReceiptMinimumMilliseconds,
-		"mouseDelayMS":   int(voice.SideHoldThreshold / time.Millisecond),
-		"pill":           indicator.HostSpec(),
-		"copyLabel":      ux.CopyAction,
-		"applyLabel":     ux.ApplyAction,
+		"pasteRestoreMS":   ux.PasteReceiptMinimumMilliseconds,
+		"mouseDelayMS":     int(voice.SideHoldThreshold / time.Millisecond),
+		"pill":             indicator.HostSpec(),
+		"copyLabel":        ux.CopyAction,
+		"applyLabel":       ux.ApplyAction,
 		"applyUnsafeLabel": ux.ApplyUnsafe,
 	}}
 	if len(provided) == 0 {
