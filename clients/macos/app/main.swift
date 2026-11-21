@@ -591,8 +591,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let before = board.changeCount
         down.flags = .maskCommand
         up.flags = .maskCommand
-        // The physical RightOption/RightCommand key-up must reach the editor
-        // before the synthesized Cmd+C, otherwise it may alter the shortcut.
+        // Let the physical modifier key-up reach the editor before
+        // synthesizing Cmd+C; otherwise the copy chord can be altered.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self, VRSnapshot(0, token).valid == 1,
                   self.targetStillValid(), board.changeCount == before else {
