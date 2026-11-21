@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -29,7 +30,9 @@ func TestProviderRefusesRedirectsToUnconfiguredHosts(t *testing.T) {
 }
 
 func TestHTTPErrorDoesNotEchoProviderBody(t *testing.T) {
-	if strings.Contains(HTTPError("ASR", 415).Error(), "secret") {
-		t.Fatal("leaked error body")
+	err := HTTPError("ASR", 415)
+	var status *HTTPStatusError
+	if strings.Contains(err.Error(), "secret") || err.Error() != "ASR HTTP 415" || !errors.As(err, &status) || status.Status != 415 {
+		t.Fatal("status code or safe message was lost", err)
 	}
 }

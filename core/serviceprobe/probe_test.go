@@ -22,9 +22,11 @@ func TestProbeModelMatchesWindowsStatusAndBearerHandling(t *testing.T) {
 		want   string
 	}{
 		{200, "已在服务中发现"},
+		{204, "HTTP 204"},
 		{401, "API Key"},
 		{404, "不提供模型列表"},
 		{503, "暂时不可用"},
+		{429, "HTTP 429"},
 	} {
 		t.Run(fmt.Sprint(tc.status), func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -99,5 +101,30 @@ func TestProbeReportsInvalidURLAndContextCancellation(t *testing.T) {
 	cancel()
 	if got := ProbeModel(ctx, "ASR", "http://127.0.0.1:1/v1", "", "qwen3-asr"); !strings.Contains(got, "超时") && !strings.Contains(got, "无法连接") {
 		t.Fatalf("cancel returned unexpected result: %q", got)
+	}
+}
+
+func TestProbeModelsReuseProviderValidationAndDeduplication(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			_, _ = io.WriteString(w, `{"data":[{"id":"chat"},{"id":"chat"},{"id":"\ninvalid"},{"id":"text-model"}]}`)
+		}
+	}))
+	defer srv.Close()
+	if got := ProbeModel(context.Background(), "LLM", srv.URL+"/v1", "", "auto"); !strings.Contains(got, "2 个模型") {
+		t.Fatalf("probe should count usable deduplicated provider models, got %q", got)
+	}
+	if got := ProbeModel(context.Background(), "LLM", srv.URL+"/v1", "", "text-model"); !strings.Contains(got, "已在服务中发现") {
+		t.Fatal(got)
+	}
+}
+
+func TestProbeModelsKeepMalformedResponseHint(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"data":`)
+	}))
+	defer srv.Close()
+	if got := ProbeModel(context.Background(), "LLM", srv.URL+"/v1", "", "auto"); !strings.Contains(got, "模型列表格式无法识别") {
+		t.Fatal(got)
 	}
 }

@@ -26,8 +26,16 @@ func RequestClient(timeout time.Duration) *http.Client {
 
 func Endpoint(base, suffix string) string { return strings.TrimRight(base, "/") + suffix }
 
-// Only a concise, non-sensitive status goes to UI or logs. Provider error
-// bodies can echo selected text, API keys or request transcripts.
+// HTTPStatusError preserves the provider status without parsing localized
+// error strings. No response body (which may contain user content) is exposed.
+type HTTPStatusError struct {
+	Service string
+	Status  int
+}
+
+func (e *HTTPStatusError) Error() string { return fmt.Sprintf("%s HTTP %d", e.Service, e.Status) }
+
+// Only a concise, non-sensitive status goes to UI or logs.
 func HTTPError(service string, status int) error {
-	return fmt.Errorf("%s HTTP %d", service, status)
+	return &HTTPStatusError{Service: service, Status: status}
 }
