@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"strings"
 	"testing"
 )
@@ -52,39 +53,23 @@ func TestHostProfileUsesSharedPasteMinimum(t *testing.T) {
 	}
 }
 
-func TestFreshMacConfigIsGoNormalizedAndNotEchoedForExistingUsers(t *testing.T) {
-	result := headlessProfile(json.RawMessage(`{}`))
-	if !result.OK {
-		t.Fatalf("default profile failed: %+v", result.Error)
+func TestFreshMacConfigUsesCoreMarshalWithoutEchoingUserSettings(t *testing.T) {
+	fresh := headlessProfile(json.RawMessage(`{}`))
+	if !fresh.OK {
+		t.Fatal(fresh.Error)
 	}
-	configText, ok := result.Result.(map[string]any)["defaultConfig"].(string)
-	if !ok || !strings.HasSuffix(configText, "\n") {
-		t.Fatalf("missing human-readable config: %T", result.Result)
-	}
-	var config map[string]any
-	if err := json.Unmarshal([]byte(configText), &config); err != nil {
+	want, err := coreconfig.Marshal(fresh.cfg)
+	if err != nil {
 		t.Fatal(err)
 	}
-	for key, want := range map[string]any{
-		"asr_base_url": "http://127.0.0.1:8080/v1",
-		"asr_model": "qwen3-asr",
-		"llm_base_url": "http://127.0.0.1:1234/v1",
-		"text_model": "auto",
-		"dictation_hotkey": "RightCommand",
-		"hotkey_record": "RightOption",
-		"record_mode": "hold",
-		"max_record_seconds": float64(180),
-	} {
-		if got := config[key]; got != want {
-			t.Errorf("%s: got %v, want %v", key, got, want)
-		}
+	if got := fresh.Result.(map[string]any)["defaultConfig"]; got != string(want) {
+		t.Fatalf("generated config differs from Go Core Marshal")
 	}
-	if len(config) < 8 {
-		t.Fatalf("defaults missing expected settings: %+v", config)
+	user := headlessProfile(json.RawMessage(`{"asr_api_key":"hidden-secret"}`))
+	if !user.OK {
+		t.Fatal(user.Error)
 	}
-	if other := headlessProfile(json.RawMessage(`{"asr_api_key":"hidden-secret"}`)); !other.OK {
-		t.Fatalf("custom profile unexpectedly failed")
-	} else if _, exposed := other.Result.(map[string]any)["defaultConfig"]; exposed {
-		t.Fatal("custom user settings must not be echoed by the bridge")
+	if _, exposed := user.Result.(map[string]any)["defaultConfig"]; exposed {
+		t.Fatal("existing user config must not be echoed")
 	}
 }
