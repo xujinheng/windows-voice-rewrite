@@ -48,7 +48,7 @@ struct PillSpec: Decodable {
 
 private struct HostProfile: Decodable {
     let maximumSeconds, modifierDelayMS, mouseDelayMS, pasteRestoreMS: Int
-    let copyLabel: String
+    let copyLabel, applyLabel, applyUnsafeLabel: String
     let pill: PillSpec
 }
 
@@ -223,6 +223,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var microphone = Microphone()
     private let pill = RecordingPill()
     private var resultPanel: NSPanel?
+    private var previewApply: (pid: pid_t, focus: FocusIdentity, selection: AXSelection, token: UInt64, text: String)?
     private var config: HostProfile!
     private var configURL: URL!
     private var taskID: UInt64 = 0
@@ -297,6 +298,35 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         defer { VRFree(result) }
         NSPasteboard.general.clearContents()
         show(NSPasteboard.general.setString(String(cString: result), forType: .string) ? "Copied" : "Copy failed")
+    }
+    @objc private func applyResult() {
+        guard let request = previewApply, VRSnapshot(0, request.token).valid == 1,
+              VRSnapshot(0, 0).armed == 0, taskID == 0, !microphone.running,
+              let app = NSRunningApplication(processIdentifier: request.pid),
+              app.isActive || app.activate(options: []) else {
+            show(config.applyUnsafeLabel)
+            return
+        }
+        // Activating the original app must not substitute a different tab,
+        // editor or selection. The existing native paste checks stay in force.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self, self.previewApply?.token == request.token,
+                  self.taskID == 0, VRSnapshot(0, request.token).valid == 1 else { return }
+            self.targetPID = request.pid
+            self.targetFocus = request.focus
+            self.taskID = request.token
+            defer { self.clearSession() }
+            guard self.targetStillValid(), self.canEditSelection(),
+                  request.selection.matches(self.selectionFromAX()) else {
+                self.show(self.config.applyUnsafeLabel)
+                return
+            }
+            if self.paste(request.text) {
+                self.resultPanel?.close()
+                self.resultPanel = nil
+                self.previewApply = nil
+            }
+        }
     }
     @objc private func quit() { VRCommand(Int32(VR_COMMAND_CANCEL), 0, 0, 0); NSApp.terminate(nil) }
     private func show(_ text: String) { item.button?.title = text }
@@ -380,6 +410,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         if down {
             resultPanel?.close()
             resultPanel = nil
+            previewApply = nil
             let press = VRCommand(Int32(VR_COMMAND_PRESS), key, 0, pending ? 1 : 0)
             let token = press.token
             guard token != 0 else { return false }
@@ -480,9 +511,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                     self.pill.working(.applying)
                                     self.show(self.config.pill.applyingLabel)
                                 }
-                                if !self.paste(text) { self.presentPreview(text, title: value.title) }
+                                if !self.paste(text) {
+                                    self.presentPreview(text, title: value.title, selection: selected)
+                                }
                             } else {
-                                self.presentPreview(text, title: value.title)
+                                self.presentPreview(text, title: value.title,
+                                                    selection: value.route == "replace" ? selected : nil)
                             }
                         }
                     }
@@ -504,8 +538,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
 
     // Native presentation only: Go Core retains the result and decides when
     // a preview is required; no clipboard mutation occurs until Copy is clicked.
-    private func presentPreview(_ text: String, title: String?) {
+    private func presentPreview(_ text: String, title: String?, selection: AXSelection? = nil) {
         resultPanel?.close()
+        previewApply = nil
+        if let selection, let targetFocus, taskID != 0 {
+            previewApply = (targetPID, targetFocus, selection, taskID, text)
+        }
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 500, height: 310),
                             styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         panel.title = title ?? "VoiceRewrite Result"
@@ -524,6 +562,11 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         copy.frame = NSRect(x: 16, y: 14, width: 120, height: 30)
         panel.contentView?.addSubview(scroll)
         panel.contentView?.addSubview(copy)
+        if previewApply != nil {
+            let apply = NSButton(title: config.applyLabel, target: self, action: #selector(applyResult))
+            apply.frame = NSRect(x: 152, y: 14, width: 138, height: 30)
+            panel.contentView?.addSubview(apply)
+        }
         panel.center()
         panel.orderFrontRegardless()
         resultPanel = panel

@@ -50,4 +50,7 @@ func TestHostProfileUsesSharedPasteMinimum(t *testing.T) {
 	if got := profile["pasteRestoreMS"]; got != 700 {
 		t.Fatalf("paste dwell must match shared minimum, got %v", got)
 	}
+	if profile["applyLabel"] != "应用到原文" || profile["applyUnsafeLabel"] != "无法安全替换，请使用复制结果" {
+		t.Fatalf("preview actions must use Go Core UX labels: %v", profile)
+	}
 }
