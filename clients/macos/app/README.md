@@ -33,7 +33,11 @@ accidental browser navigation.
 
 Grant Microphone and Accessibility permissions when prompted. The app uses a
 modifying Quartz event tap for shortcuts; it does not explicitly request Input
-Monitoring access. Verify shortcut permissions on the target macOS version.
+Monitoring access. On first launch, the menu-bar status reads **Allow
+Accessibility** until the system grants event access; the app retries every
+two seconds and switches to **VoiceRewrite** when shortcuts are active.
+If macOS still refuses the event tap, the status reads **Input unavailable**.
+Verify shortcut permissions on the target macOS version.
 The rewrite shortcut first snapshots available AX selected text when pressed,
 using `AXSelectedText` or `AXSelectedTextRange` with `AXStringForRange`.
 When the selection is inaccessible through AX, the app tries Cmd+C on release
