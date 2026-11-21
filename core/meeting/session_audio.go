@@ -35,13 +35,14 @@ func StreamAudio(ctx context.Context, source audio.FrameSource, responseTime fun
 			return
 		}
 		now := time.Now()
-		if responseTime != nil {
-			segment.SetPreviewInterval(PreviewInterval(responseTime()))
-		}
-		event := AudioEvent{Time: now, Level: audio.Level(frame)}
+		event := AudioEvent{Time: now}
 		if now.Sub(lastMeter) >= 150*time.Millisecond {
 			lastMeter = now
 			event.Meter = true
+			event.Level = audio.Level(frame)
+			if responseTime != nil {
+				segment.SetPreviewInterval(PreviewInterval(responseTime()))
+			}
 		}
 		event.UtteranceStarted, event.PCM = segment.Push(frame)
 		event.Final = event.PCM != nil
