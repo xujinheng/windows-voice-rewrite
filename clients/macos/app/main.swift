@@ -221,6 +221,7 @@ private enum GoCore {
 private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var item: NSStatusItem!
     private var tap: CFMachPort?
+    private var eventTapRetry: Timer?
     private var microphone = Microphone()
     private let pill = RecordingPill()
     private var resultPanel: NSPanel?
@@ -235,7 +236,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "VR"
+        item.button?.title = "VoiceRewrite"
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Copy last result", action: #selector(copyResult), keyEquivalent: "c"))
         menu.addItem(NSMenuItem(title: "Reload config", action: #selector(reload), keyEquivalent: "r"))
@@ -287,7 +288,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             }
             config = profile
             pill.configure(profile.pill)
-            show("VR")
+            if eventTapRetry == nil { show("VoiceRewrite") }
         } catch {
             show("Config error")
             fputs("VoiceRewrite config: \(error)\n", stderr)
@@ -355,11 +356,25 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                 options: .defaultTap, eventsOfInterest: eventMask,
                                 callback: callback,
                                 userInfo: Unmanaged.passUnretained(self).toOpaque())
-        guard let tap else { show("Input denied"); return }
+        guard let tap else {
+            show(AXIsProcessTrusted() ? "Input unavailable" : "Allow Accessibility")
+            // TCC permission may be granted after this first attempt. Retry the
+            // native event tap without restarting the app or rebinding Go Core.
+            if eventTapRetry == nil {
+                eventTapRetry = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] timer in
+                    guard let self else { timer.invalidate(); return }
+                    self.startEventTap()
+                }
+            }
+            return
+        }
+        eventTapRetry?.invalidate()
+        eventTapRetry = nil
         if let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) {
             CFRunLoopAddSource(CFRunLoopGetMain(), source, CFRunLoopMode.commonModes)
         }
         CGEvent.tapEnable(tap: tap, enable: true)
+        show("VoiceRewrite")
     }
 
     private func handleModifier(code: Int64, flags: CGEventFlags) {
@@ -722,7 +737,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func cancelFromPill() {
-        if VRSnapshot(0, 0).armed == 0 && !pending && !microphone.running { pill.dismiss(); show("VR"); return }
+        if VRSnapshot(0, 0).armed == 0 && !pending && !microphone.running { pill.dismiss(); show("VoiceRewrite"); return }
         VRCommand(Int32(VR_COMMAND_CANCEL), 0, 0, 0)
         if microphone.running { _ = try? microphone.stop(discard: true) }
         clearSession()
