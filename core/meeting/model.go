@@ -138,7 +138,7 @@ func VisibleText(text string) string {
 // SSE deltas a second time.
 func ReadStream(r io.Reader, emit func(Line), onContent ...func(string)) error {
 	var content strings.Builder
-	emitted := 0
+	emitted, processed := 0, 0
 	err := scanCompletions(r, "无法解析会议模型的流式响应", "会议模型响应提前结束", func(chunk completion) error {
 		if chunk.Error != nil {
 			return errors.New("会议模型返回流式错误")
@@ -154,7 +154,10 @@ func ReadStream(r io.Reader, emit func(Line), onContent ...func(string)) error {
 		if len(onContent) > 0 {
 			onContent[0](content.String())
 		}
-		lines := strings.Split(VisibleText(content.String()), "\n")
+		// Parse only uncommitted lines. Reasoning spans can remove raw
+		// newlines retroactively, so never advance across a <think> marker.
+		unread := content.String()[processed:]
+		lines := strings.Split(VisibleText(unread), "\n")
 		for emitted < len(lines)-1 {
 			if line, ok := ParseLine(lines[emitted]); ok {
 				emit(line)
@@ -164,12 +167,18 @@ func ReadStream(r io.Reader, emit func(Line), onContent ...func(string)) error {
 		if len(lines[len(lines)-1]) > 16<<10 {
 			return errors.New("会议模型返回的单行过长")
 		}
+		if !strings.Contains(unread, "<think>") && !strings.Contains(unread, "</think>") {
+			if at := strings.LastIndexByte(unread, '\n'); at >= 0 {
+				processed += at + 1
+				emitted = 0
+			}
+		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	lines := strings.Split(VisibleText(content.String()), "\n")
+	lines := strings.Split(VisibleText(content.String()[processed:]), "\n")
 	for emitted < len(lines) {
 		if line, ok := ParseLine(lines[emitted]); ok {
 			emit(line)
