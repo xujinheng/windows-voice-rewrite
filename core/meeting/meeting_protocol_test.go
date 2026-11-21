@@ -304,3 +304,41 @@ func TestMeetingStreamLongLineBoundsOnlyUnfinishedTail(t *testing.T) {
 		t.Fatalf("completed line was rejected: lines=%d err=%v", len(got), err)
 	}
 }
+
+func TestMeetingPartialReplyNeverPublishesSplitThoughtText(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, delta := range []string{
+			"<thi", "nk>ONE\\tPrivate\\t内部\\n</thi", "nk>  ONE\\tThe fix is",
+			" tested.\\t已验证。\\n",
+		} {
+			chunk, err := json.Marshal(map[string]any{
+				"choices": []any{map[string]any{"delta": map[string]string{"content": delta}}},
+			})
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			fmt.Fprintf(w, "data: %s\\n\\n", chunk)
+		}
+		fmt.Fprint(w, "data: [DONE]\\n\\n")
+	}))
+	defer server.Close()
+	cfg := coreconfig.Defaults()
+	cfg.TextModel, cfg.LLMBaseURL = "test-model", server.URL
+	var got []Line
+	if err := Complete(context.Background(), cfg, Query{Mode: "replies", Latest: "Any update?"}, func(line Line) {
+		got = append(got, line)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 || got[0].Complete || !got[len(got)-1].Complete ||
+		got[len(got)-1].English != "The fix is tested." {
+		t.Fatalf("missing incremental or completed reply: %#v", got)
+	}
+	for _, line := range got {
+		if strings.Contains(line.English, "Private") || strings.Contains(line.English, "<think>") {
+			t.Fatalf("thought content leaked into an incremental reply: %#v", got)
+		}
+	}
+}
