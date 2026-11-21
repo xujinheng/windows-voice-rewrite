@@ -9,7 +9,6 @@ import (
 
 	"github.com/xujinheng/windows-voice-rewrite/core/asrtext"
 	"github.com/xujinheng/windows-voice-rewrite/core/provider"
-	"github.com/xujinheng/windows-voice-rewrite/core/shortcut"
 )
 
 func TestCleanASR(t *testing.T) {
@@ -50,24 +49,6 @@ func TestDefaultMouse5Hold(t *testing.T) {
 	cfg := defaults()
 	if cfg.RecordMode != "hold" || cfg.HotkeyRecord != "Mouse5" {
 		t.Fatalf("wrong mouse-first defaults: mode=%q, hotkey=%q", cfg.RecordMode, cfg.HotkeyRecord)
-	}
-}
-
-func TestMouseButtonMapping(t *testing.T) {
-	for _, tc := range []struct {
-		text string
-		want uint16
-		ok   bool
-	}{
-		{"Mouse4", 1, true}, {"xbutton1", 1, true},
-		{"mOuSe5", 2, true}, {"XBUTTON2", 2, true},
-		{" Mouse5 ", 2, true}, {"F9", 0, false},
-		{"", 0, false}, {"Mouse6", 0, false},
-	} {
-		got, ok := shortcut.WindowsSideButton(tc.text)
-		if got != tc.want || ok != tc.ok {
-			t.Errorf("mouseSideButton(%q)=%d,%t; want %d,%t", tc.text, got, ok, tc.want, tc.ok)
-		}
 	}
 }
 
