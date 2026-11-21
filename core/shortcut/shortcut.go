@@ -27,7 +27,6 @@ const (
 	WindowsComboMessage     = "Windows 系统键组合不支持录音快捷键"
 	BareKeyMessage          = "单键仅支持 F1–F24；字母、数字和方向键请搭配 Ctrl 或 Alt"
 	ShiftLetterMessage      = "Shift+字母会干扰打字，请同时使用 Ctrl 或 Alt"
-	EmptyShortcutMessage    = "请按下快捷键"
 	CtrlRepeatMessage       = "Ctrl 重复"
 	AltRepeatMessage        = "Alt 重复"
 	ShiftRepeatMessage      = "Shift 重复"
@@ -153,9 +152,6 @@ func Parse(raw string) (string, uint32, uint32, bool, error) {
 		return "RightCommand", noRepeat, 0, false, nil
 	}
 	parts := strings.Split(key, "+")
-	if len(parts) == 0 {
-		return "", 0, 0, false, errors.New(EmptyShortcutMessage)
-	}
 	var modifiers uint32
 	for _, token := range parts[:len(parts)-1] {
 		switch strings.ToLower(strings.TrimSpace(token)) {
