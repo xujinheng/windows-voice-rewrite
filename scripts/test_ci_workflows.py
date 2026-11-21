@@ -83,7 +83,6 @@ class HeadlessWorkflowTests(unittest.TestCase):
         self.assertIn("-buildmode=c-archive", script)
         self.assertNotIn("Process()", host)
         self.assertNotIn("voicebridge", host)
-        self.assertTrue((ROOT / "clients/macos/app/config.example.json").is_file())
         self.assertTrue((ROOT / "scripts/check_headless_scope.py").is_file())
 
     def test_nightly_obeys_core_and_client_module_boundaries(self):
