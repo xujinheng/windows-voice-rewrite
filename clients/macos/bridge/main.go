@@ -70,8 +70,8 @@ func headlessProfile(raw json.RawMessage) response {
 		return failure("invalid_config", msgInvalidConfig)
 	}
 	reply := success(map[string]any{"profile": map[string]any{
-		"dictation":        cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
-		"maximumSeconds":   cfg.MaxRecordSeconds, "modifierDelayMS": 200,
+		"dictation": cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
+		"maximumSeconds": cfg.MaxRecordSeconds, "modifierDelayMS": 200,
 		"pasteRestoreMS":   ux.PasteReceiptMinimumMilliseconds,
 		"mouseDelayMS":     int(voice.SideHoldThreshold / time.Millisecond),
 		"pill":             indicator.HostSpec(),
