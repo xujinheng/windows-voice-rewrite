@@ -2,6 +2,29 @@
 // It is never linked into the production app.
 // Same-file extension can exercise private host state without widening production access.
 extension HeadlessApp {
+    func verifyFirstRunConfig() {
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VoiceRewriteFirstRun-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: temp) }
+        item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        configURL = temp.appendingPathComponent("nested/config.json")
+        reload()
+        precondition((try? String(contentsOf: configURL, encoding: .utf8)) == "{}")
+        precondition(VRSnapshot(54, 0).role == 1 && VRSnapshot(61, 0).role == 2)
+
+        let custom = #"{"dictation_hotkey":"Mouse4","hotkey_record":"Mouse5"}"#
+        try! custom.write(to: configURL, atomically: true, encoding: .utf8)
+        reload()
+        precondition((try? String(contentsOf: configURL, encoding: .utf8)) == custom)
+        precondition(VRSnapshot(103, 0).role == 1 && VRSnapshot(104, 0).role == 2)
+
+        try! "invalid JSON".write(to: configURL, atomically: true, encoding: .utf8)
+        reload()
+        precondition((try? String(contentsOf: configURL, encoding: .utf8)) == "invalid JSON")
+        precondition(item.button?.title == "Config error")
+        NSStatusBar.system.removeStatusItem(item)
+    }
+
     func verifyClipboardSnapshot() {
         let board = NSPasteboard(name: NSPasteboard.Name("VoiceRewriteScopeTest"))
         board.clearContents()
@@ -123,5 +146,6 @@ MainActor.assumeIsolated {
                                  after: host(mouseBound), modifier: true)
     hostApp.verifyPillCancelLifecycle()
     hostApp.verifyPressTargetSurvivesDelayedActivation()
-    print("AX focus, selection, clipboard budget, shortcut rebind, pill cancel and press-target smoke passed")
+    HeadlessApp().verifyFirstRunConfig()
+    print("AX focus, selection, clipboard budget, shortcut rebind, first-run config, pill cancel and press-target smoke passed")
 }
