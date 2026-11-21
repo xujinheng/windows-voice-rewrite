@@ -51,9 +51,10 @@ func TestStreamAudioEmitsSnapshotsAndFinalTurn(t *testing.T) {
 	for i := 0; i < 40; i++ {
 		frames = append(frames, silence)
 	}
-	var started, utterances, previews, finals, metered int
+	var started, utterances, previews, finals, metered, budgetReads int
 	var finalPCM []byte
 	err := StreamAudio(context.Background(), framesForMeetingTest{frames: frames}, func() time.Duration {
+		budgetReads++
 		return 100 * time.Millisecond
 	}, func() { started++ }, func(event AudioEvent) {
 		if event.UtteranceStarted {
@@ -76,6 +77,9 @@ func TestStreamAudioEmitsSnapshotsAndFinalTurn(t *testing.T) {
 	}
 	if started != 1 || utterances != 1 || previews < 1 || finals != 1 || metered < 1 {
 		t.Fatalf("ready=%d utterances=%d previews=%d finals=%d metered=%d", started, utterances, previews, finals, metered)
+	}
+	if budgetReads != metered || budgetReads >= len(frames) {
+		t.Fatalf("expected one inference-budget read per UI meter, got reads=%d meters=%d frames=%d", budgetReads, metered, len(frames))
 	}
 	if len(finalPCM) < 85*audio.FrameBytes {
 		t.Fatalf("final PCM unexpectedly shortened: %d", len(finalPCM))
