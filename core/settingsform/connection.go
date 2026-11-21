@@ -18,14 +18,14 @@ import (
 // ConnectionForm reuses the controls and coordinates already used by Windows.
 // Native hosts transform these logical top-left rectangles into native points.
 type NativeForm struct {
-	Width    int32           `json:"width"`
-	Height   int32           `json:"height"`
-	Hint     Rect            `json:"hint"`
-	Running  string          `json:"running"`
-	Busy     string          `json:"busy"`
-	CaptureHint string      `json:"captureHint"`
-	Pages    []NativePage    `json:"pages"`
-	Controls []NativeControl `json:"controls"`
+	Width       int32           `json:"width"`
+	Height      int32           `json:"height"`
+	Hint        Rect            `json:"hint"`
+	Running     string          `json:"running"`
+	Busy        string          `json:"busy"`
+	CaptureHint string          `json:"captureHint"`
+	Pages       []NativePage    `json:"pages"`
+	Controls    []NativeControl `json:"controls"`
 }
 type NativePage struct {
 	ID           string `json:"id"`
