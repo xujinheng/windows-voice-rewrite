@@ -22,6 +22,7 @@ func TestProbeModelMatchesWindowsStatusAndBearerHandling(t *testing.T) {
 		want   string
 	}{
 		{200, "已在服务中发现"},
+		{204, "HTTP 204"},
 		{401, "API Key"},
 		{404, "不提供模型列表"},
 		{503, "暂时不可用"},
