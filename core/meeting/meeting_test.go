@@ -38,9 +38,9 @@ func TestMeetingStreamSharesAccumulatedResponseWithConsumer(t *testing.T) {
 	}
 }
 
-// Each finished line is emitted exactly once. Thinking markers split across
-// SSE chunks may remove hidden newlines, but must not skip later visible lines.
-func TestMeetingStreamCursorAcrossSplitThinkingAndManyLines(t *testing.T) {
+// A split <think> marker cannot cause earlier lines to be resent or hidden
+// lines to appear. The completed tag can also erase raw newlines retroactively.
+func TestMeetingStreamCursorAcrossSplitThinking(t *testing.T) {
 	var stream strings.Builder
 	for _, delta := range []string{
 		"ONE\tFirst\t第一\n<", "think>\nTWO\tHidden\t秘密\n</th",
@@ -48,22 +48,31 @@ func TestMeetingStreamCursorAcrossSplitThinkingAndManyLines(t *testing.T) {
 	} {
 		fmt.Fprintf(&stream, "data: {\"choices\":[{\"delta\":{\"content\":%q}}]}\n\n", delta)
 	}
+	stream.WriteString("data: [DONE]\n\n")
+	var got []Line
+	err := ReadStream(strings.NewReader(stream.String()), func(line Line) { got = append(got, line) })
+	if err != nil || len(got) != 3 || got[0].English != "First" ||
+		got[1].English != "Second" || got[2].English != "Third" {
+		t.Fatalf("stream lines=%#v err=%v", got, err)
+	}
+}
+
+// Ordinary streams no longer reparse the 80 preceding completed lines for
+// every new delta. The final unterminated line is emitted once at [DONE].
+func TestMeetingStreamCursorSkipsCompletedHistory(t *testing.T) {
+	var stream strings.Builder
 	for i := 0; i < 80; i++ {
 		fmt.Fprintf(&stream, "data: {\"choices\":[{\"delta\":{\"content\":%q}}]}\n\n",
 			fmt.Sprintf("ONE\tLine %d\t第%d句\n", i, i))
 	}
+	fmt.Fprintf(&stream, "data: {\"choices\":[{\"delta\":{\"content\":%q}}]}\n\n",
+		"TWO\tTail\t结尾")
 	stream.WriteString("data: [DONE]\n\n")
 	var got []Line
 	err := ReadStream(strings.NewReader(stream.String()), func(line Line) { got = append(got, line) })
-	if err != nil || len(got) != 83 || got[0].English != "First" ||
-		got[1].English != "Second" || got[2].English != "Third" ||
-		got[82].English != "Line 79" {
-		t.Fatalf("stream lines=%d first=%#v err=%v", len(got), got[:min(len(got), 3)], err)
-	}
-	for _, line := range got {
-		if line.English == "Hidden" {
-			t.Fatal("hidden thinking line escaped the stream")
-		}
+	if err != nil || len(got) != 81 || got[0].English != "Line 0" ||
+		got[79].English != "Line 79" || got[80].English != "Tail" {
+		t.Fatalf("stream lines=%d last=%#v err=%v", len(got), got[max(0, len(got)-3):], err)
 	}
 }
 
