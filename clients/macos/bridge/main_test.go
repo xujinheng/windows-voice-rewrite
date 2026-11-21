@@ -51,3 +51,40 @@ func TestHostProfileUsesSharedPasteMinimum(t *testing.T) {
 		t.Fatalf("paste dwell must match shared minimum, got %v", got)
 	}
 }
+
+func TestFreshMacConfigIsGoNormalizedAndNotEchoedForExistingUsers(t *testing.T) {
+	result := headlessProfile(json.RawMessage(`{}`))
+	if !result.OK {
+		t.Fatalf("default profile failed: %+v", result.Error)
+	}
+	configText, ok := result.Result.(map[string]any)["defaultConfig"].(string)
+	if !ok || !strings.HasSuffix(configText, "\n") {
+		t.Fatalf("missing human-readable config: %T", result.Result)
+	}
+	var config map[string]any
+	if err := json.Unmarshal([]byte(configText), &config); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]any{
+		"asr_base_url": "http://127.0.0.1:8080/v1",
+		"asr_model": "qwen3-asr",
+		"llm_base_url": "http://127.0.0.1:1234/v1",
+		"text_model": "auto",
+		"dictation_hotkey": "RightCommand",
+		"hotkey_record": "RightOption",
+		"record_mode": "hold",
+		"max_record_seconds": float64(180),
+	} {
+		if got := config[key]; got != want {
+			t.Errorf("%s: got %v, want %v", key, got, want)
+		}
+	}
+	if len(config) < 8 {
+		t.Fatalf("defaults missing expected settings: %+v", config)
+	}
+	if other := headlessProfile(json.RawMessage(`{"asr_api_key":"hidden-secret"}`)); !other.OK {
+		t.Fatalf("custom profile unexpectedly failed")
+	} else if _, exposed := other.Result.(map[string]any)["defaultConfig"]; exposed {
+		t.Fatal("custom user settings must not be echoed by the bridge")
+	}
+}
