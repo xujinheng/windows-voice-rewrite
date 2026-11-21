@@ -44,9 +44,11 @@ When the selection is inaccessible through AX, the app tries Cmd+C on release
 and restores the original clipboard contents when its snapshot is supported and
 the copied clipboard entry is still current. Browser page text, PDFs and other
 noneditable selections can still be rewritten or explained in the result preview
-with a Copy action; the app never pastes into an unverified editor. It skips the
-clipboard fallback if it cannot back up the clipboard safely or the target
-changed. The app does not retry an uncertain paste. `Sent ✓` means an input
+with a Copy action. For requested replacement, the native host attempts paste
+only into the original focused app and still-matching selection, even when AX
+does not report a writable value. A paste event does not prove the editor
+accepted it. It skips clipboard fallback if it cannot safely snapshot the
+clipboard or the original target changed. The app does not retry an uncertain paste. `Sent ✓` means an input
 event was sent, **not** that insertion was confirmed.
 
 Development downloads from GitHub Actions contain one DMG in the GitHub artifact
@@ -61,9 +63,11 @@ No settings GUI, Meeting or full history panel. Go Core supplies the
 result text, title and `insert`/`replace`/`preview` route. macOS checks the
 actual editor and attempts the native paste; if it cannot, the result remains
 available in a small selectable AppKit preview with a **Copy result** button.
-The menu-bar **Copy last result** uses the same Go Core history. Unlike Windows,
-the preview has no **Apply to original** button. No second delivery reducer or
-separate ABI protocol is needed.
+The menu-bar **Copy last result** uses the same Go Core history. Failed or
+unavailable replacement also offers **Apply to original**, which requires the
+original app and selected text to remain verifiably unchanged. The preview
+stays visible above background apps. No separate delivery reducer or protocol
+is needed.
 
 CI compilation is not physical end-to-end acceptance. Validate both modifier
 keys, Mouse4/Mouse5, microphone permissions, dictation and rewritten selections

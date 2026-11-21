@@ -13,8 +13,7 @@ struct AXSelection {
 
     func matches(_ current: AXSelection?) -> Bool {
         guard let current, text == current.text else { return false }
-        guard let range else { return true }
-        guard let other = current.range else { return false }
+        guard let range, let other = current.range else { return true }
         return range.location == other.location && range.length == other.length
     }
 }
@@ -23,12 +22,11 @@ struct AXSelection {
 struct FocusIdentity {
     let window: AXUIElement?
     let element: AXUIElement?
-    let title: String?
 
-    func matches(window: AXUIElement?, element: AXUIElement?, title: String?) -> Bool {
+    func matches(window: AXUIElement?, element: AXUIElement?) -> Bool {
         if let saved = self.window, window.map({ CFEqual(saved, $0) }) != true { return false }
         if let saved = self.element, element.map({ CFEqual(saved, $0) }) != true { return false }
-        return self.title == nil || self.title == title
+        return true
     }
 }
 private enum HostError: Error {
@@ -48,7 +46,7 @@ struct PillSpec: Decodable {
 
 private struct HostProfile: Decodable {
     let maximumSeconds, modifierDelayMS, mouseDelayMS, pasteRestoreMS: Int
-    let copyLabel: String
+    let copyLabel, applyLabel, applyUnsafeLabel: String
     let pill: PillSpec
 }
 
@@ -225,6 +223,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var microphone = Microphone()
     private let pill = RecordingPill()
     private var resultPanel: NSPanel?
+    private var previewApply: (pid: pid_t, focus: FocusIdentity, selection: AXSelection, token: UInt64, text: String)?
     private var config: HostProfile!
     private var configURL: URL!
     private var taskID: UInt64 = 0
@@ -300,6 +299,33 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         defer { VRFree(result) }
         NSPasteboard.general.clearContents()
         show(NSPasteboard.general.setString(String(cString: result), forType: .string) ? "Copied" : "Copy failed")
+    }
+    @objc private func applyResult() {
+        guard let request = previewApply, taskID == 0,
+              VRSnapshot(0, 0).armed == 0, VRSnapshot(0, request.token).valid == 1,
+              let app = NSRunningApplication(processIdentifier: request.pid),
+              app.isActive || app.activate(options: []) else {
+            show(config.applyUnsafeLabel)
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self, self.previewApply?.token == request.token,
+                  self.taskID == 0, VRSnapshot(0, request.token).valid == 1 else { return }
+            self.targetPID = request.pid
+            self.targetFocus = request.focus
+            self.taskID = request.token
+            defer { self.clearSession() }
+            guard self.targetStillValid(),
+                  request.selection.matches(self.selectionFromAX()) else {
+                self.show(self.config.applyUnsafeLabel)
+                return
+            }
+            if self.paste(request.text) {
+                self.resultPanel?.close()
+                self.resultPanel = nil
+                self.previewApply = nil
+            }
+        }
     }
     @objc private func quit() { VRCommand(Int32(VR_COMMAND_CANCEL), 0, 0, 0); NSApp.terminate(nil) }
     private func show(_ text: String) { item.button?.title = text }
@@ -397,11 +423,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         if down {
             resultPanel?.close()
             resultPanel = nil
+            previewApply = nil
             let press = VRCommand(Int32(VR_COMMAND_PRESS), key, 0, pending ? 1 : 0)
             let token = press.token
             guard token != 0 else { return false }
             targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
-            targetFocus = FocusIdentity(window: focusedWindow(), element: nil, title: nil)
+            targetFocus = FocusIdentity(window: focusedWindow(), element: nil)
             selectedAtPress = nil
             taskID = 0
             do { try microphone.start(maximumSeconds: config.maximumSeconds) }
@@ -414,7 +441,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     self.selectedAtPress = self.selectionFromAX()
                     if self.selectedAtPress != nil {
                         self.targetFocus = FocusIdentity(window: self.targetFocus?.window,
-                                                         element: self.focusedElement(), title: nil)
+                                                         element: self.focusedElement())
                     }
                 }
             }
@@ -489,17 +516,33 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                             guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
                             // Go Core already owns the result route. Native AX
                             // checks decide whether the requested paste is possible.
-                            let editable = !rewrite || (self.canEditSelection() &&
-                                              selected?.matches(self.selectionFromAX()) == true)
-                            if (value.route == "insert" || value.route == "replace") &&
-                               self.targetStillValid() && editable {
+                            if (value.route == "insert" ||
+                                (value.route == "replace" && selected?.matches(self.selectionFromAX()) == true)) &&
+                                self.targetStillValid() {
                                 if value.route == "replace" {
                                     self.pill.working(.applying)
                                     self.show(self.config.pill.applyingLabel)
                                 }
-                                if !self.paste(text) { self.presentPreview(text, title: value.title) }
+                                if !self.paste(text) {
+                                    self.presentPreview(text, title: value.title)
+                                } else if value.route == "replace", let selected, let focus = self.targetFocus {
+                                    let pid = self.targetPID
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.27) { [weak self] in
+                                        guard let self, VRSnapshot(0, token).valid == 1,
+                                              VRSnapshot(0, 0).armed == 0,
+                                              self.targetPID == pid,
+                                              NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+                                              focus.matches(window: focus.window == nil ? nil : self.focusedWindow(),
+                                                            element: focus.element == nil ? nil : self.focusedElement()),
+                                              selected.matches(self.selectionFromAX()) else { return }
+                                        // An unchanged selection suggests the editor ignored Cmd+V.
+                                        // Never send an uncertain paste a second time.
+                                        self.presentPreview(text, title: value.title)
+                                    }
+                                }
                             } else {
-                                self.presentPreview(text, title: value.title)
+                                self.presentPreview(text, title: value.title,
+                                                    selection: value.route == "replace" ? selected : nil)
                             }
                         }
                     }
@@ -521,12 +564,19 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
 
     // Native presentation only: Go Core retains the result and decides when
     // a preview is required; no clipboard mutation occurs until Copy is clicked.
-    private func presentPreview(_ text: String, title: String?) {
+    private func presentPreview(_ text: String, title: String?, selection: AXSelection? = nil) {
         resultPanel?.close()
+        previewApply = nil
+        if let selection, let targetFocus, taskID != 0 {
+            previewApply = (targetPID, targetFocus, selection, taskID, text)
+        }
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 500, height: 310),
                             styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         panel.title = title ?? "VoiceRewrite Result"
         panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.minSize = NSSize(width: 360, height: 220)
         let scroll = NSTextView.scrollableTextView()
         scroll.frame = NSRect(x: 16, y: 56, width: 468, height: 238)
@@ -541,11 +591,16 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         copy.frame = NSRect(x: 16, y: 14, width: 120, height: 30)
         panel.contentView?.addSubview(scroll)
         panel.contentView?.addSubview(copy)
+        if previewApply != nil {
+            let apply = NSButton(title: config.applyLabel, target: self, action: #selector(applyResult))
+            apply.frame = NSRect(x: 152, y: 14, width: 138, height: 30)
+            panel.contentView?.addSubview(apply)
+        }
         panel.center()
         panel.orderFrontRegardless()
         resultPanel = panel
         pill.result(.fallback)
-        show(config.pill.fallbackLabel)
+        show(panel.title)
     }
 
     private func focusedWindow() -> AXUIElement? {
@@ -566,13 +621,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         // Never read an AX selection from a different process.
         guard AXUIElementGetPid(element, &owner) == .success, owner == targetPID else { return nil }
         return element
-    }
-
-    private func windowTitle(_ window: AXUIElement) -> String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString,
-                                             &value) == .success else { return nil }
-        return value as? String
     }
 
     private func selectionFromAX() -> AXSelection? {
@@ -602,14 +650,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             rangeValue, &text) == .success, let string = text as? String,
               !string.isEmpty else { return nil }
         return AXSelection(text: string, range: range)
-    }
-
-    // A visible selection need not be editable (web pages, PDFs and readers).
-    private func canEditSelection() -> Bool {
-        guard let focused = focusedElement() else { return false }
-        var settable = DarwinBoolean(false)
-        return AXUIElementIsAttributeSettable(focused, kAXValueAttribute as CFString, &settable) == .success
-            && settable.boolValue
     }
 
     // Copy selected browser text without adopting it as a paste target.
@@ -669,28 +709,25 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
               let targetFocus else { return false }
         let window = targetFocus.window == nil ? nil : focusedWindow()
         return targetFocus.matches(window: window,
-                                   element: targetFocus.element == nil ? nil : focusedElement(),
-                                   title: targetFocus.title == nil ? nil : window.flatMap(windowTitle))
+                                   element: targetFocus.element == nil ? nil : focusedElement())
     }
 
     private func paste(_ text: String) -> Bool {
         let source = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {
-            reset("Paste unavailable")
             return false
         }
         let board = NSPasteboard.general
         let stamp = board.changeCount
         guard let saved = snapshotClipboard(board) else { return pasteUnicode(text) }
-        guard board.changeCount == stamp else { reset("Clipboard changed"); return false }
-        guard targetStillValid() else { reset("Focus changed"); return false }
+        guard board.changeCount == stamp else { return false }
+        guard targetStillValid() else { return false }
         board.clearContents()
         let cleared = board.changeCount
         guard board.setString(text, forType: .string) else {
             // Failed writes must not erase a newer clipboard owner.
             if board.changeCount == cleared && !saved.isEmpty { _ = board.writeObjects(saved) }
-            reset("Paste failed")
             return false
         }
         let lease = board.changeCount
@@ -698,7 +735,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         up.flags = .maskCommand
         guard board.changeCount == lease, targetStillValid() else {
             if board.changeCount == lease { board.clearContents(); _ = board.writeObjects(saved) }
-            reset("Focus or clipboard changed"); return false
+            return false
         }
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
@@ -716,11 +753,11 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let source = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: false)
-        else { reset("Paste unavailable"); return false }
+        else { return false }
         let units = Array(text.utf16)
         var start = 0
         while start < units.count {
-            guard targetStillValid() else { reset("Focus changed"); return false }
+            guard targetStillValid() else { return false }
             var end = min(start + 20, units.count)
             if end < units.count && (0xD800...0xDBFF).contains(units[end - 1]) { end -= 1 }
             for event in [down, up] {
