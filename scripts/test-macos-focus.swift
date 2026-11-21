@@ -105,6 +105,13 @@ MainActor.assumeIsolated {
     precondition("insert".withCString { VRDelivery(deliveryToken, $0, 1, 1, 1) } == Int32(VR_DELIVERY_PREVIEW))
     VRCommand(Int32(VR_COMMAND_CANCEL), 0, 0, 0)
     precondition("insert".withCString { VRDelivery(deliveryToken, $0, 1, 1, 0) } == Int32(VR_DELIVERY_DROP))
+    // Clipboard reads for browser selections and native paste share one
+    // multi-format snapshot path; it must retain the original contents.
+    let testBoard = NSPasteboard(name: NSPasteboard.Name("VoiceRewriteScopeTest"))
+    testBoard.clearContents()
+    precondition(testBoard.setString("keep clipboard", forType: .string))
+    let snapshot = hostApp.snapshotClipboard(testBoard)
+    precondition(snapshot?.first?.string(forType: .string) == "keep clipboard")
     // The native PCM conversion can run after recording is stopped without
     // accessing AVAudioEngine on a worker or requiring a physical microphone.
     let pcm = try! Microphone.pcm((samples: Array(repeating: Float(0.01), count: 19200), rate: 48000))
