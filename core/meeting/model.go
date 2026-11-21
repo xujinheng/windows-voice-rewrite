@@ -134,9 +134,9 @@ func VisibleText(text string) string {
 	return text
 }
 
-// onContent sees the accumulated response; callers need not buffer the same
-// SSE deltas a second time.
-func ReadStream(r io.Reader, emit func(Line), onContent ...func(string)) error {
+// onContent receives the accumulated raw response and its current unfinished,
+// thinking-filtered line. No caller needs to rescan all prior deltas.
+func ReadStream(r io.Reader, emit func(Line), onContent ...func(string, string)) error {
 	var content strings.Builder
 	var line []byte
 	var tag string // At most a partial <think> or </think> across SSE deltas.
@@ -163,9 +163,6 @@ func ReadStream(r io.Reader, emit func(Line), onContent ...func(string)) error {
 		}
 		delta := chunk.Choices[0].Delta.Content
 		content.WriteString(delta)
-		if len(onContent) > 0 {
-			onContent[0](content.String())
-		}
 		// Do not rescan earlier completions or thought text: only unfinished
 		// tag prefixes and the current visible line survive across deltas.
 		for i := 0; i < len(delta); i++ {
@@ -201,6 +198,9 @@ func ReadStream(r io.Reader, emit func(Line), onContent ...func(string)) error {
 				appendVisible(tag[0])
 				tag = tag[1:]
 			}
+		}
+		if len(onContent) > 0 {
+			onContent[0](content.String(), string(line))
 		}
 		if len(line) > 16<<10 {
 			return errors.New("会议模型返回的单行过长")
@@ -311,21 +311,17 @@ func Complete(ctx context.Context, cfg coreconfig.Config, query Query, emit func
 		if query.Mode != "caption" && query.Mode != "express" && query.Mode != "compose" {
 			handle(line)
 		}
-	}, func(text string) {
+	}, func(text, tail string) {
 		responseText = text
 		if query.Mode != "caption" && query.Mode != "express" && query.Mode != "compose" {
-			if !strings.Contains(text, "<think>") || strings.Contains(text, "</think>") {
-				text = provider.ThinkingTag.ReplaceAllString(text, "")
-				tail := text[strings.LastIndex(text, "\n")+1:]
-				parts := strings.SplitN(tail, "\t", 3)
-				if len(parts) >= 2 {
-					line := Line{Kind: parts[0], English: parts[1]}
-					if len(parts) == 3 {
-						line.Chinese = parts[2]
-					}
-					if line.English != "" {
-						handle(line)
-					}
+			parts := strings.SplitN(tail, "\t", 3)
+			if len(parts) >= 2 {
+				line := Line{Kind: parts[0], English: parts[1]}
+				if len(parts) == 3 {
+					line.Chinese = parts[2]
+				}
+				if line.English != "" {
+					handle(line)
 				}
 			}
 		}
