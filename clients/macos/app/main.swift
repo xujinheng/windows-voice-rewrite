@@ -395,11 +395,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private func begin(rewrite: Bool) {
         guard targetPID > 0 else { reset("No target"); return }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { reset("Focus changed"); return }
-        let window = targetFocus?.window ?? focusedWindow(), element = rewrite ? focusedElement() : nil
-        if targetFocus?.window != nil && targetFocus?.matches(window: focusedWindow(), element: nil, title: nil) != true { reset("Focus changed"); return }
-        guard !rewrite || (window != nil && element != nil) else { reset("Target unavailable"); return }
-        targetFocus = FocusIdentity(window: window, element: element,
-                                    title: rewrite ? window.flatMap(windowTitle) : nil)
+        // Browser page selections do not necessarily expose an AX focused
+        // window/element. Start the hold UI without requiring either; capture
+        // and recheck the actual selection on release before any replacement.
         guard microphone.running else { reset("Mic error"); return }
         taskID = VRCommand(Int32(VR_COMMAND_START), 0, 0, 0).token
         pill.recording(rewrite: rewrite, started: Date(),
