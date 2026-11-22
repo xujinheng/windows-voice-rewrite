@@ -319,13 +319,9 @@ type Installation struct {
 
 var deploymentMu sync.Mutex
 
-// Deploy installs only into directory/Qwen3-ASR. No application data or
+// install installs only into directory/Qwen3-ASR. No application data or
 // package-manager folders are modified.
-func Deploy(ctx context.Context, directory string) (Installation, error) {
-	if !deploymentMu.TryLock() {
-		return Installation{}, errors.New("ASR is already deploying")
-	}
-	defer deploymentMu.Unlock()
+func install(ctx context.Context, directory string) (Installation, error) {
 	if directory == "" {
 		return Installation{}, errors.New("choose an ASR directory")
 	}
