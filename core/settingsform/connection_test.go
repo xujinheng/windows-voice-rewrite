@@ -102,4 +102,3 @@ func TestDeployDirectoryAndEndpointSaveIndependently(t *testing.T) {
 		t.Fatalf("saving endpoint overwrote selected Deploy directory: %+v", cfg)
 	}
 }
-
