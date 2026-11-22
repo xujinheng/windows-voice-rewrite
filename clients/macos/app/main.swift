@@ -659,8 +659,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     @objc private func copyResult() {
-        guard let result = try? GoCore.history("latest"), let text = result.text else {
-            show("当前没有语音结果")
+        let result = try? GoCore.history("latest")
+        guard let text = result?.text else {
+            show(result?.status ?? "无法读取语音结果")
             return
         }
         NSPasteboard.general.clearContents()
