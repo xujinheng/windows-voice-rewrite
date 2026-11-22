@@ -13,8 +13,6 @@ protection. Do **not** make path-filtered visual workflows required checks.
 | Native `*_windows.go` only | Windows tests and GUI compile |
 | `macos/` only | macOS ARM and Intel |
 | `cmd/voicebridge/` only | Linux race and macOS ARM/Intel |
-| `oneclick/` only | Windows OneClick |
-| `installer/` only | Windows tests and GUI compile |
 | Workflow/CI classifier | full validation matrix |
 
 Specialized cross-platform UI and Direct2D acceptance are invoked as conditional
@@ -66,7 +64,7 @@ version; a passing CI Gate is still required for release/merge readiness.
 
 Each push to `main` publishes one Windows EXE and one verified VoiceRewrite
 developer DMG per macOS architecture. Version tags upload the existing standalone
-experimental Mac ZIP release assets rather than a duplicate developer artifact.
+experimental Mac DMG release assets rather than duplicate ZIP artifacts.
 These builds are ad-hoc signed, not Developer ID signed or notarized.
 The signed/notarized macOS distribution pipeline remains separate.
 
@@ -160,13 +158,11 @@ policy on every PR. Ordinary documentation edits remain lightweight.
 
 ## Release-only provenance permissions
 
-Windows compilation and OneClick jobs now use only `contents: read` for
+Windows compilation jobs use only `contents: read` for
 ordinary PRs and main builds. The release-tag-only
 `attest-windows-release` job is the **sole** Windows provenance job granted
 `id-token: write` and `attestations: write`. It downloads the three
-release build outputs from the **same workflow run**, checks the portable
-and installer SHA-256 manifests, and attests the exact portable archive,
-installer and OneClick executable. The curated GitHub Release cannot be
+release build outputs from the **same workflow run**, verifies and attests the single Windows executable. The curated GitHub Release cannot be
 published until these attestations succeed. Native source compilation,
 release packages and PR CI Gate tests are unchanged.
 
