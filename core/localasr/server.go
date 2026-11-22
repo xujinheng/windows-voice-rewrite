@@ -47,11 +47,11 @@ var (
 // lifetime. Core owns when it is used; the host owns the OS API.
 type ChildGuard func(pid int) (func(), error)
 
-// DeployConfigured is the single portable deployment decision for both desktop
-// hosts. Native clients only choose a directory and persist the returned config.
-func DeployConfigured(ctx context.Context, cfg coreconfig.Config, directory string, guard ChildGuard) (updated coreconfig.Config, err error) {
+// Deploy installs and starts local ASR. Configuration is saved separately
+// when the user chooses a directory, so concurrent settings edits stay intact.
+func Deploy(ctx context.Context, directory string, guard ChildGuard) (err error) {
 	if !deploymentMu.TryLock() {
-		return cfg, errors.New("ASR 正在部署中；请查看当前下载进度")
+		return errors.New("ASR 正在部署中；请查看当前下载进度")
 	}
 	progressMu.Lock()
 	progress = Progress{Text: "正在准备 ASR 部署", Directory: directory, Busy: true}
@@ -67,33 +67,12 @@ func DeployConfigured(ctx context.Context, cfg coreconfig.Config, directory stri
 		progressMu.Unlock()
 		deploymentMu.Unlock()
 	}()
-	install, err := install(ctx, directory)
-	if err == nil {
-		report("正在启动识别服务，加载模型中…")
-		err = Start(ctx, install, guard)
-	}
+	installation, err := install(ctx, directory)
 	if err != nil {
-		return cfg, err
+		return err
 	}
-	defaults := coreconfig.Defaults()
-	cfg.ASRDeployDir = directory
-	cfg.ASRBaseURL = defaults.ASRBaseURL
-	cfg.ASRModel = defaults.ASRModel
-	return cfg, nil
-}
-
-// ReconcileDeployed preserves settings saved while Deploy was downloading.
-// Only untouched local-ASR fields are updated; other application settings
-// always come from the latest configuration on disk.
-func ReconcileDeployed(started, latest, deployed coreconfig.Config) coreconfig.Config {
-	if latest.ASRDeployDir == started.ASRDeployDir {
-		latest.ASRDeployDir = deployed.ASRDeployDir
-	}
-	if latest.ASRBaseURL == started.ASRBaseURL && latest.ASRModel == started.ASRModel {
-		latest.ASRBaseURL = deployed.ASRBaseURL
-		latest.ASRModel = deployed.ASRModel
-	}
-	return latest
+	report("正在启动识别服务，加载模型中…")
+	return Start(ctx, installation, guard)
 }
 
 // Resume starts a previously deployed local ASR only when the configured
