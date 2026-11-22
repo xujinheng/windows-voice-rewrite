@@ -100,12 +100,12 @@ func watchHoldRelease(hwnd, vk, mods, session uintptr, canceled <-chan struct{},
 // A native recording supplies either a caret target (dictation) or selected
 // text (rewrite). Both use one worker and the same public voice.Core.Execute.
 type recordingTask struct {
-	cfg       Config
-	dictation bool
-	target    uintptr
-	anchor    trayPoint
-	selection *selectedText // toggle mode owns this capture
-	earlySelection <-chan selectedText // confirmed side-button hold captures during recording
+	cfg            Config
+	dictation      bool
+	target         uintptr
+	anchor         trayPoint
+	selection      *selectedText
+	earlySelection <-chan selectedText // selection captured during an active side-button hold
 }
 
 func processRecording(app *appState, rec *audioRecorder, task recordingTask, generation uint64) {
@@ -134,28 +134,27 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 				}
 			}
 			if sel.Text == "" {
-			started := time.Now()
-			// A held keyboard chord needs release before injecting Ctrl+C.
-			// Side buttons already had a chance to capture at activation.
-			if !isSameForegroundWindow(task.target) {
-				rec.Stop()
-				app.fail(errors.New(ux.HoldWindowChanged))
-				return
+				started := time.Now()
+				// Keyboard chords and unsuccessful early captures use the release-time path.
+				if !isSameForegroundWindow(task.target) {
+					rec.Stop()
+					app.fail(errors.New(ux.HoldWindowChanged))
+					return
+				}
+				var err error
+				sel, err = captureSelection(app.Window, task.cfg)
+				if err == nil && sel.TargetWindow != task.target {
+					err = errors.New(ux.HoldSelectionMoved)
+				}
+				if err != nil {
+					sel.ClipboardBackup.restoreIfOwned(app.Window)
+					app.fail(err)
+					return
+				}
+				app.logger.Printf("stage=selection mode=hold ms=%d chars=%d",
+					time.Since(started).Milliseconds(), utf8.RuneCountInString(sel.Text))
 			}
-			var err error
-			sel, err = captureSelection(app.Window, task.cfg)
 			sel.Anchor = task.anchor
-			if err == nil && sel.TargetWindow != task.target {
-				err = errors.New(ux.HoldSelectionMoved)
-			}
-			if err != nil {
-				sel.ClipboardBackup.restoreIfOwned(app.Window)
-				app.fail(err)
-				return
-			}
-			app.logger.Printf("stage=selection mode=hold ms=%d chars=%d",
-				time.Since(started).Milliseconds(), utf8.RuneCountInString(sel.Text))
-			}
 			app.postHandyPhase(indicator.Processing, generation)
 		}
 		defer sel.ClipboardBackup.restoreIfOwned(app.Window)

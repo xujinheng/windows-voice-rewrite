@@ -512,9 +512,13 @@ func runApp() {
 			task.earlySelection = captured
 			go func(token uint64, config Config) {
 				defer close(captured)
-				if !app.core.Snapshot(0, token).Valid || !isSameForegroundWindow(target) { return }
+				if !app.core.Snapshot(0, token).Valid || !isSameForegroundWindow(target) {
+					return
+				}
 				sel, err := captureSelection(hwnd, config)
-				if restore := sel.ClipboardBackup.restoreIfOwned(hwnd); restore != nil { err = restore }
+				if restore := sel.ClipboardBackup.restoreIfOwned(hwnd); restore != nil {
+					err = restore
+				}
 				sel.ClipboardBackup = nil // Do not reserve the user's clipboard during recording.
 				if err == nil && sel.TargetWindow == target && app.core.Snapshot(0, token).Valid {
 					captured <- sel
@@ -986,7 +990,7 @@ func runApp() {
 				sel, err := captureSelection(hwnd, jobConfig)
 				l.Printf("stage=selection mode=toggle ms=%d", time.Since(begin).Milliseconds())
 				if err == nil {
-					err = textedit.SelectedLengthError(cfg.MaxSelectedRunes, sel.Text)
+					err = textedit.SelectedLengthError(jobConfig.MaxSelectedRunes, sel.Text)
 				}
 				if err != nil {
 					finishTogglePrepare(app, hwnd, sel, nil, true, err)
