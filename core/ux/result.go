@@ -27,8 +27,6 @@ const (
 	ApplyUnsafe = "无法安全替换，请使用复制结果"
 	// NoModelsFound is the result when provider discovery returns an empty list.
 	NoModelsFound = "未发现可用模型，请检查 API 地址或手动输入模型 ID"
-	// SaveWhileBusy is the settings message when a voice task is still running.
-	SaveWhileBusy = "请先完成当前录音／改写，再保存"
 	// WindowsSaveRestart is shown after a shortcut or recording device change.
 	// macOS applies shortcuts immediately and keeps its own sentence.
 	WindowsSaveRestart = "设置已保存。快捷键和录音设备将在重启 VoiceRewrite 后生效。"

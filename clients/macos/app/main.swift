@@ -169,7 +169,7 @@ private struct SettingsRect: Decodable {
 private struct SettingsForm: Decodable {
     let width, height: Int
     let hint: SettingsRect
-    let running, busy, captureHint: String
+    let running, captureHint: String
     let pages: [SettingsPage]
     let controls: [SettingsControl]
 }
@@ -248,7 +248,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var settingsHint: NSTextField?
     private var settingsDeployDirectory = ""
     private var settingsRunning = ""
-    private var settingsBusy = ""
     private var settingsCaptureHint = ""
     private var settingsSerial = 0
     private var settingsCapture: String?
@@ -354,8 +353,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             settingsDeployDirectory = values["asr_deploy_dir"] ?? ""
             let deployStatus = try? GoCore.decode(VRASRProgress())
             settingsRunning = form.running
-            settingsBusy = form.busy
-            settingsCaptureHint = form.captureHint
+                settingsCaptureHint = form.captureHint
             settingsCaptureCodes = output.capture ?? [:]
             for page in form.pages {
                 let pageView = NSView(frame: content.bounds)

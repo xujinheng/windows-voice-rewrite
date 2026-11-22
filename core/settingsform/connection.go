@@ -22,7 +22,6 @@ type NativeForm struct {
 	Height      int32           `json:"height"`
 	Hint        Rect            `json:"hint"`
 	Running     string          `json:"running"`
-	Busy        string          `json:"busy"`
 	CaptureHint string          `json:"captureHint"`
 	Pages       []NativePage    `json:"pages"`
 	Controls    []NativeControl `json:"controls"`
@@ -45,7 +44,7 @@ type NativeControl struct {
 
 func ConnectionForm() NativeForm {
 	hint, _ := contract.Find("capture_rewrite")
-	form := NativeForm{Width: DesignWidth, Height: DesignHeight, Hint: SettingsHint(), Running: serviceprobe.StatusRunning, Busy: ux.SaveWhileBusy, CaptureHint: hint.Hint}
+	form := NativeForm{Width: DesignWidth, Height: DesignHeight, Hint: SettingsHint(), Running: serviceprobe.StatusRunning, CaptureHint: hint.Hint}
 	for i, page := range contract.Pages() {
 		form.Pages = append(form.Pages, NativePage{ID: page.ID, Title: page.Title, Subtitle: page.Subtitle, Nav: NavButton(i), SubtitleRect: Rect{X: 224, Y: 114, W: 460, H: 42}})
 		row := 0
