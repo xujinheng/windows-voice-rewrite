@@ -4,7 +4,6 @@ package main
 
 import (
 	"errors"
-	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 	"io"
 	"log"
 	"runtime"
@@ -12,6 +11,8 @@ import (
 	"testing"
 	"time"
 	"unsafe"
+
+	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 )
 
 func TestCanceledVoiceWorkerReleasesBusy(t *testing.T) {

@@ -249,8 +249,8 @@ func (c *Core) Apply(cmd Command) Event {
 	return Event{Kind: EventRejected}
 }
 
-// ContextFor is used only to bind distinct long-running native work (Meeting)
-// to the current voice generation. Normal clients call Execute instead.
+// ContextFor binds native preparation (e.g. selection capture waits) and Meeting
+// to a task generation. Portable inference itself uses Execute.
 func (c *Core) ContextFor(id uint64) context.Context {
 	c.mu.Lock()
 	defer c.mu.Unlock()
