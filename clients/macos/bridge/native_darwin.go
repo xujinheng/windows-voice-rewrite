@@ -163,8 +163,7 @@ func VRDeploy(directory *C.char) *C.char {
 	if directory == nil {
 		return nativeJSON(failure("invalid_directory", "missing directory"))
 	}
-	_, err := localasr.BeginDeploy(context.Background(), C.GoString(directory), nil)
-	if err != nil {
+	if err := localasr.BeginDeploy(context.Background(), C.GoString(directory), nil); err != nil {
 		return nativeJSON(failure("deploy_failed", err.Error()))
 	}
 	return nativeJSON(success(map[string]string{"status": localasr.DeploymentStatus().Text}))
