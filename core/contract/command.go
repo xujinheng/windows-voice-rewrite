@@ -8,8 +8,8 @@ const (
 	ProbeLLMButton     = 9105
 	DiscoverASRButton  = 9150
 	DiscoverLLMButton  = 9151
-	SelectASRDirectory = 9152
-	DeployASRButton    = 9153
+	SelectASRDirectory = 9190
+	DeployASRButton    = 9191
 	NavSpeech          = 9120
 	NavAI              = 9121
 	NavInput           = 9122
