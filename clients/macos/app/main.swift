@@ -210,28 +210,14 @@ private let onCoreEvent: @convention(c) (Int32, UInt64) -> Void = { kind, token 
 }
 
 private enum GoCore {
-    static func request(config: String? = nil, rewrite: Bool? = nil, audio: Data,
-                        selection: String?, token: UInt64 = 0) throws -> BridgeReply.Output {
-        let result: UnsafeMutablePointer<CChar>?
-        if let rewrite {
-            result = (selection ?? "").withCString { selected in
-                audio.withUnsafeBytes { pcm in
-                    VRRun(rewrite ? 1 : 0, pcm.bindMemory(to: UInt8.self).baseAddress,
-                          Int32(audio.count), selected, token, onCoreEvent)
-                }
+    static func run(audio: Data, selection: String?, rewrite: Bool, token: UInt64) throws -> BridgeReply.Output {
+        let result = (selection ?? "").withCString { selected in
+            audio.withUnsafeBytes { pcm in
+                VRRun(rewrite ? 1 : 0, pcm.bindMemory(to: UInt8.self).baseAddress,
+                      Int32(audio.count), selected, token, onCoreEvent)
             }
-        } else {
-            result = (config ?? "").withCString { VRProfile($0) }
         }
         return try decode(result)
-    }
-
-    static func asrProgress() throws -> BridgeReply.Output {
-        try decode(VRASRProgress())
-    }
-
-    static func deploy(_ directory: String) throws -> BridgeReply.Output {
-        try decode(directory.withCString { VRDeploy($0) })
     }
 
     static func settings(_ action: String, config: String, values: [String: String] = [:],
@@ -242,7 +228,7 @@ private enum GoCore {
         return try decode(json.withCString { VRSettings($0) })
     }
 
-    private static func decode(_ result: UnsafeMutablePointer<CChar>?) throws -> BridgeReply.Output {
+    static func decode(_ result: UnsafeMutablePointer<CChar>?) throws -> BridgeReply.Output {
         guard let result else { throw HostError.bridge("Go Core returned no response") }
         defer { VRFree(result) }
         let reply = try JSONDecoder().decode(BridgeReply.self,
@@ -334,7 +320,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 json = "{}" // Go Core owns the persisted defaults and macOS shortcut bindings.
                 needsDefaults = true
             }
-            let output = try GoCore.request(config: json, audio: Data(), selection: nil)
+            let output = try GoCore.decode(json.withCString { VRProfile($0) })
             guard let profile = output.profile else { throw HostError.config("missing Go host profile") }
             if needsDefaults {
                 firstRun = true
@@ -375,7 +361,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             settingsPages = [:]
             settingsStatuses = [:]
             settingsDeployDirectory = values["asr_deploy_dir"] ?? ""
-            let deployStatus = try? GoCore.asrProgress()
+            let deployStatus = try? GoCore.decode(VRASRProgress())
             settingsRunning = form.running
             settingsBusy = form.busy
             settingsCaptureHint = form.captureHint
@@ -446,7 +432,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     timer.invalidate()
                     return
                 }
-                if let progress = try? GoCore.asrProgress(), progress.directory == self.settingsDeployDirectory {
+                if let progress = try? GoCore.decode(VRASRProgress()), progress.directory == self.settingsDeployDirectory {
                     self.settingsHint?.stringValue = progress.status ?? "部署位置：" + self.settingsDeployDirectory
                 }
             }
@@ -460,7 +446,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func settingsShowDeployError() {
-        guard let progress = try? GoCore.asrProgress(),
+        guard let progress = try? GoCore.decode(VRASRProgress()),
               progress.phase == "failed", progress.directory == settingsDeployDirectory,
               let message = progress.status else { return }
         let alert = NSAlert()
@@ -515,7 +501,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             }
         case "deploy_asr":
             do {
-                settingsHint?.stringValue = try GoCore.deploy(settingsDeployDirectory).status ?? "ASR 正在准备部署"
+                settingsHint?.stringValue = try GoCore.decode(settingsDeployDirectory.withCString { VRDeploy($0) }).status ?? "ASR 正在准备部署"
             } catch {
                 settingsHint?.stringValue = String(describing: error)
             }
@@ -811,8 +797,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                     let result = Result {
                         let pcm = try Microphone.pcm(capture)
-                        return try GoCore.request(rewrite: rewrite, audio: pcm,
-                                                 selection: selected?.text, token: token)
+                        return try GoCore.run(audio: pcm, selection: selected?.text,
+                                              rewrite: rewrite, token: token)
                     }
                     DispatchQueue.main.async {
                         guard let self, VRSnapshot(0, token).valid == 1 else { return }
