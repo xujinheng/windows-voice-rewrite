@@ -49,7 +49,7 @@ func TestConnectionSaveUsesCoreConfig(t *testing.T) {
 	if actual.ASRBaseURL != "http://localhost:8081/v1" || actual.TextModel != "auto" || actual.DictationHotkey != "Mouse4" || actual.MaxRecordSeconds != 90 {
 		t.Fatalf("unexpected saved config: %+v", actual)
 	}
-	// Windows uses the typed Core update; macOS uses the JSON ABI.
+	// Both paths execute the same Core Update; JSON is only macOS C ABI serialization.
 	typed, err := Update(cfg, values)
 	if err != nil {
 		t.Fatal(err)
@@ -68,12 +68,12 @@ func TestMacOSInputFormShowsOnlySupportedControls(t *testing.T) {
 			visible[field.ID] = true
 		}
 	}
-	for _, id := range []string{"rewrite_shortcut", "dictation_shortcut", "capture_rewrite", "capture_dictation", "max_record_seconds", "input_note_macos"} {
+	for _, id := range []string{"rewrite_shortcut", "dictation_shortcut", "capture_rewrite", "capture_dictation", "max_record_seconds", "microphone", "input_note_macos"} {
 		if !visible[id] {
 			t.Fatalf("missing supported setting %s", id)
 		}
 	}
-	for _, id := range []string{"microphone", "record_mode", "meeting_asr_mode", "exit_shortcut"} {
+	for _, id := range []string{"record_mode", "meeting_asr_mode", "exit_shortcut"} {
 		if visible[id] {
 			t.Fatalf("unsupported native field %s", id)
 		}
