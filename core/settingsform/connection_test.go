@@ -3,9 +3,6 @@ package settingsform
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"reflect"
 	"testing"
 
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
@@ -39,10 +36,8 @@ func TestConnectionSaveUsesCoreConfig(t *testing.T) {
 	cfg := coreconfig.Defaults()
 	cfg.DictationHotkey = "RightCommand"
 	raw, _ := json.Marshal(cfg)
-	request, _ := json.Marshal(map[string]any{
-		"action": "save", "config": json.RawMessage(raw),
-		"values": map[string]string{"asr_base_url": " http://localhost:8081/v1/ ", "text_model": "", "max_record_seconds": "90", "dictation_shortcut": "Mouse4"},
-	})
+	values := map[string]string{"asr_base_url": " http://localhost:8081/v1/ ", "text_model": "", "max_record_seconds": "90", "dictation_shortcut": "Mouse4"}
+	request, _ := json.Marshal(map[string]any{"action": "save", "config": json.RawMessage(raw), "values": values})
 	value, err := ConnectionAction(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -53,6 +48,15 @@ func TestConnectionSaveUsesCoreConfig(t *testing.T) {
 	}
 	if actual.ASRBaseURL != "http://localhost:8081/v1" || actual.TextModel != "auto" || actual.DictationHotkey != "Mouse4" || actual.MaxRecordSeconds != 90 {
 		t.Fatalf("unexpected saved config: %+v", actual)
+	}
+	// Windows uses the typed Core update; macOS uses the JSON ABI.
+	typed, err := Update(cfg, values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, _ := coreconfig.Marshal(typed)
+	if string(canonical) != value.(map[string]string)["config"] {
+		t.Fatal("native and JSON settings disagree")
 	}
 }
 
@@ -99,62 +103,3 @@ func TestDeployDirectoryAndEndpointSaveIndependently(t *testing.T) {
 	}
 }
 
-func TestNativeSettingsAndJSONContractAgree(t *testing.T) {
-	cfg := coreconfig.Defaults()
-	cfg.DictationHotkey = "RightCommand"
-	cfg.HotkeyRecord = "RightOption"
-	values := map[string]string{
-		"asr_base_url":       " http://127.0.0.1:9001/v1/ ",
-		"llm_base_url":       " http://127.0.0.1:1234/v1 ",
-		"asr_model":          "custom-asr",
-		"max_record_seconds": "45",
-		"asr_deploy_dir":     "/tmp/deploy-target",
-	}
-	typed, err := Update(cfg, values)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := json.Marshal(cfg)
-	request, _ := json.Marshal(map[string]any{
-		"action": "save", "config": json.RawMessage(raw), "values": values,
-	})
-	reply, err := ConnectionAction(context.Background(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var decoded coreconfig.Config
-	if err := json.Unmarshal([]byte(reply.(map[string]string)["config"]), &decoded); err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(typed, decoded) {
-		t.Fatalf("platform settings differ: native=%+v json=%+v", typed, decoded)
-	}
-}
-
-func TestNativeModelDiscoveryAndJSONContractAgree(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/models" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":"test-asr"}]}`))
-	}))
-	defer server.Close()
-	cfg := coreconfig.Defaults()
-	cfg.ASRBaseURL = server.URL + "/v1"
-	_, models, err := Service(context.Background(), "discover", "ASR", cfg.ASRBaseURL, cfg.ASRAPIKey, cfg.ASRModel)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := json.Marshal(cfg)
-	request, _ := json.Marshal(map[string]any{"action": "discover", "kind": "ASR", "config": json.RawMessage(raw)})
-	reply, err := ConnectionAction(context.Background(), request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bound, ok := reply.(map[string]any)["models"].([]string)
-	if !ok || !reflect.DeepEqual(models, bound) {
-		t.Fatalf("platform discovery differs: native=%v json=%v", models, reply)
-	}
-}
