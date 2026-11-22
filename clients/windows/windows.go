@@ -806,11 +806,7 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_TRAY_TOGGLE_PAUSE {
-			kind := voice.CommandPause
-			if app.core.Snapshot(0, 0).Paused {
-				kind = voice.CommandResume
-			}
-			switch app.core.Apply(voice.Command{Kind: kind, Busy: app.busy.Load() || active != nil}).Kind {
+			switch app.core.Apply(voice.Command{Kind: voice.CommandTogglePause, Busy: app.busy.Load() || active != nil}).Kind {
 			case voice.EventResumed:
 				app.setStatus(trayIdle)
 			case voice.EventPaused:

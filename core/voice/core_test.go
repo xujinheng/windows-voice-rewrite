@@ -54,7 +54,7 @@ func TestCoreCancelsPriorRequests(t *testing.T) {
 func TestPauseIsOneCoreOwnedInputPolicy(t *testing.T) {
 	var g Core
 	g.Apply(Command{Kind: CommandBind, Dictation: []int{1}, Rewrite: []int{2}})
-	if got := g.Apply(Command{Kind: CommandPause}); got.Kind != EventPaused || !g.Snapshot(0, 0).Paused {
+	if got := g.Apply(Command{Kind: CommandTogglePause}); got.Kind != EventPaused || !g.Snapshot(0, 0).Paused {
 		t.Fatal("pause must be visible to every native adapter")
 	}
 	for _, code := range []int{1, 2} {
@@ -65,17 +65,17 @@ func TestPauseIsOneCoreOwnedInputPolicy(t *testing.T) {
 	if event := g.Apply(Command{Kind: CommandStart}); event.Kind != EventRejected {
 		t.Fatal("paused Core started a task")
 	}
-	if g.Apply(Command{Kind: CommandResume, Busy: true}).Kind != EventRejected {
+	if g.Apply(Command{Kind: CommandTogglePause, Busy: true}).Kind != EventRejected {
 		t.Fatal("Core must refuse resume when native session is busy")
 	}
-	if got := g.Apply(Command{Kind: CommandResume}); got.Kind != EventResumed || g.Snapshot(0, 0).Paused {
+	if got := g.Apply(Command{Kind: CommandTogglePause}); got.Kind != EventResumed || g.Snapshot(0, 0).Paused {
 		t.Fatal("resume must unlock both clients")
 	}
-	if g.Apply(Command{Kind: CommandPause, Busy: true}).Kind != EventRejected {
+	if g.Apply(Command{Kind: CommandTogglePause, Busy: true}).Kind != EventRejected {
 		t.Fatal("Core must refuse pause when native session is busy")
 	}
 	press := g.Apply(Command{Kind: CommandPress, Code: 1})
-	if press.Kind != EventPressed || g.Apply(Command{Kind: CommandPause}).Kind != EventRejected {
+	if press.Kind != EventPressed || g.Apply(Command{Kind: CommandTogglePause}).Kind != EventRejected {
 		t.Fatal("cannot pause while a shortcut owns a hold")
 	}
 }
