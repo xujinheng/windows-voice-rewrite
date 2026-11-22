@@ -320,7 +320,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
     private var microphone = Microphone()
     private let pill = RecordingPill()
     private var resultPanel: NSPanel?
-    private var previewText: String?
     private var settingsPanel: NSPanel?
     private var settingsProgressTimer: Timer?
     private var settingsInputs: [String: NSTextField] = [:]
@@ -413,7 +412,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
 
     @objc private func closePreview() {
         resultPanel?.close()
-        previewText = nil
+        resultPanel = nil
     }
 
     private func recordError(_ message: String) {
@@ -792,7 +791,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
         copyText(text)
     }
     @objc private func copyPreview() {
-        if let text = previewText { copyText(text) }
+        guard let scroll = resultPanel?.contentView?.subviews.compactMap({ $0 as? NSScrollView }).first,
+              let text = (scroll.documentView as? NSTextView)?.string else { return }
+        copyText(text)
     }
     @objc private func applyResult() {
         guard let request = previewApply, taskID == 0,
@@ -1074,7 +1075,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
     // a preview is required; no clipboard mutation occurs until Copy is clicked.
     private func presentPreview(_ text: String, title: String?, selection: AXSelection? = nil) {
         resultPanel?.close()
-        previewText = text
         previewApply = nil
         if let selection, taskID != 0 {
             previewApply = (targetPID, targetWindow, selection, taskID, text)
