@@ -753,32 +753,33 @@ func (p *uxSettings) save() error {
 	if p.app.busy.Load() {
 		return errors.New(ux.SaveWhileBusy)
 	}
-	var fields [6]string
-	for i, h := range p.inputs {
-		fields[i] = uxWinText(h)
+	if p.capturingShortcut != 0 {
+		return errors.New(shortcut.CapturePendingMessage)
 	}
 	latest, err := loadConfig()
 	if err != nil {
 		return err
 	}
-	cfg, err := coreconfig.WithConnectionFields(latest, fields)
+	values := map[string]string{
+		"rewrite_shortcut":   uxWinText(p.rewriteShortcut),
+		"dictation_shortcut": uxWinText(p.shortcut),
+		"max_record_seconds": uxWinText(p.recordDuration),
+	}
+	for _, control := range contract.Controls() {
+		if index, ok := contract.InputIndex(control.ID); ok {
+			values[control.ID] = uxWinText(p.inputs[index])
+		}
+	}
+	cfg, err := settingsform.Update(latest, values)
 	if err != nil {
 		return err
 	}
-	if p.capturingShortcut != 0 {
-		return errors.New(shortcut.CapturePendingMessage)
-	}
-	newRewrite, newDictation, changedShortcut, err := shortcut.AssignPair(cfg.HotkeyRecord, cfg.DictationHotkey, cfg.HotkeyExit, uxWinText(p.rewriteShortcut), uxWinText(p.shortcut))
+	newRewrite, newDictation, changedShortcut, err := shortcut.AssignPair(latest.HotkeyRecord, latest.DictationHotkey, latest.HotkeyExit, cfg.HotkeyRecord, cfg.DictationHotkey)
 	if err != nil {
 		return err
 	}
 	cfg.HotkeyRecord, cfg.DictationHotkey = newRewrite, newDictation
-	seconds, err := coreconfig.RecordingSeconds(uxWinText(p.recordDuration))
-	if err != nil {
-		return err
-	}
-	changedDuration := cfg.MaxRecordSeconds != seconds
-	cfg.MaxRecordSeconds = seconds
+	changedDuration := cfg.MaxRecordSeconds != latest.MaxRecordSeconds
 	selected, _, _ := procSendMessage.Call(p.microphone, uxCBGetCurSel, 0, 0)
 	deviceID := cfg.AudioDeviceID
 	if p.microphone != 0 && selected != ^uintptr(0) && int(selected) >= 0 && int(selected) < len(p.microphoneIDs) {
