@@ -768,6 +768,14 @@ func (p *uxSettings) inputValue(id string) string {
 	return uxWinText(p.inputs[index])
 }
 
+func (p *uxSettings) bumpProbe(idx int) uint64 {
+	p.probeMu.Lock()
+	p.probeSerial[idx]++
+	serial := p.probeSerial[idx]
+	p.probeMu.Unlock()
+	return serial
+}
+
 func (p *uxSettings) probe(kind string) {
 	url, key, model, ok := contract.ProbeInputs(kind)
 	if !ok || p.window == 0 {
@@ -778,10 +786,7 @@ func (p *uxSettings) probe(kind string) {
 		return
 	}
 	base, secret, name := p.inputValue(url), p.inputValue(key), p.inputValue(model)
-	p.probeMu.Lock()
-	p.probeSerial[idx]++
-	serial := p.probeSerial[idx]
-	p.probeMu.Unlock()
+	serial := p.bumpProbe(idx)
 	uxSetText(p.probeStatus[idx], serviceprobe.StatusRunning)
 	hwnd := p.window
 	go func() {
