@@ -24,7 +24,12 @@ func DefaultDirectory() string {
 	dir := filepath.Dir(exe)
 	if runtime.GOOS == "darwin" && filepath.Base(dir) == "MacOS" &&
 		filepath.Base(filepath.Dir(dir)) == "Contents" {
-		return filepath.Dir(filepath.Dir(filepath.Dir(dir)))
+		parent := filepath.Dir(filepath.Dir(filepath.Dir(dir)))
+		// /Applications is normally read-only to ordinary users.
+		if parent == "/Applications" || parent == "/System/Applications" {
+			if home, err := os.UserHomeDir(); err == nil { return home }
+		}
+		return parent
 	}
 	return dir
 }
