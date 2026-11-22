@@ -10,6 +10,7 @@ import (
 
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/contract"
+	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
 	"github.com/xujinheng/windows-voice-rewrite/core/provider"
 	"github.com/xujinheng/windows-voice-rewrite/core/serviceprobe"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
@@ -130,12 +131,14 @@ func ConnectionAction(ctx context.Context, raw []byte) (any, error) {
 		return nil, err
 	}
 	if req.Action == "form" {
+		directory := cfg.ASRDeployDir
+		if directory == "" { directory = localasr.DefaultDirectory() }
 		return map[string]any{"form": ConnectionForm(), "values": map[string]string{
 			"asr_base_url": cfg.ASRBaseURL, "asr_model": cfg.ASRModel, "asr_api_key": cfg.ASRAPIKey,
 			"llm_base_url": cfg.LLMBaseURL, "text_model": cfg.TextModel, "llm_api_key": cfg.LLMAPIKey,
 			"rewrite_shortcut": cfg.HotkeyRecord, "dictation_shortcut": cfg.DictationHotkey,
 			"max_record_seconds": strconv.Itoa(cfg.MaxRecordSeconds),
-			"asr_deploy_dir": cfg.ASRDeployDir,
+			"asr_deploy_dir": directory,
 		}}, nil
 	}
 	fields := [6]string{cfg.ASRBaseURL, cfg.ASRModel, cfg.ASRAPIKey, cfg.LLMBaseURL, cfg.TextModel, cfg.LLMAPIKey}
