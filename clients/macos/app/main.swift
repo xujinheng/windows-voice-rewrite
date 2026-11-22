@@ -705,6 +705,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
         guard tap == nil else { return }
         let eventMask = (UInt64(1) << CGEventType.flagsChanged.rawValue)
             | (UInt64(1) << CGEventType.keyDown.rawValue)
+            | (UInt64(1) << CGEventType.keyUp.rawValue)
             | (UInt64(1) << CGEventType.otherMouseDown.rawValue)
             | (UInt64(1) << CGEventType.otherMouseUp.rawValue)
         let callback: CGEventTapCallBack = { _, type, event, info in
@@ -728,7 +729,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
                 return nil
             }
             if let field = app.settingsCapture, app.settingsPanel?.isVisible == true {
-                let key = type == .flagsChanged ? code : type == .otherMouseDown ? 100 + mouse : -1
+                let key = (type == .flagsChanged || type == .keyDown) ? code : type == .otherMouseDown ? 100 + mouse : -1
                 if let name = app.settingsCaptureCodes[String(key)] {
                     app.settingsInputs[field]?.stringValue = name
                     app.settingsCapture = nil
@@ -747,8 +748,14 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
             }
             if type == .flagsChanged {
                 app.handleModifier(code: code, flags: event.flags)
-            } else if type == .keyDown {
-                if VRSnapshot(0, 0).armed != 0 && app.taskID == 0 {
+            } else if type == .keyDown || type == .keyUp {
+                let state = VRSnapshot(Int32(code), 0)
+                if state.role != 0 || state.down != 0 {
+                    if type == .keyDown && state.down != 0 { return nil } // ignore auto-repeat
+                    if app.updatePress(code: code, down: type == .keyDown,
+                                       delay: Double(app.config.modifierDelayMS) / 1000) { return nil }
+                }
+                if type == .keyDown && VRSnapshot(0, 0).armed != 0 && app.taskID == 0 {
                     VRCommand(Int32(VR_COMMAND_ABANDON), 0, 0, 0)
                     if app.microphone.running { _ = try? app.microphone.stop(discard: true) }
                 }
@@ -798,8 +805,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
     private func handleModifier(code: Int64, flags: CGEventFlags) {
         let family: CGEventFlags
         switch code {
-        case 54: family = .maskCommand
-        case 61: family = .maskAlternate
+        case 54, 55: family = .maskCommand
+        case 58, 61: family = .maskAlternate
+        case 59, 62: family = .maskControl
         default: return
         }
         let state = VRSnapshot(Int32(code), 0)

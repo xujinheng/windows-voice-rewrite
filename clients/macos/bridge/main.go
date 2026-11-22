@@ -38,7 +38,15 @@ func success(value any) response {
 }
 
 // Quartz codes remain physical facts owned by the native adapter.
-var macShortcutCodes = map[string]int{macDefaultDictation: 54, macDefaultRewrite: 61, "Mouse4": 103, "Mouse5": 104}
+// Quartz virtual-key codes are OS facts; shortcut validation belongs to Core.
+var macShortcutCodes = map[string]int{
+	macDefaultDictation: 54, macDefaultRewrite: 61, "Mouse4": 103, "Mouse5": 104,
+	"LeftCommand": 55, "LeftOption": 58, "LeftCtrl": 59, "RightCtrl": 62,
+	"F1": 122, "F2": 120, "F3": 99, "F4": 118, "F5": 96,
+	"F6": 97, "F7": 98, "F8": 100, "F9": 101, "F10": 109,
+	"F11": 103, "F12": 111, "F13": 105, "F14": 107, "F15": 113,
+	"F16": 106, "F17": 64, "F18": 79, "F19": 80, "F20": 90,
+}
 
 func macKeyCode(s string) int { return macShortcutCodes[s] }
 

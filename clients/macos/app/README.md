@@ -29,7 +29,7 @@ The optional first process argument specifies another config file path.
 
 Hold **RightCommand** to dictate; hold **RightOption** over selected text to
 speak a rewrite instruction. Both keys use a 200 ms arm delay; configured mouse
-side buttons use 250 ms. Configure either shortcut as `Mouse4` or `Mouse5`.
+side buttons use 250 ms. Configure either shortcut as `Mouse4`, `Mouse5`, a supported modifier key, or F1–F20.
 Mouse button events assigned to voice shortcuts are intercepted to avoid
 accidental browser navigation.
 
@@ -65,7 +65,7 @@ approval; only Developer ID signing and Apple notarization can fix that.
 
 Settings are rendered from the shared Windows Go Core catalog and geometry.
 AppKit owns only native input widgets, local file persistence and Quartz events.
-The current macOS adapter supports RightCommand/RightOption and Mouse4/Mouse5,
+The current macOS adapter supports left/right Command, Option, Control, F1–F20 and Mouse4/Mouse5,
 the default microphone, and hold-to-record; other input options are not editable
 because this native host cannot yet apply them. No Meeting or full history panel.
 Go Core supplies the
