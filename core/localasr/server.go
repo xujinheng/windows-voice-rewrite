@@ -46,7 +46,11 @@ var (
 // DeployConfigured is the single portable deployment decision for both desktop
 // hosts. Native clients only choose a directory and persist the returned config.
 func DeployConfigured(ctx context.Context, cfg coreconfig.Config, directory string) (coreconfig.Config, error) {
-	install, err := Deploy(ctx, directory)
+	if !deploymentMu.TryLock() {
+		return cfg, errors.New("ASR is already deploying")
+	}
+	defer deploymentMu.Unlock()
+	install, err := install(ctx, directory)
 	if err == nil {
 		err = Start(ctx, install)
 	}
