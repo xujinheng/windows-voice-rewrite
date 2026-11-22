@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
-	"time"
 
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/contract"
@@ -110,6 +109,37 @@ func ConnectionForm() NativeForm {
 	return form
 }
 
+// Update applies all portable settings edits once for every native host.
+// Filesystem writes, microphone selection and platform shortcut capabilities
+// belong to the host, not this business decision.
+func Update(cfg coreconfig.Config, values map[string]string) (coreconfig.Config, error) {
+	fields := [6]string{cfg.ASRBaseURL, cfg.ASRModel, cfg.ASRAPIKey, cfg.LLMBaseURL, cfg.TextModel, cfg.LLMAPIKey}
+	for id, value := range values {
+		if index, ok := contract.InputIndex(id); ok {
+			fields[index] = value
+		}
+	}
+	cfg, err := coreconfig.WithConnectionFields(cfg, fields)
+	if err != nil {
+		return cfg, err
+	}
+	for id, value := range values {
+		switch id {
+		case "rewrite_shortcut":
+			cfg.HotkeyRecord = value
+		case "dictation_shortcut":
+			cfg.DictationHotkey = value
+		case "asr_deploy_dir":
+			cfg.ASRDeployDir = value
+		case "max_record_seconds":
+			if cfg.MaxRecordSeconds, err = coreconfig.RecordingSeconds(value); err != nil {
+				return cfg, err
+			}
+		}
+	}
+	return coreconfig.Normalize(cfg)
+}
+
 // ConnectionAction runs settings updates and diagnostics with exactly the same
 // config, provider and probe owners called by the Windows settings window.
 // The caller owns the configuration file and native widgets.
@@ -143,37 +173,12 @@ func ConnectionAction(ctx context.Context, raw []byte) (any, error) {
 			"asr_deploy_dir":     directory,
 		}}, nil
 	}
-	fields := [6]string{cfg.ASRBaseURL, cfg.ASRModel, cfg.ASRAPIKey, cfg.LLMBaseURL, cfg.TextModel, cfg.LLMAPIKey}
-	for id, value := range req.Values {
-		if index, ok := contract.InputIndex(id); ok {
-			fields[index] = value
-		}
-	}
-	cfg, err = coreconfig.WithConnectionFields(cfg, fields)
+	cfg, err = Update(cfg, req.Values)
 	if err != nil {
 		return nil, err
 	}
-	if value, ok := req.Values["rewrite_shortcut"]; ok {
-		cfg.HotkeyRecord = value
-	}
-	if value, ok := req.Values["dictation_shortcut"]; ok {
-		cfg.DictationHotkey = value
-	}
-	if value, ok := req.Values["asr_deploy_dir"]; ok {
-		cfg.ASRDeployDir = value
-	}
-	if value, ok := req.Values["max_record_seconds"]; ok {
-		cfg.MaxRecordSeconds, err = coreconfig.RecordingSeconds(value)
-		if err != nil {
-			return nil, err
-		}
-	}
 	switch req.Action {
 	case "save":
-		cfg, err = coreconfig.Normalize(cfg)
-		if err != nil {
-			return nil, err
-		}
 		data, err := coreconfig.Marshal(cfg)
 		if err != nil {
 			return nil, err
@@ -192,17 +197,15 @@ func ConnectionAction(ctx context.Context, raw []byte) (any, error) {
 		if req.Action == "probe" {
 			return map[string]string{"status": serviceprobe.ProbeModel(ctx, req.Kind, base, key, model)}, nil
 		}
-		query, cancel := context.WithTimeout(ctx, 8*time.Second)
-		defer cancel()
-		models, err := provider.ListModels(query, base, key)
+		models, err := provider.ListModels(ctx, base, key)
 		if err != nil {
 			return nil, err
 		}
-		if len(models) == 0 {
-			return map[string]any{"models": []string{}, "status": ux.NoModelsFound}, nil
-		}
 		if len(models) > MaxModelMenuChoices {
 			models = models[:MaxModelMenuChoices]
+		}
+		if len(models) == 0 {
+			return map[string]any{"models": models, "status": ux.NoModelsFound}, nil
 		}
 		return map[string]any{"models": models}, nil
 	default:

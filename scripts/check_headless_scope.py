@@ -86,7 +86,7 @@ def main():
     # Scan every Windows desktop host and the shipped Go bridge, not just the
     # current worker filenames. Meeting is a separate Go Core product pipeline.
     forbidden = ("speech.Transcribe(", "textedit.ResolveSelectedTask(",
-                 "textedit.RouteTask(", "textedit.Rewrite(")
+                 "textedit.RouteTask(", "textedit.Rewrite(", "coreconfig.WithConnectionFields(")
     desktop = ROOT / "clients/windows"
     for path in [*(ROOT / "clients/macos/bridge").glob("*.go"), *desktop.glob("*.go")]:
         if path.name.endswith("_test.go") or (path.parent == desktop and path.name.startswith("meeting")):

@@ -12,10 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
-	"time"
 	"unsafe"
 
-	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/contract"
 	"github.com/xujinheng/windows-voice-rewrite/core/desktop"
 	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
@@ -564,7 +562,10 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				if item.CtlID == contract.DiscoverLLMButton {
 					slot = 1
 				}
-				if p.modelChoicesReady(slot) {
+				p.modelMu.Lock()
+				ready := len(p.modelResults[slot].models) > 0 && p.modelCancel[slot] == nil
+				p.modelMu.Unlock()
+				if ready {
 					label = "选择模型"
 				}
 			}
@@ -753,32 +754,33 @@ func (p *uxSettings) save() error {
 	if p.app.busy.Load() {
 		return errors.New(ux.SaveWhileBusy)
 	}
-	var fields [6]string
-	for i, h := range p.inputs {
-		fields[i] = uxWinText(h)
+	if p.capturingShortcut != 0 {
+		return errors.New(shortcut.CapturePendingMessage)
 	}
 	latest, err := loadConfig()
 	if err != nil {
 		return err
 	}
-	cfg, err := coreconfig.WithConnectionFields(latest, fields)
+	values := map[string]string{
+		"rewrite_shortcut":   uxWinText(p.rewriteShortcut),
+		"dictation_shortcut": uxWinText(p.shortcut),
+		"max_record_seconds": uxWinText(p.recordDuration),
+	}
+	for _, control := range contract.Controls() {
+		if index, ok := contract.InputIndex(control.ID); ok {
+			values[control.ID] = uxWinText(p.inputs[index])
+		}
+	}
+	cfg, err := settingsform.Update(latest, values)
 	if err != nil {
 		return err
 	}
-	if p.capturingShortcut != 0 {
-		return errors.New(shortcut.CapturePendingMessage)
-	}
-	newRewrite, newDictation, changedShortcut, err := shortcut.AssignPair(cfg.HotkeyRecord, cfg.DictationHotkey, cfg.HotkeyExit, uxWinText(p.rewriteShortcut), uxWinText(p.shortcut))
+	newRewrite, newDictation, changedShortcut, err := shortcut.AssignPair(latest.HotkeyRecord, latest.DictationHotkey, latest.HotkeyExit, cfg.HotkeyRecord, cfg.DictationHotkey)
 	if err != nil {
 		return err
 	}
 	cfg.HotkeyRecord, cfg.DictationHotkey = newRewrite, newDictation
-	seconds, err := coreconfig.RecordingSeconds(uxWinText(p.recordDuration))
-	if err != nil {
-		return err
-	}
-	changedDuration := cfg.MaxRecordSeconds != seconds
-	cfg.MaxRecordSeconds = seconds
+	changedDuration := cfg.MaxRecordSeconds != latest.MaxRecordSeconds
 	selected, _, _ := procSendMessage.Call(p.microphone, uxCBGetCurSel, 0, 0)
 	deviceID := cfg.AudioDeviceID
 	if p.microphone != 0 && selected != ^uintptr(0) && int(selected) >= 0 && int(selected) < len(p.microphoneIDs) {
@@ -822,31 +824,25 @@ func (p *uxSettings) bumpProbe(idx int) uint64 {
 
 func (p *uxSettings) probe(kind string) {
 	url, key, model, ok := contract.ProbeInputs(kind)
-	if !ok {
+	if !ok || p.window == 0 {
 		return
 	}
-	p.check(kind, p.inputValue(url), p.inputValue(key), p.inputValue(model), url)
-}
-
-func (p *uxSettings) check(kind, base, key, model, field string) {
-	if p == nil || p.window == 0 {
+	idx, ok := contract.ProbeSlot(url)
+	if !ok || idx >= len(p.probeStatus) {
 		return
 	}
-	idx, ok := contract.ProbeSlot(field)
-	if !ok || idx < 0 || idx >= len(p.probeStatus) {
-		return
-	}
+	base, secret, name := p.inputValue(url), p.inputValue(key), p.inputValue(model)
 	serial := p.bumpProbe(idx)
 	uxSetText(p.probeStatus[idx], serviceprobe.StatusRunning)
-	h := p.window
+	hwnd := p.window
 	go func() {
-		result := serviceprobe.ProbeModel(context.Background(), kind, base, key, model)
+		status := serviceprobe.ProbeModel(context.Background(), kind, base, secret, name)
 		p.probeMu.Lock()
 		if serial == p.probeSerial[idx] {
-			p.probeResult[idx] = result
+			p.probeResult[idx] = status
 		}
 		p.probeMu.Unlock()
-		procPostMessage.Call(h, uxWMProbeDone, uintptr(idx), uintptr(serial))
+		procPostMessage.Call(hwnd, uxWMProbeDone, uintptr(idx), uintptr(serial))
 	}()
 }
 
@@ -868,13 +864,6 @@ func (p *uxSettings) invalidateModels(slot int) {
 	if p.modelButtons[slot] != 0 {
 		refreshNativeWindow(p.modelButtons[slot])
 	}
-}
-
-func (p *uxSettings) modelChoicesReady(slot int) bool {
-	p.modelMu.Lock()
-	ready := len(p.modelResults[slot].models) > 0 && p.modelCancel[slot] == nil
-	p.modelMu.Unlock()
-	return ready
 }
 
 func (p *uxSettings) invalidateAllModels() {
@@ -905,7 +894,7 @@ func (p *uxSettings) discoverModels(kind string) {
 		return
 	}
 	base, key := p.inputValue(baseField), p.inputValue(keyField)
-	ctx, cancel := context.WithTimeout(context.Background(), 11*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
 	p.modelMu.Lock()
 	if previous := p.modelCancel[slot]; previous != nil {
 		previous()

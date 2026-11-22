@@ -36,10 +36,8 @@ func TestConnectionSaveUsesCoreConfig(t *testing.T) {
 	cfg := coreconfig.Defaults()
 	cfg.DictationHotkey = "RightCommand"
 	raw, _ := json.Marshal(cfg)
-	request, _ := json.Marshal(map[string]any{
-		"action": "save", "config": json.RawMessage(raw),
-		"values": map[string]string{"asr_base_url": " http://localhost:8081/v1/ ", "text_model": "", "max_record_seconds": "90", "dictation_shortcut": "Mouse4"},
-	})
+	values := map[string]string{"asr_base_url": " http://localhost:8081/v1/ ", "text_model": "", "max_record_seconds": "90", "dictation_shortcut": "Mouse4"}
+	request, _ := json.Marshal(map[string]any{"action": "save", "config": json.RawMessage(raw), "values": values})
 	value, err := ConnectionAction(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -50,6 +48,15 @@ func TestConnectionSaveUsesCoreConfig(t *testing.T) {
 	}
 	if actual.ASRBaseURL != "http://localhost:8081/v1" || actual.TextModel != "auto" || actual.DictationHotkey != "Mouse4" || actual.MaxRecordSeconds != 90 {
 		t.Fatalf("unexpected saved config: %+v", actual)
+	}
+	// Windows uses the typed Core update; macOS uses the JSON ABI.
+	typed, err := Update(cfg, values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, _ := coreconfig.Marshal(typed)
+	if string(canonical) != value.(map[string]string)["config"] {
+		t.Fatal("native and JSON settings disagree")
 	}
 }
 
