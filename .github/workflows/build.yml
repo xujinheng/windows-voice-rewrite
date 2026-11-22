@@ -114,7 +114,7 @@ jobs:
   build-macos-headless:
     name: macOS headless ${{ matrix.arch }} Go + Swift
     needs: changes
-    if: needs.changes.outputs.macos == 'true'
+    if: needs.changes.outputs.macos == 'true' || needs.changes.outputs.oneclick == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     strategy:
@@ -132,6 +132,7 @@ jobs:
           go-version: '1.23'
           cache-dependency-path: clients/go.mod
       - name: Build headless app with in-process Go Core
+        if: needs.changes.outputs.macos == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -140,8 +141,10 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then version="${GITHUB_REF_NAME#v}"; fi
           bash scripts/build-macos-headless.sh '${{ matrix.arch }}' "$RUNNER_TEMP/headless" "$version"
       - name: Verify Go-linked production source share
+        if: needs.changes.outputs.macos == 'true'
         run: python3 scripts/check_headless_scope.py
       - name: Verify signed binary and basic configuration
+        if: needs.changes.outputs.macos == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -152,6 +155,7 @@ jobs:
           nm -g "$app/Contents/MacOS/VoiceRewrite" | grep ' _VRCommand' >/dev/null
           codesign --verify --deep --strict "$app"
       - name: Smoke native Go ABI and benchmark real Swift-to-Go call overhead
+        if: needs.changes.outputs.macos == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -175,6 +179,40 @@ jobs:
             "$RUNNER_TEMP/main.swift" clients/macos/app/RecordingPill.swift \
             "$RUNNER_TEMP/headless/libvoicecore.a"
           "$RUNNER_TEMP/voicecore-focus-test"
+      - name: Test and build portable Apple Silicon OneClick
+        if: matrix.arch == 'arm64' && needs.changes.outputs.oneclick == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          cd oneclick
+          go test ./...
+          go vet ./...
+          bundle="$RUNNER_TEMP/Qwen3-ASR-OneClick-Mac-arm64"
+          mkdir -p "$bundle"
+          go build -trimpath -ldflags '-s -w' -o "$bundle/Qwen3-ASR-OneClick" .
+          cp ../LICENSE "$bundle/LICENSE"
+          printf '%s\n' '#!/bin/sh' 'cd "$(dirname "$0")" || exit 1' 'exec ./Qwen3-ASR-OneClick' > "$bundle/Start OneClick.command"
+          chmod +x "$bundle/Start OneClick.command" "$bundle/Qwen3-ASR-OneClick"
+          /usr/bin/codesign --force --sign - --timestamp=none "$bundle/Qwen3-ASR-OneClick"
+          /usr/bin/codesign --verify "$bundle/Qwen3-ASR-OneClick"
+          if [[ "$GITHUB_REF" == refs/heads/main || "$GITHUB_REF" == refs/tags/v* ]]; then
+            /usr/bin/ditto -c -k --keepParent "$bundle" "$RUNNER_TEMP/Qwen3-ASR-OneClick-Mac-arm64.zip"
+            extracted="$(mktemp -d)"
+            /usr/bin/ditto -x -k "$RUNNER_TEMP/Qwen3-ASR-OneClick-Mac-arm64.zip" "$extracted"
+            test -x "$extracted/Qwen3-ASR-OneClick-Mac-arm64/Qwen3-ASR-OneClick"
+            test -x "$extracted/Qwen3-ASR-OneClick-Mac-arm64/Start OneClick.command"
+            test -f "$extracted/Qwen3-ASR-OneClick-Mac-arm64/LICENSE"
+            rm -rf "$extracted"
+          fi
+      - name: Upload portable Apple Silicon OneClick
+        if: matrix.arch == 'arm64' && needs.changes.outputs.oneclick == 'true' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: Qwen3-ASR-OneClick-Mac-arm64
+          path: ${{ runner.temp }}/Qwen3-ASR-OneClick-Mac-arm64.zip
+          retention-days: 7
+          if-no-files-found: error
       - name: Package experimental ZIP for tagged Release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
@@ -442,6 +480,10 @@ jobs:
         with:
           name: Qwen3-ASR-OneClick-Windows-x64
           path: release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: Qwen3-ASR-OneClick-Mac-arm64
+          path: release
       - name: Publish unsigned release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
@@ -454,6 +496,7 @@ jobs:
           # explicitly experimental unnotarized Mac builds; checksums stay in CI.
           files: |
             release/Qwen3-ASR-OneClick-Windows-x64.exe
+            release/Qwen3-ASR-OneClick-Mac-arm64.zip
             release/VoiceRewrite-Setup-*-x64.exe
             release/VoiceRewrite-windows-x64.zip
             release/VoiceRewrite-*-macOS-*-Experimental.zip
