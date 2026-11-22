@@ -58,7 +58,7 @@ func Deploy(ctx context.Context, directory string, guard ChildGuard) (err error)
 	progressMu.Unlock()
 	defer func() {
 		if err != nil {
-			report("ASR 部署失败：" + err.Error())
+			report("ASR 部署失败：检查网络或目录权限，然后重试 Deploy")
 		} else {
 			report("ASR 已部署并启动")
 		}
