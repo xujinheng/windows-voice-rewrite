@@ -321,7 +321,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
     private let pill = RecordingPill()
     private var resultPanel: NSPanel?
     private var previewText: String?
-    private var lastError = ""
     private var settingsPanel: NSPanel?
     private var settingsProgressTimer: Timer?
     private var settingsInputs: [String: NSTextField] = [:]
@@ -418,14 +417,16 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     private func recordError(_ message: String) {
-        lastError = message
+        message.withCString { VRRecordError($0) }
         NSLog("%@", message)
     }
 
     @objc private func showLastError() {
+        let error = VRLastError()
+        defer { VRFree(error) }
         let alert = NSAlert()
         alert.messageText = "最近一次错误"
-        alert.informativeText = lastError.isEmpty ? "当前没有记录到错误。" : lastError
+        alert.informativeText = error.map { String(cString: $0) } ?? "当前没有记录到错误。"
         alert.runModal()
     }
 
