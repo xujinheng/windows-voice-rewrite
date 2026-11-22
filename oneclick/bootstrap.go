@@ -23,6 +23,7 @@ const (
 	asrModelSHA = "58e22d0532d4eacaf034cfac17a6fed159f37c41390c710186783be439d1fc57"
 	asrProjectorFilename = "mmproj-Qwen3-ASR-1.7B-bf16.gguf"
 	asrProjectorSHA = "8882e9ddab3186f9aa71b1417c847177913e1466655ac944cf86e9b846735d62"
+	macArmTarSHA = "e88d7e91198d0de6ceb3d33711ac01ee0d5b519cd9ba4e81854e3bba84f22214"
 	cpuZipSHA = "64bee9b6fece8e66c665c40290cbb84706af23c670041d024b56a71a39859d77"
 	cudaZipSHA = "9df9b6316051ce258debb234b3475762eecd8721e6bb41474f0743d54aad08aa"
 	cudaRuntimeZipSHA = "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6"
@@ -139,7 +140,10 @@ func installRuntime(ctx context.Context, root, flavor string) (string, error) {
 		if exe := locateServer(target); exe != "" { return exe, nil }
 	}
 	var specs []downloadSpec
-	if flavor == "cuda" {
+	if runtime.GOOS == "darwin" {
+		if runtime.GOARCH != "arm64" { return "", errors.New("automatic installation supports Apple Silicon (arm64) only") }
+		specs = []downloadSpec{releaseDownload("llama-"+llamaRelease+"-bin-macos-arm64.tar.gz", macArmTarSHA)}
+	} else if flavor == "cuda" {
 		specs = []downloadSpec{
 			releaseDownload("llama-"+llamaRelease+"-bin-win-cuda-12.4-x64.zip", cudaZipSHA),
 			releaseDownload("cudart-llama-bin-win-cuda-12.4-x64.zip", cudaRuntimeZipSHA),
@@ -156,9 +160,13 @@ func installRuntime(ctx context.Context, root, flavor string) (string, error) {
 	if err != nil { return "", err }
 	defer os.RemoveAll(stage)
 	for _, spec := range specs {
-		if err := unpackZip(filepath.Join(cache, spec.filename), stage); err != nil { return "", err }
+		archive := filepath.Join(cache, spec.filename)
+		if strings.HasSuffix(archive, ".tar.gz") {
+			output, err := exec.Command("tar", "-xzf", archive, "-C", stage).CombinedOutput()
+			if err != nil { return "", fmt.Errorf("unpack %s: %w: %s", spec.filename, err, output) }
+		} else if err := unpackZip(archive, stage); err != nil { return "", err }
 	}
-	if locateServer(stage) == "" { return "", errors.New("安装包没有 llama-server.exe") }
+	if locateServer(stage) == "" { return "", errors.New("安装包没有 llama-server") }
 	if err := os.WriteFile(filepath.Join(stage, ".installed-"+llamaRelease), []byte(flavor+"\n"), 0600); err != nil { return "", err }
 	if err := os.RemoveAll(target); err != nil { return "", err }
 	if err := os.Rename(stage, target); err != nil { return "", err }
@@ -196,10 +204,12 @@ func unpackZip(file, root string) error {
 }
 
 func locateServer(root string) string {
+	name := "llama-server.exe"
+	if runtime.GOOS == "darwin" { name = "llama-server" }
 	var found string
 	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil { return nil }
-		if !entry.IsDir() && strings.EqualFold(entry.Name(), "llama-server.exe") {
+		if !entry.IsDir() && strings.EqualFold(entry.Name(), name) {
 			found = path
 			return filepath.SkipAll
 		}
@@ -213,10 +223,10 @@ func hasNVIDIA() bool {
 	return exec.Command("nvidia-smi", "-L").Run() == nil
 }
 
-// Existing explicit paths remain authoritative: automatic installation only
-// replaces default names that are not already present beside the EXE.
-func bootstrapWindows(cfg config, directory string) (config, error) {
-	if runtime.GOOS != "windows" || cfg.AttachToExistingServer { return cfg, nil }
+// Existing explicit paths remain authoritative. Automatic downloads stay beside
+// the launcher, inside Qwen3-ASR/, on both Windows and Apple Silicon.
+func bootstrapLocal(cfg config, directory string) (config, error) {
+	if cfg.AttachToExistingServer || (runtime.GOOS != "windows" && runtime.GOOS != "darwin") { return cfg, nil }
 	root := filepath.Join(directory, "Qwen3-ASR")
 	if cfg.ModelPath == "Qwen3-ASR-1.7B-Q8_0.gguf" {
 		existing := filepath.Join(directory, cfg.ModelPath)
@@ -240,11 +250,25 @@ func bootstrapWindows(cfg config, directory string) (config, error) {
 			cfg.MMProjPath = dest
 		}
 	}
-	if cfg.LlamaServerPath != "llama-server.exe" { return cfg, nil }
-	existing := filepath.Join(directory, "llama-server.exe")
+	serverName := "llama-server.exe"
+	if runtime.GOOS == "darwin" { serverName = "llama-server" }
+	if cfg.LlamaServerPath != serverName { return cfg, nil }
+	existing := filepath.Join(directory, serverName)
 	if stat, err := os.Stat(existing); err == nil && !stat.IsDir() {
 		cfg.LlamaServerPath = existing
-		if !hasNVIDIA() { cfg.GPULayers, cfg.AllowCPU = 0, true }
+		if runtime.GOOS == "windows" && !hasNVIDIA() { cfg.GPULayers, cfg.AllowCPU = 0, true }
+		return cfg, nil
+	}
+	if runtime.GOOS == "darwin" {
+		exe, err := installRuntime(context.Background(), root, "metal")
+		if err != nil { return cfg, err }
+		cfg.LlamaServerPath = exe
+		if err := checkGPUs(exe, filepath.Dir(exe), false); err != nil {
+			fmt.Printf("[提示] Metal 不可用，使用 CPU：%v\n", err)
+			cfg.GPULayers, cfg.AllowCPU = 0, true
+		} else {
+			fmt.Println("[设备] Apple Metal")
+		}
 		return cfg, nil
 	}
 	if hasNVIDIA() {
