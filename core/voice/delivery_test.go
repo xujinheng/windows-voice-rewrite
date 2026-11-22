@@ -17,7 +17,7 @@ func TestPortableDeliveryDecision(t *testing.T) {
 		{"unknown", "invalid", true, true, DeliveryPreview},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := DecideDelivery(Result{Route: tc.route}, DeliveryFacts{TargetCurrent: tc.target, SelectionCaptured: tc.selected})
+			got := DecideDelivery(tc.route, DeliveryFacts{TargetCurrent: tc.target, SelectionCaptured: tc.selected})
 			if got != tc.want {
 				t.Fatalf("got %d want %d", got, tc.want)
 			}
