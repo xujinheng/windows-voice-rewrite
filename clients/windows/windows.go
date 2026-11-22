@@ -157,6 +157,7 @@ type sideCapture struct {
 }
 
 type togglePrepareResult struct {
+	cfg        Config
 	rec        *audioRecorder
 	sel        selectedText
 	generation uint64
@@ -499,7 +500,7 @@ func runApp() {
 	// A microphone stream may already be capturing the first 250ms before
 	// a side-button hold becomes a voice operation.
 	activateHold := func(rec *audioRecorder, dictation bool, button uint16, target uintptr) {
-		task = recordingTask{dictation: dictation, target: target}
+		task = recordingTask{cfg: app.cfg, dictation: dictation, target: target}
 		holdButton = button
 		holdMeeting = nil
 		if app.meeting != nil && !app.meeting.Demo() {
@@ -509,7 +510,7 @@ func runApp() {
 		active = rec
 		watchRecordingLimit(hwnd, rec, activeGeneration, l)
 		app.setStatus(trayRecording)
-		watchLimit := time.Duration(cfg.MaxRecordSeconds+2) * time.Second
+		watchLimit := time.Duration(task.cfg.MaxRecordSeconds+2) * time.Second
 		if button != 0 {
 			go watchMouseHoldTimeout(hwnd, uintptr(activeGeneration), rec.done, watchLimit, l)
 		} else {
@@ -548,7 +549,7 @@ func runApp() {
 			app.fail(errors.New(voice.NoTargetWindow))
 			return
 		}
-		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
+		rec, err := startRecorder(app.cfg.MaxRecordSeconds, app.cfg.AudioDeviceID)
 		if err != nil {
 			app.fail(err)
 			return
@@ -585,7 +586,7 @@ func runApp() {
 		// A short click closes this preview and replays browser navigation.
 		mode := voice.HoldModeLabel(app.core.Snapshot(int(button), 0).HeldRole == 1, false)
 		showPendingHandyStatus(mode)
-		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
+		rec, err := startRecorder(app.cfg.MaxRecordSeconds, app.cfg.AudioDeviceID)
 		pendingSide = &sideCapture{button: button, targetWindow: win, recorder: rec, err: err}
 	}
 
@@ -718,7 +719,7 @@ func runApp() {
 			activeGeneration = result.generation
 			active = result.rec
 			watchRecordingLimit(hwnd, active, activeGeneration, l)
-			task = recordingTask{selection: &result.sel}
+			task = recordingTask{cfg: result.cfg, selection: &result.sel}
 			app.busy.Store(false)
 			app.setStatus(trayRecording)
 			l.Printf("recording started, mode=toggle, selected characters=%d", utf8.RuneCountInString(result.sel.Text))
@@ -951,13 +952,14 @@ func runApp() {
 				}
 				continue
 			}
-			if cfg.RecordMode == "hold" {
+			if app.cfg.RecordMode == "hold" {
 				// Hold mode records immediately and does NOT touch the clipboard
 				// while the hotkey is physically held. Capture is performed on release.
 				startHold(false)
 				continue
 			}
 			// Legacy toggle mode also prepares its selection on a worker.
+			jobConfig := app.cfg
 			generation := app.core.Apply(voice.Command{Kind: voice.CommandStart}).Token
 			app.busy.Store(true)
 			app.setStatus(trayTranscribing)
@@ -967,7 +969,7 @@ func runApp() {
 					return
 				}
 				begin := time.Now()
-				sel, err := captureSelection(hwnd, cfg)
+				sel, err := captureSelection(hwnd, jobConfig)
 				l.Printf("stage=selection mode=toggle ms=%d", time.Since(begin).Milliseconds())
 				if err == nil {
 					err = textedit.SelectedLengthError(cfg.MaxSelectedRunes, sel.Text)
@@ -976,7 +978,7 @@ func runApp() {
 					finishTogglePrepare(app, hwnd, sel, nil, true, err)
 					return
 				}
-				rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
+				rec, err := startRecorder(jobConfig.MaxRecordSeconds, jobConfig.AudioDeviceID)
 				if err != nil {
 					finishTogglePrepare(app, hwnd, sel, nil, true, err)
 					return
@@ -985,7 +987,7 @@ func runApp() {
 					finishTogglePrepare(app, hwnd, sel, rec, true, nil)
 					return
 				}
-				toggleResult <- togglePrepareResult{rec: rec, sel: sel, generation: generation}
+				toggleResult <- togglePrepareResult{cfg: jobConfig, rec: rec, sel: sel, generation: generation}
 				if ok, _, _ := procPostMessage.Call(hwnd, WM_TOGGLE_READY, 0, 0); ok == 0 {
 					// The UI never received the ready notification. Withdraw the
 					// buffered result so a later toggle cannot block on a full channel.

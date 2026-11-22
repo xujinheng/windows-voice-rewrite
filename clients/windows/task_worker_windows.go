@@ -100,6 +100,7 @@ func watchHoldRelease(hwnd, vk, mods, session uintptr, canceled <-chan struct{},
 // A native recording supplies either a caret target (dictation) or selected
 // text (rewrite). Both use one worker and the same public voice.Core.Execute.
 type recordingTask struct {
+	cfg       Config
 	dictation bool
 	target    uintptr
 	anchor    trayPoint
@@ -133,7 +134,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 				return
 			}
 			var err error
-			sel, err = captureSelection(app.Window, app.cfg)
+			sel, err = captureSelection(app.Window, task.cfg)
 			sel.Anchor = task.anchor
 			if err == nil && sel.TargetWindow != task.target {
 				err = errors.New(ux.HoldSelectionMoved)
@@ -179,7 +180,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 			app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(event.Text))
 		}
 	}
-	answer, err := app.core.Execute(generation, app.cfg, r.pcm, sel.Text, !task.dictation, afterASR)
+	answer, err := app.core.Execute(generation, task.cfg, r.pcm, sel.Text, !task.dictation, afterASR)
 	if !app.core.Snapshot(0, generation).Valid {
 		return
 	}
@@ -221,7 +222,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 		app.postHandyPhase(indicator.Applying, generation)
 		started = time.Now()
 		// Native editability determines whether to verify the pasted selection.
-		err = replaceSelectionWithGuard(app.Window, sel, answer.Text, app.cfg,
+		err = replaceSelectionWithGuard(app.Window, sel, answer.Text, task.cfg,
 			!isSafelyEditableControl(sel.TargetWindow), func() bool { return app.core.Snapshot(0, generation).Valid })
 		app.logger.Printf("stage=paste ms=%d", time.Since(started).Milliseconds())
 		if err == nil {
