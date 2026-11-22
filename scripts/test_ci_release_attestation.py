@@ -35,9 +35,9 @@ class ReleaseAttestationScopeTests(unittest.TestCase):
         self.assertIn("contents: read", content)
         self.assertEqual(content.count("uses: actions/attest@"), 3)
         self.assertEqual(content.count("uses: actions/download-artifact@"), 3)
-        for artifact in ("VoiceRewrite-portable-windows-x64",
-                         "VoiceRewrite-installer-windows-x64",
-                         "Qwen3-ASR-OneClick-Windows-x64"):
+        for artifact in ("VoiceRewrite-App-Windows-x64-PortableZIP",
+                         "VoiceRewrite-App-Windows-x64-Installer",
+                         "VoiceRewrite-ASR-OneClick-Windows-x64-EXE"):
             self.assertIn("name: " + artifact, content)
         self.assertIn("sha256sum -c SHA256SUMS.txt", content)
         self.assertIn("sha256sum -c INSTALLER-SHA256SUMS.txt", content)
