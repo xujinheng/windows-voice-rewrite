@@ -51,7 +51,7 @@ func modelDownload(filename, sha string) downloadSpec {
 
 func releaseDownload(asset, sha string) downloadSpec {
 	upstream := "https://github.com/ggml-org/llama.cpp/releases/download/" + llamaRelease + "/" + asset
-	return downloadSpec{asset, sha, []string{"https://ghfast.top/" + upstream, "https://gh-proxy.com/" + upstream}}
+	return downloadSpec{asset, sha, []string{"https://ghfast.top/" + upstream, "https://gh-proxy.com/" + upstream, "https://ghproxy.net/" + upstream, upstream}}
 }
 
 func validSHA(path, expected string) bool {
@@ -107,7 +107,7 @@ func downloadVerified(ctx context.Context, dest string, spec downloadSpec) error
 		report("下载完成 " + spec.filename)
 		return nil
 	}
-	return fmt.Errorf("无法下载 %s（已尝试国内下载源）: %w", spec.filename, last)
+	return fmt.Errorf("下载 %s 失败：%w。请检查网络/代理后重试；或从 %s 手动下载同名文件放到 %s，再点 Deploy（会校验 SHA-256）", spec.filename, last, spec.urls[len(spec.urls)-1], dest)
 }
 
 func downloadFrom(ctx context.Context, source, part, filename string) error {
