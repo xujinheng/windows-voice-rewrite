@@ -230,10 +230,8 @@ private enum GoCore {
         try decode(VRASRProgress())
     }
 
-    static func deploy(_ directory: String, config: String) throws -> BridgeReply.Output {
-        try decode(config.withCString { raw in
-            directory.withCString { VRDeploy(raw, $0) }
-        })
+    static func deploy(_ directory: String) throws -> BridgeReply.Output {
+        try decode(directory.withCString { VRDeploy($0) })
     }
 
     static func settings(_ action: String, config: String, values: [String: String] = [:],
@@ -510,15 +508,11 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 settingsHint?.stringValue = "ASR 正在部署中"
                 return
             }
-            guard let initialConfig = try? String(contentsOf: configURL, encoding: .utf8) else {
-                settingsHint?.stringValue = "无法读取配置文件"
-                return
-            }
             settingsDeploying = true
             settingsHint?.stringValue = "ASR 正在下载与部署（首次需要数 GB 空间）…"
             let directory = settingsDeployDirectory
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let result = Result { try GoCore.deploy(directory, config: initialConfig) }
+                let result = Result { try GoCore.deploy(directory) }
                 DispatchQueue.main.async {
                     guard let self else { return }
                     self.settingsDeploying = false
@@ -534,21 +528,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                         }
                         alert.addButton(withTitle: "确定")
                         alert.runModal()
-                    case .success:
-                        do {
-                            let latest = try String(contentsOf: self.configURL, encoding: .utf8)
-                            let saved = try GoCore.settings("deploy_complete", config: latest, values: [
-                                "started_config": initialConfig, "deployed_dir": directory
-                            ])
-                            guard let updated = saved.config else {
-                                throw HostError.config("missing ASR deployment config")
-                            }
-                            try updated.write(to: self.configURL, atomically: true, encoding: .utf8)
-                            self.reload()
-                            self.settingsHint?.stringValue = saved.status ?? "ASR ready"
-                        } catch {
-                            self.settingsHint?.stringValue = String(describing: error)
-                        }
+                    case .success(let output):
+                        self.settingsHint?.stringValue = output.status ?? "ASR 已部署"
                     }
                 }
             }
