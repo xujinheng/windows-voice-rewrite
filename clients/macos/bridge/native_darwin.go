@@ -145,6 +145,12 @@ func VRProfile(config *C.char) *C.char {
 	return nativeJSON(reply)
 }
 
+//export VRASRProgress
+func VRASRProgress() *C.char {
+	p := localasr.ProgressSnapshot()
+	return nativeJSON(success(map[string]any{"status": p.Text, "directory": p.Directory, "busy": p.Busy}))
+}
+
 //export VRDeploy
 func VRDeploy(rawConfig, directory *C.char) *C.char {
 	if rawConfig == nil || directory == nil {

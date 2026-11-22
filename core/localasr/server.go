@@ -49,13 +49,27 @@ type ChildGuard func(pid int) (func(), error)
 
 // DeployConfigured is the single portable deployment decision for both desktop
 // hosts. Native clients only choose a directory and persist the returned config.
-func DeployConfigured(ctx context.Context, cfg coreconfig.Config, directory string, guard ChildGuard) (coreconfig.Config, error) {
+func DeployConfigured(ctx context.Context, cfg coreconfig.Config, directory string, guard ChildGuard) (updated coreconfig.Config, err error) {
 	if !deploymentMu.TryLock() {
-		return cfg, errors.New("ASR is already deploying")
+		return cfg, errors.New("ASR 正在部署中；请查看当前下载进度")
 	}
-	defer deploymentMu.Unlock()
+	progressMu.Lock()
+	progress = Progress{Text: "正在准备 ASR 部署", Directory: directory, Busy: true}
+	progressMu.Unlock()
+	defer func() {
+		if err != nil {
+			report("ASR 部署失败：" + err.Error())
+		} else {
+			report("ASR 已部署并启动")
+		}
+		progressMu.Lock()
+		progress.Busy = false
+		progressMu.Unlock()
+		deploymentMu.Unlock()
+	}()
 	install, err := install(ctx, directory)
 	if err == nil {
+		report("正在启动识别服务，加载模型中…")
 		err = Start(ctx, install, guard)
 	}
 	if err != nil {

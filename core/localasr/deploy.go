@@ -69,13 +69,15 @@ func validSHA(path, expected string) bool {
 
 // Retain .part across interrupted transfers; publish only verified content.
 func downloadVerified(ctx context.Context, dest string, spec downloadSpec) error {
+	report("正在校验 " + spec.filename)
 	if validSHA(dest, spec.sha) {
-		fmt.Printf("[已缓存] %s (SHA-256 OK)\n", spec.filename)
+		report("已缓存 " + spec.filename)
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
 		return err
 	}
+	report("正在校验未完成下载 " + spec.filename)
 	if validSHA(dest+".part", spec.sha) {
 		if err := os.Remove(dest); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
@@ -84,12 +86,13 @@ func downloadVerified(ctx context.Context, dest string, spec downloadSpec) error
 	}
 	var last error
 	for _, source := range spec.urls {
-		fmt.Printf("[下载] %s\n", spec.filename)
-		if err := downloadFrom(ctx, source, dest+".part"); err != nil {
+		report("正在连接 " + spec.filename)
+		if err := downloadFrom(ctx, source, dest+".part", spec.filename); err != nil {
 			last = err
-			fmt.Printf("[切换下载源] %v\n", err)
+			report("下载源不可用，正在切换：" + spec.filename)
 			continue
 		}
+		report("正在校验 " + spec.filename)
 		if !validSHA(dest+".part", spec.sha) {
 			last = fmt.Errorf("%s 下载内容 SHA-256 不匹配", spec.filename)
 			_ = os.Remove(dest + ".part")
@@ -101,13 +104,13 @@ func downloadVerified(ctx context.Context, dest string, spec downloadSpec) error
 		if err := os.Rename(dest+".part", dest); err != nil {
 			return err
 		}
-		fmt.Printf("[完成] %s\n", spec.filename)
+		report("下载完成 " + spec.filename)
 		return nil
 	}
 	return fmt.Errorf("无法下载 %s（已尝试国内下载源）: %w", spec.filename, last)
 }
 
-func downloadFrom(ctx context.Context, source, part string) error {
+func downloadFrom(ctx context.Context, source, part, filename string) error {
 	var offset int64
 	if stat, err := os.Stat(part); err == nil {
 		offset = stat.Size()
@@ -139,9 +142,15 @@ func downloadFrom(ctx context.Context, source, part string) error {
 		return err
 	}
 	defer f.Close()
-	start := time.Now()
 	var received int64
-	var lastPrint time.Time
+	var lastUpdate time.Time
+	total := resp.ContentLength
+	if resp.StatusCode == http.StatusPartialContent {
+		total += offset
+	} else {
+		offset = 0
+	}
+	report("正在下载 " + filename)
 	buffer := make([]byte, 256*1024)
 	for {
 		n, readErr := resp.Body.Read(buffer)
@@ -150,9 +159,15 @@ func downloadFrom(ctx context.Context, source, part string) error {
 				return err
 			}
 			received += int64(n)
-			if time.Since(lastPrint) >= 3*time.Second {
-				fmt.Printf("    已下载 %.1f MB (%.1f MB/s)\n", float64(received+offset)/1e6, float64(received)/1e6/time.Since(start).Seconds())
-				lastPrint = time.Now()
+			if time.Since(lastUpdate) >= 500*time.Millisecond {
+				done := received + offset
+				if total > 0 {
+					report(fmt.Sprintf("下载 %s：%.1f / %.1f MB (%.0f%%)",
+						filename, float64(done)/1e6, float64(total)/1e6, 100*float64(done)/float64(total)))
+				} else {
+					report(fmt.Sprintf("下载 %s：已下载 %.1f MB", filename, float64(done)/1e6))
+				}
+				lastUpdate = time.Now()
 			}
 		}
 		if readErr == io.EOF {
@@ -203,6 +218,7 @@ func installRuntime(ctx context.Context, root, flavor string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 		return "", err
 	}
+	report("正在解压 llama.cpp 运行时")
 	stage, err := os.MkdirTemp(filepath.Dir(target), ".unpack-")
 	if err != nil {
 		return "", err
@@ -318,6 +334,29 @@ type Installation struct {
 }
 
 var deploymentMu sync.Mutex
+
+// Progress is an in-memory snapshot, surviving settings-window closure while
+// the host process remains alive. Native clients display this same state.
+type Progress struct {
+	Text      string
+	Directory string
+	Busy      bool
+}
+
+var progressMu sync.RWMutex
+var progress Progress
+
+func ProgressSnapshot() Progress {
+	progressMu.RLock()
+	defer progressMu.RUnlock()
+	return progress
+}
+
+func report(text string) {
+	progressMu.Lock()
+	progress.Text = text
+	progressMu.Unlock()
+}
 
 // install installs only into directory/Qwen3-ASR. No application data or
 // package-manager folders are modified.

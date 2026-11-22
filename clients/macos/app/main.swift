@@ -196,6 +196,8 @@ private struct BridgeReply: Decodable {
         let values: [String: String]?
         let config: String?
         let status: String?
+        let directory: String?
+        let busy: Bool?
         let models: [String]?
         let capture: [String: String]?
     }
@@ -222,6 +224,10 @@ private enum GoCore {
             result = (config ?? "").withCString { VRProfile($0) }
         }
         return try decode(result)
+    }
+
+    static func asrProgress() throws -> BridgeReply.Output {
+        try decode(VRASRProgress())
     }
 
     static func deploy(_ directory: String, config: String) throws -> BridgeReply.Output {
@@ -259,6 +265,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private let pill = RecordingPill()
     private var resultPanel: NSPanel?
     private var settingsPanel: NSPanel?
+    private var settingsProgressTimer: Timer?
     private var settingsInputs: [String: NSTextField] = [:]
     private var settingsPages: [String: NSView] = [:]
     private var settingsStatuses: [String: NSTextField] = [:]
@@ -369,6 +376,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             settingsPages = [:]
             settingsStatuses = [:]
             settingsDeployDirectory = values["asr_deploy_dir"] ?? ""
+            let deployStatus = try? GoCore.asrProgress()
+            if deployStatus?.busy == true, let directory = deployStatus?.directory {
+                settingsDeployDirectory = directory
+            }
             settingsRunning = form.running
             settingsBusy = form.busy
             settingsCaptureHint = form.captureHint
@@ -423,12 +434,24 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 default: break
                 }
             }
-            let hint = NSTextField(labelWithString: "部署位置：" + settingsDeployDirectory)
+            let initialHint = deployStatus?.directory == settingsDeployDirectory && !(deployStatus?.status ?? "").isEmpty
+                ? (deployStatus?.status ?? "") : "部署位置：" + settingsDeployDirectory
+            let hint = NSTextField(labelWithString: initialHint)
             hint.frame = form.hint.native(height)
             hint.textColor = .secondaryLabelColor
             content.addSubview(hint)
             settingsHint = hint
             settingsPanel = panel
+            settingsProgressTimer?.invalidate()
+            settingsProgressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
+                guard let self, self.settingsPanel?.isVisible == true else {
+                    timer.invalidate()
+                    return
+                }
+                if let progress = try? GoCore.asrProgress(), progress.busy == true {
+                    self.settingsHint?.stringValue = progress.status ?? "ASR 正在部署中"
+                }
+            }
             panel.center()
             NSApp.activate(ignoringOtherApps: true)
             panel.makeKeyAndOrderFront(nil)
@@ -470,11 +493,18 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 settingsHint?.stringValue = "部署位置：" + url.path
             }
         case "deploy_asr":
+            if let progress = try? GoCore.asrProgress(), progress.busy == true {
+                settingsHint?.stringValue = progress.status ?? "ASR 正在部署中"
+                return
+            }
             guard VRSnapshot(0, 0).armed == 0 && !pending else {
                 settingsHint?.stringValue = settingsBusy
                 return
             }
-            guard !settingsDeploying else { return }
+            guard !settingsDeploying else {
+                settingsHint?.stringValue = "ASR 正在部署中"
+                return
+            }
             settingsDeploying = true
             settingsHint?.stringValue = "ASR 正在下载与部署（首次需要数 GB 空间）…"
             let directory = settingsDeployDirectory
@@ -510,7 +540,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             settingsSerial += 1
             let serial = settingsSerial
             if id == "save" {
-                guard !settingsDeploying else {
+                guard !settingsDeploying && (try? GoCore.asrProgress().busy) != true else {
                     settingsHint?.stringValue = "请在 ASR 部署完成后保存设置"
                     return
                 }

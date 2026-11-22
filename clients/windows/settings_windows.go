@@ -48,6 +48,7 @@ const (
 	uxWMEraseBkgnd            = 0x0014
 	uxWMPaint                 = 0x000F
 	uxWMNCDestroy             = 0x0082
+	uxWMTimer                 = 0x0113
 	uxWMColorStatic           = 0x0138
 	uxWMColorEdit             = 0x0133
 	uxWMDrawItem              = 0x002B
@@ -83,6 +84,8 @@ var (
 	uxWindowCallback       = syscall.NewCallback(uxSettingsWndProc)
 	uxActiveSettings       *uxSettings
 	uxModelRequestSequence atomic.Uint64
+	uxSetTimer = user32.NewProc("SetTimer")
+	uxKillTimer = user32.NewProc("KillTimer")
 	procBrowseFolder = shell32.NewProc("SHBrowseForFolderW")
 	procGetFolderPath = shell32.NewProc("SHGetPathFromIDListW")
 	procFreeFolder = syscall.NewLazyDLL("ole32.dll").NewProc("CoTaskMemFree")
@@ -434,6 +437,24 @@ func (p *uxSettings) refreshTheme() {
 func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	p := uxActiveSettings
 	switch uint32(msg) {
+	case uxWMTimer:
+		if p != nil && p.window == hwnd && wParam == 1 && p.hint != 0 {
+			state := localasr.ProgressSnapshot()
+			text := "部署位置：" + p.deployDir
+			if state.Text != "" && (state.Busy || state.Directory == p.deployDir) {
+				text = state.Text
+			}
+			p.deployMu.Lock()
+			err := p.deployResult
+			p.deployMu.Unlock()
+			if err != nil && !state.Busy {
+				text = "ASR Deploy 失败：" + err.Error()
+			}
+			if text != uxWinText(p.hint) {
+				uxSetText(p.hint, text)
+			}
+		}
+		return 0
 	case uxWMSettingChange, uxWMThemeChanged:
 		if p != nil && p.window == hwnd {
 			p.refreshTheme()
@@ -476,6 +497,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		return 0
 	case uxWMNCDestroy:
 		if p != nil && p.window == hwnd {
+			uxKillTimer.Call(hwnd, 1)
 			p.stopShortcutCapture()
 			p.invalidateAllModels()
 			uxActiveSettings = nil
@@ -687,10 +709,18 @@ func (p *uxSettings) deployASR() {
 		uxSetText(p.hint, "请在当前语音任务结束后部署 ASR")
 		return
 	}
+	state := localasr.ProgressSnapshot()
+	if state.Busy {
+		uxSetText(p.hint, state.Text)
+		return
+	}
 	if !p.deployBusy.CompareAndSwap(false, true) {
 		uxSetText(p.hint, "ASR 正在部署中")
 		return
 	}
+	p.deployMu.Lock()
+	p.deployResult = nil
+	p.deployMu.Unlock()
 	directory := p.deployDir
 	hwnd := p.window
 	uxSetText(p.hint, "ASR 正在下载与部署（首次需要数 GB 空间）…")
@@ -711,7 +741,7 @@ func (p *uxSettings) deployASR() {
 }
 
 func (p *uxSettings) save() error {
-	if p.deployBusy.Load() {
+	if p.deployBusy.Load() || localasr.ProgressSnapshot().Busy {
 		return errors.New("请在 ASR 部署完成后保存设置")
 	}
 	if p.app.busy.Load() {
@@ -1166,6 +1196,11 @@ func showNativeSettings(app *appState) error {
 		procSetForegroundWindow.Call(uxActiveSettings.window)
 		return nil
 	}
+	if !app.busy.Load() && !localasr.ProgressSnapshot().Busy {
+		if latest, err := loadConfig(); err == nil {
+			app.cfg = latest
+		}
+	}
 	className := uxPtr("VoiceRewrite.Settings")
 	title := uxPtr("VoiceRewrite · 连接设置")
 	module, _, _ := procGetModuleHandle.Call(0)
@@ -1191,6 +1226,9 @@ func showNativeSettings(app *appState) error {
 	}
 	p := &uxSettings{window: h, app: app, scale: scale, focusRow: -1, cardStatics: make(map[uintptr]bool), probeEdits: make(map[uintptr]int), palette: resultCardPalette()}
 	p.deployDir = app.cfg.ASRDeployDir
+	if state := localasr.ProgressSnapshot(); state.Busy && state.Directory != "" {
+		p.deployDir = state.Directory
+	}
 	if p.deployDir == "" { p.deployDir = localasr.DefaultDirectory() }
 	uxActiveSettings = p
 	p.background, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.background))
@@ -1251,7 +1289,11 @@ func showNativeSettings(app *appState) error {
 		return err
 	}
 	hint := settingsform.SettingsHint()
-	p.hint = makeOne("STATIC", "部署位置："+p.deployDir, stat, hint.X, hint.Y, hint.W, hint.H, 0, false)
+	initialHint := "部署位置：" + p.deployDir
+	if state := localasr.ProgressSnapshot(); state.Text != "" && (state.Busy || state.Directory == p.deployDir) {
+		initialHint = state.Text
+	}
+	p.hint = makeOne("STATIC", initialHint, stat, hint.X, hint.Y, hint.W, hint.H, 0, false)
 	for _, hwnd := range [3]uintptr{p.hint, p.probeStatus[0], p.probeStatus[1]} {
 		setFont(hwnd, p.mutedFont)
 	}
@@ -1260,6 +1302,7 @@ func showNativeSettings(app *appState) error {
 	// Windows 11 DWM-rounded frame and non-activating status pill are separate.
 	rounding := uint32(2)
 	procDwmSetWindowAttribute.Call(h, DWMWA_WINDOW_CORNER_PREFERENCE, uintptr(unsafe.Pointer(&rounding)), 4)
+	uxSetTimer.Call(h, 1, 500, 0)
 	procShowWindow.Call(h, SW_SHOW)
 	procSetForegroundWindow.Call(h)
 	return nil
