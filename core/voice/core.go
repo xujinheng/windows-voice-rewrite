@@ -15,6 +15,7 @@ import (
 // cancellation, inference and output routing.
 type Core struct {
 	History   history.Store
+	lastError string
 	paused    bool
 	mu        sync.Mutex
 	keys      map[int]*keyState
@@ -297,6 +298,20 @@ func (c *Core) cancelLocked() {
 			key.token++
 		}
 	}
+}
+
+// RecordError and LastError are the single cross-platform diagnostic state.
+// Hosts supply native error facts; Core owns their lifetime and retrieval.
+func (c *Core) RecordError(message string) {
+	c.mu.Lock()
+	c.lastError = message
+	c.mu.Unlock()
+}
+
+func (c *Core) LastError() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return history.ShownError(c.lastError)
 }
 
 // Execute is the platform-independent task entrypoint. No client can execute

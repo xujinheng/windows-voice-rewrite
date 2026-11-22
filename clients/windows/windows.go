@@ -179,8 +179,6 @@ type appState struct {
 	trayMu      sync.Mutex
 	tray        *trayIndicator
 	popups      chan popupMessage
-	lastErrorMu sync.Mutex
-	lastError   string
 	updateBusy  atomic.Bool
 	updateReady chan update.Notice
 }
@@ -233,12 +231,11 @@ func (a *appState) fail(e error) {
 		return
 	}
 	a.logger.Printf("ERROR: %v", e)
-	a.lastErrorMu.Lock()
-	a.lastError = e.Error()
-	if message, ok := ux.Classify(e); ok {
-		a.lastError = message
+	message := e.Error()
+	if friendly, ok := ux.Classify(e); ok {
+		message = friendly
 	}
-	a.lastErrorMu.Unlock()
+	a.core.RecordError(message)
 	a.setStatus(trayError) // nonmodal; available via tray's last-error command
 }
 
@@ -845,10 +842,7 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_TRAY_LAST_ERROR {
-			app.lastErrorMu.Lock()
-			latest := app.lastError
-			app.lastErrorMu.Unlock()
-			winErr(history.ShownError(latest))
+			winErr(app.core.LastError())
 			continue
 		}
 		if msg.Message == WM_TRAY_LOG {

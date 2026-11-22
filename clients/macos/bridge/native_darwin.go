@@ -119,6 +119,14 @@ func VRDuration(seconds C.longlong, buffer *C.char, capacity C.int) {
 //export VRFree
 func VRFree(value unsafe.Pointer) { C.free(value) }
 
+//export VRRecordError
+func VRRecordError(message *C.char) {
+	if message != nil { nativeCore.RecordError(C.GoString(message)) }
+}
+
+//export VRLastError
+func VRLastError() *C.char { return C.CString(nativeCore.LastError()) }
+
 //export VRMenu
 func VRMenu() *C.char {
 	return nativeJSON(success(map[string]any{"menu": contract.TrayMenu(nativeCore.Snapshot(0, 0).Paused, nativeCore.History.Snapshot())}))
