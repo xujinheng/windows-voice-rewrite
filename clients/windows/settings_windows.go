@@ -750,6 +750,11 @@ func (p *uxSettings) save() error {
 		return err
 	}
 	p.app.cfg = cfg
+	go func() {
+		if err := localasr.Resume(context.Background(), cfg); err != nil {
+			p.app.logger.Printf("local ASR config update: %v", err)
+		}
+	}()
 	notice := ux.WindowsSaveImmediate
 	if changedShortcut || changedDuration || changedAudioDevice {
 		notice = ux.WindowsSaveRestart
