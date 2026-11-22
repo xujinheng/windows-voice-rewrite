@@ -697,7 +697,7 @@ func (p *uxSettings) chooseDeployDirectory() {
 }
 
 func (p *uxSettings) deployASR() {
-	if _, err := localasr.BeginDeploy(context.Background(), p.deployDir, protectChild); err != nil {
+	if err := localasr.BeginDeploy(context.Background(), p.deployDir, protectChild); err != nil {
 		uxSetText(p.hint, err.Error())
 		return
 	}
