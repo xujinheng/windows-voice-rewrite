@@ -20,7 +20,9 @@ func waitKeysReleased(max time.Duration, recordingKey bool) bool {
 	for time.Now().Before(deadline) {
 		down := false
 		for i, k := range [...]uintptr{VK_CONTROL, VK_MENU, VK_SHIFT, recordVirtualKey} {
-			if i == 3 && !recordingKey { break }
+			if i == 3 && !recordingKey {
+				break
+			}
 			v, _, _ := procGetAsyncKeyState.Call(k)
 			if v&0x8000 != 0 {
 				down = true
@@ -28,7 +30,9 @@ func waitKeysReleased(max time.Duration, recordingKey bool) bool {
 			}
 		}
 		if !down {
-			if recordingKey { time.Sleep(60 * time.Millisecond) }
+			if recordingKey {
+				time.Sleep(60 * time.Millisecond)
+			}
 			return true
 		}
 		time.Sleep(20 * time.Millisecond)
