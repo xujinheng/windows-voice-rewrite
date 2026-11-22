@@ -48,11 +48,11 @@ class HeadlessWorkflowTests(unittest.TestCase):
         workflow = (WORKFLOWS / "build.yml").read_text()
         self.assertIn("release/Qwen3-ASR-OneClick-Windows-x64.exe", workflow)
         self.assertIn("release/Qwen3-ASR-OneClick-Mac-arm64.zip", workflow)
-        self.assertIn("name: Qwen3-ASR-OneClick-Mac-arm64", workflow)
+        self.assertIn("name: VoiceRewrite-ASR-OneClick-macOS-AppleSilicon-ZIP", workflow)
         self.assertIn("Start OneClick.command", workflow)
         self.assertIn("release/VoiceRewrite-*-macOS-*-Experimental.zip", workflow)
         self.assertIn("ditto -c -k --sequesterRsrc --keepParent", workflow)
-        self.assertIn("name: Qwen3-ASR-OneClick-Windows-x64", workflow)
+        self.assertIn("name: VoiceRewrite-ASR-OneClick-Windows-x64-EXE", workflow)
         self.assertIn("release/VoiceRewrite-Setup-*-x64.exe", workflow)
         self.assertIn("gh api -X POST", workflow)
         for path in (ROOT / "README.md", ROOT / "README.en.md"):
