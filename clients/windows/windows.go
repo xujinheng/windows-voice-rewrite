@@ -806,15 +806,17 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_TRAY_TOGGLE_PAUSE {
-			if app.busy.Load() || active != nil {
-				winErr(ux.PauseWhileBusy)
-			} else if app.core.Snapshot(0, 0).Paused {
-				app.core.Apply(voice.Command{Kind: voice.CommandResume})
+			kind := voice.CommandPause
+			if app.core.Snapshot(0, 0).Paused { kind = voice.CommandResume }
+			switch app.core.Apply(voice.Command{Kind: kind, Busy: app.busy.Load() || active != nil}).Kind {
+			case voice.EventResumed:
 				app.setStatus(trayIdle)
-			} else if app.core.Apply(voice.Command{Kind: voice.CommandPause}).Kind == voice.EventPaused {
+			case voice.EventPaused:
 				app.closeMeeting()
 				discardPendingSide()
 				app.setStatus(trayPaused)
+			default:
+				winErr(ux.PauseWhileBusy)
 			}
 			continue
 		}
