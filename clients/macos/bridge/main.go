@@ -48,7 +48,14 @@ var macShortcutCodes = map[string]int{
 	"F16": 106, "F17": 64, "F18": 79, "F19": 80, "F20": 90,
 }
 
-func macKeyCode(s string) int { return macShortcutCodes[s] }
+func macKeyCode(s string) int {
+	code, ok := macShortcutCodes[s]
+	if !ok { return 0 }
+	// Keyboard and otherMouse button numbers occupy separate Quartz namespaces.
+	// Never allow F11 (physical key 103) to collide with Mouse4 (button 103).
+	if s != "Mouse4" && s != "Mouse5" { return code + 512 }
+	return code
+}
 
 // headlessProfile shares the existing config normalizer and indicator with
 // Windows; only physical Mac shortcut identifiers differ.
