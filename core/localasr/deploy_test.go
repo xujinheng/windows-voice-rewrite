@@ -72,12 +72,13 @@ func TestUnpackZipCannotEscapeFolder(t *testing.T) {
 }
 
 func TestDeployFailureReportsStatus(t *testing.T) {
-	if err := Deploy(context.Background(), "", nil); err == nil {
+	err := Deploy(context.Background(), "", nil)
+	if err == nil {
 		t.Fatal("expected failure for empty deployment directory")
 	}
 	progress := ProgressSnapshot()
-	if progress.Busy || !strings.Contains(progress.Text, "失败") {
-		t.Fatalf("failed Deploy not reported: %+v", progress)
+	if progress.Busy || !strings.Contains(progress.Text, err.Error()) {
+		t.Fatalf("failed Deploy lost its error details: %+v, %v", progress, err)
 	}
 }
 
