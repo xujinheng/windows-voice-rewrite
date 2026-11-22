@@ -15,6 +15,7 @@ import (
 // cancellation, inference and output routing.
 type Core struct {
 	History   history.Store
+	paused    bool
 	mu        sync.Mutex
 	keys      map[int]*keyState
 	owner     int
@@ -71,6 +72,8 @@ const (
 	CommandStart
 	CommandCancel
 	CommandShutdown
+	CommandPause
+	CommandResume
 )
 
 type Command struct {
@@ -98,6 +101,8 @@ const (
 	EventTranscribed
 	EventFinished
 	EventFailed
+	EventPaused
+	EventResumed
 )
 
 // Event is the command receipt and asynchronous task progress vocabulary.
@@ -124,6 +129,7 @@ type State struct {
 	Current     uint64    `json:"current"`
 	Phase       EventKind `json:"phase"`
 	Closed      bool      `json:"closed"`
+	Paused      bool      `json:"paused"`
 }
 
 func (c *Core) key(code int) *keyState {
@@ -147,7 +153,7 @@ func (c *Core) Snapshot(code int, token uint64) State {
 		Role: c.roles[code], Armed: c.owner != 0,
 		Valid:       token != 0 && !c.closed && c.currentID == token && c.ctx != nil,
 		CanActivate: !c.closed && c.canActivate(code, token),
-		Current:     c.currentID, Phase: c.phase, Closed: c.closed,
+		Current:     c.currentID, Phase: c.phase, Closed: c.closed, Paused: c.paused,
 	}
 	if h := c.key(code); h != nil {
 		s.Down = h.down
@@ -181,10 +187,19 @@ func (c *Core) Apply(cmd Command) Event {
 		}
 		c.roles = roles
 		return Event{Kind: EventBound}
+	case CommandPause:
+		if c.owner != 0 || c.phase == EventStarted || c.phase == EventProcessing || c.phase == EventTranscribed {
+			break
+		}
+		c.paused = true
+		return Event{Kind: EventPaused}
+	case CommandResume:
+		c.paused = false
+		return Event{Kind: EventResumed}
 	case CommandPress:
 		h := c.key(cmd.Code)
 		role := c.roles[cmd.Code]
-		if cmd.Code <= 0 || role == 0 || h != nil && h.down || cmd.Busy || c.owner != 0 {
+		if cmd.Code <= 0 || role == 0 || h != nil && h.down || cmd.Busy || c.owner != 0 || c.paused {
 			break
 		}
 		if h == nil {
@@ -228,6 +243,9 @@ func (c *Core) Apply(cmd Command) Event {
 		c.owner = 0 // Retain physical key-up for native click replay.
 		return Event{Kind: EventAbandoned}
 	case CommandStart:
+		if c.paused {
+			break
+		}
 		if c.cancel != nil {
 			c.cancel()
 		}

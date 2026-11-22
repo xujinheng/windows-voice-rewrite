@@ -182,6 +182,8 @@ private struct SettingsControl: Decodable {
     let rect, labelRect: SettingsRect
 }
 
+private struct HistoryItem: Decodable { let id: UInt64; let label: String }
+
 private struct BridgeReply: Decodable {
     let ok: Bool
     let result: Output?
@@ -200,6 +202,7 @@ private struct BridgeReply: Decodable {
         let busy: Bool?
         let models: [String]?
         let capture: [String: String]?
+        let entries: [HistoryItem]?
     }
     struct Failure: Decodable { let code: String; let message: String }
 }
@@ -224,6 +227,10 @@ private enum GoCore {
             result = (config ?? "").withCString { VRProfile($0) }
         }
         return try decode(result)
+    }
+
+    static func history(_ action: String, id: UInt64 = 0) throws -> BridgeReply.Output {
+        try decode(action.withCString { VRHistory($0, id) })
     }
 
     static func asrProgress() throws -> BridgeReply.Output {
@@ -255,7 +262,7 @@ private enum GoCore {
 }
 
 @MainActor
-private final class HeadlessApp: NSObject, NSApplicationDelegate {
+private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var item: NSStatusItem!
     private var tap: CFMachPort?
     private var eventTapRetry: Timer?
@@ -291,12 +298,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "VoiceRewrite"
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Copy last result", action: #selector(copyResult), keyEquivalent: "c"))
-        menu.addItem(NSMenuItem(title: "设置…", action: #selector(openSettings), keyEquivalent: ","))
-        menu.addItem(NSMenuItem(title: "Reload config", action: #selector(reload), keyEquivalent: "r"))
-        menu.addItem(NSMenuItem(title: "Show config in Finder", action: #selector(showConfig), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
-        for entry in menu.items where entry.action != nil { entry.target = self }
+        menu.delegate = self
         item.menu = menu
         pill.onCancel = { [weak self] in self?.cancelFromPill() }
         pill.onRecordingSecond = { [weak self] seconds in self?.show("● \(seconds)s") }
@@ -317,6 +319,64 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 else { self.show("Mic denied") }
             }
         }
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let paused = VRSnapshot(0, 0).paused != 0
+        for (title, action) in [
+            ("复制最近一次结果", #selector(copyResult)),
+            (paused ? "恢复语音操作" : "暂停语音操作", #selector(togglePause)),
+            ("设置…", #selector(openSettings)),
+            ("Reload config", #selector(reload)),
+            ("Show config in Finder", #selector(showConfig)),
+            ("Quit", #selector(quit))
+        ] {
+            let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            entry.target = self
+            menu.addItem(entry)
+        }
+        if let entries = try? GoCore.history("list").entries, !entries.isEmpty {
+            let submenu = NSMenu()
+            for value in entries {
+                let item = NSMenuItem(title: value.label, action: #selector(openHistory), keyEquivalent: "")
+                item.representedObject = NSNumber(value: value.id)
+                item.target = self
+                submenu.addItem(item)
+            }
+            let recent = NSMenuItem(title: "最近语音结果", action: nil, keyEquivalent: "")
+            recent.submenu = submenu
+            menu.insertItem(recent, at: 2)
+            let clear = NSMenuItem(title: "清空本次会话历史", action: #selector(clearHistory), keyEquivalent: "")
+            clear.target = self
+            menu.insertItem(clear, at: 3)
+        }
+    }
+
+    @objc private func togglePause() {
+        guard !microphone.running && !pending && VRSnapshot(0, 0).armed == 0 else {
+            show("请先完成当前语音任务")
+            return
+        }
+        let paused = VRSnapshot(0, 0).paused != 0
+        let kind = Int32(paused ? VR_COMMAND_RESUME : VR_COMMAND_PAUSE)
+        if VRCommand(kind, 0, 0, 0).kind == Int32(VR_EVENT_REJECTED) {
+            show("请先完成当前语音任务")
+        } else {
+            show(paused ? "VoiceRewrite" : "已暂停")
+        }
+    }
+
+    @objc private func openHistory(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? NSNumber,
+              let entry = try? GoCore.history("get", id: id.uint64Value),
+              let text = entry.text else { return }
+        presentPreview(text, title: entry.title)
+    }
+
+    @objc private func clearHistory() {
+        _ = try? GoCore.history("clear")
+        resultPanel?.close()
     }
 
     @objc private func reload() {
@@ -344,7 +404,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             }
             config = profile
             pill.configure(profile.pill)
-            if eventTapRetry == nil { show("VoiceRewrite") }
+            if eventTapRetry == nil { show(VRSnapshot(0, 0).paused != 0 ? "已暂停" : "VoiceRewrite") }
         } catch {
             show("Config error")
             fputs("VoiceRewrite config: \(error)\n", stderr)
@@ -602,10 +662,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func copyResult() {
-        guard let result = VRLatestResult() else { show("No result"); return }
-        defer { VRFree(result) }
+        guard let result = try? GoCore.history("latest"), let text = result.text else {
+            show("当前没有语音结果")
+            return
+        }
         NSPasteboard.general.clearContents()
-        show(NSPasteboard.general.setString(String(cString: result), forType: .string) ? "Copied" : "Copy failed")
+        show(NSPasteboard.general.setString(text, forType: .string) ? "Copied" : "Copy failed")
     }
     @objc private func applyResult() {
         guard let request = previewApply, taskID == 0,
@@ -730,7 +792,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             CFRunLoopAddSource(CFRunLoopGetMain(), source, CFRunLoopMode.commonModes)
         }
         CGEvent.tapEnable(tap: tap, enable: true)
-        show("VoiceRewrite")
+        show(VRSnapshot(0, 0).paused != 0 ? "已暂停" : "VoiceRewrite")
     }
 
     private func handleModifier(code: Int64, flags: CGEventFlags) {

@@ -181,7 +181,6 @@ type appState struct {
 	popups      chan popupMessage
 	lastErrorMu sync.Mutex
 	lastError   string
-	paused      atomic.Bool
 	updateBusy  atomic.Bool
 	updateReady chan update.Notice
 }
@@ -392,7 +391,7 @@ func runApp() {
 		return
 	}
 	defer procUnregisterHotKey.Call(0, HOTKEY_EXIT)
-	trayIcon, err := newTrayIndicator(hwnd, &app.paused, &app.core.History)
+	trayIcon, err := newTrayIndicator(hwnd, &app.core)
 	if err != nil {
 		winErr("无法创建系统托盘图标: " + err.Error())
 		return
@@ -416,7 +415,7 @@ func runApp() {
 	{
 		// Even keyboard-only bindings need the hook while Settings captures
 		// Mouse4/Mouse5. Unassigned buttons still pass through untouched.
-		mouseHook, hookErr := installSideMouseHook(hwnd, selectedMouseButton, dictationButton, &app.paused, &app.core)
+		mouseHook, hookErr := installSideMouseHook(hwnd, selectedMouseButton, dictationButton, &app.core)
 		if hookErr != nil {
 			winErr(hookErr.Error())
 			return
@@ -539,7 +538,7 @@ func runApp() {
 	}
 
 	startHold := func(dictation bool) {
-		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil ||
+		if app.core.Snapshot(0, 0).Paused || app.busy.Load() || active != nil || pendingSide != nil ||
 			uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
 			return
 		}
@@ -569,7 +568,7 @@ func runApp() {
 	}
 
 	armSide := func(button uint16) {
-		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil ||
+		if app.core.Snapshot(0, 0).Paused || app.busy.Load() || active != nil || pendingSide != nil ||
 			app.core.Snapshot(int(button), 0).HeldRole == 0 {
 			return
 		}
@@ -594,7 +593,7 @@ func runApp() {
 			return
 		}
 		held := pendingSide
-		if app.paused.Load() || app.busy.Load() || active != nil ||
+		if app.core.Snapshot(0, 0).Paused || app.busy.Load() || active != nil ||
 			app.core.Snapshot(int(button), 0).HeldRole == 0 ||
 			held.targetWindow == 0 || !isSameForegroundWindow(held.targetWindow) {
 			discardPendingSide()
@@ -631,7 +630,7 @@ func runApp() {
 			case WM_MEETING_STOP:
 				message = meetingcore.PostedStop
 			}
-			switch meetingcore.PostedMeetingEffect(message, app.paused.Load(), app.meeting != nil, app.meeting != nil && app.meeting.Demo()) {
+			switch meetingcore.PostedMeetingEffect(message, app.core.Snapshot(0, 0).Paused, app.meeting != nil, app.meeting != nil && app.meeting.Demo()) {
 			case meetingcore.PostedBegin:
 				app.beginMeeting(uint32(msg.WParam), false)
 			case meetingcore.PostedBeginDemo:
@@ -743,7 +742,7 @@ func runApp() {
 			procKillTimer.Call(0, TRAY_RESET_TIMER_ID)
 			state := trayState(app.status.Load())
 			if state == traySuccess || state == trayError {
-				if app.paused.Load() {
+				if app.core.Snapshot(0, 0).Paused {
 					app.setStatus(trayPaused)
 				} else {
 					app.setStatus(trayIdle)
@@ -809,11 +808,10 @@ func runApp() {
 		if msg.Message == WM_TRAY_TOGGLE_PAUSE {
 			if app.busy.Load() || active != nil {
 				winErr(ux.PauseWhileBusy)
-			} else if app.paused.Load() {
-				app.paused.Store(false)
+			} else if app.core.Snapshot(0, 0).Paused {
+				app.core.Apply(voice.Command{Kind: voice.CommandResume})
 				app.setStatus(trayIdle)
-			} else {
-				app.paused.Store(true)
+			} else if app.core.Apply(voice.Command{Kind: voice.CommandPause}).Kind == voice.EventPaused {
 				app.closeMeeting()
 				discardPendingSide()
 				app.setStatus(trayPaused)
@@ -937,12 +935,12 @@ func runApp() {
 		}
 		switch msg.WParam {
 		case HOTKEY_DICTATION:
-			if !app.paused.Load() {
+			if !app.core.Snapshot(0, 0).Paused {
 				startHold(true)
 			}
 			continue
 		case HOTKEY_RECORD:
-			if app.paused.Load() || app.busy.Load() {
+			if app.core.Snapshot(0, 0).Paused || app.busy.Load() {
 				continue
 			}
 			if active != nil {

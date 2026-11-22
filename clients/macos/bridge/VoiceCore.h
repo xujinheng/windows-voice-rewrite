@@ -13,7 +13,9 @@ enum {
     VR_COMMAND_ABANDON,
     VR_COMMAND_START,
     VR_COMMAND_CANCEL,
-    VR_COMMAND_SHUTDOWN
+    VR_COMMAND_SHUTDOWN,
+    VR_COMMAND_PAUSE,
+    VR_COMMAND_RESUME
 };
 enum {
     VR_EVENT_REJECTED = 0,
@@ -28,7 +30,9 @@ enum {
     VR_EVENT_PROCESSING,
     VR_EVENT_TRANSCRIBED,
     VR_EVENT_FINISHED,
-    VR_EVENT_FAILED
+    VR_EVENT_FAILED,
+    VR_EVENT_PAUSED,
+    VR_EVENT_RESUMED
 };
 typedef struct {
     int kind;
@@ -39,7 +43,7 @@ typedef struct {
 typedef struct {
     int role, held_role, down, armed, can_activate, valid;
     uint64_t current;
-    int phase, closed;
+    int phase, closed, paused;
 } VRCoreState;
 
 VRCommandEvent VRCommand(int kind, int code, uint64_t token, int busy);
@@ -50,7 +54,7 @@ int VRWave(int index, double level, unsigned int tick);
 unsigned int VRSpinner(int index, unsigned int tick);
 void VRDuration(long long seconds, char *buffer, int capacity);
 void VRFree(void *ptr);
-char *VRLatestResult(void);
+char *VRHistory(const char *action, uint64_t id);
 char *VRProfile(const char *config);
 char *VRSettings(const char *request);
 char *VRDeploy(const char *directory);

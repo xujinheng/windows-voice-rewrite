@@ -32,6 +32,7 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/core/audio"
 	"github.com/xujinheng/windows-voice-rewrite/core/clipboard"
 	"github.com/xujinheng/windows-voice-rewrite/core/indicator"
+	"github.com/xujinheng/windows-voice-rewrite/core/history"
 	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
 	"github.com/xujinheng/windows-voice-rewrite/core/settingsform"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
@@ -71,6 +72,9 @@ func VRSnapshot(code C.int, token C.uint64_t) C.VRCoreState {
 	}
 	if s.Closed {
 		r.closed = 1
+	}
+	if s.Paused {
+		r.paused = 1
 	}
 	return r
 }
@@ -113,13 +117,35 @@ func VRDuration(seconds C.longlong, buffer *C.char, capacity C.int) {
 //export VRFree
 func VRFree(value unsafe.Pointer) { C.free(value) }
 
-//export VRLatestResult
-func VRLatestResult() *C.char {
-	entries := nativeCore.History.Snapshot()
-	if len(entries) == 0 {
-		return nil
+//export VRHistory
+func VRHistory(action *C.char, id C.uint64_t) *C.char {
+	if action == nil {
+		return nativeJSON(failure("invalid_action", "missing history action"))
 	}
-	return C.CString(entries[0].Text)
+	switch C.GoString(action) {
+	case "list":
+		entries := nativeCore.History.Snapshot()
+		items := make([]map[string]any, 0, len(entries))
+		for i, entry := range entries {
+			items = append(items, map[string]any{"id": entry.ID, "label": history.MenuLine(i, entry)})
+		}
+		return nativeJSON(success(map[string]any{"entries": items}))
+	case "latest":
+		entries := nativeCore.History.Snapshot()
+		if len(entries) != 0 {
+			return nativeJSON(success(map[string]any{"text": entries[0].Text}))
+		}
+		return nativeJSON(success(map[string]any{"status": history.EmptySession}))
+	case "get":
+		if entry, ok := nativeCore.History.Get(uint64(id)); ok {
+			return nativeJSON(success(map[string]any{"title": ux.HistoryRestoreTitle(entry.Title), "text": entry.Text}))
+		}
+		return nativeJSON(success(map[string]any{"status": history.Cleared}))
+	case "clear":
+		nativeCore.History.Clear()
+		return nativeJSON(success(map[string]any{"status": history.Cleared}))
+	}
+	return nativeJSON(failure("invalid_action", "unknown history action"))
 }
 
 func nativeJSON(value response) *C.char {

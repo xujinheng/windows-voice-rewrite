@@ -8,7 +8,6 @@ import (
 	"log"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -103,7 +102,7 @@ func replaySideClick(button uint16) error {
 	return nil
 }
 
-func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, paused *atomic.Bool, buttons *voice.Core) (*sideMouseHook, error) {
+func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, buttons *voice.Core) (*sideMouseHook, error) {
 	if hwnd == 0 || (rewriteButton != 0 && rewriteButton == dictationButton) {
 		return nil, errors.New("鼠标侧键钩子参数无效")
 	}
@@ -172,7 +171,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 					mu.Unlock()
 					return 1
 				}
-				if closed || (paused != nil && paused.Load()) {
+				if closed || buttons.Snapshot(0, 0).Paused {
 					mu.Unlock()
 					return callNextMouseHook(hook, code, message, data)
 				}
@@ -191,7 +190,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 				timers[button] = time.AfterFunc(voice.SideHoldThreshold, func() {
 					mu.Lock()
 					defer mu.Unlock()
-					if closed || (paused != nil && paused.Load()) || !buttons.Snapshot(int(button), token).CanActivate {
+					if closed || buttons.Snapshot(0, 0).Paused || !buttons.Snapshot(int(button), token).CanActivate {
 						return
 					}
 					if ok, _, _ := procPostMessage.Call(hwnd, WM_SIDE_DOWN, uintptr(button), 0); ok != 0 {

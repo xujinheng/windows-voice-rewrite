@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"unsafe"
 
 	"github.com/xujinheng/windows-voice-rewrite/core/history"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 )
 
 // Windows notification-area (system tray) indicator. The icon is painted in
@@ -161,8 +161,7 @@ type trayIndicator struct {
 	hwnd           uintptr
 	menuOwner      uintptr
 	icons          [7]uintptr
-	paused         *atomic.Bool
-	history        *history.Store
+	core           *voice.Core
 	taskbarCreated uint32
 	created        bool
 }
@@ -217,8 +216,8 @@ func colorIcon(rgb uint32) (uintptr, error) {
 	return h, nil
 }
 
-func newTrayIndicator(hwnd uintptr, paused *atomic.Bool, history *history.Store) (*trayIndicator, error) {
-	t := &trayIndicator{hwnd: hwnd, paused: paused, history: history}
+func newTrayIndicator(hwnd uintptr, core *voice.Core) (*trayIndicator, error) {
+	t := &trayIndicator{hwnd: hwnd, core: core}
 	class, _ := syscall.UTF16PtrFromString("STATIC")
 	title, _ := syscall.UTF16PtrFromString("VoiceRewriteMenuOwner")
 	owner, _, _ := procCreateWindow.Call(WS_EX_TOOLWINDOW, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)), WS_POPUP, 0, 0, 1, 1, 0, 0, 0, 0)
@@ -303,7 +302,7 @@ func (t *trayIndicator) contextMenu(meetingActive bool) (uintptr, error) {
 	}
 	defer procDestroyMenu.Call(m)
 	pauseText := ux.PauseVoice
-	if t.paused != nil && t.paused.Load() {
+	if t.core.Snapshot(0, 0).Paused {
 		pauseText = ux.ResumeVoice
 	}
 	pauseLabel, _ := syscall.UTF16PtrFromString(pauseText)
@@ -319,7 +318,7 @@ func (t *trayIndicator) contextMenu(meetingActive bool) (uintptr, error) {
 		meetingStopLabel, _ := syscall.UTF16PtrFromString("结束会议模式")
 		procAppendMenu.Call(m, MF_STRING, 10, uintptr(unsafe.Pointer(meetingStopLabel)))
 		runtime.KeepAlive(meetingStopLabel)
-	} else if !t.paused.Load() {
+	} else if !t.core.Snapshot(0, 0).Paused {
 		sources = runningMeetingSources()
 		if submenu, _, _ := procCreatePopupMenu.Call(); submenu != 0 {
 			for i, source := range sources {
@@ -351,8 +350,8 @@ func (t *trayIndicator) contextMenu(meetingActive bool) (uintptr, error) {
 	// A bounded, in-memory history. Never put any transcript words in the
 	// system menu, which can be observed by other applications/screenshots.
 	var recent []history.Entry
-	if t.history != nil {
-		recent = t.history.Snapshot()
+	if t.core != nil {
+		recent = t.core.History.Snapshot()
 	}
 	if len(recent) != 0 {
 		submenu, _, _ := procCreatePopupMenu.Call()
