@@ -38,10 +38,10 @@ type DeliveryRequest struct {
 }
 
 type DeliveryPlan struct {
-	AttemptID uint64 `json:"attemptID"`
+	AttemptID uint64         `json:"attemptID"`
 	Action    DeliveryAction `json:"action"`
-	Text      string `json:"text"`
-	Title     string `json:"title"`
+	Text      string         `json:"text"`
+	Title     string         `json:"title"`
 }
 
 type DeliveryReceiptStatus uint8
@@ -68,7 +68,7 @@ const (
 )
 
 var (
-	ErrAlreadyPlanned = errors.New("delivery already planned")
+	ErrAlreadyPlanned   = errors.New("delivery already planned")
 	ErrDeliveryConflict = errors.New("conflicting delivery receipt")
 )
 

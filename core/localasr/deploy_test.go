@@ -13,9 +13,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 )
@@ -78,9 +78,13 @@ func TestDeployFailureReportsStatus(t *testing.T) {
 		t.Fatal("empty directory should fail without creating a job")
 	}
 	parent := filepath.Join(t.TempDir(), "not-a-directory")
-	if err := os.WriteFile(parent, []byte("file"), 0600); err != nil { t.Fatal(err) }
+	if err := os.WriteFile(parent, []byte("file"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	id, err := BeginDeploy(context.Background(), parent, nil)
-	if err != nil || id == 0 { t.Fatalf("start: %d %v", id, err) }
+	if err != nil || id == 0 {
+		t.Fatalf("start: %d %v", id, err)
+	}
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		p := DeploymentStatus()
@@ -138,11 +142,15 @@ func TestConcurrentDeployDoesNotStartAnotherDownload(t *testing.T) {
 	progressMu.Unlock()
 	defer func() { progressMu.Lock(); progress = old; progressMu.Unlock() }()
 	id, err := BeginDeploy(context.Background(), "/one", nil)
-	if err != nil || id != 88 { t.Fatalf("same task should join: %d %v", id, err) }
+	if err != nil || id != 88 {
+		t.Fatalf("same task should join: %d %v", id, err)
+	}
 	if _, err := BeginDeploy(context.Background(), "/other", nil); !errors.Is(err, ErrBusyDifferentDirectory) {
 		t.Fatalf("different path should conflict without replacing task: %v", err)
 	}
-	if DeploymentStatus().Directory != "/one" { t.Fatal("active deployment was replaced") }
+	if DeploymentStatus().Directory != "/one" {
+		t.Fatal("active deployment was replaced")
+	}
 }
 
 func TestRuntimeDownloadHasVerifiedOfficialFallback(t *testing.T) {

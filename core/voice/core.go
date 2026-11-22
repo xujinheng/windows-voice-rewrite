@@ -14,22 +14,22 @@ import (
 // facts, audio and final OS effects; the core owns holds, task generations,
 // cancellation, inference and output routing.
 type Core struct {
-	History   history.Store
-	mu        sync.Mutex
-	keys      map[int]*keyState
-	owner     int
-	roles     map[int]int
-	nextToken uint64
-	currentID uint64
-	closed    bool
-	phase     EventKind
-	completed Result
-	completedToken uint64
-	deliveryAttempt uint64
+	History          history.Store
+	mu               sync.Mutex
+	keys             map[int]*keyState
+	owner            int
+	roles            map[int]int
+	nextToken        uint64
+	currentID        uint64
+	closed           bool
+	phase            EventKind
+	completed        Result
+	completedToken   uint64
+	deliveryAttempt  uint64
 	deliverySequence uint64
-	deliveryStatus DeliveryReceiptStatus
-	ctx       context.Context
-	cancel    context.CancelFunc
+	deliveryStatus   DeliveryReceiptStatus
+	ctx              context.Context
+	cancel           context.CancelFunc
 }
 type keyState struct {
 	down, active bool
