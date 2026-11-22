@@ -19,7 +19,6 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/core/contract"
 	"github.com/xujinheng/windows-voice-rewrite/core/desktop"
 	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
-	"github.com/xujinheng/windows-voice-rewrite/core/provider"
 	"github.com/xujinheng/windows-voice-rewrite/core/serviceprobe"
 	"github.com/xujinheng/windows-voice-rewrite/core/settingsform"
 	"github.com/xujinheng/windows-voice-rewrite/core/shortcut"
@@ -823,31 +822,28 @@ func (p *uxSettings) bumpProbe(idx int) uint64 {
 
 func (p *uxSettings) probe(kind string) {
 	url, key, model, ok := contract.ProbeInputs(kind)
-	if !ok {
+	if !ok || p.window == 0 {
 		return
 	}
-	p.check(kind, p.inputValue(url), p.inputValue(key), p.inputValue(model), url)
-}
-
-func (p *uxSettings) check(kind, base, key, model, field string) {
-	if p == nil || p.window == 0 {
+	idx, ok := contract.ProbeSlot(url)
+	if !ok || idx >= len(p.probeStatus) {
 		return
 	}
-	idx, ok := contract.ProbeSlot(field)
-	if !ok || idx < 0 || idx >= len(p.probeStatus) {
-		return
-	}
+	base, secret, name := p.inputValue(url), p.inputValue(key), p.inputValue(model)
 	serial := p.bumpProbe(idx)
 	uxSetText(p.probeStatus[idx], serviceprobe.StatusRunning)
-	h := p.window
+	hwnd := p.window
 	go func() {
-		result := serviceprobe.ProbeModel(context.Background(), kind, base, key, model)
+		status, _, err := settingsform.Service(context.Background(), "probe", kind, base, secret, name)
+		if err != nil {
+			status = err.Error()
+		}
 		p.probeMu.Lock()
 		if serial == p.probeSerial[idx] {
-			p.probeResult[idx] = result
+			p.probeResult[idx] = status
 		}
 		p.probeMu.Unlock()
-		procPostMessage.Call(h, uxWMProbeDone, uintptr(idx), uintptr(serial))
+		procPostMessage.Call(hwnd, uxWMProbeDone, uintptr(idx), uintptr(serial))
 	}()
 }
 
@@ -906,7 +902,7 @@ func (p *uxSettings) discoverModels(kind string) {
 		return
 	}
 	base, key := p.inputValue(baseField), p.inputValue(keyField)
-	ctx, cancel := context.WithTimeout(context.Background(), 11*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
 	p.modelMu.Lock()
 	if previous := p.modelCancel[slot]; previous != nil {
 		previous()
@@ -920,7 +916,7 @@ func (p *uxSettings) discoverModels(kind string) {
 	hwnd := p.window
 	go func() {
 		defer cancel()
-		models, err := provider.ListModels(ctx, base, key)
+		_, models, err := settingsform.Service(ctx, "discover", kind, base, key, "")
 		p.modelMu.Lock()
 		if token == p.modelSerial[slot] {
 			p.modelResults[slot] = uxModelDiscoveryResult{models: models, err: err}
