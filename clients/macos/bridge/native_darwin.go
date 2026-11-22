@@ -8,7 +8,6 @@ package main
 // Only the C ABI shapes are duplicated here for cgo; Core rules are in Go.
 // cgo exports non-const pointers, while the Swift header accepts const inputs.
 typedef struct { int kind; uint64_t token; int role; int release; } VRCommandEvent;
-typedef struct { int action; uint64_t attempt; } VRDeliveryPlan;
 typedef struct {
     int role, held_role, down, armed, can_activate, valid;
     uint64_t current;
@@ -76,25 +75,11 @@ func VRSnapshot(code C.int, token C.uint64_t) C.VRCoreState {
 	return r
 }
 
-//export VRPlanDelivery
-func VRPlanDelivery(token C.uint64_t, target, selection, trigger C.int) C.VRDeliveryPlan {
-	plan, err := nativeCore.PlanDelivery(voice.DeliveryRequest{Token: uint64(token),
-		Observation: voice.TargetObservation{Target: voice.Match(target), Selection: voice.Match(selection)},
-		Trigger: voice.DeliveryTrigger(trigger)})
-	if err != nil {
-		return C.VRDeliveryPlan{}
-	}
-	return C.VRDeliveryPlan{action: C.int(plan.Action), attempt: C.uint64_t(plan.AttemptID)}
-}
-
-//export VRReportDelivery
-func VRReportDelivery(token, attempt C.uint64_t, status C.int) C.int {
-	_, err := nativeCore.ReportDelivery(voice.DeliveryReceipt{Token: uint64(token),
-		AttemptID: uint64(attempt), Status: voice.DeliveryReceiptStatus(status)})
-	if err != nil {
-		return 0
-	}
-	return 1
+//export VRDeliveryAction
+func VRDeliveryAction(route *C.char, target, selected C.int) C.int {
+	if route == nil { return C.int(voice.DeliveryPreview) }
+	return C.int(voice.DecideDelivery(voice.Result{Route: C.GoString(route)},
+		voice.DeliveryFacts{TargetCurrent: target != 0, SelectionCaptured: selected != 0}))
 }
 
 //export VRClipboardSnapshotFits

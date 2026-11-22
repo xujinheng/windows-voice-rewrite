@@ -609,7 +609,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             self.targetPID = request.pid
             self.targetWindow = request.window
             self.taskID = request.token
-            self.pasteSelection(request.selection, with: request.text, token: request.token, manual: true) { [weak self] sent in
+            self.pasteSelection(request.selection, with: request.text, token: request.token) { [weak self] sent in
                 guard let self, self.taskID == request.token else { return }
                 if sent {
                     self.resultPanel?.close()
@@ -827,7 +827,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                             fputs("VoiceRewrite: \(error)\n", stderr)
                         case .success(let value):
                             guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
-                            if value.route == "replace", let selected {
+                            let action = (value.route ?? "").withCString {
+                                VRDeliveryAction($0, self.targetStillValid() ? 1 : 0, selected == nil ? 0 : 1)
+                            }
+                            if action == Int32(VR_DELIVERY_REPLACE), let selected {
                                 self.pill.working(.applying)
                                 self.show(self.config.pill.applyingLabel)
                                 self.pasteSelection(selected, with: text, token: token) { [weak self] sent in
@@ -837,13 +840,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                 }
                                 return
                             }
-                            let target: Int32 = self.targetStillValid() ? Int32(VR_MATCH_SAME) : Int32(VR_MATCH_DIFFERENT)
-                            let plan = VRPlanDelivery(token, target, Int32(VR_MATCH_UNKNOWN), Int32(VR_DELIVERY_AUTOMATIC))
-                            if plan.action == Int32(VR_DELIVERY_INSERT), plan.attempt != 0 {
-                                let sent = self.paste(text)
-                                _ = VRReportDelivery(token, plan.attempt,
-                                                     sent ? Int32(VR_RECEIPT_SENT_UNVERIFIED) : Int32(VR_RECEIPT_UNKNOWN))
-                                if !sent { self.presentPreview(text, title: value.title) }
+                            if action == Int32(VR_DELIVERY_INSERT) {
+                                if !self.paste(text) { self.presentPreview(text, title: value.title) }
                             } else {
                                 self.presentPreview(text, title: value.title)
                             }
@@ -1017,28 +1015,14 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     // One native replacement path for automatic delivery and the result's Apply button.
     // Windows likewise checks the current selection by copying before replacing.
     private func pasteSelection(_ selected: AXSelection, with text: String,
-                                token: UInt64, manual: Bool = false,
-                                completed: @escaping (Bool) -> Void) {
+                                token: UInt64, completed: @escaping (Bool) -> Void) {
         guard targetStillValid() else { completed(false); return }
-        let deliver = { [weak self] in
-            guard let self, self.targetStillValid() else { completed(false); return }
-            let trigger = manual ? Int32(VR_DELIVERY_USER_APPLY) : Int32(VR_DELIVERY_AUTOMATIC)
-            let plan = VRPlanDelivery(token, Int32(VR_MATCH_SAME), Int32(VR_MATCH_SAME), trigger)
-            guard plan.action == Int32(VR_DELIVERY_REPLACE), plan.attempt != 0 else {
-                completed(false); return
-            }
-            let sent = self.paste(text)
-            _ = VRReportDelivery(token, plan.attempt,
-                                 sent ? Int32(VR_RECEIPT_SENT_UNVERIFIED) : Int32(VR_RECEIPT_UNKNOWN))
-            completed(sent)
-        }
         if selected.matches(selectionFromAX()) {
-            deliver()
+            completed(paste(text))
         } else {
             copySelection(token: token) { [weak self] current in
                 guard let self, self.taskID == token, VRSnapshot(0, token).valid == 1 else { return }
-                if current == selected.text && self.targetStillValid() { deliver() }
-                else { completed(false) }
+                completed(current == selected.text && self.targetStillValid() && self.paste(text))
             }
         }
     }
