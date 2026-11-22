@@ -44,7 +44,20 @@ var (
 // Start serves the built-in Qwen ASR model on the existing default endpoint.
 // Clients directly use llama.cpp; Core already normalizes ASR transcript markers.
 func Start(ctx context.Context, install Installation) error {
-	processMu.Lock()
+	for {
+		processMu.Lock()
+		if process == nil || process.Path == install.Server {
+			break
+		}
+		old := process
+		processMu.Unlock()
+		_ = old.Process.Kill()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
 	var exited chan error
 	if process == nil {
 		conn, err := net.DialTimeout("tcp", "127.0.0.1:8080", 300*time.Millisecond)
