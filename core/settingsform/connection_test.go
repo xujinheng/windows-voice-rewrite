@@ -72,3 +72,26 @@ func TestMacOSInputFormShowsOnlySupportedControls(t *testing.T) {
 		}
 	}
 }
+
+func TestDeployDirectoryAndEndpointSaveIndependently(t *testing.T) {
+	cfg := coreconfig.Defaults()
+	for _, values := range []map[string]string{
+		{"asr_deploy_dir": "/example/models"},
+		{"asr_base_url": "http://127.0.0.1:9876/v1"},
+	} {
+		raw, _ := json.Marshal(cfg)
+		req, _ := json.Marshal(map[string]any{
+			"action": "save", "config": json.RawMessage(raw), "values": values,
+		})
+		result, err := ConnectionAction(context.Background(), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal([]byte(result.(map[string]string)["config"]), &cfg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if cfg.ASRDeployDir != "/example/models" || cfg.ASRBaseURL != "http://127.0.0.1:9876/v1" {
+		t.Fatalf("saving endpoint overwrote selected Deploy directory: %+v", cfg)
+	}
+}
