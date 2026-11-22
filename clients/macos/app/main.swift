@@ -429,11 +429,13 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 default: break
                 }
             }
-            let initialHint = deployStatus?.directory == settingsDeployDirectory && !(deployStatus?.status ?? "").isEmpty
-                ? (deployStatus?.status ?? "") : "部署位置：" + settingsDeployDirectory
+            let previous = deployStatus?.directory == settingsDeployDirectory ? (deployStatus?.status ?? "") : ""
+            let initialHint = previous.hasPrefix("ASR 部署失败：") ? "ASR 部署失败（点击查看原因）"
+                : (previous.isEmpty ? "部署位置：" + settingsDeployDirectory : previous)
             let hint = NSTextField(labelWithString: initialHint)
             hint.frame = form.hint.native(height)
             hint.textColor = .secondaryLabelColor
+            hint.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(settingsShowDeployError)))
             content.addSubview(hint)
             settingsHint = hint
             settingsPanel = panel
@@ -453,6 +455,22 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         } catch {
             show("Config error")
             fputs("VoiceRewrite settings: \(error)\n", stderr)
+        }
+    }
+
+    @objc private func settingsShowDeployError() {
+        guard let progress = try? GoCore.asrProgress(),
+              let message = progress.status,
+              progress.directory == settingsDeployDirectory,
+              message.hasPrefix("ASR 部署失败：") else { return }
+        let alert = NSAlert()
+        alert.messageText = "ASR 部署失败"
+        alert.informativeText = message
+        alert.addButton(withTitle: "复制错误")
+        alert.addButton(withTitle: "关闭")
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(message, forType: .string)
         }
     }
 
@@ -517,17 +535,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     guard let self else { return }
                     self.settingsDeploying = false
                     switch result {
-                    case .failure(let error):
-                        self.settingsHint?.stringValue = "ASR 部署失败，请查看处理方法"
-                        let alert = NSAlert()
-                        alert.messageText = "ASR 部署失败"
-                        if case HostError.bridge(let message) = error {
-                            alert.informativeText = message
-                        } else {
-                            alert.informativeText = String(describing: error)
-                        }
-                        alert.addButton(withTitle: "确定")
-                        alert.runModal()
+                    case .failure:
+                        self.settingsHint?.stringValue = "ASR 部署失败（点击查看原因）"
+                        self.settingsShowDeployError()
                     case .success(let output):
                         self.settingsHint?.stringValue = output.status ?? "ASR 已部署"
                     }
