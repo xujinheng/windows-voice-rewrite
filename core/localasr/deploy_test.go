@@ -72,7 +72,7 @@ func TestUnpackZipCannotEscapeFolder(t *testing.T) {
 func TestDeployConfiguredDoesNotMutateOnFailure(t *testing.T) {
 	cfg := coreconfig.Defaults()
 	cfg.ASRBaseURL = "http://127.0.0.1:4567/v1"
-	got, err := DeployConfigured(context.Background(), cfg, "")
+	got, err := DeployConfigured(context.Background(), cfg, "", nil)
 	if err == nil || got != cfg {
 		t.Fatalf("failed deploy modified active ASR config: %+v, %v", got, err)
 	}
@@ -82,7 +82,7 @@ func TestResumeDoesNotStartForRemoteASR(t *testing.T) {
 	cfg := coreconfig.Defaults()
 	cfg.ASRBaseURL = "https://example.invalid/v1"
 	cfg.ASRDeployDir = t.TempDir()
-	if err := Resume(context.Background(), cfg); err != nil {
+	if err := Resume(context.Background(), cfg, nil); err != nil {
 		t.Fatal(err)
 	}
 }
