@@ -586,8 +586,10 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			p.deployMu.Lock()
 			err := p.deployResult
 			p.deployMu.Unlock()
-			if err != nil { uxSetText(p.hint, "ASR Deploy 失败："+err.Error()) }
-			if err == nil { uxSetText(p.hint, "ASR 已部署，服务地址 http://127.0.0.1:8080/v1") }
+			if err != nil { uxSetText(p.hint, "ASR Deploy 失败："+err.Error()) } else {
+				if cfg, loadErr := loadConfig(); loadErr == nil { p.app.cfg = cfg }
+				uxSetText(p.hint, "ASR 已部署，服务地址 http://127.0.0.1:8080/v1")
+			}
 		}
 		return 0
 	case uxWMModelsDone:
