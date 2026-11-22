@@ -483,6 +483,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     guard let updated = saved.config else { throw HostError.config("部署目录未保存") }
                     try updated.write(to: configURL, atomically: true, encoding: .utf8)
                     settingsDeployDirectory = url.path
+                    if VRSnapshot(0, 0).armed == 0 && !pending { reload() }
+                    else { reloadAfterTask = true }
                     settingsHint?.stringValue = "部署位置已保存：" + url.path
                 } catch {
                     settingsHint?.stringValue = "保存部署目录失败：" + String(describing: error)
