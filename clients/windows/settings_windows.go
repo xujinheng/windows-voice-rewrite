@@ -19,6 +19,7 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/core/contract"
 	"github.com/xujinheng/windows-voice-rewrite/core/desktop"
 	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
+	"github.com/xujinheng/windows-voice-rewrite/core/provider"
 	"github.com/xujinheng/windows-voice-rewrite/core/serviceprobe"
 	"github.com/xujinheng/windows-voice-rewrite/core/settingsform"
 	"github.com/xujinheng/windows-voice-rewrite/core/shortcut"
@@ -834,10 +835,7 @@ func (p *uxSettings) probe(kind string) {
 	uxSetText(p.probeStatus[idx], serviceprobe.StatusRunning)
 	hwnd := p.window
 	go func() {
-		status, _, err := settingsform.Service(context.Background(), "probe", kind, base, secret, name)
-		if err != nil {
-			status = err.Error()
-		}
+		status := serviceprobe.ProbeModel(context.Background(), kind, base, secret, name)
 		p.probeMu.Lock()
 		if serial == p.probeSerial[idx] {
 			p.probeResult[idx] = status
@@ -916,7 +914,7 @@ func (p *uxSettings) discoverModels(kind string) {
 	hwnd := p.window
 	go func() {
 		defer cancel()
-		_, models, err := settingsform.Service(ctx, "discover", kind, base, key, "")
+		models, err := provider.ListModels(ctx, base, key)
 		p.modelMu.Lock()
 		if token == p.modelSerial[slot] {
 			p.modelResults[slot] = uxModelDiscoveryResult{models: models, err: err}
