@@ -17,7 +17,7 @@ class ReleaseAttestationScopeTests(unittest.TestCase):
 
     def test_pr_build_cannot_request_provenance_writer_permissions(self):
         content = job(self.workflow, "build", "attest-windows-release")
-        self.assertIn("permissions:\\n      contents: read", content)
+        self.assertIn("permissions:\n      contents: read", content)
         self.assertNotIn("id-token: write", content)
         self.assertNotIn("attestations: write", content)
         self.assertNotIn("uses: actions/attest@", content)
