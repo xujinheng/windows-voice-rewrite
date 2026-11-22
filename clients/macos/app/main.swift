@@ -235,12 +235,14 @@ private enum GoCore {
 
     static func deliveryPlan(token: UInt64, target: Int32, selection: Int32,
                              manual: Bool = false) throws -> BridgeReply.Output {
-        try decode(VRPlanDelivery(token, target, selection, manual ? 2 : 1))
+        try decode(VRPlanDelivery(token, target, selection,
+                                  manual ? Int32(VR_DELIVERY_USER_APPLY) : Int32(VR_DELIVERY_AUTOMATIC)))
     }
 
     static func deliveryReceipt(token: UInt64, attempt: UInt64, sent: Bool) {
         // A native failure may have partially dispatched the key event.
-        _ = try? decode(VRReportDelivery(token, attempt, sent ? 2 : 4))
+        _ = try? decode(VRReportDelivery(token, attempt,
+                                         sent ? Int32(VR_RECEIPT_SENT_UNVERIFIED) : Int32(VR_RECEIPT_UNKNOWN)))
     }
 
     static func asrProgress() throws -> BridgeReply.Output {
@@ -282,6 +284,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var settingsPanel: NSPanel?
     private var settingsProgressTimer: Timer?
     private var settingsInputs: [String: NSTextField] = [:]
+    private var settingsInitialValues: [String: String] = [:]
     private var settingsPages: [String: NSView] = [:]
     private var settingsStatuses: [String: NSTextField] = [:]
     private var settingsHint: NSTextField?
@@ -387,6 +390,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             let height = form.height
             let content = panel.contentView!
             settingsInputs = [:]
+            settingsInitialValues = values
             settingsPages = [:]
             settingsStatuses = [:]
             settingsDeployDirectory = values["asr_deploy_dir"] ?? ""
@@ -461,8 +465,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     timer.invalidate()
                     return
                 }
-                if let progress = try? GoCore.asrProgress(), progress.busy == true {
-                    self.settingsHint?.stringValue = progress.status ?? "ASR 正在部署中"
+                if let progress = try? GoCore.asrProgress(), progress.directory == self.settingsDeployDirectory {
+                    self.settingsHint?.stringValue = progress.status ?? "部署位置：" + self.settingsDeployDirectory
                 }
             }
             panel.center()
@@ -475,8 +479,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func settingsShowDeployError() {
-        guard settingsHint?.stringValue == "ASR 部署失败（点击查看原因）",
-              let progress = try? GoCore.asrProgress(),
+        guard let progress = try? GoCore.asrProgress(),
+              progress.phase == "failed", progress.directory == settingsDeployDirectory,
               let message = progress.status,
               message.hasPrefix("ASR 部署失败：") else { return }
         let alert = NSAlert()
@@ -537,7 +541,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             }
         case "save", "probe_asr", "probe_llm", "discover_asr_models", "discover_llm_models":
             guard let json = try? String(contentsOf: configURL, encoding: .utf8) else { return }
-            let values = settingsInputs.mapValues { $0.stringValue }
+            let currentValues = settingsInputs.mapValues { $0.stringValue }
+            let values = id == "save"
+                ? currentValues.filter { settingsInitialValues[$0.key] != $0.value }
+                : currentValues
             settingsSerial += 1
             let serial = settingsSerial
             if id == "save" {
@@ -549,6 +556,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     let output = try GoCore.settings("save", config: json, values: values)
                     guard let updated = output.config else { return }
                     try updated.write(to: configURL, atomically: true, encoding: .utf8)
+                    settingsInitialValues = currentValues
                     reload()
                     firstRun = false
                     settingsHint?.stringValue = output.status ?? ""
@@ -844,9 +852,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                 }
                                 return
                             }
-                            let target: Int32 = self.targetStillValid() ? 1 : 2
-                            if let plan = try? GoCore.deliveryPlan(token: token, target: target, selection: 0),
-                               plan.action == 2, let attempt = plan.attemptID {
+                            let target: Int32 = self.targetStillValid() ? Int32(VR_MATCH_SAME) : Int32(VR_MATCH_DIFFERENT)
+                            if let plan = try? GoCore.deliveryPlan(token: token, target: target, selection: Int32(VR_MATCH_UNKNOWN)),
+                               plan.action == Int(VR_DELIVERY_INSERT), let attempt = plan.attemptID {
                                 let sent = self.paste(text)
                                 GoCore.deliveryReceipt(token: token, attempt: attempt, sent: sent)
                                 if !sent { self.presentPreview(text, title: value.title) }
@@ -1028,8 +1036,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard targetStillValid() else { completed(false); return }
         let deliver = { [weak self] in
             guard let self, self.targetStillValid(),
-                  let plan = try? GoCore.deliveryPlan(token: token, target: 1, selection: 1, manual: manual),
-                  plan.action == 3, let attempt = plan.attemptID else {
+                  let plan = try? GoCore.deliveryPlan(token: token, target: Int32(VR_MATCH_SAME),
+                                                    selection: Int32(VR_MATCH_SAME), manual: manual),
+                  plan.action == Int(VR_DELIVERY_REPLACE), let attempt = plan.attemptID else {
                 completed(false); return
             }
             let sent = self.paste(text)
