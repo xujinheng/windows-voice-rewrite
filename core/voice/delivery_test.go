@@ -24,4 +24,18 @@ func TestPortableDeliveryDecision(t *testing.T) {
 			}
 		})
 	}
+	for _, tc := range []struct {
+		name, route string
+		selected bool
+		want DeliveryAction
+	}{
+		{"insert failed", RouteInsert, false, DeliveryPreview},
+		{"replace failed, selection retained", RouteReplace, true, DeliveryPreviewApply},
+		{"replace failed, selection unavailable", RouteReplace, false, DeliveryPreview},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := DecideDelivery(tc.route, DeliveryFacts{TargetCurrent: true, SelectionCaptured: tc.selected, EffectFailed: true})
+			if got != tc.want { t.Fatalf("got %d, want %d", got, tc.want) }
+		})
+	}
 }

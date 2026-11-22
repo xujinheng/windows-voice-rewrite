@@ -15,11 +15,18 @@ const (
 type DeliveryFacts struct {
 	TargetCurrent     bool
 	SelectionCaptured bool
+	EffectFailed      bool // Native adapter could not complete the requested effect.
 }
 
 // DecideDelivery owns the portable fallback policy for every client.
 // Hosts implement the selected native effect but never auto-retry an unknown paste.
 func DecideDelivery(route string, facts DeliveryFacts) DeliveryAction {
+	if facts.EffectFailed {
+		if route == RouteReplace && facts.SelectionCaptured {
+			return DeliveryPreviewApply
+		}
+		return DeliveryPreview
+	}
 	switch route {
 	case RouteInsert:
 		if facts.TargetCurrent {

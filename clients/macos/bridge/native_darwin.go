@@ -76,10 +76,10 @@ func VRSnapshot(code C.int, token C.uint64_t) C.VRCoreState {
 }
 
 //export VRDeliveryAction
-func VRDeliveryAction(route *C.char, target, selected C.int) C.int {
+func VRDeliveryAction(route *C.char, target, selected, effectFailed C.int) C.int {
 	if route == nil { return C.int(voice.DeliveryPreview) }
 	return C.int(voice.DecideDelivery(C.GoString(route),
-		voice.DeliveryFacts{TargetCurrent: target != 0, SelectionCaptured: selected != 0}))
+		voice.DeliveryFacts{TargetCurrent: target != 0, SelectionCaptured: selected != 0, EffectFailed: effectFailed != 0}))
 }
 
 //export VRClipboardSnapshotFits

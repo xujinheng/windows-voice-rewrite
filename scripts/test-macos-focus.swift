@@ -108,11 +108,13 @@ MainActor.assumeIsolated {
     precondition(VRClipboardSnapshotFits((16 << 20) + 1, 0) == 0)
     precondition(VRClipboardSnapshotFits(1, 48 << 20) == 0)
     // All native clients must use the same Go delivery policy.
-    precondition("insert".withCString { VRDeliveryAction($0, 1, 0) } == Int32(VR_DELIVERY_INSERT))
-    precondition("replace".withCString { VRDeliveryAction($0, 1, 1) } == Int32(VR_DELIVERY_REPLACE))
-    precondition("replace".withCString { VRDeliveryAction($0, 1, 0) } == Int32(VR_DELIVERY_PREVIEW))
-    precondition("replace".withCString { VRDeliveryAction($0, 0, 1) } == Int32(VR_DELIVERY_PREVIEW_APPLY))
-    precondition("insert".withCString { VRDeliveryAction($0, 0, 0) } == Int32(VR_DELIVERY_PREVIEW))
+    precondition("insert".withCString { VRDeliveryAction($0, 1, 0, 0) } == Int32(VR_DELIVERY_INSERT))
+    precondition("replace".withCString { VRDeliveryAction($0, 1, 1, 0) } == Int32(VR_DELIVERY_REPLACE))
+    precondition("replace".withCString { VRDeliveryAction($0, 1, 0, 0) } == Int32(VR_DELIVERY_PREVIEW))
+    precondition("replace".withCString { VRDeliveryAction($0, 0, 1, 0) } == Int32(VR_DELIVERY_PREVIEW_APPLY))
+    precondition("insert".withCString { VRDeliveryAction($0, 0, 0, 0) } == Int32(VR_DELIVERY_PREVIEW))
+    precondition("replace".withCString { VRDeliveryAction($0, 1, 1, 1) } == Int32(VR_DELIVERY_PREVIEW_APPLY))
+    precondition("insert".withCString { VRDeliveryAction($0, 1, 0, 1) } == Int32(VR_DELIVERY_PREVIEW))
     // The native PCM conversion can run after recording is stopped without
     // accessing AVAudioEngine on a worker or requiring a physical microphone.
     let pcm = try! Microphone.pcm((samples: Array(repeating: Float(0.01), count: 19200), rate: 48000))
