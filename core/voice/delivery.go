@@ -18,11 +18,11 @@ type DeliveryFacts struct {
 
 // DecideDelivery owns the portable fallback policy for every client.
 // Hosts implement the selected native effect but never auto-retry an unknown paste.
-func DecideDelivery(result Result, facts DeliveryFacts) DeliveryAction {
+func DecideDelivery(route string, facts DeliveryFacts) DeliveryAction {
 	if !facts.TargetCurrent {
 		return DeliveryPreview
 	}
-	switch result.Route {
+	switch route {
 	case RouteInsert:
 		return DeliveryInsert
 	case RouteReplace:
