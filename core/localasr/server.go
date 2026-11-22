@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"sync"
 	"time"
 )
@@ -40,6 +42,40 @@ var (
 	processMu sync.Mutex
 	process   *exec.Cmd
 )
+
+// DeployConfigured is the single portable deployment decision for both desktop
+// hosts. Native clients only choose a directory and persist the returned config.
+func DeployConfigured(ctx context.Context, cfg coreconfig.Config, directory string) (coreconfig.Config, error) {
+	install, err := Deploy(ctx, directory)
+	if err == nil {
+		err = Start(ctx, install)
+	}
+	if err != nil {
+		return cfg, err
+	}
+	defaults := coreconfig.Defaults()
+	cfg.ASRDeployDir = directory
+	cfg.ASRBaseURL = defaults.ASRBaseURL
+	cfg.ASRModel = defaults.ASRModel
+	return cfg, nil
+}
+
+// Resume starts a previously deployed local ASR only when the configured
+// endpoint is the managed local service, never for a custom/remote endpoint.
+func Resume(ctx context.Context, cfg coreconfig.Config) error {
+	if cfg.ASRBaseURL != coreconfig.Defaults().ASRBaseURL {
+		return nil
+	}
+	directory := cfg.ASRDeployDir
+	if directory == "" {
+		directory = DefaultDirectory()
+	}
+	install, ok := Installed(directory)
+	if !ok {
+		return nil
+	}
+	return Start(ctx, install)
+}
 
 // Start serves the built-in Qwen ASR model on the existing default endpoint.
 // Clients directly use llama.cpp; Core already normalizes ASR transcript markers.
@@ -82,10 +118,21 @@ func Start(ctx context.Context, install Installation) error {
 			processMu.Unlock()
 			return err
 		}
+		release, err := protectChild(cmd.Process.Pid)
+		if err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			_ = file.Close()
+			processMu.Unlock()
+			return fmt.Errorf("cannot bind ASR child lifetime: %w", err)
+		}
 		process = cmd
 		exited = make(chan error, 1)
 		go func() {
 			e := cmd.Wait()
+			if release != nil {
+				release()
+			}
 			processMu.Lock()
 			if process == cmd {
 				process = nil
