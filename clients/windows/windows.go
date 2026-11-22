@@ -18,7 +18,6 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
 	"github.com/xujinheng/windows-voice-rewrite/core/history"
 	"github.com/xujinheng/windows-voice-rewrite/core/indicator"
@@ -331,17 +330,11 @@ func runApp() {
 		return
 	}
 	defer localasr.Stop()
-	if cfg.ASRBaseURL == coreconfig.Defaults().ASRBaseURL {
-		directory := cfg.ASRDeployDir
-		if directory == "" { directory = localasr.DefaultDirectory() }
-		if install, ok := localasr.Installed(directory); ok {
-			go func() {
-				if err := localasr.Start(context.Background(), install); err != nil {
-					l.Printf("local ASR startup: %v", err)
-				}
-			}()
+	go func() {
+		if err := localasr.Resume(context.Background(), cfg); err != nil {
+			l.Printf("local ASR startup: %v", err)
 		}
-	}
+	}()
 	hwnd, e := createTrayCallbackWindow()
 	if e != nil {
 		winErr("无法初始化 Windows 托盘消息窗口：" + e.Error())
