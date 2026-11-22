@@ -804,29 +804,20 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                         case .success(let value):
                             guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
                             let action = (value.route ?? "").withCString {
-                                VRDeliveryAction($0, self.targetStillValid() ? 1 : 0, selected == nil ? 0 : 1, 0)
+                                VRDeliveryAction($0, self.targetStillValid() ? 1 : 0, selected == nil ? 0 : 1)
                             }
                             if action == Int32(VR_DELIVERY_REPLACE), let selected {
                                 self.pill.working(.applying)
                                 self.show(self.config.pill.applyingLabel)
                                 self.pasteSelection(selected, with: text, token: token) { [weak self] sent in
                                     guard let self, self.taskID == token else { return }
-                                    if !sent {
-                                        let fallback = (value.route ?? "").withCString {
-                                            VRDeliveryAction($0, 0, 1, 1)
-                                        }
-                                        self.presentPreview(text, title: value.title,
-                                                            selection: fallback == Int32(VR_DELIVERY_PREVIEW_APPLY) ? selected : nil)
-                                    }
+                                    if !sent { self.presentPreview(text, title: value.title, selection: selected) }
                                     self.clearSession()
                                 }
                                 return
                             }
                             if action == Int32(VR_DELIVERY_INSERT) {
-                                if !self.paste(text) {
-                                    let fallback = (value.route ?? "").withCString { VRDeliveryAction($0, 0, 0, 1) }
-                                    if fallback == Int32(VR_DELIVERY_PREVIEW) { self.presentPreview(text, title: value.title) }
-                                }
+                                if !self.paste(text) { self.presentPreview(text, title: value.title) }
                             } else {
                                 // A replace result remains manually applicable after focus moves.
                                 self.presentPreview(text, title: value.title,
