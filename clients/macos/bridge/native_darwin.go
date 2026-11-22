@@ -138,13 +138,7 @@ func VRProfile(config *C.char) *C.char {
 	reply := headlessProfile(json.RawMessage(C.GoString(config)))
 	if reply.OK {
 		nativeConfig.Store(&reply.cfg)
-		if reply.cfg.ASRBaseURL == coreconfig.Defaults().ASRBaseURL {
-			directory := reply.cfg.ASRDeployDir
-			if directory == "" { directory = localasr.DefaultDirectory() }
-			if install, ok := localasr.Installed(directory); ok {
-				go func() { _ = localasr.Start(context.Background(), install) }()
-			}
-		}
+		go func() { _ = localasr.Resume(context.Background(), reply.cfg) }()
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
 		nativeCore.Apply(voice.Command{Kind: voice.CommandBind, Dictation: []int{macKeyCode(profile["dictation"].(string))}, Rewrite: []int{macKeyCode(profile["rewrite"].(string))}})
 	}
@@ -152,16 +146,22 @@ func VRProfile(config *C.char) *C.char {
 }
 
 //export VRDeploy
-func VRDeploy(directory *C.char) *C.char {
-	if directory == nil { return nativeJSON(failure("invalid_directory", "choose a directory")) }
-	install, err := localasr.Deploy(context.Background(), C.GoString(directory))
-	if err == nil { err = localasr.Start(context.Background(), install) }
-	if err != nil { return nativeJSON(failure("deploy_failed", err.Error())) }
-	return nativeJSON(success(map[string]any{"status": "ASR ready", "values": map[string]string{
-		"asr_deploy_dir": C.GoString(directory),
-		"asr_base_url": coreconfig.Defaults().ASRBaseURL,
-		"asr_model": coreconfig.Defaults().ASRModel,
-	}}))
+func VRDeploy(rawConfig, directory *C.char) *C.char {
+	if rawConfig == nil || directory == nil {
+		return nativeJSON(failure("invalid_directory", "missing config or directory"))
+	}
+	cfg, err := coreconfig.Parse([]byte(C.GoString(rawConfig)))
+	if err == nil {
+		cfg, err = localasr.DeployConfigured(context.Background(), cfg, C.GoString(directory))
+	}
+	if err != nil {
+		return nativeJSON(failure("deploy_failed", err.Error()))
+	}
+	data, err := coreconfig.Marshal(cfg)
+	if err != nil {
+		return nativeJSON(failure("invalid_config", err.Error()))
+	}
+	return nativeJSON(success(map[string]string{"status": "ASR ready", "config": string(data)}))
 }
 
 //export VRStopASR
