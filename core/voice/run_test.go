@@ -15,6 +15,13 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 )
 
+func modeForRewrite(rewrite bool) TaskMode {
+	if rewrite {
+		return TaskRewrite
+	}
+	return TaskDictation
+}
+
 func TestRunSpokenTaskCancelsBeforeLLM(t *testing.T) {
 	var llm atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +103,7 @@ func TestPortableEpochCancellationDisconnectsProvider(t *testing.T) {
 			token := epoch.Apply(Command{Kind: CommandStart}).Token
 			done := make(chan error, 1)
 			go func() {
-				_, err := epoch.Execute(token, cfg, make([]byte, 3200), "selected text", rewrite, nil)
+				_, err := epoch.Execute(context.Background(), TaskRequest{Token: token, Config: cfg, PCM: make([]byte, 3200), SelectedText: "selected text", Mode: modeForRewrite(rewrite)}, nil)
 				done <- err
 			}()
 			select {
@@ -134,7 +141,7 @@ func TestCoreRetainsCompletedResultWithoutHostState(t *testing.T) {
 	cfg.ASRBaseURL = server.URL + "/v1"
 	var core Core
 	token := core.Apply(Command{Kind: CommandStart}).Token
-	out, err := core.Execute(token, cfg, make([]byte, 3200), "", false, nil)
+	out, err := core.Execute(context.Background(), TaskRequest{Token: token, Config: cfg, PCM: make([]byte, 3200), Mode: TaskDictation}, nil)
 	if err != nil || out.Text != "shared transcript" || out.Title != ux.DictationHistoryTitle {
 		t.Fatalf("execute result: %+v, %v", out, err)
 	}

@@ -2,6 +2,7 @@ package voice
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -23,6 +24,11 @@ type Core struct {
 	currentID uint64
 	closed    bool
 	phase     EventKind
+	completed Result
+	completedToken uint64
+	deliveryAttempt uint64
+	deliverySequence uint64
+	deliveryStatus DeliveryReceiptStatus
 	ctx       context.Context
 	cancel    context.CancelFunc
 }
@@ -232,6 +238,8 @@ func (c *Core) Apply(cmd Command) Event {
 			c.cancel()
 		}
 		c.currentID++
+		c.completedToken = 0
+		c.deliveryAttempt = 0
 		c.ctx, c.cancel = context.WithCancel(context.Background())
 		c.phase = EventStarted
 		return Event{Kind: EventStarted, Token: c.currentID}
@@ -264,6 +272,8 @@ func (c *Core) ContextFor(id uint64) context.Context {
 // Cancel stops a task and drops any held key ownership, including late timers.
 func (c *Core) cancelLocked() {
 	c.currentID++
+	c.completedToken = 0
+	c.deliveryAttempt = 0
 	if c.cancel != nil {
 		c.cancel()
 		c.cancel = nil
@@ -278,51 +288,84 @@ func (c *Core) cancelLocked() {
 	}
 }
 
-// Execute is the platform-independent task entrypoint. No client can execute
-// an expired task or circumvent the shared model deadlines and result routes.
-func (c *Core) Execute(token uint64, cfg coreconfig.Config, pcm []byte, selected string, rewrite bool, emit func(Event)) (Result, error) {
-	c.mu.Lock()
-	if token != 0 && c.currentID == token && c.ctx != nil && !c.closed {
-		c.phase = EventProcessing
+// ErrInvalidTask is returned for malformed voice operations.
+var ErrInvalidTask = errors.New("invalid voice task")
+
+// ErrStaleTask identifies a canceled or superseded task generation.
+var ErrStaleTask = errors.New("stale voice task")
+
+// Execute is the synchronous portable task pipeline, with both caller and
+// generation cancellation. The host supplies audio and handles OS effects.
+func (c *Core) Execute(parent context.Context, req TaskRequest, emit func(Event)) (Result, error) {
+	if parent == nil || (req.Mode != TaskDictation && req.Mode != TaskRewrite) {
+		return Result{}, ErrInvalidTask
 	}
+	taskCtx := c.ContextFor(req.Token)
+	if taskCtx.Err() != nil {
+		return Result{}, ErrStaleTask
+	}
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	stop := context.AfterFunc(taskCtx, cancel)
+	defer stop()
+
+	c.mu.Lock()
+	if c.currentID != req.Token || c.ctx == nil || c.closed {
+		c.mu.Unlock()
+		return Result{}, ErrStaleTask
+	}
+	c.phase = EventProcessing
 	c.mu.Unlock()
-	result, err := run(c.ContextFor(token), cfg, pcm, selected, rewrite, func(text string) {
+
+	rewrite := req.Mode == TaskRewrite
+	result, err := run(ctx, req.Config, req.PCM, req.SelectedText, rewrite, func(text string) {
 		c.mu.Lock()
-		valid := token != 0 && c.currentID == token && !c.closed && c.ctx != nil
+		valid := c.currentID == req.Token && !c.closed && c.ctx != nil
 		if valid {
 			c.phase = EventTranscribed
 		}
 		c.mu.Unlock()
-		if valid && emit != nil {
-			emit(Event{Kind: EventTranscribed, Token: token, Text: text})
+		if valid && ctx.Err() == nil && emit != nil {
+			emit(Event{Kind: EventTranscribed, Token: req.Token, Text: text})
 		}
 	})
+	if err == nil {
+		result.Title = ux.DictationHistoryTitle
+		if rewrite {
+			result.Title = ux.ResultCardTitle(result.Intent)
+		}
+	}
 	c.mu.Lock()
-	valid := token != 0 && c.currentID == token && !c.closed && c.ctx != nil
+	valid := c.currentID == req.Token && !c.closed && c.ctx != nil
 	if valid {
-		if err == nil {
+		if err == nil && ctx.Err() == nil {
 			c.phase = EventFinished
+			c.completed = result
+			c.completedToken = req.Token
+			c.deliveryAttempt = 0
+			c.deliveryStatus = 0
 		} else {
 			c.phase = EventFailed
 		}
 	}
 	c.mu.Unlock()
 	if !valid {
-		return result, err
+		return Result{}, context.Canceled
+	}
+	if ctx.Err() != nil {
+		return Result{}, ctx.Err()
 	}
 	if err == nil {
 		title := ux.DictationHistoryTitle
-		result.Title = ux.DictationHistoryTitle
 		if rewrite {
 			title = ux.HistoryTitle(result.Intent)
-			result.Title = ux.ResultCardTitle(result.Intent)
 		}
 		c.History.Remember(title, result.Text)
 		if emit != nil {
-			emit(Event{Kind: EventFinished, Token: token, Result: result})
+			emit(Event{Kind: EventFinished, Token: req.Token, Result: result})
 		}
 	} else if emit != nil {
-		emit(Event{Kind: EventFailed, Token: token, Error: err.Error()})
+		emit(Event{Kind: EventFailed, Token: req.Token, Error: err.Error()})
 	}
 	return result, err
 }

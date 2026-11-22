@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -179,7 +180,11 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 			app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(event.Text))
 		}
 	}
-	answer, err := app.core.Execute(generation, app.cfg, r.pcm, sel.Text, !task.dictation, afterASR)
+	mode := voice.TaskRewrite
+	if task.dictation {
+		mode = voice.TaskDictation
+	}
+	answer, err := app.core.Execute(context.Background(), voice.TaskRequest{Token: generation, Config: app.cfg, PCM: r.pcm, SelectedText: sel.Text, Mode: mode}, afterASR)
 	if !app.core.Snapshot(0, generation).Valid {
 		return
 	}

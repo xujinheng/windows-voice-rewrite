@@ -14,6 +14,23 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 )
 
+// TaskMode is independent of the host's physical shortcut.
+type TaskMode uint8
+
+const (
+	TaskDictation TaskMode = iota + 1
+	TaskRewrite
+)
+
+// TaskRequest contains all facts needed for one portable speech task.
+type TaskRequest struct {
+	Token        uint64
+	Mode         TaskMode
+	Config       coreconfig.Config
+	PCM          []byte
+	SelectedText string
+}
+
 type Result struct {
 	Text        string `json:"text"`
 	Title       string `json:"title,omitempty"`

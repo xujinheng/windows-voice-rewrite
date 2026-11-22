@@ -1,6 +1,7 @@
 package voice
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -88,7 +89,7 @@ func TestExecuteEmitsPublicProgressAndResult(t *testing.T) {
 	defer core.Apply(Command{Kind: CommandShutdown})
 	started := core.Apply(Command{Kind: CommandStart}).Token
 	var events []Event
-	result, err := core.Execute(started, cfg, make([]byte, 3200), "Original", true, func(e Event) { events = append(events, e) })
+	result, err := core.Execute(context.Background(), TaskRequest{Token: started, Config: cfg, PCM: make([]byte, 3200), SelectedText: "Original", Mode: TaskRewrite}, func(e Event) { events = append(events, e) })
 	if err != nil || result.Route != RoutePreview || result.Text != "Explanation" {
 		t.Fatalf("shared result: %+v %v", result, err)
 	}
