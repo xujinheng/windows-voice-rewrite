@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
 )
@@ -31,7 +30,6 @@ func DefaultDirectory() string {
 var (
 	processMu sync.Mutex
 	process *exec.Cmd
-	processLog *os.File
 )
 
 // Start serves the built-in Qwen ASR model on the existing default endpoint.
@@ -48,7 +46,7 @@ func Start(ctx context.Context, install Installation) error {
 		processMu.Unlock()
 		return errors.New("ASR port 8080 is occupied; stop the other server before Deploy")
 	}
-	logPath := filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(install.Model))), "server.log")
+	logPath := filepath.Join(filepath.Dir(filepath.Dir(install.Model)), "server.log")
 	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil { processMu.Unlock(); return err }
 	cmd := exec.Command(install.Server, "-m", install.Model, "--mmproj", install.Projector,
@@ -61,14 +59,14 @@ func Start(ctx context.Context, install Installation) error {
 		processMu.Unlock()
 		return err
 	}
-	process, processLog = cmd, file
+	process = cmd
 	processMu.Unlock()
 	exited := make(chan error, 1)
 	go func() {
 		e := cmd.Wait()
 		processMu.Lock()
 		if process == cmd {
-			process, processLog = nil, nil
+			process = nil
 			file.Close()
 		}
 		processMu.Unlock()
@@ -113,8 +111,3 @@ func Ready() bool {
 	return process != nil
 }
 
-// ServerPath derives no executable outside the selected installation directory.
-func ServerPath(directory string) (string, bool) {
-	install, ok := Installed(strings.TrimSpace(directory))
-	return install.Server, ok
-}
