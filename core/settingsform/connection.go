@@ -174,7 +174,7 @@ func ConnectionAction(ctx context.Context, raw []byte) (any, error) {
 			"llm_base_url": cfg.LLMBaseURL, "text_model": cfg.TextModel, "llm_api_key": cfg.LLMAPIKey,
 			"rewrite_shortcut": cfg.HotkeyRecord, "dictation_shortcut": cfg.DictationHotkey,
 			"max_record_seconds": strconv.Itoa(cfg.MaxRecordSeconds),
-			"microphone": strconv.Itoa(cfg.AudioDeviceID),
+			"microphone":         strconv.Itoa(cfg.AudioDeviceID),
 			"asr_deploy_dir":     directory,
 		}}, nil
 	}
