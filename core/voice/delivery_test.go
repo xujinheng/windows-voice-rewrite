@@ -12,7 +12,8 @@ func TestPortableDeliveryDecision(t *testing.T) {
 		{"focus lost", RouteInsert, false, false, DeliveryPreview},
 		{"replace", RouteReplace, true, true, DeliveryReplace},
 		{"selection absent", RouteReplace, true, false, DeliveryPreview},
-		{"target lost", RouteReplace, false, true, DeliveryPreview},
+		{"selection and target absent", RouteReplace, false, false, DeliveryPreview},
+		{"target lost, manual apply available", RouteReplace, false, true, DeliveryPreviewApply},
 		{"explain", RoutePreview, true, true, DeliveryPreview},
 		{"unknown", "invalid", true, true, DeliveryPreview},
 	} {

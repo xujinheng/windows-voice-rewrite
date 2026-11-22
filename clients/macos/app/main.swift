@@ -826,7 +826,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                             } else {
                                 // A replace result remains manually applicable after focus moves.
                                 self.presentPreview(text, title: value.title,
-                                                    selection: value.route == "replace" ? selected : nil)
+                                                    selection: action == Int32(VR_DELIVERY_PREVIEW_APPLY) ? selected : nil)
                             }
                             self.clearSession()
                         }

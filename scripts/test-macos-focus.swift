@@ -111,6 +111,7 @@ MainActor.assumeIsolated {
     precondition("insert".withCString { VRDeliveryAction($0, 1, 0) } == Int32(VR_DELIVERY_INSERT))
     precondition("replace".withCString { VRDeliveryAction($0, 1, 1) } == Int32(VR_DELIVERY_REPLACE))
     precondition("replace".withCString { VRDeliveryAction($0, 1, 0) } == Int32(VR_DELIVERY_PREVIEW))
+    precondition("replace".withCString { VRDeliveryAction($0, 0, 1) } == Int32(VR_DELIVERY_PREVIEW_APPLY))
     precondition("insert".withCString { VRDeliveryAction($0, 0, 0) } == Int32(VR_DELIVERY_PREVIEW))
     // The native PCM conversion can run after recording is stopped without
     // accessing AVAudioEngine on a worker or requiring a physical microphone.
