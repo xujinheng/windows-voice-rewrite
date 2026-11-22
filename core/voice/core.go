@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/history"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 )
@@ -314,6 +313,11 @@ func (c *Core) Execute(parent context.Context, req TaskRequest, emit func(Event)
 		c.mu.Unlock()
 		return Result{}, ErrStaleTask
 	}
+	if c.phase != EventStarted {
+		c.mu.Unlock()
+		return Result{}, ErrInvalidTask
+	}
+	c.completedToken = 0
 	c.phase = EventProcessing
 	c.mu.Unlock()
 
