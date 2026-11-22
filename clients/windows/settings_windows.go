@@ -683,6 +683,10 @@ func (p *uxSettings) chooseDeployDirectory() {
 }
 
 func (p *uxSettings) deployASR() {
+	if p.app.busy.Load() {
+		uxSetText(p.hint, "请在当前语音任务结束后部署 ASR")
+		return
+	}
 	if !p.deployBusy.CompareAndSwap(false, true) {
 		uxSetText(p.hint, "ASR 正在部署中")
 		return
