@@ -197,11 +197,7 @@ private struct BridgeReply: Decodable {
         let config: String?
         let status: String?
         let directory: String?
-        let busy: Bool?
         let phase: String?
-        let received, total: Int64?
-        let file, errorCode: String?
-        let jobID: UInt64?
         let models: [String]?
         let capture: [String: String]?
     }
@@ -466,8 +462,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     @objc private func settingsShowDeployError() {
         guard let progress = try? GoCore.asrProgress(),
               progress.phase == "failed", progress.directory == settingsDeployDirectory,
-              let message = progress.status,
-              message.hasPrefix("ASR 部署失败：") else { return }
+              let message = progress.status else { return }
         let alert = NSAlert()
         alert.messageText = "ASR 部署失败"
         alert.informativeText = message
