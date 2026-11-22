@@ -24,6 +24,7 @@ const (
 	asrProjectorFilename = "mmproj-Qwen3-ASR-1.7B-bf16.gguf"
 	asrProjectorSHA      = "8882e9ddab3186f9aa71b1417c847177913e1466655ac944cf86e9b846735d62"
 	macArmTarSHA         = "e88d7e91198d0de6ceb3d33711ac01ee0d5b519cd9ba4e81854e3bba84f22214"
+	macIntelTarSHA       = "4c42388726490b1ed7864dc621dd29526f0ced3d617a96c5ac111287a7a68ba5"
 	cpuZipSHA            = "64bee9b6fece8e66c665c40290cbb84706af23c670041d024b56a71a39859d77"
 	cudaZipSHA           = "9df9b6316051ce258debb234b3475762eecd8721e6bb41474f0743d54aad08aa"
 	cudaRuntimeZipSHA    = "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6"
@@ -177,10 +178,13 @@ func installRuntime(ctx context.Context, root, flavor string) (string, error) {
 	}
 	var specs []downloadSpec
 	if runtime.GOOS == "darwin" {
-		if runtime.GOARCH != "arm64" {
-			return "", errors.New("automatic installation supports Apple Silicon (arm64) only")
+		asset, sha := "llama-"+llamaRelease+"-bin-macos-arm64.tar.gz", macArmTarSHA
+		if runtime.GOARCH == "amd64" {
+			asset, sha = "llama-"+llamaRelease+"-bin-macos-x64.tar.gz", macIntelTarSHA
+		} else if runtime.GOARCH != "arm64" {
+			return "", errors.New("unsupported Mac architecture")
 		}
-		specs = []downloadSpec{releaseDownload("llama-"+llamaRelease+"-bin-macos-arm64.tar.gz", macArmTarSHA)}
+		specs = []downloadSpec{releaseDownload(asset, sha)}
 	} else if flavor == "cuda" {
 		specs = []downloadSpec{
 			releaseDownload("llama-"+llamaRelease+"-bin-win-cuda-12.4-x64.zip", cudaZipSHA),
@@ -348,6 +352,10 @@ func Deploy(ctx context.Context, directory string) (Installation, error) {
 	}
 	if gpu != 0 && !supportsGPU(server, flavor) {
 		gpu = 0
+		if flavor == "cuda" {
+			server, err = installRuntime(ctx, root, "cpu")
+			if err != nil { return Installation{}, err }
+		}
 	}
 	return Installation{Server: server, Model: model, Projector: projector, GPULayers: gpu}, nil
 }
@@ -378,7 +386,7 @@ func Installed(directory string) (Installation, bool) {
 		}
 		if server := locateServer(target); server != "" {
 			gpu := 0
-			if flavor != "cpu" {
+			if flavor != "cpu" && supportsGPU(server, flavor) {
 				gpu = 99
 			}
 			return Installation{Server: server, Model: model, Projector: projector, GPULayers: gpu}, true
