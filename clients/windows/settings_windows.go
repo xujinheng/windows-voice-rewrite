@@ -564,7 +564,10 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				if item.CtlID == contract.DiscoverLLMButton {
 					slot = 1
 				}
-				if p.modelChoicesReady(slot) {
+				p.modelMu.Lock()
+				ready := len(p.modelResults[slot].models) > 0 && p.modelCancel[slot] == nil
+				p.modelMu.Unlock()
+				if ready {
 					label = "选择模型"
 				}
 			}
@@ -813,14 +816,6 @@ func (p *uxSettings) inputValue(id string) string {
 	return uxWinText(p.inputs[index])
 }
 
-func (p *uxSettings) bumpProbe(idx int) uint64 {
-	p.probeMu.Lock()
-	p.probeSerial[idx]++
-	serial := p.probeSerial[idx]
-	p.probeMu.Unlock()
-	return serial
-}
-
 func (p *uxSettings) probe(kind string) {
 	url, key, model, ok := contract.ProbeInputs(kind)
 	if !ok || p.window == 0 {
@@ -831,7 +826,10 @@ func (p *uxSettings) probe(kind string) {
 		return
 	}
 	base, secret, name := p.inputValue(url), p.inputValue(key), p.inputValue(model)
-	serial := p.bumpProbe(idx)
+	p.probeMu.Lock()
+	p.probeSerial[idx]++
+	serial := p.probeSerial[idx]
+	p.probeMu.Unlock()
 	uxSetText(p.probeStatus[idx], serviceprobe.StatusRunning)
 	hwnd := p.window
 	go func() {
@@ -863,13 +861,6 @@ func (p *uxSettings) invalidateModels(slot int) {
 	if p.modelButtons[slot] != 0 {
 		refreshNativeWindow(p.modelButtons[slot])
 	}
-}
-
-func (p *uxSettings) modelChoicesReady(slot int) bool {
-	p.modelMu.Lock()
-	ready := len(p.modelResults[slot].models) > 0 && p.modelCancel[slot] == nil
-	p.modelMu.Unlock()
-	return ready
 }
 
 func (p *uxSettings) invalidateAllModels() {
