@@ -685,7 +685,9 @@ func (p *uxSettings) chooseDeployDirectory() {
 		directory := syscall.UTF16ToString(selected[:])
 		cfg, err := loadConfig()
 		if err == nil {
-			cfg.ASRDeployDir = directory
+			cfg, err = settingsform.Update(cfg, map[string]string{"asr_deploy_dir": directory})
+		}
+		if err == nil {
 			err = saveConfig(cfg)
 		}
 		if err != nil {
@@ -694,7 +696,7 @@ func (p *uxSettings) chooseDeployDirectory() {
 			return
 		}
 		p.deployDir = directory
-		p.app.cfg.ASRDeployDir = directory
+		p.app.cfg = cfg
 		uxSetText(p.hint, "部署位置已保存："+directory)
 	}
 }
