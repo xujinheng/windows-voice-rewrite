@@ -17,6 +17,7 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/core/desktop"
 	corepopup "github.com/xujinheng/windows-voice-rewrite/core/popup"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 )
 
 // The result card is an ordinary HWND with a complete Win32 message pump.
@@ -219,7 +220,8 @@ func (p *answerPopup) apply() {
 	go func() {
 		defer app.busy.Store(false)
 		time.Sleep(ux.ApplySettle)
-		err := replaceSelectionWithGuard(app.Window, sel, body, app.cfg, !isSafelyEditableControl(sel.TargetWindow), func() bool { return !p.canceled.Load() && app.core.Snapshot(0, p.generation).Valid })
+		err := replaceSelectionWithGuard(app, sel, body, !isSafelyEditableControl(sel.TargetWindow), p.generation, voice.DeliveryUserApply,
+			func() bool { return !p.canceled.Load() && app.core.Snapshot(0, p.generation).Valid })
 		if err != nil {
 			app.logger.Printf("manual apply failed: %v", err)
 		} else {

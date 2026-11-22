@@ -38,10 +38,10 @@ type DeliveryRequest struct {
 }
 
 type DeliveryPlan struct {
-	AttemptID uint64
-	Action    DeliveryAction
-	Text      string
-	Title     string
+	AttemptID uint64 `json:"attemptID"`
+	Action    DeliveryAction `json:"action"`
+	Text      string `json:"text"`
+	Title     string `json:"title"`
 }
 
 type DeliveryReceiptStatus uint8

@@ -199,13 +199,21 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 	if task.dictation {
 		app.logger.Printf("stage=asr flow=dictation ms=%d", time.Since(started).Milliseconds())
 		text := answer.Text
-		if !isSameForegroundWindow(task.target) {
+		observed := voice.MatchDifferent
+		if isSameForegroundWindow(task.target) { observed = voice.MatchSame }
+		plan, planErr := app.core.PlanDelivery(voice.DeliveryRequest{Token: generation,
+			Observation: voice.TargetObservation{Target: observed}, Trigger: voice.DeliveryAutomatic})
+		if planErr != nil { app.fail(planErr); return }
+		if plan.Action != voice.DeliveryInsert {
 			app.showAnswer(ux.DictationNotInserted, text, currentCursorPoint(), nil, false, generation)
 			app.postHandyPhase(indicator.Fallback, generation)
 			return
 		}
 		started = time.Now()
 		err = insertDictationText(app.Window, task.target, text, func() bool { return app.core.Snapshot(0, generation).Valid })
+		status := voice.DeliveryUnknown
+		if err == nil { status = voice.DeliverySentUnverified }
+		_, _ = app.core.ReportDelivery(voice.DeliveryReceipt{Token: generation, AttemptID: plan.AttemptID, Status: status})
 		if err != nil {
 			app.fail(err)
 			app.showAnswer(ux.DictationCopyManually, text, currentCursorPoint(), nil, false, generation)
@@ -225,8 +233,9 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 		app.postHandyPhase(indicator.Applying, generation)
 		started = time.Now()
 		// Native editability determines whether to verify the pasted selection.
-		err = replaceSelectionWithGuard(app.Window, sel, answer.Text, app.cfg,
-			!isSafelyEditableControl(sel.TargetWindow), func() bool { return app.core.Snapshot(0, generation).Valid })
+		err = replaceSelectionWithGuard(app, sel, answer.Text,
+			!isSafelyEditableControl(sel.TargetWindow), generation, voice.DeliveryAutomatic,
+			func() bool { return app.core.Snapshot(0, generation).Valid })
 		app.logger.Printf("stage=paste ms=%d", time.Since(started).Milliseconds())
 		if err == nil {
 			app.setStatus(traySuccess)

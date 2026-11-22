@@ -13,6 +13,7 @@ import (
 
 	"github.com/xujinheng/windows-voice-rewrite/core/clipboard"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 )
 
 func waitKeysReleased(max time.Duration) bool {
@@ -241,7 +242,8 @@ func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 // foreground window; then paste and check whether the same original selection
 // remains. If it does, the surface likely refused the paste, so show a preview.
 // This remains a heuristic: it cannot prove an application's content changed.
-func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement string, cfg Config, verifyBrowser bool, valid func() bool) error {
+func replaceSelectionWithGuard(app *appState, sel selectedText, replacement string, verifyBrowser bool, token uint64, trigger voice.DeliveryTrigger, valid func() bool) error {
+	hwnd, cfg := app.Window, app.cfg
 	taskValid := func() bool { return valid == nil || valid() }
 	if !taskValid() {
 		return errors.New(ux.ReplaceExpired)
@@ -281,6 +283,14 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 	if err != nil || actual != sel.Text {
 		return errors.New(ux.ReplaceSelectionChanged)
 	}
+	plan, err := app.core.PlanDelivery(voice.DeliveryRequest{Token: token,
+		Observation: voice.TargetObservation{Target: voice.MatchSame, Selection: voice.MatchSame}, Trigger: trigger})
+	if err != nil { return err }
+	if plan.Action != voice.DeliveryReplace { return errors.New(ux.ReplaceSelectionChanged) }
+	status := voice.DeliveryNotSent
+	defer func() {
+		_, _ = app.core.ReportDelivery(voice.DeliveryReceipt{Token: token, AttemptID: plan.AttemptID, Status: status})
+	}()
 	if !taskValid() || !isSameForegroundWindow(sel.TargetWindow) {
 		return errors.New(ux.ReplaceBeforePaste)
 	}
@@ -292,9 +302,12 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 	if !taskValid() || !isSameForegroundWindow(sel.TargetWindow) {
 		return errors.New(ux.ReplacePasteStopped)
 	}
+	// The input call may partially dispatch even when it reports an error.
+	status = voice.DeliveryUnknown
 	if err := sendCombo('V'); err != nil {
 		return err
 	}
+	status = voice.DeliverySentUnverified
 	time.Sleep(270 * time.Millisecond)
 	if verifyBrowser {
 		if !isSameForegroundWindow(sel.TargetWindow) {
