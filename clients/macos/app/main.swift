@@ -354,13 +354,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
     }
 
     @objc private func togglePause() {
-        guard !microphone.running && !pending && VRSnapshot(0, 0).armed == 0 else {
-            show("请先完成当前语音任务")
-            return
-        }
         let paused = VRSnapshot(0, 0).paused != 0
         let kind = Int32(paused ? VR_COMMAND_RESUME : VR_COMMAND_PAUSE)
-        if VRCommand(kind, 0, 0, 0).kind == Int32(VR_EVENT_REJECTED) {
+        let busy: Int32 = microphone.running || pending ? 1 : 0
+        if VRCommand(kind, 0, 0, busy).kind == Int32(VR_EVENT_REJECTED) {
             show("请先完成当前语音任务")
         } else {
             show(paused ? "VoiceRewrite" : "已暂停")

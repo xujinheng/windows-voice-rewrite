@@ -65,9 +65,11 @@ func TestPauseIsOneCoreOwnedInputPolicy(t *testing.T) {
 	if event := g.Apply(Command{Kind: CommandStart}); event.Kind != EventRejected {
 		t.Fatal("paused Core started a task")
 	}
+	if g.Apply(Command{Kind: CommandResume, Busy: true}).Kind != EventRejected { t.Fatal("busy resume accepted") }
 	if got := g.Apply(Command{Kind: CommandResume}); got.Kind != EventResumed || g.Snapshot(0, 0).Paused {
 		t.Fatal("resume must unlock both clients")
 	}
+	if g.Apply(Command{Kind: CommandPause, Busy: true}).Kind != EventRejected { t.Fatal("busy pause accepted") }
 	press := g.Apply(Command{Kind: CommandPress, Code: 1})
 	if press.Kind != EventPressed || g.Apply(Command{Kind: CommandPause}).Kind != EventRejected {
 		t.Fatal("cannot pause while a shortcut owns a hold")

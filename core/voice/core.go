@@ -188,12 +188,13 @@ func (c *Core) Apply(cmd Command) Event {
 		c.roles = roles
 		return Event{Kind: EventBound}
 	case CommandPause:
-		if c.owner != 0 || c.phase == EventStarted || c.phase == EventProcessing || c.phase == EventTranscribed {
+		if cmd.Busy || c.owner != 0 || c.phase == EventStarted || c.phase == EventProcessing || c.phase == EventTranscribed {
 			break
 		}
 		c.paused = true
 		return Event{Kind: EventPaused}
 	case CommandResume:
+		if cmd.Busy { break }
 		c.paused = false
 		return Event{Kind: EventResumed}
 	case CommandPress:
