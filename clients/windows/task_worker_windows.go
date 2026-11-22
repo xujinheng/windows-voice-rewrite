@@ -243,8 +243,9 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 		}
 		app.logger.Printf("auto replacement failed; preview instead: %v", err)
 	}
+	var attempted pasteAttemptedError
 	app.showAnswer(answer.Title, answer.Text, sel.Anchor,
-		&sel, action == voice.DeliveryReplace || action == voice.DeliveryPreviewApply, generation)
+		&sel, !errors.As(err, &attempted) && (action == voice.DeliveryReplace || action == voice.DeliveryPreviewApply), generation)
 	app.setStatus(traySuccess)
 	app.logger.Printf("popup result queued; chars=%d", utf8.RuneCountInString(answer.Text))
 }

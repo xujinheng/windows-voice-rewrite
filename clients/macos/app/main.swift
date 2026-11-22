@@ -578,10 +578,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             self.taskID = request.token
             self.pasteSelection(request.selection, with: request.text, token: request.token) { [weak self] sent in
                 guard let self, self.taskID == request.token else { return }
-                if sent {
+                if sent == true {
                     self.resultPanel?.close()
                     self.resultPanel = nil
                     self.previewApply = nil
+                } else if sent == nil {
+                    self.presentPreview(request.text, title: self.resultPanel?.title)
                 } else {
                     self.show(self.config.applyUnsafeLabel)
                 }
@@ -807,13 +809,16 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                 self.show(self.config.pill.applyingLabel)
                                 self.pasteSelection(selected, with: text, token: token) { [weak self] sent in
                                     guard let self, self.taskID == token else { return }
-                                    if !sent { self.presentPreview(text, title: value.title, selection: selected) }
+                                    if sent != true {
+                                        self.presentPreview(text, title: value.title,
+                                                            selection: sent == false ? selected : nil)
+                                    }
                                     self.clearSession()
                                 }
                                 return
                             }
                             if action == Int32(VR_DELIVERY_INSERT) {
-                                if !self.paste(text) { self.presentPreview(text, title: value.title) }
+                                if self.paste(text) != true { self.presentPreview(text, title: value.title) }
                             } else {
                                 // A replace result remains manually applicable after focus moves.
                                 self.presentPreview(text, title: value.title,
@@ -989,19 +994,19 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     // One native replacement path for automatic delivery and the result's Apply button.
     // Windows likewise checks the current selection by copying before replacing.
     private func pasteSelection(_ selected: AXSelection, with text: String,
-                                token: UInt64, completed: @escaping (Bool) -> Void) {
+                                token: UInt64, completed: @escaping (Bool?) -> Void) {
         guard targetStillValid() else { completed(false); return }
         if selected.matches(selectionFromAX()) {
             completed(paste(text))
         } else {
             copySelection(token: token) { [weak self] current in
                 guard let self, self.taskID == token, VRSnapshot(0, token).valid == 1 else { return }
-                completed(current == selected.text && self.targetStillValid() && self.paste(text))
+                completed(current == selected.text && self.targetStillValid() ? self.paste(text) : false)
             }
         }
     }
 
-    private func paste(_ text: String) -> Bool {
+    private func paste(_ text: String) -> Bool? {
         let source = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {
@@ -1038,7 +1043,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         }
         return true
     }
-    private func pasteUnicode(_ text: String) -> Bool {
+    // nil means some Unicode chunks may have been sent; never offer another Apply.
+    private func pasteUnicode(_ text: String) -> Bool? {
         let source = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: false)
@@ -1046,7 +1052,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         let units = Array(text.utf16)
         var start = 0
         while start < units.count {
-            guard targetStillValid() else { return false }
+            guard targetStillValid() else { return start == 0 ? false : nil }
             var end = min(start + 20, units.count)
             if end < units.count && (0xD800...0xDBFF).contains(units[end - 1]) { end -= 1 }
             for event in [down, up] {

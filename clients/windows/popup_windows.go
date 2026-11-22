@@ -87,6 +87,7 @@ type answerPopup struct {
 	app                *appState
 	selection          *selectedText
 	allowApply         bool
+	applyButton        uintptr
 	applyResult        chan error
 	generation         uint64
 	canceled           atomic.Bool
@@ -607,7 +608,7 @@ func showAnswerPopup(msg popupMessage) error {
 		return err
 	}
 	if msg.allowApply {
-		if _, err = makeChild("BUTTON", ux.ApplyAction, WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw - px(243), ch - px(48), px(116), px(33), hwnd, BUTTON_APPLY); err != nil {
+		if popup.applyButton, err = makeChild("BUTTON", ux.ApplyAction, WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw - px(243), ch - px(48), px(116), px(33), hwnd, BUTTON_APPLY); err != nil {
 			closeActiveAnswer()
 			return err
 		}

@@ -700,6 +700,11 @@ func runApp() {
 							closeActiveAnswer()
 						} else {
 							l.Printf("popup apply failed: %v", err)
+							var attempted pasteAttemptedError
+							if errors.As(err, &attempted) {
+								popup.allowApply = false
+								procShowWindow.Call(popup.applyButton, SW_HIDE)
+							}
 							popup.setNote(ux.ApplyUnsafe)
 						}
 					default:
