@@ -51,23 +51,21 @@ type ChildGuard func(pid int) (func(), error)
 var ErrBusyDifferentDirectory = errors.New("ASR deployment already running in another directory")
 
 // BeginDeploy starts one non-blocking application-owned deployment. Repeated
-// requests for the same busy or ready directory return the existing job ID.
-func BeginDeploy(ctx context.Context, directory string, guard ChildGuard) (JobID, error) {
+// requests for the same busy or ready directory reuse the existing task.
+func BeginDeploy(ctx context.Context, directory string, guard ChildGuard) error {
 	if ctx == nil || directory == "" {
-		return 0, errors.New("choose an ASR directory")
+		return errors.New("choose an ASR directory")
 	}
 	progressMu.Lock()
 	if progress.Directory == directory && (progress.Busy || progress.Phase == PhaseReady) {
-		id := progress.ID
 		progressMu.Unlock()
-		return id, nil
+		return nil
 	}
 	if progress.Busy {
 		progressMu.Unlock()
-		return 0, ErrBusyDifferentDirectory
+		return ErrBusyDifferentDirectory
 	}
-	id := progress.ID + 1
-	progress = Status{ID: id, Directory: directory, Phase: PhasePreparing,
+	progress = Status{Directory: directory, Phase: PhasePreparing,
 		Text: "正在准备 ASR 部署", Busy: true}
 	progressMu.Unlock()
 	go func() {
@@ -91,7 +89,7 @@ func BeginDeploy(ctx context.Context, directory string, guard ChildGuard) (JobID
 		}
 		progressMu.Unlock()
 	}()
-	return id, nil
+	return nil
 }
 
 // Resume starts a previously deployed local ASR only when the configured
