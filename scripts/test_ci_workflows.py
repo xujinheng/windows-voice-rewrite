@@ -47,6 +47,9 @@ class HeadlessWorkflowTests(unittest.TestCase):
     def test_release_has_oneclick_and_experimental_mac_downloads(self):
         workflow = (WORKFLOWS / "build.yml").read_text()
         self.assertIn("release/Qwen3-ASR-OneClick-Windows-x64.exe", workflow)
+        self.assertIn("release/Qwen3-ASR-OneClick-Mac-arm64.zip", workflow)
+        self.assertIn("name: Qwen3-ASR-OneClick-Mac-arm64", workflow)
+        self.assertIn("Start OneClick.command", workflow)
         self.assertIn("release/VoiceRewrite-*-macOS-*-Experimental.zip", workflow)
         self.assertIn("ditto -c -k --sequesterRsrc --keepParent", workflow)
         self.assertIn("name: Qwen3-ASR-OneClick-Windows-x64", workflow)
