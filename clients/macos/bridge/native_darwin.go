@@ -157,7 +157,11 @@ func VRDeploy(directory *C.char) *C.char {
 	install, err := localasr.Deploy(context.Background(), C.GoString(directory))
 	if err == nil { err = localasr.Start(context.Background(), install) }
 	if err != nil { return nativeJSON(failure("deploy_failed", err.Error())) }
-	return nativeJSON(success(map[string]string{"status":"ASR ready: http://127.0.0.1:8080/v1"}))
+	return nativeJSON(success(map[string]any{"status": "ASR ready", "values": map[string]string{
+		"asr_deploy_dir": C.GoString(directory),
+		"asr_base_url": coreconfig.Defaults().ASRBaseURL,
+		"asr_model": coreconfig.Defaults().ASRModel,
+	}}))
 }
 
 //export VRStopASR
