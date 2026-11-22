@@ -194,7 +194,9 @@ func (c *Core) Apply(cmd Command) Event {
 		c.paused = true
 		return Event{Kind: EventPaused}
 	case CommandResume:
-		if cmd.Busy { break }
+		if cmd.Busy {
+			break
+		}
 		c.paused = false
 		return Event{Kind: EventResumed}
 	case CommandPress:
