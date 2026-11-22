@@ -17,7 +17,7 @@ extension HeadlessApp {
         precondition(settingsInputs["max_record_seconds"]?.stringValue == catalog.values?["max_record_seconds"])
         settingsPanel?.close()
         settingsPanel = nil
-        let coreDefaults = try! GoCore.request(config: "{}", audio: Data(), selection: nil).defaultConfig
+        let coreDefaults = try! GoCore.decode("{}".withCString { VRProfile($0) }).defaultConfig
         precondition(defaults == coreDefaults)
         precondition(VRSnapshot(54, 0).role == 1 && VRSnapshot(61, 0).role == 2)
         try! "  {}\n".write(to: configURL, atomically: true, encoding: .utf8)
@@ -46,14 +46,14 @@ extension HeadlessApp {
 
     func verifyReboundRelease(code: Int64, before: String,
                               after: String, modifier: Bool) {
-        let initial = try! GoCore.request(config: before, audio: Data(), selection: nil)
+        let initial = try! GoCore.decode(before.withCString { VRProfile($0) })
         config = initial.profile!
         precondition(VRSnapshot(Int32(code), 0).role != 0)
         updatePress(code: code, down: true, delay: 3600)
         precondition(VRSnapshot(Int32(code), 0).down == 1 && VRSnapshot(0, 0).armed == 1)
         let heldRole = VRSnapshot(Int32(code), 0).held_role
         precondition(heldRole != 0)
-        let rebound = try! GoCore.request(config: after, audio: Data(), selection: nil)
+        let rebound = try! GoCore.decode(after.withCString { VRProfile($0) })
         config = rebound.profile!
         precondition(VRSnapshot(Int32(code), 0).role == 0 && VRSnapshot(Int32(code), 0).held_role == heldRole)
         if modifier {
@@ -107,13 +107,18 @@ MainActor.assumeIsolated {
     precondition(VRClipboardSnapshotFits(16 << 20, 32 << 20) == 1)
     precondition(VRClipboardSnapshotFits((16 << 20) + 1, 0) == 0)
     precondition(VRClipboardSnapshotFits(1, 48 << 20) == 0)
+    // All native clients must use the same Go delivery policy.
+    precondition("insert".withCString { VRDeliveryAction($0, 1, 0) } == Int32(VR_DELIVERY_INSERT))
+    precondition("replace".withCString { VRDeliveryAction($0, 1, 1) } == Int32(VR_DELIVERY_REPLACE))
+    precondition("replace".withCString { VRDeliveryAction($0, 1, 0) } == Int32(VR_DELIVERY_PREVIEW))
+    precondition("insert".withCString { VRDeliveryAction($0, 0, 0) } == Int32(VR_DELIVERY_PREVIEW))
     // The native PCM conversion can run after recording is stopped without
     // accessing AVAudioEngine on a worker or requiring a physical microphone.
     let pcm = try! Microphone.pcm((samples: Array(repeating: Float(0.01), count: 19200), rate: 48000))
     precondition(pcm.count > 3200 && pcm.count % 2 == 0)
     // Exercise the production Swift -> native Go Hold path without posting HID events.
     // A shortcut can be rebound while its old physical key is still down.
-    let defaults = try! GoCore.request(config: "{}", audio: Data(), selection: nil).defaultConfig!
+    let defaults = try! GoCore.decode("{}".withCString { VRProfile($0) }).defaultConfig!
     let original = try! JSONSerialization.jsonObject(with: Data(defaults.utf8)) as! [String: Any]
     var mouseBound = original
     mouseBound["dictation_hotkey"] = "Mouse4"
