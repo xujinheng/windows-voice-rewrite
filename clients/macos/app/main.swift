@@ -377,9 +377,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             settingsStatuses = [:]
             settingsDeployDirectory = values["asr_deploy_dir"] ?? ""
             let deployStatus = try? GoCore.asrProgress()
-            if deployStatus?.busy == true, let directory = deployStatus?.directory {
-                settingsDeployDirectory = directory
-            }
             settingsRunning = form.running
             settingsBusy = form.busy
             settingsCaptureHint = form.captureHint
@@ -489,8 +486,16 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 picker.directoryURL = URL(fileURLWithPath: settingsDeployDirectory, isDirectory: true)
             }
             if picker.runModal() == .OK, let url = picker.url {
-                settingsDeployDirectory = url.path
-                settingsHint?.stringValue = "部署位置：" + url.path
+                do {
+                    let json = try String(contentsOf: configURL, encoding: .utf8)
+                    let saved = try GoCore.settings("save", config: json, values: ["asr_deploy_dir": url.path])
+                    guard let updated = saved.config else { throw HostError.config("部署目录未保存") }
+                    try updated.write(to: configURL, atomically: true, encoding: .utf8)
+                    settingsDeployDirectory = url.path
+                    settingsHint?.stringValue = "部署位置已保存：" + url.path
+                } catch {
+                    settingsHint?.stringValue = "保存部署目录失败：" + String(describing: error)
+                }
             }
         case "deploy_asr":
             if let progress = try? GoCore.asrProgress(), progress.busy == true {
@@ -505,29 +510,42 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 settingsHint?.stringValue = "ASR 正在部署中"
                 return
             }
+            guard let initialConfig = try? String(contentsOf: configURL, encoding: .utf8) else {
+                settingsHint?.stringValue = "无法读取配置文件"
+                return
+            }
             settingsDeploying = true
             settingsHint?.stringValue = "ASR 正在下载与部署（首次需要数 GB 空间）…"
             let directory = settingsDeployDirectory
-            let currentConfigURL = configURL!
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let result = Result {
-                    let json = try String(contentsOf: currentConfigURL, encoding: .utf8)
-                    return try GoCore.deploy(directory, config: json)
-                }
+                let result = Result { try GoCore.deploy(directory, config: initialConfig) }
                 DispatchQueue.main.async {
                     guard let self else { return }
                     self.settingsDeploying = false
                     switch result {
                     case .failure(let error):
-                        self.settingsHint?.stringValue = "ASR Deploy 失败：" + String(describing: error)
-                    case .success(let output):
+                        self.settingsHint?.stringValue = "ASR 部署失败，请查看处理方法"
+                        let alert = NSAlert()
+                        alert.messageText = "ASR 部署失败"
+                        if case HostError.bridge(let message) = error {
+                            alert.informativeText = message
+                        } else {
+                            alert.informativeText = String(describing: error)
+                        }
+                        alert.addButton(withTitle: "确定")
+                        alert.runModal()
+                    case .success:
                         do {
-                            guard let updated = output.config else {
+                            let latest = try String(contentsOf: self.configURL, encoding: .utf8)
+                            let saved = try GoCore.settings("deploy_complete", config: latest, values: [
+                                "started_config": initialConfig, "deployed_dir": directory
+                            ])
+                            guard let updated = saved.config else {
                                 throw HostError.config("missing ASR deployment config")
                             }
                             try updated.write(to: self.configURL, atomically: true, encoding: .utf8)
                             self.reload()
-                            self.settingsHint?.stringValue = output.status ?? "ASR ready"
+                            self.settingsHint?.stringValue = saved.status ?? "ASR ready"
                         } catch {
                             self.settingsHint?.stringValue = String(describing: error)
                         }
@@ -540,10 +558,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             settingsSerial += 1
             let serial = settingsSerial
             if id == "save" {
-                guard !settingsDeploying && (try? GoCore.asrProgress().busy) != true else {
-                    settingsHint?.stringValue = "请在 ASR 部署完成后保存设置"
-                    return
-                }
                 guard VRSnapshot(0, 0).armed == 0 && !pending else {
                     settingsHint?.stringValue = settingsBusy
                     return
