@@ -224,8 +224,10 @@ private enum GoCore {
         return try decode(result)
     }
 
-    static func deploy(_ directory: String) throws -> BridgeReply.Output {
-        try decode(directory.withCString { VRDeploy($0) })
+    static func deploy(_ directory: String, config: String) throws -> BridgeReply.Output {
+        try decode(config.withCString { raw in
+            directory.withCString { VRDeploy(raw, $0) }
+        })
     }
 
     static func settings(_ action: String, config: String, values: [String: String] = [:],
@@ -477,7 +479,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             settingsHint?.stringValue = "ASR 正在下载与部署（首次需要数 GB 空间）…"
             let directory = settingsDeployDirectory
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let result = Result { try GoCore.deploy(directory) }
+                let result = Result {
+                    let json = try String(contentsOf: self.configURL, encoding: .utf8)
+                    return try GoCore.deploy(directory, config: json)
+                }
                 DispatchQueue.main.async {
                     guard let self else { return }
                     self.settingsDeploying = false
@@ -486,12 +491,11 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                         self.settingsHint?.stringValue = "ASR Deploy 失败：" + String(describing: error)
                     case .success(let output):
                         do {
-                            let json = try String(contentsOf: self.configURL, encoding: .utf8)
-                            let saved = try GoCore.settings("save", config: json, values: output.values ?? [:])
-                            if let updated = saved.config {
-                                try updated.write(to: self.configURL, atomically: true, encoding: .utf8)
-                                self.reload()
+                            guard let updated = output.config else {
+                                throw HostError.config("missing ASR deployment config")
                             }
+                            try updated.write(to: self.configURL, atomically: true, encoding: .utf8)
+                            self.reload()
                             self.settingsHint?.stringValue = output.status ?? "ASR ready"
                         } catch {
                             self.settingsHint?.stringValue = String(describing: error)
@@ -505,6 +509,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             settingsSerial += 1
             let serial = settingsSerial
             if id == "save" {
+                guard !settingsDeploying else {
+                    settingsHint?.stringValue = "请在 ASR 部署完成后保存设置"
+                    return
+                }
                 guard VRSnapshot(0, 0).armed == 0 && !pending else {
                     settingsHint?.stringValue = settingsBusy
                     return
