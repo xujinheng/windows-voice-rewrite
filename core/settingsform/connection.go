@@ -169,6 +169,19 @@ func ConnectionAction(ctx context.Context, raw []byte) (any, error) {
 		}
 	}
 	switch req.Action {
+	case "deploy_complete":
+		started, err := coreconfig.Parse([]byte(req.Values["started_config"]))
+		if err != nil {
+			return nil, err
+		}
+		deployed := coreconfig.Defaults()
+		deployed.ASRDeployDir = req.Values["deployed_dir"]
+		cfg = localasr.ReconcileDeployed(started, cfg, deployed)
+		data, err := coreconfig.Marshal(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]string{"config": string(data), "status": "ASR 已部署"}, nil
 	case "save":
 		cfg, err = coreconfig.Normalize(cfg)
 		if err != nil {
