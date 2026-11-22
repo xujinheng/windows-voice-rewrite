@@ -8,9 +8,9 @@ import (
 // TrayItem is one portable menu action; hosts only render it and dispatch the ID.
 // Meeting and OS-only debug commands remain native integrations.
 type TrayItem struct {
-	ID int `json:"id"`
-	Title string `json:"title"`
-	ResultID uint64 `json:"resultID,omitempty"`
+	ID       int        `json:"id"`
+	Title    string     `json:"title"`
+	ResultID uint64     `json:"resultID,omitempty"`
 	Children []TrayItem `json:"children,omitempty"`
 }
 
@@ -18,7 +18,9 @@ type TrayItem struct {
 // IDs intentionally preserve Windows' existing tray command values.
 func TrayMenu(paused bool, recent []history.Entry) []TrayItem {
 	pause := ux.PauseVoice
-	if paused { pause = ux.ResumeVoice }
+	if paused {
+		pause = ux.ResumeVoice
+	}
 	items := []TrayItem{
 		{ID: 6, Title: pause},
 		{ID: 2, Title: "设置与连接检测…"},
@@ -29,7 +31,7 @@ func TrayMenu(paused bool, recent []history.Entry) []TrayItem {
 	if len(recent) != 0 {
 		h := TrayItem{ID: 100, Title: history.SectionTitle()}
 		for i, entry := range recent {
-			h.Children = append(h.Children, TrayItem{ID: 1000+i, Title: history.MenuLine(i, entry), ResultID: entry.ID})
+			h.Children = append(h.Children, TrayItem{ID: 1000 + i, Title: history.MenuLine(i, entry), ResultID: entry.ID})
 		}
 		items = append(items, h, TrayItem{ID: 9, Title: history.ClearSession})
 	}
