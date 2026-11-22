@@ -27,7 +27,9 @@ func DefaultDirectory() string {
 		parent := filepath.Dir(filepath.Dir(filepath.Dir(dir)))
 		// /Applications is normally read-only to ordinary users.
 		if parent == "/Applications" || parent == "/System/Applications" {
-			if home, err := os.UserHomeDir(); err == nil { return home }
+			if home, err := os.UserHomeDir(); err == nil {
+				return home
+			}
 		}
 		return parent
 	}
