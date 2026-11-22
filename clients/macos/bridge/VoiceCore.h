@@ -54,6 +54,7 @@ int VRWave(int index, double level, unsigned int tick);
 unsigned int VRSpinner(int index, unsigned int tick);
 void VRDuration(long long seconds, char *buffer, int capacity);
 void VRFree(void *ptr);
+char *VRMenu(void);
 char *VRHistory(const char *action, uint64_t id);
 char *VRProfile(const char *config);
 char *VRSettings(const char *request);

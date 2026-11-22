@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/xujinheng/windows-voice-rewrite/core/history"
+	"github.com/xujinheng/windows-voice-rewrite/core/contract"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 )
@@ -301,18 +301,6 @@ func (t *trayIndicator) contextMenu(meetingActive bool) (uintptr, error) {
 		return 0, errors.New("CreatePopupMenu failed")
 	}
 	defer procDestroyMenu.Call(m)
-	pauseText := ux.PauseVoice
-	if t.core.Snapshot(0, 0).Paused {
-		pauseText = ux.ResumeVoice
-	}
-	pauseLabel, _ := syscall.UTF16PtrFromString(pauseText)
-	configLabel, _ := syscall.UTF16PtrFromString("设置与连接检测…")
-	logLabel, _ := syscall.UTF16PtrFromString(ux.ViewDiagnosticLog)
-	errorLabel, _ := syscall.UTF16PtrFromString("最近一次错误与解决方法")
-	resultLabel, _ := syscall.UTF16PtrFromString("恢复最近一次语音结果")
-	closeLabel, _ := syscall.UTF16PtrFromString("关闭 AI 结果窗口")
-	updateLabel, _ := syscall.UTF16PtrFromString("检查更新…")
-	exitLabel, _ := syscall.UTF16PtrFromString("退出 VoiceRewrite")
 	var sources []meetingSource
 	if meetingActive {
 		meetingStopLabel, _ := syscall.UTF16PtrFromString("结束会议模式")
@@ -342,47 +330,29 @@ func (t *trayIndicator) contextMenu(meetingActive bool) (uintptr, error) {
 	procAppendMenu.Call(m, MF_STRING, 11, uintptr(unsafe.Pointer(meetingDemoLabel)))
 	procAppendMenu.Call(m, MF_SEPARATOR, 0, 0)
 	runtime.KeepAlive(meetingDemoLabel)
-	procAppendMenu.Call(m, MF_STRING, 6, uintptr(unsafe.Pointer(pauseLabel)))
-	procAppendMenu.Call(m, MF_STRING, 2, uintptr(unsafe.Pointer(configLabel)))
-	procAppendMenu.Call(m, MF_STRING, 3, uintptr(unsafe.Pointer(logLabel)))
-	procAppendMenu.Call(m, MF_STRING, 5, uintptr(unsafe.Pointer(errorLabel)))
-	procAppendMenu.Call(m, MF_STRING, 7, uintptr(unsafe.Pointer(resultLabel)))
-	// A bounded, in-memory history. Never put any transcript words in the
-	// system menu, which can be observed by other applications/screenshots.
-	var recent []history.Entry
-	if t.core != nil {
-		recent = t.core.History.Snapshot()
-	}
-	if len(recent) != 0 {
-		submenu, _, _ := procCreatePopupMenu.Call()
-		if submenu != 0 {
-			for i, entry := range recent {
-				label, _ := syscall.UTF16PtrFromString(history.MenuLine(i, entry))
-				procAppendMenu.Call(submenu, MF_STRING, uintptr(1000+i), uintptr(unsafe.Pointer(label)))
-				runtime.KeepAlive(label)
-			}
-			historyLabel, _ := syscall.UTF16PtrFromString(history.SectionTitle())
-			if ok, _, _ := procAppendMenu.Call(m, MF_POPUP, submenu, uintptr(unsafe.Pointer(historyLabel))); ok == 0 {
-				procDestroyMenu.Call(submenu)
-			}
-			runtime.KeepAlive(historyLabel)
+	recent := t.core.History.Snapshot()
+	for _, entry := range contract.TrayMenu(t.core.Snapshot(0, 0).Paused, recent) {
+		if entry.ID == 1 {
+			procAppendMenu.Call(m, MF_SEPARATOR, 0, 0)
 		}
-		clearLabel, _ := syscall.UTF16PtrFromString(history.ClearSession)
-		procAppendMenu.Call(m, MF_STRING, 9, uintptr(unsafe.Pointer(clearLabel)))
-		runtime.KeepAlive(clearLabel)
+		label, _ := syscall.UTF16PtrFromString(entry.Title)
+		if len(entry.Children) == 0 {
+			procAppendMenu.Call(m, MF_STRING, uintptr(entry.ID), uintptr(unsafe.Pointer(label)))
+		} else {
+			submenu, _, _ := procCreatePopupMenu.Call()
+			if submenu != 0 {
+				for _, child := range entry.Children {
+					text, _ := syscall.UTF16PtrFromString(child.Title)
+					procAppendMenu.Call(submenu, MF_STRING, uintptr(child.ID), uintptr(unsafe.Pointer(text)))
+					runtime.KeepAlive(text)
+				}
+				if ok, _, _ := procAppendMenu.Call(m, MF_POPUP, submenu, uintptr(unsafe.Pointer(label))); ok == 0 {
+					procDestroyMenu.Call(submenu)
+				}
+			}
+		}
+		runtime.KeepAlive(label)
 	}
-	procAppendMenu.Call(m, MF_STRING, 4, uintptr(unsafe.Pointer(closeLabel)))
-	procAppendMenu.Call(m, MF_STRING, 8, uintptr(unsafe.Pointer(updateLabel)))
-	procAppendMenu.Call(m, MF_SEPARATOR, 0, 0)
-	procAppendMenu.Call(m, MF_STRING, 1, uintptr(unsafe.Pointer(exitLabel)))
-	runtime.KeepAlive(pauseLabel)
-	runtime.KeepAlive(configLabel)
-	runtime.KeepAlive(logLabel)
-	runtime.KeepAlive(errorLabel)
-	runtime.KeepAlive(resultLabel)
-	runtime.KeepAlive(closeLabel)
-	runtime.KeepAlive(updateLabel)
-	runtime.KeepAlive(exitLabel)
 	var p trayPoint
 	if ok, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(&p))); ok == 0 {
 		return 0, errors.New("GetCursorPos failed")

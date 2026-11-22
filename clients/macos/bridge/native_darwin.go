@@ -31,6 +31,7 @@ import (
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/audio"
 	"github.com/xujinheng/windows-voice-rewrite/core/clipboard"
+	"github.com/xujinheng/windows-voice-rewrite/core/contract"
 	"github.com/xujinheng/windows-voice-rewrite/core/indicator"
 	"github.com/xujinheng/windows-voice-rewrite/core/history"
 	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
@@ -118,19 +119,17 @@ func VRDuration(seconds C.longlong, buffer *C.char, capacity C.int) {
 //export VRFree
 func VRFree(value unsafe.Pointer) { C.free(value) }
 
+//export VRMenu
+func VRMenu() *C.char {
+	return nativeJSON(success(map[string]any{"menu": contract.TrayMenu(nativeCore.Snapshot(0, 0).Paused, nativeCore.History.Snapshot())}))
+}
+
 //export VRHistory
 func VRHistory(action *C.char, id C.uint64_t) *C.char {
 	if action == nil {
 		return nativeJSON(failure("invalid_action", "missing history action"))
 	}
 	switch C.GoString(action) {
-	case "list":
-		entries := nativeCore.History.Snapshot()
-		items := make([]map[string]any, 0, len(entries))
-		for i, entry := range entries {
-			items = append(items, map[string]any{"id": entry.ID, "label": history.MenuLine(i, entry)})
-		}
-		return nativeJSON(success(map[string]any{"entries": items}))
 	case "latest":
 		entries := nativeCore.History.Snapshot()
 		if len(entries) != 0 {
