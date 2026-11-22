@@ -217,6 +217,12 @@ func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 	return sel, nil
 }
 
+// A paste may have reached the editor even if subsequent native verification fails.
+// Such an error must not enable a second manual Apply of the same result.
+type pasteAttemptedError struct{ error }
+
+func (e pasteAttemptedError) Unwrap() error { return e.error }
+
 // Unknown editor types (Chrome/Edge/WeChat/VS Code and more) cannot be
 // classified reliably via Win32 HWND. First verify the selected text and
 // foreground window; then paste and check whether the same original selection
@@ -274,12 +280,12 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 		return errors.New(ux.ReplacePasteStopped)
 	}
 	if err := sendCombo('V'); err != nil {
-		return err
+		return pasteAttemptedError{err}
 	}
 	time.Sleep(270 * time.Millisecond)
 	if verifyBrowser {
 		if !isSameForegroundWindow(sel.TargetWindow) {
-			return errors.New(ux.ReplaceWindowAfterPaste)
+			return pasteAttemptedError{errors.New(ux.ReplaceWindowAfterPaste)}
 		}
 		beforeProbe := clipboardSeq()
 		stillSelected, probedSequence, verifyErr := clipboardCopy(hwnd, 470*time.Millisecond)
@@ -292,11 +298,11 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 			backup.abandon()
 		}
 		if verifyErr == nil && stillSelected == sel.Text {
-			return errors.New(ux.ReplacePasteRefused)
+			return pasteAttemptedError{errors.New(ux.ReplacePasteRefused)}
 		}
 	}
 	if err := backup.restoreIfOwned(hwnd); err != nil {
-		return fmt.Errorf("%s: %w", ux.ReplaceRestoreFailed, err)
+		return pasteAttemptedError{fmt.Errorf("%s: %w", ux.ReplaceRestoreFailed, err)}
 	}
 	return nil // Windows accepted Ctrl+V; target editor insertion remains best-effort.
 }
