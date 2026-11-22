@@ -152,22 +152,14 @@ func VRASRProgress() *C.char {
 }
 
 //export VRDeploy
-func VRDeploy(rawConfig, directory *C.char) *C.char {
-	if rawConfig == nil || directory == nil {
-		return nativeJSON(failure("invalid_directory", "missing config or directory"))
+func VRDeploy(directory *C.char) *C.char {
+	if directory == nil {
+		return nativeJSON(failure("invalid_directory", "missing directory"))
 	}
-	cfg, err := coreconfig.Parse([]byte(C.GoString(rawConfig)))
-	if err == nil {
-		cfg, err = localasr.DeployConfigured(context.Background(), cfg, C.GoString(directory), nil)
-	}
-	if err != nil {
+	if err := localasr.Deploy(context.Background(), C.GoString(directory), nil); err != nil {
 		return nativeJSON(failure("deploy_failed", err.Error()))
 	}
-	data, err := coreconfig.Marshal(cfg)
-	if err != nil {
-		return nativeJSON(failure("invalid_config", err.Error()))
-	}
-	return nativeJSON(success(map[string]string{"status": "ASR ready", "config": string(data)}))
+	return nativeJSON(success(map[string]string{"status": "ASR 已部署"}))
 }
 
 //export VRStopASR
