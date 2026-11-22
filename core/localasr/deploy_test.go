@@ -158,3 +158,20 @@ func TestRuntimeDownloadHasVerifiedOfficialFallback(t *testing.T) {
 		t.Fatalf("official verified fallback missing: %+v", spec)
 	}
 }
+
+func TestIntentionalStopDoesNotReportRuntimeFailure(t *testing.T) {
+	progressMu.Lock()
+	prior := progress
+	progress = Status{Phase: PhaseReady, Directory: "/test", Text: "ASR 已部署并启动"}
+	progressMu.Unlock()
+	defer func() {
+		progressMu.Lock()
+		progress = prior
+		progressMu.Unlock()
+	}()
+	Stop()
+	state := DeploymentStatus()
+	if state.Phase != PhaseIdle || state.ErrorCode != "" || state.Busy {
+		t.Fatalf("intentional stop reported as a deployment failure: %+v", state)
+	}
+}

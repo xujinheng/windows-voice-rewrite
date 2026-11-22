@@ -174,11 +174,21 @@ func Start(ctx context.Context, install Installation, guard ChildGuard) error {
 				release()
 			}
 			processMu.Lock()
-			if process == cmd {
+			wasCurrent := process == cmd
+			if wasCurrent {
 				process = nil
 				file.Close()
 			}
 			processMu.Unlock()
+			if wasCurrent {
+				progressMu.Lock()
+				if progress.Phase == PhaseReady {
+					progress.Phase = PhaseFailed
+					progress.ErrorCode = "runtime_exited"
+					progress.Text = "ASR 服务意外停止，请重新 Deploy"
+				}
+				progressMu.Unlock()
+			}
 			exited <- e
 		}()
 	}
@@ -218,15 +228,16 @@ func Start(ctx context.Context, install Installation, guard ChildGuard) error {
 
 // Stop leaves the downloaded files intact and stops only the managed child.
 func Stop() {
+	// Mark intentional shutdown before the waiter observes process exit.
+	progressMu.Lock()
+	if !progress.Busy && progress.Phase == PhaseReady {
+		progress.Phase, progress.Text = PhaseIdle, "ASR 已停止"
+	}
+	progressMu.Unlock()
 	processMu.Lock()
 	p := process
 	processMu.Unlock()
 	if p != nil {
 		_ = p.Process.Kill()
 	}
-	progressMu.Lock()
-	if !progress.Busy && progress.Phase == PhaseReady {
-		progress.Phase, progress.Text = PhaseIdle, "ASR 已停止"
-	}
-	progressMu.Unlock()
 }
