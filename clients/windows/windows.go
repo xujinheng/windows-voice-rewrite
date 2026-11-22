@@ -331,7 +331,7 @@ func runApp() {
 	}
 	defer localasr.Stop()
 	go func() {
-		if err := localasr.Resume(context.Background(), cfg); err != nil {
+		if err := localasr.Resume(context.Background(), cfg, protectChild); err != nil {
 			l.Printf("local ASR startup: %v", err)
 		}
 	}()
