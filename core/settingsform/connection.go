@@ -110,6 +110,66 @@ func ConnectionForm() NativeForm {
 	return form
 }
 
+// Update applies all portable settings edits once for every native host.
+// Filesystem writes, microphone selection and platform shortcut capabilities
+// belong to the host, not this business decision.
+func Update(cfg coreconfig.Config, values map[string]string) (coreconfig.Config, error) {
+	fields := [6]string{cfg.ASRBaseURL, cfg.ASRModel, cfg.ASRAPIKey, cfg.LLMBaseURL, cfg.TextModel, cfg.LLMAPIKey}
+	for id, value := range values {
+		if index, ok := contract.InputIndex(id); ok {
+			fields[index] = value
+		}
+	}
+	var err error
+	cfg, err = coreconfig.WithConnectionFields(cfg, fields)
+	if err != nil {
+		return cfg, err
+	}
+	if value, ok := values["rewrite_shortcut"]; ok {
+		cfg.HotkeyRecord = value
+	}
+	if value, ok := values["dictation_shortcut"]; ok {
+		cfg.DictationHotkey = value
+	}
+	if value, ok := values["asr_deploy_dir"]; ok {
+		cfg.ASRDeployDir = value
+	}
+	if value, ok := values["max_record_seconds"]; ok {
+		cfg.MaxRecordSeconds, err = coreconfig.RecordingSeconds(value)
+		if err != nil {
+			return cfg, err
+		}
+	}
+	return coreconfig.Normalize(cfg)
+}
+
+// Service owns probe and model-discovery semantics. Native clients only own
+// selecting the fields, cancelling stale UI requests, and displaying results.
+func Service(ctx context.Context, action, kind, base, key, model string) (string, []string, error) {
+	if kind != "ASR" && kind != "LLM" {
+		return "", nil, errors.New("unknown service")
+	}
+	if action == "probe" {
+		return serviceprobe.ProbeModel(ctx, kind, base, key, model), nil, nil
+	}
+	if action != "discover" {
+		return "", nil, errors.New("unknown settings action")
+	}
+	query, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	models, err := provider.ListModels(query, base, key)
+	if err != nil {
+		return "", nil, err
+	}
+	if len(models) == 0 {
+		return ux.NoModelsFound, []string{}, nil
+	}
+	if len(models) > MaxModelMenuChoices {
+		models = models[:MaxModelMenuChoices]
+	}
+	return "", models, nil
+}
+
 // ConnectionAction runs settings updates and diagnostics with exactly the same
 // config, provider and probe owners called by the Windows settings window.
 // The caller owns the configuration file and native widgets.
@@ -143,37 +203,12 @@ func ConnectionAction(ctx context.Context, raw []byte) (any, error) {
 			"asr_deploy_dir":     directory,
 		}}, nil
 	}
-	fields := [6]string{cfg.ASRBaseURL, cfg.ASRModel, cfg.ASRAPIKey, cfg.LLMBaseURL, cfg.TextModel, cfg.LLMAPIKey}
-	for id, value := range req.Values {
-		if index, ok := contract.InputIndex(id); ok {
-			fields[index] = value
-		}
-	}
-	cfg, err = coreconfig.WithConnectionFields(cfg, fields)
+	cfg, err = Update(cfg, req.Values)
 	if err != nil {
 		return nil, err
 	}
-	if value, ok := req.Values["rewrite_shortcut"]; ok {
-		cfg.HotkeyRecord = value
-	}
-	if value, ok := req.Values["dictation_shortcut"]; ok {
-		cfg.DictationHotkey = value
-	}
-	if value, ok := req.Values["asr_deploy_dir"]; ok {
-		cfg.ASRDeployDir = value
-	}
-	if value, ok := req.Values["max_record_seconds"]; ok {
-		cfg.MaxRecordSeconds, err = coreconfig.RecordingSeconds(value)
-		if err != nil {
-			return nil, err
-		}
-	}
 	switch req.Action {
 	case "save":
-		cfg, err = coreconfig.Normalize(cfg)
-		if err != nil {
-			return nil, err
-		}
 		data, err := coreconfig.Marshal(cfg)
 		if err != nil {
 			return nil, err
@@ -189,22 +224,14 @@ func ConnectionAction(ctx context.Context, raw []byte) (any, error) {
 		default:
 			return nil, errors.New("unknown service")
 		}
-		if req.Action == "probe" {
-			return map[string]string{"status": serviceprobe.ProbeModel(ctx, req.Kind, base, key, model)}, nil
-		}
-		query, cancel := context.WithTimeout(ctx, 8*time.Second)
-		defer cancel()
-		models, err := provider.ListModels(query, base, key)
+		status, models, err := Service(ctx, req.Action, req.Kind, base, key, model)
 		if err != nil {
 			return nil, err
 		}
-		if len(models) == 0 {
-			return map[string]any{"models": []string{}, "status": ux.NoModelsFound}, nil
+		if req.Action == "probe" {
+			return map[string]string{"status": status}, nil
 		}
-		if len(models) > MaxModelMenuChoices {
-			models = models[:MaxModelMenuChoices]
-		}
-		return map[string]any{"models": models}, nil
+		return map[string]any{"models": models, "status": status}, nil
 	default:
 		return nil, errors.New("unknown settings action")
 	}
