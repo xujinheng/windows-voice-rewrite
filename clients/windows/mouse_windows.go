@@ -8,6 +8,7 @@ import (
 	"log"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
