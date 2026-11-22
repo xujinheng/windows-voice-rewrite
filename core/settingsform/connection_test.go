@@ -104,11 +104,11 @@ func TestNativeSettingsAndJSONContractAgree(t *testing.T) {
 	cfg.DictationHotkey = "RightCommand"
 	cfg.HotkeyRecord = "RightOption"
 	values := map[string]string{
-		"asr_base_url": " http://127.0.0.1:9001/v1/ ",
-		"llm_base_url": " http://127.0.0.1:1234/v1 ",
-		"asr_model": "custom-asr",
+		"asr_base_url":       " http://127.0.0.1:9001/v1/ ",
+		"llm_base_url":       " http://127.0.0.1:1234/v1 ",
+		"asr_model":          "custom-asr",
 		"max_record_seconds": "45",
-		"asr_deploy_dir": "/tmp/deploy-target",
+		"asr_deploy_dir":     "/tmp/deploy-target",
 	}
 	typed, err := Update(cfg, values)
 	if err != nil {
