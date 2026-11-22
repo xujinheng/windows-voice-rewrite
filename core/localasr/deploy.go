@@ -354,7 +354,9 @@ func Deploy(ctx context.Context, directory string) (Installation, error) {
 		gpu = 0
 		if flavor == "cuda" {
 			server, err = installRuntime(ctx, root, "cpu")
-			if err != nil { return Installation{}, err }
+			if err != nil {
+				return Installation{}, err
+			}
 		}
 	}
 	return Installation{Server: server, Model: model, Projector: projector, GPULayers: gpu}, nil
