@@ -309,6 +309,13 @@ func (c *Core) Execute(token uint64, cfg coreconfig.Config, pcm []byte, selected
 	valid := token != 0 && c.currentID == token && !c.closed && c.ctx != nil
 	if valid {
 		if err == nil {
+			title := ux.DictationHistoryTitle
+			result.Title = title
+			if rewrite {
+				title = ux.HistoryTitle(result.Intent)
+				result.Title = ux.ResultCardTitle(result.Intent)
+			}
+			c.History.Remember(title, result.Text)
 			c.phase = EventFinished
 		} else {
 			c.phase = EventFailed
@@ -318,19 +325,12 @@ func (c *Core) Execute(token uint64, cfg coreconfig.Config, pcm []byte, selected
 	if !valid {
 		return Result{}, context.Canceled
 	}
-	if err == nil {
-		title := ux.DictationHistoryTitle
-		result.Title = ux.DictationHistoryTitle
-		if rewrite {
-			title = ux.HistoryTitle(result.Intent)
-			result.Title = ux.ResultCardTitle(result.Intent)
-		}
-		c.History.Remember(title, result.Text)
-		if emit != nil {
+	if emit != nil {
+		if err == nil {
 			emit(Event{Kind: EventFinished, Token: token, Result: result})
+		} else {
+			emit(Event{Kind: EventFailed, Token: token, Error: err.Error()})
 		}
-	} else if emit != nil {
-		emit(Event{Kind: EventFailed, Token: token, Error: err.Error()})
 	}
 	return result, err
 }
