@@ -40,7 +40,10 @@ class HeadlessWorkflowTests(unittest.TestCase):
                 self.assertNotIn("path: ${{ runner.temp }}/headless/VoiceRewrite.app", workflow)
         self.assertIn("VoiceRewrite-Ready-macOS-${{ matrix.arch }}.dmg", ready)
         self.assertNotIn("VoiceRewrite-Ready-macOS-${{ matrix.arch }}.zip", ready)
-        self.assertIn("VoiceRewrite-Mac", main)
+        self.assertIn("asset: VoiceRewrite-Mac}", main)
+        self.assertIn("asset: VoiceRewrite-Mac-Intel}", main)
+        self.assertEqual(main.count("name: ${{ matrix.asset }}"), 2)
+        self.assertNotIn("&& '' || '-Intel'", main)
         self.assertIn("Package experimental Mac DMG for tagged Release", main)
         self.assertIn("bash scripts/verify-macos-package.sh dmg", main)
 
