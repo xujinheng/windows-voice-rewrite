@@ -16,6 +16,7 @@ type Config struct {
 	MeetingBackground      string `json:"meeting_background"`
 	MeetingTerms           string `json:"meeting_terms"`
 	ASRBaseURL             string `json:"asr_base_url"`
+	ASRDeployDir           string `json:"asr_deploy_dir,omitempty"`
 	LLMBaseURL             string `json:"llm_base_url"`
 	TextModel              string `json:"text_model"`
 	ASRAPIKey              string `json:"asr_api_key"`
