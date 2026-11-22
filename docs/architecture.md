@@ -7,7 +7,7 @@ core/  <--- clients/windows/
        <--- clients/macos/bridge/ <--- clients/macos/app/ (Swift)
        <--- clients/cli/
 
-oneclick/ ---> core/asrtext/ (shared transcript normalization only)
+core/localasr/ owns optional local ASR model/runtime deployment for both hosts.
 ```
 
 ## Ownership
@@ -20,7 +20,7 @@ oneclick/ ---> core/asrtext/ (shared transcript normalization only)
 - `clients/windows/` owns Win32, UIA, keyboard/mouse hooks, microphone capture, clipboard/editor effects, tray and UI windows, and the Windows build entrypoint. It is a `package main` inside the `clients/` Go module.
 - `clients/macos/app/` owns AppKit/Quartz, accessibility, AVAudioEngine, clipboard and native drawing. `clients/macos/bridge/` is only the in-process Darwin Go/C ABI for the same Go Core; no separate voice pipeline or JSONL helper.
 - `clients/cli/` is a **separately importable Go module** and executable contract witness; it must build without native dependencies or CGO.
-- `oneclick/` is a separate local ASR runtime/bootstrapper, not a voice client. It reuses `core/asrtext` only.
+- `core/localasr/` deploys and manages one optional local Qwen3-ASR runtime for both native hosts; it uses the same ASR client owned by Core.
 
 ## Dependency rules
 
@@ -36,11 +36,10 @@ oneclick/ ---> core/asrtext/ (shared transcript normalization only)
 core/go.mod           reusable business module
 clients/go.mod        Windows native executable and macOS Go/C bridge
 clients/cli/go.mod    independent headless CLI client
-oneclick/go.mod       independent ASR runtime utility
 go.work                local multi-module development
 ```
 
-From the repository root, use `cd core && go test ./...`, `cd clients && go test ./windows ./macos/bridge`, `cd clients/cli && go test ./...`, and `cd oneclick && go test ./...`. Build macOS with `scripts/build-macos-headless.sh`. The native platforms must still pass physical microphone, hotkey, focus, clipboard and insertion acceptance testing: Go contract equality is not evidence of OS-level parity.
+From the repository root, use `cd core && go test ./...`, `cd clients && go test ./windows ./macos/bridge`, `cd clients/cli && go test ./...`. Build macOS with `scripts/build-macos-headless.sh`. The native platforms must still pass physical microphone, hotkey, focus, clipboard and insertion acceptance testing: Go contract equality is not evidence of OS-level parity.
 
 ## Review and maintenance
 
