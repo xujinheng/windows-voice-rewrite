@@ -141,7 +141,7 @@ func VRHistory(action *C.char, id C.uint64_t) *C.char {
 	case "latest":
 		entries := nativeCore.History.Snapshot()
 		if len(entries) != 0 {
-			return nativeJSON(success(map[string]any{"text": entries[0].Text}))
+			return nativeJSON(success(map[string]any{"text": entries[0].Text, "title": ux.HistoryRestoreTitle(entries[0].Title)}))
 		}
 		return nativeJSON(success(map[string]any{"status": history.EmptySession}))
 	case "get":

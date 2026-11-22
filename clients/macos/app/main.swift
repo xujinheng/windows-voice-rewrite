@@ -379,7 +379,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
             1: #selector(quit), 2: #selector(openSettings),
             3: #selector(openDiagnostics), 4: #selector(closePreview),
             5: #selector(showLastError), 6: #selector(togglePause),
-            7: #selector(copyResult), 8: #selector(checkUpdates),
+            7: #selector(restoreResult), 8: #selector(checkUpdates),
             9: #selector(clearHistory)
         ]
         for item in (try? GoCore.menu()) ?? [] {
@@ -778,22 +778,19 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
         settingsInputs[id]?.stringValue = item.title
     }
 
-    private func copyText(_ text: String) {
-        NSPasteboard.general.clearContents()
-        show(NSPasteboard.general.setString(text, forType: .string) ? "Copied" : "Copy failed")
-    }
-    @objc private func copyResult() {
+    @objc private func restoreResult() {
         let result = try? GoCore.history("latest")
         guard let text = result?.text else {
             show(result?.status ?? "无法读取语音结果")
             return
         }
-        copyText(text)
+        presentPreview(text, title: result?.title)
     }
     @objc private func copyPreview() {
         guard let scroll = resultPanel?.contentView?.subviews.compactMap({ $0 as? NSScrollView }).first,
               let text = (scroll.documentView as? NSTextView)?.string else { return }
-        copyText(text)
+        NSPasteboard.general.clearContents()
+        show(NSPasteboard.general.setString(text, forType: .string) ? "Copied" : "Copy failed")
     }
     @objc private func applyResult() {
         guard let request = previewApply, taskID == 0,
