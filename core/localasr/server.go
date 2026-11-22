@@ -226,4 +226,9 @@ func Stop() {
 	if p != nil {
 		_ = p.Process.Kill()
 	}
+	progressMu.Lock()
+	if !progress.Busy && progress.Phase == PhaseReady {
+		progress.Phase, progress.Text = PhaseIdle, "ASR 已停止"
+	}
+	progressMu.Unlock()
 }
