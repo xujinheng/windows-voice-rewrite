@@ -269,7 +269,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var settingsStatuses: [String: NSTextField] = [:]
     private var settingsHint: NSTextField?
     private var settingsDeployDirectory = ""
-    private var settingsDeploying = false
     private var settingsRunning = ""
     private var settingsBusy = ""
     private var settingsCaptureHint = ""
@@ -522,23 +521,19 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 settingsHint?.stringValue = settingsBusy
                 return
             }
-            guard !settingsDeploying else {
-                settingsHint?.stringValue = "ASR 正在部署中"
-                return
-            }
-            settingsDeploying = true
             settingsHint?.stringValue = "ASR 正在下载与部署（首次需要数 GB 空间）…"
             let directory = settingsDeployDirectory
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let result = Result { try GoCore.deploy(directory) }
                 DispatchQueue.main.async {
                     guard let self else { return }
-                    self.settingsDeploying = false
                     switch result {
                     case .failure:
-                        self.settingsHint?.stringValue = "ASR 部署失败（点击查看原因）"
-                        if self.settingsPanel?.isVisible == true {
-                            self.settingsShowDeployError()
+                        if let active = try? GoCore.asrProgress(), active.busy == true {
+                            self.settingsHint?.stringValue = active.status ?? "ASR 正在部署中"
+                        } else {
+                            self.settingsHint?.stringValue = "ASR 部署失败（点击查看原因）"
+                            if self.settingsPanel?.isVisible == true { self.settingsShowDeployError() }
                         }
                     case .success(let output):
                         self.settingsHint?.stringValue = output.status ?? "ASR 已部署"

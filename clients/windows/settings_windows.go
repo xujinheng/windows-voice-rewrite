@@ -129,9 +129,6 @@ type uxSettings struct {
 	modelSerial                             [2]uint64
 	modelCancel                             [2]context.CancelFunc
 	deployDir                               string
-	deployBusy                              atomic.Bool
-	deployMu                                sync.Mutex
-	deployResult                            error
 	modelResults                            [2]uxModelDiscoveryResult
 	controls                                []uxControl
 	scale                                   float64
@@ -442,12 +439,6 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			if state.Text != "" && (state.Busy || state.Directory == p.deployDir) {
 				text = state.Text
 			}
-			p.deployMu.Lock()
-			err := p.deployResult
-			p.deployMu.Unlock()
-			if err != nil && !state.Busy {
-				text = "ASR 部署失败，请查看错误提示并重试"
-			}
 			if text != uxWinText(p.hint) {
 				uxSetText(p.hint, text)
 			}
@@ -606,15 +597,13 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		return 0
 	case uxWMDeployDone:
 		if p != nil && p.window == hwnd {
-			p.deployMu.Lock()
-			err := p.deployResult
-			p.deployMu.Unlock()
-			if err != nil {
+			state := localasr.ProgressSnapshot()
+			if strings.HasPrefix(state.Text, "ASR 部署失败：") {
 				uxSetText(p.hint, "ASR 部署失败，请查看错误提示并重试")
-				winErr("ASR 部署失败：\n\n" + err.Error())
-			} else {
+				winErr(state.Text)
+			} else if !state.Busy {
 				if cfg, loadErr := loadConfig(); loadErr == nil { p.app.cfg = cfg }
-				uxSetText(p.hint, "ASR 部署完成")
+				uxSetText(p.hint, state.Text)
 			}
 		}
 		return 0
@@ -730,22 +719,11 @@ func (p *uxSettings) deployASR() {
 		uxSetText(p.hint, state.Text)
 		return
 	}
-	if !p.deployBusy.CompareAndSwap(false, true) {
-		uxSetText(p.hint, "ASR 正在部署中")
-		return
-	}
-	p.deployMu.Lock()
-	p.deployResult = nil
-	p.deployMu.Unlock()
 	directory := p.deployDir
 	hwnd := p.window
 	uxSetText(p.hint, "ASR 正在下载与部署（首次需要数 GB 空间）…")
 	go func() {
-		err := localasr.Deploy(context.Background(), directory, protectChild)
-		p.deployMu.Lock()
-		p.deployResult = err
-		p.deployMu.Unlock()
-		p.deployBusy.Store(false)
+		_ = localasr.Deploy(context.Background(), directory, protectChild)
 		procPostMessage.Call(hwnd, uxWMDeployDone, 0, 0)
 	}()
 }
