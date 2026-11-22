@@ -962,7 +962,7 @@ func runApp() {
 			app.busy.Store(true)
 			app.setStatus(trayTranscribing)
 			go func() {
-				if !waitKeysReleased(2500 * time.Millisecond) {
+				if !waitKeysReleased(2500 * time.Millisecond, true) {
 					finishTogglePrepare(app, hwnd, selectedText{}, nil, false, errors.New(ux.DictationReleaseKeys))
 					return
 				}

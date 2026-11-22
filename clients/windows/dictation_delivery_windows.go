@@ -20,7 +20,7 @@ func insertDictationText(hwnd, target uintptr, text string, valid func() bool) e
 	if strings.TrimSpace(text) == "" {
 		return errors.New(ux.DictationEmpty)
 	}
-	if !waitKeysReleased(2 * time.Second) {
+	if !waitKeysReleased(2 * time.Second, true) {
 		return errors.New(ux.DictationReleaseKeys)
 	}
 	if !windowOK() {

@@ -15,12 +15,14 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 )
 
-func waitKeysReleased(max time.Duration) bool {
+func waitKeysReleased(max time.Duration, recordingKey bool) bool {
 	deadline := time.Now().Add(max)
 	for time.Now().Before(deadline) {
-		keys := []uintptr{VK_CONTROL, VK_MENU, VK_SHIFT, recordVirtualKey}
 		down := false
-		for _, k := range keys {
+		for i, k := range [...]uintptr{VK_CONTROL, VK_MENU, VK_SHIFT, recordVirtualKey} {
+			if i == 3 && !recordingKey {
+				break
+			}
 			v, _, _ := procGetAsyncKeyState.Call(k)
 			if v&0x8000 != 0 {
 				down = true
@@ -28,7 +30,9 @@ func waitKeysReleased(max time.Duration) bool {
 			}
 		}
 		if !down {
-			time.Sleep(60 * time.Millisecond)
+			if recordingKey {
+				time.Sleep(60 * time.Millisecond)
+			}
 			return true
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -161,33 +165,10 @@ func isSameForegroundWindow(target uintptr) bool {
 
 // Copy only while the original editor is foreground. Some applications update the
 // clipboard asynchronously, so retry without crossing application boundaries.
-// A mouse side-button may be released while Ctrl/Alt/Shift is still physically
-// held. SendInput does not clear that state; an injected Ctrl+C could then be
-// interpreted as a different shortcut. Normal mouse-only use returns at once.
-func waitCopyModifiersReleased(timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	for {
-		down := false
-		for _, key := range [...]uintptr{VK_CONTROL, VK_MENU, VK_SHIFT} {
-			state, _, _ := procGetAsyncKeyState.Call(key)
-			if state&0x8000 != 0 {
-				down = true
-				break
-			}
-		}
-		if !down {
-			return true
-		}
-		if !time.Now().Before(deadline) {
-			return false
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-}
 
 func copySelectionWithRetry(hwnd, target uintptr, cfg Config) (string, uintptr, error) {
 	time.Sleep(clipboard.CopySettle) // Let mouse key-up and selection settle.
-	if !waitCopyModifiersReleased(clipboard.CopyModifierWait) {
+	if !waitKeysReleased(clipboard.CopyModifierWait, false) {
 		return "", 0, errors.New(clipboard.CopyModifiersHeld)
 	}
 	var lastErr error
@@ -246,7 +227,7 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 	if !taskValid() {
 		return errors.New(ux.ReplaceExpired)
 	}
-	if !waitKeysReleased(3 * time.Second) {
+	if !waitKeysReleased(3 * time.Second, true) {
 		return errors.New(ux.ReplaceReleaseKeys)
 	}
 	if !isSameForegroundWindow(sel.TargetWindow) {
