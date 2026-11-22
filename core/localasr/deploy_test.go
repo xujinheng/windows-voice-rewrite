@@ -74,22 +74,21 @@ func TestUnpackZipCannotEscapeFolder(t *testing.T) {
 }
 
 func TestDeployFailureReportsStatus(t *testing.T) {
-	if _, err := BeginDeploy(context.Background(), "", nil); err == nil {
+	if err := BeginDeploy(context.Background(), "", nil); err == nil {
 		t.Fatal("empty directory should fail without creating a job")
 	}
 	parent := filepath.Join(t.TempDir(), "not-a-directory")
 	if err := os.WriteFile(parent, []byte("file"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	id, err := BeginDeploy(context.Background(), parent, nil)
-	if err != nil || id == 0 {
-		t.Fatalf("start: %d %v", id, err)
+	if err := BeginDeploy(context.Background(), parent, nil); err != nil {
+		t.Fatal(err)
 	}
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		p := DeploymentStatus()
 		if !p.Busy {
-			if p.ID != id || p.Phase != PhaseFailed || p.ErrorCode == "" || !strings.Contains(p.Text, "失败") {
+			if p.Directory != parent || p.Phase != PhaseFailed || p.ErrorCode == "" || !strings.Contains(p.Text, "失败") {
 				t.Fatalf("failed deployment lost diagnostics: %+v", p)
 			}
 			return
@@ -138,14 +137,13 @@ func TestDownloadProgressAfterResume(t *testing.T) {
 func TestConcurrentDeployDoesNotStartAnotherDownload(t *testing.T) {
 	progressMu.Lock()
 	old := progress
-	progress = Status{ID: 88, Directory: "/one", Busy: true, Phase: PhaseDownloading}
+	progress = Status{Directory: "/one", Busy: true, Phase: PhaseDownloading}
 	progressMu.Unlock()
 	defer func() { progressMu.Lock(); progress = old; progressMu.Unlock() }()
-	id, err := BeginDeploy(context.Background(), "/one", nil)
-	if err != nil || id != 88 {
-		t.Fatalf("same task should join: %d %v", id, err)
+	if err := BeginDeploy(context.Background(), "/one", nil); err != nil {
+		t.Fatalf("same task should join: %v", err)
 	}
-	if _, err := BeginDeploy(context.Background(), "/other", nil); !errors.Is(err, ErrBusyDifferentDirectory) {
+	if err := BeginDeploy(context.Background(), "/other", nil); !errors.Is(err, ErrBusyDifferentDirectory) {
 		t.Fatalf("different path should conflict without replacing task: %v", err)
 	}
 	if DeploymentStatus().Directory != "/one" {
