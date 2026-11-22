@@ -12,19 +12,23 @@ const (
 // DeliveryFacts are observed by the host. The native write path must recheck
 // the editor and selection immediately before any mutation.
 type DeliveryFacts struct {
-	TargetCurrent bool
+	TargetCurrent     bool
 	SelectionCaptured bool
 }
 
 // DecideDelivery owns the portable fallback policy for every client.
 // Hosts implement the selected native effect but never auto-retry an unknown paste.
 func DecideDelivery(result Result, facts DeliveryFacts) DeliveryAction {
-	if !facts.TargetCurrent { return DeliveryPreview }
+	if !facts.TargetCurrent {
+		return DeliveryPreview
+	}
 	switch result.Route {
 	case RouteInsert:
 		return DeliveryInsert
 	case RouteReplace:
-		if facts.SelectionCaptured { return DeliveryReplace }
+		if facts.SelectionCaptured {
+			return DeliveryReplace
+		}
 	}
 	return DeliveryPreview
 }
