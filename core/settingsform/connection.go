@@ -119,24 +119,22 @@ func Update(cfg coreconfig.Config, values map[string]string) (coreconfig.Config,
 			fields[index] = value
 		}
 	}
-	var err error
-	cfg, err = coreconfig.WithConnectionFields(cfg, fields)
+	cfg, err := coreconfig.WithConnectionFields(cfg, fields)
 	if err != nil {
 		return cfg, err
 	}
-	if value, ok := values["rewrite_shortcut"]; ok {
-		cfg.HotkeyRecord = value
-	}
-	if value, ok := values["dictation_shortcut"]; ok {
-		cfg.DictationHotkey = value
-	}
-	if value, ok := values["asr_deploy_dir"]; ok {
-		cfg.ASRDeployDir = value
-	}
-	if value, ok := values["max_record_seconds"]; ok {
-		cfg.MaxRecordSeconds, err = coreconfig.RecordingSeconds(value)
-		if err != nil {
-			return cfg, err
+	for id, value := range values {
+		switch id {
+		case "rewrite_shortcut":
+			cfg.HotkeyRecord = value
+		case "dictation_shortcut":
+			cfg.DictationHotkey = value
+		case "asr_deploy_dir":
+			cfg.ASRDeployDir = value
+		case "max_record_seconds":
+			if cfg.MaxRecordSeconds, err = coreconfig.RecordingSeconds(value); err != nil {
+				return cfg, err
+			}
 		}
 	}
 	return coreconfig.Normalize(cfg)
