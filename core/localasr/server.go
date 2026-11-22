@@ -38,45 +38,45 @@ var (
 // Clients directly use llama.cpp; Core already normalizes ASR transcript markers.
 func Start(ctx context.Context, install Installation) error {
 	processMu.Lock()
-	if process != nil {
-		processMu.Unlock()
-		return nil
-	}
-	conn, err := net.DialTimeout("tcp", "127.0.0.1:8080", 300*time.Millisecond)
-	if err == nil {
-		conn.Close()
-		processMu.Unlock()
-		return errors.New("ASR port 8080 is occupied; stop the other server before Deploy")
-	}
-	logPath := filepath.Join(filepath.Dir(filepath.Dir(install.Model)), "server.log")
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
-	if err != nil {
-		processMu.Unlock()
-		return err
-	}
-	cmd := exec.Command(install.Server, "-m", install.Model, "--mmproj", install.Projector,
-		"--alias", "qwen3-asr", "-ngl", fmt.Sprint(install.GPULayers),
-		"-c", "8192", "-np", "1", "--host", "127.0.0.1", "--port", "8080")
-	cmd.Dir = filepath.Dir(install.Server)
-	cmd.Stdout, cmd.Stderr = file, file
-	if err = cmd.Start(); err != nil {
-		file.Close()
-		processMu.Unlock()
-		return err
-	}
-	process = cmd
-	processMu.Unlock()
-	exited := make(chan error, 1)
-	go func() {
-		e := cmd.Wait()
-		processMu.Lock()
-		if process == cmd {
-			process = nil
-			file.Close()
+	var exited chan error
+	if process == nil {
+		conn, err := net.DialTimeout("tcp", "127.0.0.1:8080", 300*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			processMu.Unlock()
+			return errors.New("ASR port 8080 is occupied; stop the other server before Deploy")
 		}
-		processMu.Unlock()
-		exited <- e
-	}()
+		logPath := filepath.Join(filepath.Dir(filepath.Dir(install.Model)), "server.log")
+		file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+		if err != nil {
+			processMu.Unlock()
+			return err
+		}
+		cmd := exec.Command(install.Server, "-m", install.Model, "--mmproj", install.Projector,
+			"--alias", "qwen3-asr", "-ngl", fmt.Sprint(install.GPULayers),
+			"-c", "8192", "-np", "1", "--host", "127.0.0.1", "--port", "8080")
+		cmd.Dir = filepath.Dir(install.Server)
+		cmd.Stdout, cmd.Stderr = file, file
+		if err = cmd.Start(); err != nil {
+			file.Close()
+			processMu.Unlock()
+			return err
+		}
+		process = cmd
+		exited = make(chan error, 1)
+		go func() {
+			e := cmd.Wait()
+			processMu.Lock()
+			if process == cmd {
+				process = nil
+				file.Close()
+			}
+			processMu.Unlock()
+			exited <- e
+		}()
+	}
+	processMu.Unlock()
+
 	client := http.Client{Timeout: 1200 * time.Millisecond}
 	timeout, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
@@ -84,21 +84,27 @@ func Start(ctx context.Context, install Installation) error {
 	defer ticker.Stop()
 	for {
 		req, _ := http.NewRequestWithContext(timeout, http.MethodGet, "http://127.0.0.1:8080/health", nil)
-		res, e := client.Do(req)
-		if e == nil {
-			io.Copy(io.Discard, io.LimitReader(res.Body, 256))
-			res.Body.Close()
+		res, err := client.Do(req)
+		if err == nil {
+			_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 256))
+			_ = res.Body.Close()
 			if res.StatusCode == http.StatusOK {
 				return nil
 			}
 		}
 		select {
-		case e := <-exited:
-			return fmt.Errorf("llama-server stopped before model readiness: %v", e)
+		case err := <-exited:
+			return fmt.Errorf("llama-server stopped before model readiness: %v", err)
 		case <-timeout.Done():
 			Stop()
 			return timeout.Err()
 		case <-ticker.C:
+			processMu.Lock()
+			alive := process != nil
+			processMu.Unlock()
+			if !alive {
+				return errors.New("local ASR server stopped before readiness")
+			}
 		}
 	}
 }
@@ -113,9 +119,3 @@ func Stop() {
 	}
 }
 
-// Ready returns true only for a managed process already started in this session.
-func Ready() bool {
-	processMu.Lock()
-	defer processMu.Unlock()
-	return process != nil
-}
