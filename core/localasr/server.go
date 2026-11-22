@@ -64,6 +64,7 @@ func DeployConfigured(ctx context.Context, cfg coreconfig.Config, directory stri
 // endpoint is the managed local service, never for a custom/remote endpoint.
 func Resume(ctx context.Context, cfg coreconfig.Config) error {
 	if cfg.ASRBaseURL != coreconfig.Defaults().ASRBaseURL {
+		Stop()
 		return nil
 	}
 	directory := cfg.ASRDeployDir
