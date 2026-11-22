@@ -69,15 +69,15 @@ func validSHA(path, expected string) bool {
 
 // Retain .part across interrupted transfers; publish only verified content.
 func downloadVerified(ctx context.Context, dest string, spec downloadSpec) error {
-	report("正在校验 " + spec.filename)
+	report(PhaseVerifying, "正在校验 " + spec.filename)
 	if validSHA(dest, spec.sha) {
-		report("已缓存 " + spec.filename)
+		report(PhaseVerifying, "已缓存 " + spec.filename)
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
 		return err
 	}
-	report("正在校验未完成下载 " + spec.filename)
+	report(PhaseVerifying, "正在校验未完成下载 " + spec.filename)
 	if validSHA(dest+".part", spec.sha) {
 		if err := os.Remove(dest); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
@@ -86,13 +86,13 @@ func downloadVerified(ctx context.Context, dest string, spec downloadSpec) error
 	}
 	var last error
 	for _, source := range spec.urls {
-		report("正在连接 " + spec.filename)
+		report(PhaseDownloading, "正在连接 " + spec.filename)
 		if err := downloadFrom(ctx, source, dest+".part", spec.filename); err != nil {
 			last = err
-			report("下载源不可用，正在切换：" + spec.filename)
+			report(PhaseDownloading, "下载源不可用，正在切换：" + spec.filename)
 			continue
 		}
-		report("正在校验 " + spec.filename)
+		report(PhaseVerifying, "正在校验 " + spec.filename)
 		if !validSHA(dest+".part", spec.sha) {
 			last = fmt.Errorf("%s 下载内容 SHA-256 不匹配", spec.filename)
 			_ = os.Remove(dest + ".part")
@@ -104,7 +104,7 @@ func downloadVerified(ctx context.Context, dest string, spec downloadSpec) error
 		if err := os.Rename(dest+".part", dest); err != nil {
 			return err
 		}
-		report("下载完成 " + spec.filename)
+		report(PhaseVerifying, "下载完成 " + spec.filename)
 		return nil
 	}
 	return fmt.Errorf("下载 %s 失败：%w。请检查网络/代理后重试；或从 %s 手动下载同名文件放到 %s，再点 Deploy（会校验 SHA-256）", spec.filename, last, spec.urls[len(spec.urls)-1], dest)
@@ -150,7 +150,7 @@ func downloadFrom(ctx context.Context, source, part, filename string) error {
 	} else {
 		offset = 0
 	}
-	report("正在下载 " + filename)
+	report(PhaseDownloading, "正在下载 " + filename)
 	buffer := make([]byte, 256*1024)
 	for {
 		n, readErr := resp.Body.Read(buffer)
@@ -213,7 +213,7 @@ func installRuntime(ctx context.Context, root, flavor string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 		return "", err
 	}
-	report("正在解压 llama.cpp 运行时")
+	report(PhaseInstalling, "正在解压 llama.cpp 运行时")
 	stage, err := os.MkdirTemp(filepath.Dir(target), ".unpack-")
 	if err != nil {
 		return "", err
@@ -365,9 +365,12 @@ func DeploymentStatus() Status {
 	return progress
 }
 
-func report(text string) {
+func report(phase Phase, text string) {
 	progressMu.Lock()
-	progress.Text = text
+	progress.Phase, progress.Text = phase, text
+	if phase != PhaseDownloading {
+		progress.File, progress.Received, progress.Total = "", 0, 0
+	}
 	progressMu.Unlock()
 }
 
