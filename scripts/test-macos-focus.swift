@@ -15,6 +15,17 @@ extension HeadlessApp {
         precondition(settingsPanel?.isVisible == true && settingsPages.count == 3)
         precondition(settingsInputs["asr_base_url"]?.stringValue == catalog.values?["asr_base_url"])
         precondition(settingsInputs["max_record_seconds"]?.stringValue == catalog.values?["max_record_seconds"])
+        // Persist while processing, then apply the saved profile once the task finishes.
+        taskID = VRCommand(Int32(VR_COMMAND_START), 0, 0, 0).token
+        settingsInputs["text_model"]?.stringValue = "deferred-model"
+        let save = NSButton()
+        save.identifier = NSUserInterfaceItemIdentifier("save")
+        settingsAction(save)
+        precondition(reloadAfterTask && (try! String(contentsOf: configURL, encoding: .utf8)).contains("deferred-model"))
+        clearSession()
+        precondition(!reloadAfterTask && taskID == 0)
+        try! defaults.write(to: configURL, atomically: true, encoding: .utf8)
+        reload()
         settingsPanel?.close()
         settingsPanel = nil
         let coreDefaults = try! GoCore.decode("{}".withCString { VRProfile($0) }).defaultConfig
