@@ -478,9 +478,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             settingsDeploying = true
             settingsHint?.stringValue = "ASR 正在下载与部署（首次需要数 GB 空间）…"
             let directory = settingsDeployDirectory
+            let currentConfigURL = configURL!
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let result = Result {
-                    let json = try String(contentsOf: self.configURL, encoding: .utf8)
+                    let json = try String(contentsOf: currentConfigURL, encoding: .utf8)
                     return try GoCore.deploy(directory, config: json)
                 }
                 DispatchQueue.main.async {
