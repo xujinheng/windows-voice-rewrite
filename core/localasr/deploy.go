@@ -328,8 +328,6 @@ type Installation struct {
 	GPULayers int
 }
 
-type JobID uint64
-
 type Phase string
 
 const (
@@ -345,7 +343,6 @@ const (
 
 // Status is the sole in-process deployment state, independent of UI windows.
 type Status struct {
-	ID        JobID
 	Phase     Phase
 	Text      string
 	Directory string
