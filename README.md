@@ -4,55 +4,30 @@
 
 # VoiceRewrite
 
-**按住鼠标侧键说话，松开就能输入文字。** 适用于 Windows 11。
+**按住鼠标侧键说话，松开就能输入文字。** 支持 Windows；macOS 版本仍在测试。
 
 <a href="README.en.md"><img alt="Switch to English" src="https://img.shields.io/badge/English-Switch_language-2563eb?style=for-the-badge"></a>
 
-## 🚀 三步开始（Windows）
+## 🚀 开始使用
 
-### 1. 下载 OneClick，双击启动语音模型
+1. **下载主程序。** Windows 下载 `VoiceRewrite-Windows.exe`，双击运行，不需要安装。M 系列 Mac 下载 `VoiceRewrite-Mac.dmg`，将应用拖到「应用程序」；Intel Mac 选择 `VoiceRewrite-Mac-Intel.dmg`。
+2. **部署语音模型。** 打开 VoiceRewrite「设置」→「语音识别」，选择下载目录（Windows 默认在 EXE 旁边；Mac 安装在「应用程序」时默认为个人主目录），点击 **Deploy**。它会自动下载 Qwen3-ASR-1.7B 和对应的 llama.cpp CUDA/CPU/Metal 运行时，不需要单独安装 OneClick、Python 或 Homebrew。首次需要联网和数 GB 空间。
+3. **开始听写。** Windows 默认按住鼠标下侧键（Mouse4）说话，松开后输入；Mac 默认按住右 Command。快捷键可在设置中修改。
 
-**[⬇ 下载 Qwen3-ASR-OneClick-Windows-x64.exe](https://github.com/xujinheng/windows-voice-rewrite/releases/download/v0.1.1/Qwen3-ASR-OneClick-Windows-x64.exe)**
+安装的数据全部在 **`你选择的目录/Qwen3-ASR/`**，包含模型、运行时、下载缓存和服务日志。关闭 VoiceRewrite 后删除这个文件夹即可清理模型环境。已下载文件会复用，重启主程序自动恢复本地 ASR 服务。
 
-将下载的文件放在一个方便找到的文件夹里，**直接双击，不用安装、解压或敲命令**。首次运行会自动下载语音识别模型和所需程序；需要联网、数 GB 磁盘空间，下载时间取决于网速。
+**下载入口：** [GitHub Releases](https://github.com/xujinheng/windows-voice-rewrite/releases) · [最新 main 构建（Actions）](https://github.com/xujinheng/windows-voice-rewrite/actions/workflows/build.yml?query=branch%3Amain)
 
-看到黑色窗口显示 **`READY!`** 就准备好了。**请保持这个窗口打开**，关闭它会停止语音识别服务。再次启动会复用已下载的文件。
+**版本说明：** v0.1.1 是历史版本，仍需要分别下载旧 OneClick 与 Windows 安装包。集成 Deploy 的单 EXE / Mac DMG 将在本次改动合并后的新构建中提供，尚未属于 v0.1.1 下载内容。
 
-### 2. 下载 VoiceRewrite，完成安装
+## ✨ AI 改写、翻译与解释
 
-**[⬇ 下载 VoiceRewrite-Setup-0.1.1-x64.exe](https://github.com/xujinheng/windows-voice-rewrite/releases/download/v0.1.1/VoiceRewrite-Setup-0.1.1-x64.exe)**
+听写只需要上述内置 ASR。使用 AI 改写还需要文字模型，例如 [LM Studio](https://lmstudio.ai/)；在 LM Studio 加载聊天模型并开启本地 API（通常为 `http://127.0.0.1:1234/v1`），然后在 VoiceRewrite 设置里检查连接。Windows 默认使用 Mouse5 发出语音指令，Mac 默认使用右 Option。
 
-这是 **Windows 安装程序（.exe），不需要解压**。双击并按照提示安装，安装结束后打开 VoiceRewrite。如果没看到主窗口，可以在任务栏右下角找到它的托盘图标，进入「设置」。
+## 🍎 macOS 注意事项
 
-安装包目前没有 Windows 发布者数字签名，系统可能显示安全提醒。请确认文件来自本项目的 GitHub Release 再决定是否运行。
+macOS 的听写和跨应用文本插入仍处于实验阶段。未经 Apple Developer ID 签名、公证的测试 DMG 可能被系统拦截；请核实来源并了解系统权限提示。需要按实际功能授予麦克风、辅助功能和输入监控权限。
 
-### 3. 按住鼠标下侧键，开始听写
+[进阶说明](clients/windows/README.md) · [Mac 设置](clients/macos/app/README.md) · [隐私说明](PRIVACY.md) · [报告问题](https://github.com/xujinheng/windows-voice-rewrite/issues)
 
-打开微信、记事本或浏览器输入框，把光标放在要输入文字的位置。**按住鼠标下侧键（Mouse4）说话，松开按键**，识别结果就会尝试输入到光标处。
-
-没有鼠标侧键？在 VoiceRewrite「设置」中把听写快捷键改成自己习惯的按键。
-
-## ✨ 想用 AI 改写、翻译或解释文字？
-
-听写只需要上面的 OneClick。**改写/翻译/问答还需要文字 AI 模型**：
-
-[⬇ 下载 LM Studio（官网）](https://lmstudio.ai/)
-
-在 LM Studio 里下载并加载一个聊天模型，开启本地 API 服务（默认 `http://127.0.0.1:1234/v1`）；再在 VoiceRewrite「设置」中检查文字模型连接。选中一段文字，按住**鼠标上侧键（Mouse5）**，说出「把这段话改得更自然」等指令，再松开。
-
-## 🍎 macOS（实验性版本 · 目前不稳定）
-
-**macOS 目前仍可能出现听写、输入或剪贴板问题，不建议非技术用户作为日常主力使用。**
-
-- **[⬇ Apple Silicon（M 系列）实验版 ZIP](https://github.com/xujinheng/windows-voice-rewrite/releases/download/v0.1.1/VoiceRewrite-0.1.1-macOS-arm64-Experimental.zip)**
-- **[⬇ Intel Mac 实验版 ZIP](https://github.com/xujinheng/windows-voice-rewrite/releases/download/v0.1.1/VoiceRewrite-0.1.1-macOS-x86_64-Experimental.zip)**
-
-下载 ZIP 后**双击解压**，将 `VoiceRewrite.app` 拖进「应用程序」，再尝试打开。此实验版未经过 Apple Developer ID 签名及公证；macOS 可能拦截启动，请先核对下载来源，了解安全风险，不要直接关闭系统安全保护。它还需要授予麦克风、辅助功能和输入监控权限。
-
-**注意：Windows OneClick 不能在 Mac 上运行。** macOS 需要自行启动兼容的语音识别 API 服务并配置 `~/.config/voicerewrite/config.json`，**尚不是双击即用**。已配置后按住**右 Command** 听写，按住**右 Option** 对选中文字发出改写指令。详见 [macOS 安装与配置说明](clients/macos/app/README.md)。
-
-## 其他
-
-[全部 v0.1.1 下载文件与更新说明](https://github.com/xujinheng/windows-voice-rewrite/releases/tag/v0.1.1) · [Windows 进阶使用说明](clients/windows/README.md) · [隐私说明](PRIVACY.md) · [反馈问题](https://github.com/xujinheng/windows-voice-rewrite/issues)
-
-语音和选中文字会发送到**你配置的**本地或远程模型服务。项目按 [BSD 3-Clause 许可证](LICENSE) 发布；另见 [第三方许可说明](docs/third-party-notices.md)。
+语音和选中文字只会发送到你配置的本地或远程模型接口。项目采用 [BSD 3-Clause 许可证](LICENSE)。

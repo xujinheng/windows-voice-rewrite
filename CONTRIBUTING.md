@@ -1,6 +1,6 @@
 # Contributing
 
-The Windows application is in `voice-rewrite/` and the ASR launcher is in `oneclick/`. Go 1.23 or newer is required.
+Native applications live under `clients/windows/` and `clients/macos/`. The shared Core includes local ASR deployment in `core/localasr/`. Go 1.23 or newer is required.
 
 ```powershell
 cd voice-rewrite

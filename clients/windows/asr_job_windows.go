@@ -41,7 +41,7 @@ type jobExtendedLimitInformation struct {
 	PeakJobMemoryUsed     uintptr
 }
 
-func attachKillOnParentExit(pid int) (func(), error) {
+func protectChild(pid int) (func(), error) {
 	kernel := syscall.NewLazyDLL("kernel32.dll")
 	createJob := kernel.NewProc("CreateJobObjectW")
 	setJob := kernel.NewProc("SetInformationJobObject")

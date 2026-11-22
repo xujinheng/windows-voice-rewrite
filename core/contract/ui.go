@@ -70,6 +70,8 @@ func Controls() []Control {
 		{ID: "asr_api_key", Page: "speech", Label: "API Key", Hint: "ASR API Key（本地服务可留空；留空保留旧值）", Kind: Secret, Stacked: true, StaleProbe: "transcribe"},
 		{ID: "probe_asr", Page: "speech", Label: "测试连接", Kind: Button},
 		{ID: "probe_asr_status", Page: "speech", Kind: Status},
+		{ID: "select_asr_directory", Page: "speech", Label: "选择部署目录…", Kind: Button},
+		{ID: "deploy_asr", Page: "speech", Label: "Deploy", Kind: Button},
 
 		{ID: "llm_base_url", Page: "writing", Label: "API 地址", Kind: Text, Stacked: true, StaleProbe: "selectedTask"},
 		{ID: "text_model", Page: "writing", Label: "模型 ID", Kind: Text, Stacked: true, StaleProbe: "selectedTask"},

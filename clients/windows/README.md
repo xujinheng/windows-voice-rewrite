@@ -35,10 +35,10 @@ On Windows 11, start Zoom or another conference app. From the tray choose **开�
 
 **会议资料** stores your role, actual experience, constraints and terminology. Terms guide Qwen ASR spelling; background and terms also accompany translation and reply requests. Leave unknown facts blank. Suggestions must not invent experience or commitments. The profile pane also selects the meeting ASR protocol:
 
-- `llama-prefix` (default): Qwen3-ASR GGUF on llama.cpp, using streamed audio chat completions and the server's tokenizer to roll back five text tokens between snapshots. It requires `/v1/chat/completions`, `/tokenize`, `/detokenize`, and enabled assistant prefilling. The current OneClick proxy exposes these routes. This is cumulative-audio transcription with text continuation, not native incremental audio encoding. It still uploads and re-encodes the active audio window.
+- `llama-prefix` (default): Qwen3-ASR GGUF on llama.cpp, using streamed audio chat completions and the server's tokenizer to roll back five text tokens between snapshots. It requires `/v1/chat/completions`, `/tokenize`, `/detokenize`, and enabled assistant prefilling. The embedded local llama.cpp server exposes these routes. This is cumulative-audio transcription with text continuation, not native incremental audio encoding. It still uploads and re-encodes the active audio window.
 - `multipart`: explicit segmented recognition using the configured `/audio/transcriptions` provider. No prefix continuation is used.
 
-Recognition snapshots adapt between 0.8 and 2.4 seconds according to measured ASR/translation request time, with a bounded 11-second audio window. A final segment cancels an obsolete preview; bounded queues replace stale waiting work and show the discard count. Unsupported prefix APIs produce an actionable error rather than silently changing protocols. Keep the existing model name/alias in Settings. A port number alone does not identify whether OneClick or llama-server is listening there.
+Recognition snapshots adapt between 0.8 and 2.4 seconds according to measured ASR/translation request time, with a bounded 11-second audio window. A final segment cancels an obsolete preview; bounded queues replace stale waiting work and show the discard count. Unsupported prefix APIs produce an actionable error rather than silently changing protocols. Keep the existing model name/alias in Settings. A port number alone does not identify whether the bundled or an external llama-server is listening there.
 
 Meeting ASR and LLM requests share a single scheduler, suitable for both models residing on one GPU. Your spoken expression and manual refinement have highest priority, followed by final recognition, translation, provisional recognition and reply suggestions. Lower-priority suggestions yield when subtitles need the GPU. Cancellation stops the client request; how promptly GPU computation stops depends on the backend. Meeting requests send `chat_template_kwargs.enable_thinking=false`; the server's chat template must honor it.
 
@@ -61,7 +61,7 @@ go vet -unsafeptr=false ./...
 go build -trimpath -ldflags="-H windowsgui -s -w" -o VoiceRewrite.exe .
 ```
 
-See [architecture](../../docs/architecture.md), [Windows testing](../../docs/testing.md), [privacy](../../PRIVACY.md) and [installer instructions](../../installer/README.md).
+See [architecture](../../docs/architecture.md), [Windows testing](../../docs/testing.md), [privacy](../../PRIVACY.md) and [download instructions](../../README.md).
 
 ## License
 

@@ -69,7 +69,7 @@ func meetingJSON(ctx context.Context, cfg coreconfig.Config, url string, body an
 }
 func meetingASRHTTPError(status int) error {
 	if status == 404 || status == 405 || status == 400 || status == 501 {
-		return fmt.Errorf("ASR 续写接口不可用（HTTP %d），请更新 oneclick/llama-server，或在会议设置选择分段识别", status)
+		return fmt.Errorf("ASR 续写接口不可用（HTTP %d），请更新本地 ASR 运行时，或在会议设置选择分段识别", status)
 	}
 	return provider.HTTPError("ASR", status)
 }

@@ -10,6 +10,7 @@ import (
 
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/contract"
+	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
 	"github.com/xujinheng/windows-voice-rewrite/core/provider"
 	"github.com/xujinheng/windows-voice-rewrite/core/serviceprobe"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
@@ -73,6 +74,10 @@ func ConnectionForm() NativeForm {
 				switch control.ID {
 				case "probe_asr", "probe_llm":
 					item.Rect = ProbeButtonBox()
+				case "select_asr_directory":
+					item.Rect = DeployFolderBox()
+				case "deploy_asr":
+					item.Rect = DeployButtonBox()
 				case "capture_rewrite", "capture_dictation":
 					item.Rect = CaptureButton(row - 1)
 				default:
@@ -126,11 +131,16 @@ func ConnectionAction(ctx context.Context, raw []byte) (any, error) {
 		return nil, err
 	}
 	if req.Action == "form" {
+		directory := cfg.ASRDeployDir
+		if directory == "" {
+			directory = localasr.DefaultDirectory()
+		}
 		return map[string]any{"form": ConnectionForm(), "values": map[string]string{
 			"asr_base_url": cfg.ASRBaseURL, "asr_model": cfg.ASRModel, "asr_api_key": cfg.ASRAPIKey,
 			"llm_base_url": cfg.LLMBaseURL, "text_model": cfg.TextModel, "llm_api_key": cfg.LLMAPIKey,
 			"rewrite_shortcut": cfg.HotkeyRecord, "dictation_shortcut": cfg.DictationHotkey,
 			"max_record_seconds": strconv.Itoa(cfg.MaxRecordSeconds),
+			"asr_deploy_dir":     directory,
 		}}, nil
 	}
 	fields := [6]string{cfg.ASRBaseURL, cfg.ASRModel, cfg.ASRAPIKey, cfg.LLMBaseURL, cfg.TextModel, cfg.LLMAPIKey}
@@ -148,6 +158,9 @@ func ConnectionAction(ctx context.Context, raw []byte) (any, error) {
 	}
 	if value, ok := req.Values["dictation_shortcut"]; ok {
 		cfg.DictationHotkey = value
+	}
+	if value, ok := req.Values["asr_deploy_dir"]; ok {
+		cfg.ASRDeployDir = value
 	}
 	if value, ok := req.Values["max_record_seconds"]; ok {
 		cfg.MaxRecordSeconds, err = coreconfig.RecordingSeconds(value)

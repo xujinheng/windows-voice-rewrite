@@ -1,5 +1,5 @@
 // Package asrtext owns Qwen3-ASR transcript marker normalization for
-// VoiceRewrite and its standalone OneClick proxy.
+// VoiceRewrite's shared ASR client and local model server.
 package asrtext
 
 import (
@@ -11,7 +11,7 @@ import (
 var languageMarker = regexp.MustCompile(`(?i)language[ \t]+[a-z][a-z0-9 ,_+\-/]{0,79}[ \t]*<asr_text>`)
 var leadingMarker = regexp.MustCompile(`(?i)^\s*<asr_text>\s*`)
 
-// StripMetadata preserves the OneClick API contract: remove language
+// StripMetadata removes Qwen3-ASR language headers: remove language
 // headers, leaving other recognized tokens to the consuming client.
 func StripMetadata(s string) string {
 	return strings.TrimSpace(languageMarker.ReplaceAllString(s, ""))

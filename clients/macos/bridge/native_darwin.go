@@ -32,6 +32,7 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/core/audio"
 	"github.com/xujinheng/windows-voice-rewrite/core/clipboard"
 	"github.com/xujinheng/windows-voice-rewrite/core/indicator"
+	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
 	"github.com/xujinheng/windows-voice-rewrite/core/settingsform"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 	"github.com/xujinheng/windows-voice-rewrite/core/voice"
@@ -137,11 +138,34 @@ func VRProfile(config *C.char) *C.char {
 	reply := headlessProfile(json.RawMessage(C.GoString(config)))
 	if reply.OK {
 		nativeConfig.Store(&reply.cfg)
+		go func() { _ = localasr.Resume(context.Background(), reply.cfg, nil) }()
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
 		nativeCore.Apply(voice.Command{Kind: voice.CommandBind, Dictation: []int{macKeyCode(profile["dictation"].(string))}, Rewrite: []int{macKeyCode(profile["rewrite"].(string))}})
 	}
 	return nativeJSON(reply)
 }
+
+//export VRDeploy
+func VRDeploy(rawConfig, directory *C.char) *C.char {
+	if rawConfig == nil || directory == nil {
+		return nativeJSON(failure("invalid_directory", "missing config or directory"))
+	}
+	cfg, err := coreconfig.Parse([]byte(C.GoString(rawConfig)))
+	if err == nil {
+		cfg, err = localasr.DeployConfigured(context.Background(), cfg, C.GoString(directory), nil)
+	}
+	if err != nil {
+		return nativeJSON(failure("deploy_failed", err.Error()))
+	}
+	data, err := coreconfig.Marshal(cfg)
+	if err != nil {
+		return nativeJSON(failure("invalid_config", err.Error()))
+	}
+	return nativeJSON(success(map[string]string{"status": "ASR ready", "config": string(data)}))
+}
+
+//export VRStopASR
+func VRStopASR() { localasr.Stop() }
 
 //export VRSettings
 func VRSettings(request *C.char) *C.char {

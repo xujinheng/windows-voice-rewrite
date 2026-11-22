@@ -14,7 +14,7 @@ pwsh -File scripts/capture-acceptance-windows.ps1
 pwsh -File scripts/test-meeting-ui.ps1
 ```
 
-The current `.github/workflows/acceptance-evidence.yml` also runs the Windows native Meeting/popup E2E tests and uploads `acceptance-windows` screenshots/logs. A locked or disconnected desktop may invalidate captured UI evidence.
+The current `.github/workflows/acceptance-evidence.yml` also runs the Windows native Meeting/popup E2E tests and uploads `CI-TestEvidence-Windows-UI` screenshots/logs. A locked or disconnected desktop may invalidate captured UI evidence.
 
 macOS 13+ with Go and Xcode command-line tools, on an actual Mac:
 

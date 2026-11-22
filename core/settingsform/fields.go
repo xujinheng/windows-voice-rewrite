@@ -84,6 +84,9 @@ func ProbeStatusBox() Rect { return Rect{352, 324, 435, 48} }
 
 func ProbeButtonBox() Rect { return Rect{696, 130, 92, 30} }
 
+func DeployFolderBox() Rect { return Rect{352, 376, 300, 32} }
+func DeployButtonBox() Rect { return Rect{696, 376, 92, 32} }
+
 func WindowsInputNote() Rect { return Rect{226, 374, 565, 32} }
 
 func FooterButton(anchor Anchor) Rect {

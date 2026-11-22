@@ -1,23 +1,15 @@
-# Windows downloads
+# Release downloads and verification
 
-CI builds a portable ZIP and an Inno Setup installer. Tagged preview releases include SHA-256 checksums and GitHub artifact provenance attestations.
+VoiceRewrite ships one standalone Windows application (`VoiceRewrite-Windows.exe`) and macOS applications in DMGs (`VoiceRewrite-Mac.dmg` for Apple Silicon, `VoiceRewrite-Mac-Intel.dmg` for Intel). The application includes optional ASR deployment in Settings: choose a folder and press Deploy. It downloads only into `<selected folder>/Qwen3-ASR/`.
 
-Verify a downloaded artifact with the published checksum. For tag builds with attestations, use:
+The Windows binary currently lacks an Authenticode publisher signature. macOS development DMGs are ad-hoc signed, not Apple Developer ID signed or notarized, and Gatekeeper may block them. Verify the downloads come from this repository before deciding to run unsigned builds.
+
+Tagged Windows releases have GitHub provenance attestations:
 
 ```bash
-gh attestation verify PATH --repo xujinheng/windows-voice-rewrite
+gh attestation verify VoiceRewrite-Windows.exe --repo xujinheng/windows-voice-rewrite
 ```
 
-The executable and installer currently lack Authenticode publisher signatures, so Windows SmartScreen may warn.
+Signed and notarized macOS distribution is published separately only when valid developer credentials and Apple notarization are available. Passing CI does not prove microphone, Accessibility or editor-insertion behavior on a physical device.
 
-The repository does not currently have a project-wide license. Releases are provided as unsigned preview builds.
-
-## macOS downloads
-
-Apple Silicon (`arm64`) and Intel (`x64`) development packages in GitHub Actions are explicitly named `*-Dev.zip` / `*-Dev.dmg`. They are ad-hoc signed, not Developer ID signed and not notarized. Gatekeeper or macOS permission prompts may appear; these packages are not advertised as friction-free installations.
-
-When the repository has a valid Developer ID Application certificate and Apple notarization credentials, the macOS signed distribution workflow produces `VoiceRewrite-<version>-macOS-<arch>-Notarized.zip` and `.dmg`, each with a SHA-256 sidecar. Each signed app and its embedded `voicebridge` are checked for the same single CPU architecture and signing team, Hardened Runtime, Apple-stapled ticket and Gatekeeper assessment. The drag-to-Applications DMG is separately notarized and stapled. Tagged assets are added to the existing curated Windows GitHub Release only after both architectures pass verification; missing Apple credentials never cause Dev artifacts to be relabeled Notarized.
-
-Check a downloaded archive and its adjacent sidecar with `shasum -a 256 -c FILE.sha256`. macOS installation, permissions, replacement upgrades and data-preserving uninstall instructions are in [macos/README.md](macos/README.md).
-
-Developer ID signing, notarization and checksum validation do not substitute for physical-device microphone, Accessibility, side-button and Meeting permission acceptance tests.
+This project is licensed under [BSD 3-Clause](LICENSE).

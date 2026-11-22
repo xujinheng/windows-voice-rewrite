@@ -18,6 +18,7 @@ import (
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/contract"
 	"github.com/xujinheng/windows-voice-rewrite/core/desktop"
+	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
 	"github.com/xujinheng/windows-voice-rewrite/core/provider"
 	"github.com/xujinheng/windows-voice-rewrite/core/serviceprobe"
 	"github.com/xujinheng/windows-voice-rewrite/core/settingsform"
@@ -54,6 +55,7 @@ const (
 	uxEMSetMargins            = 0x00D3
 	uxWMProbeDone             = 0x8000 + 104
 	uxWMModelsDone            = 0x8000 + 106
+	uxWMDeployDone           = 0x8000 + 107
 	uxShortcutInput           = 9106
 	uxRewriteInput            = 9108
 	WM_SETTINGS_CAPTURE_MOUSE = 0x8000 + 105
@@ -81,7 +83,22 @@ var (
 	uxWindowCallback       = syscall.NewCallback(uxSettingsWndProc)
 	uxActiveSettings       *uxSettings
 	uxModelRequestSequence atomic.Uint64
+	procBrowseFolder = shell32.NewProc("SHBrowseForFolderW")
+	procGetFolderPath = shell32.NewProc("SHGetPathFromIDListW")
+	procFreeFolder = syscall.NewLazyDLL("ole32.dll").NewProc("CoTaskMemFree")
+	uxBrowseCallback = syscall.NewCallback(func(hwnd, msg, data, initial uintptr) uintptr {
+		if msg == 1 { procSendMessage.Call(hwnd, 0x467, 1, initial) }
+		return 0
+	})
 )
+
+type uxBrowseInfo struct {
+	owner, root uintptr
+	display, title *uint16
+	flags uint32
+	callback, data uintptr
+	image int32
+}
 
 type uxSettings struct {
 	window                                  uintptr
@@ -110,6 +127,10 @@ type uxSettings struct {
 	modelMu                                 sync.Mutex
 	modelSerial                             [2]uint64
 	modelCancel                             [2]context.CancelFunc
+	deployDir                               string
+	deployBusy                              atomic.Bool
+	deployMu                                sync.Mutex
+	deployResult                            error
 	modelResults                            [2]uxModelDiscoveryResult
 	controls                                []uxControl
 	scale                                   float64
@@ -560,6 +581,17 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			}
 		}
 		return 0
+	case uxWMDeployDone:
+		if p != nil && p.window == hwnd {
+			p.deployMu.Lock()
+			err := p.deployResult
+			p.deployMu.Unlock()
+			if err != nil { uxSetText(p.hint, "ASR Deploy 失败："+err.Error()) } else {
+				if cfg, loadErr := loadConfig(); loadErr == nil { p.app.cfg = cfg }
+				uxSetText(p.hint, "ASR 已部署，服务地址 http://127.0.0.1:8080/v1")
+			}
+		}
+		return 0
 	case uxWMModelsDone:
 		if p != nil && p.window == hwnd && wParam < 2 {
 			p.completeModelDiscovery(int(wParam), uint64(lParam))
@@ -621,6 +653,12 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			case contract.ActionDiscoverLLM:
 				p.discoverModels("LLM")
 				return 0
+			case contract.ActionSelectASRDirectory:
+				p.chooseDeployDirectory()
+				return 0
+			case contract.ActionDeployASR:
+				p.deployASR()
+				return 0
 			}
 		}
 	}
@@ -628,7 +666,54 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	return v
 }
 
+func (p *uxSettings) chooseDeployDirectory() {
+	var display, selected [260]uint16
+	title, _ := syscall.UTF16PtrFromString("选择 Qwen3-ASR 模型和运行时的保存位置")
+	initial, _ := syscall.UTF16PtrFromString(p.deployDir)
+	info := uxBrowseInfo{owner:p.window, display:&display[0], title:title,
+		flags:0x0001|0x0040, callback:uxBrowseCallback, data:uintptr(unsafe.Pointer(initial))}
+	pidl, _, _ := procBrowseFolder.Call(uintptr(unsafe.Pointer(&info)))
+	runtime.KeepAlive(initial)
+	if pidl == 0 { return }
+	defer procFreeFolder.Call(pidl)
+	if ok, _, _ := procGetFolderPath.Call(pidl, uintptr(unsafe.Pointer(&selected[0]))); ok != 0 {
+		p.deployDir = syscall.UTF16ToString(selected[:])
+		uxSetText(p.hint, "部署位置："+p.deployDir)
+	}
+}
+
+func (p *uxSettings) deployASR() {
+	if p.app.busy.Load() {
+		uxSetText(p.hint, "请在当前语音任务结束后部署 ASR")
+		return
+	}
+	if !p.deployBusy.CompareAndSwap(false, true) {
+		uxSetText(p.hint, "ASR 正在部署中")
+		return
+	}
+	directory := p.deployDir
+	hwnd := p.window
+	uxSetText(p.hint, "ASR 正在下载与部署（首次需要数 GB 空间）…")
+	go func() {
+		cfg, err := loadConfig()
+		if err == nil {
+			cfg, err = localasr.DeployConfigured(context.Background(), cfg, directory, protectChild)
+		}
+		if err == nil {
+			err = saveConfig(cfg)
+		}
+		p.deployMu.Lock()
+		p.deployResult = err
+		p.deployMu.Unlock()
+		p.deployBusy.Store(false)
+		procPostMessage.Call(hwnd, uxWMDeployDone, 0, 0)
+	}()
+}
+
 func (p *uxSettings) save() error {
+	if p.deployBusy.Load() {
+		return errors.New("请在 ASR 部署完成后保存设置")
+	}
 	if p.app.busy.Load() {
 		return errors.New(ux.SaveWhileBusy)
 	}
@@ -665,6 +750,11 @@ func (p *uxSettings) save() error {
 		return err
 	}
 	p.app.cfg = cfg
+	go func() {
+		if err := localasr.Resume(context.Background(), cfg, protectChild); err != nil {
+			p.app.logger.Printf("local ASR config update: %v", err)
+		}
+	}()
 	notice := ux.WindowsSaveImmediate
 	if changedShortcut || changedDuration || changedAudioDevice {
 		notice = ux.WindowsSaveRestart
@@ -931,6 +1021,12 @@ func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t stri
 		}
 	case "probe_asr":
 		placeProbeButton(makeOne, btn, control, contract.ProbeASRButton)
+	case "select_asr_directory":
+		box := settingsform.DeployFolderBox()
+		makeOne("BUTTON", control.Label, btn, box.X, box.Y, box.W, box.H, contract.SelectASRDirectory, false)
+	case "deploy_asr":
+		box := settingsform.DeployButtonBox()
+		makeOne("BUTTON", control.Label, btn, box.X, box.Y, box.W, box.H, contract.DeployASRButton, false)
 	case "llm_base_url":
 		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.LLMBaseURL)
 	case "text_model":
@@ -1094,6 +1190,8 @@ func showNativeSettings(app *appState) error {
 		return fmt.Errorf("创建设置窗口失败: %w", createErr)
 	}
 	p := &uxSettings{window: h, app: app, scale: scale, focusRow: -1, cardStatics: make(map[uintptr]bool), probeEdits: make(map[uintptr]int), palette: resultCardPalette()}
+	p.deployDir = app.cfg.ASRDeployDir
+	if p.deployDir == "" { p.deployDir = localasr.DefaultDirectory() }
 	uxActiveSettings = p
 	p.background, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.background))
 	p.cardBrush, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.surface))
@@ -1153,7 +1251,7 @@ func showNativeSettings(app *appState) error {
 		return err
 	}
 	hint := settingsform.SettingsHint()
-	p.hint = makeOne("STATIC", "", stat, hint.X, hint.Y, hint.W, hint.H, 0, false)
+	p.hint = makeOne("STATIC", "部署位置："+p.deployDir, stat, hint.X, hint.Y, hint.W, hint.H, 0, false)
 	for _, hwnd := range [3]uintptr{p.hint, p.probeStatus[0], p.probeStatus[1]} {
 		setFont(hwnd, p.mutedFont)
 	}

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -17,6 +18,7 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
+	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
 	"github.com/xujinheng/windows-voice-rewrite/core/history"
 	"github.com/xujinheng/windows-voice-rewrite/core/indicator"
 	"github.com/xujinheng/windows-voice-rewrite/core/logfile"
@@ -327,6 +329,12 @@ func runApp() {
 		winErr(e.Error())
 		return
 	}
+	defer localasr.Stop()
+	go func() {
+		if err := localasr.Resume(context.Background(), cfg, protectChild); err != nil {
+			l.Printf("local ASR startup: %v", err)
+		}
+	}()
 	hwnd, e := createTrayCallbackWindow()
 	if e != nil {
 		winErr("无法初始化 Windows 托盘消息窗口：" + e.Error())

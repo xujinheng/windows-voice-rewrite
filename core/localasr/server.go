@@ -1,0 +1,199 @@
+package localasr
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
+	"sync"
+	"time"
+)
+
+// DefaultDirectory is beside the executable, or beside the .app bundle on Mac.
+func DefaultDirectory() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Dir(exe)
+	if runtime.GOOS == "darwin" && filepath.Base(dir) == "MacOS" &&
+		filepath.Base(filepath.Dir(dir)) == "Contents" {
+		parent := filepath.Dir(filepath.Dir(filepath.Dir(dir)))
+		// /Applications is normally read-only to ordinary users.
+		if parent == "/Applications" || parent == "/System/Applications" {
+			if home, err := os.UserHomeDir(); err == nil {
+				return home
+			}
+		}
+		return parent
+	}
+	return dir
+}
+
+var (
+	processMu sync.Mutex
+	process   *exec.Cmd
+)
+
+// ChildGuard is the native host callback that binds a launched process to its
+// lifetime. Core owns when it is used; the host owns the OS API.
+type ChildGuard func(pid int) (func(), error)
+
+// DeployConfigured is the single portable deployment decision for both desktop
+// hosts. Native clients only choose a directory and persist the returned config.
+func DeployConfigured(ctx context.Context, cfg coreconfig.Config, directory string, guard ChildGuard) (coreconfig.Config, error) {
+	if !deploymentMu.TryLock() {
+		return cfg, errors.New("ASR is already deploying")
+	}
+	defer deploymentMu.Unlock()
+	install, err := install(ctx, directory)
+	if err == nil {
+		err = Start(ctx, install, guard)
+	}
+	if err != nil {
+		return cfg, err
+	}
+	defaults := coreconfig.Defaults()
+	cfg.ASRDeployDir = directory
+	cfg.ASRBaseURL = defaults.ASRBaseURL
+	cfg.ASRModel = defaults.ASRModel
+	return cfg, nil
+}
+
+// Resume starts a previously deployed local ASR only when the configured
+// endpoint is the managed local service, never for a custom/remote endpoint.
+func Resume(ctx context.Context, cfg coreconfig.Config, guard ChildGuard) error {
+	if cfg.ASRBaseURL != coreconfig.Defaults().ASRBaseURL {
+		Stop()
+		return nil
+	}
+	directory := cfg.ASRDeployDir
+	if directory == "" {
+		directory = DefaultDirectory()
+	}
+	install, ok := Installed(directory)
+	if !ok {
+		return nil
+	}
+	return Start(ctx, install, guard)
+}
+
+// Start serves the built-in Qwen ASR model on the existing default endpoint.
+// Clients directly use llama.cpp; Core already normalizes ASR transcript markers.
+func Start(ctx context.Context, install Installation, guard ChildGuard) error {
+	for {
+		processMu.Lock()
+		if process == nil || process.Path == install.Server {
+			break
+		}
+		old := process
+		processMu.Unlock()
+		_ = old.Process.Kill()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	var exited chan error
+	if process == nil {
+		conn, err := net.DialTimeout("tcp", "127.0.0.1:8080", 300*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			processMu.Unlock()
+			return errors.New("ASR port 8080 is occupied; stop the other server before Deploy")
+		}
+		logPath := filepath.Join(filepath.Dir(filepath.Dir(install.Model)), "server.log")
+		file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+		if err != nil {
+			processMu.Unlock()
+			return err
+		}
+		cmd := exec.Command(install.Server, "-m", install.Model, "--mmproj", install.Projector,
+			"--alias", "qwen3-asr", "-ngl", fmt.Sprint(install.GPULayers),
+			"-c", "8192", "-np", "1", "--host", "127.0.0.1", "--port", "8080")
+		cmd.Dir = filepath.Dir(install.Server)
+		cmd.Stdout, cmd.Stderr = file, file
+		if err = cmd.Start(); err != nil {
+			file.Close()
+			processMu.Unlock()
+			return err
+		}
+		var release func()
+		if guard != nil {
+			release, err = guard(cmd.Process.Pid)
+			if err != nil {
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+				_ = file.Close()
+				processMu.Unlock()
+				return fmt.Errorf("cannot bind ASR child lifetime: %w", err)
+			}
+		}
+		process = cmd
+		exited = make(chan error, 1)
+		go func() {
+			e := cmd.Wait()
+			if release != nil {
+				release()
+			}
+			processMu.Lock()
+			if process == cmd {
+				process = nil
+				file.Close()
+			}
+			processMu.Unlock()
+			exited <- e
+		}()
+	}
+	processMu.Unlock()
+
+	client := http.Client{Timeout: 1200 * time.Millisecond}
+	timeout, cancel := context.WithTimeout(ctx, 4*time.Minute)
+	defer cancel()
+	ticker := time.NewTicker(800 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		req, _ := http.NewRequestWithContext(timeout, http.MethodGet, "http://127.0.0.1:8080/health", nil)
+		res, err := client.Do(req)
+		if err == nil {
+			_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 256))
+			_ = res.Body.Close()
+			if res.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+		select {
+		case err := <-exited:
+			return fmt.Errorf("llama-server stopped before model readiness: %v", err)
+		case <-timeout.Done():
+			Stop()
+			return timeout.Err()
+		case <-ticker.C:
+			processMu.Lock()
+			alive := process != nil
+			processMu.Unlock()
+			if !alive {
+				return errors.New("local ASR server stopped before readiness")
+			}
+		}
+	}
+}
+
+// Stop leaves the downloaded files intact and stops only the managed child.
+func Stop() {
+	processMu.Lock()
+	p := process
+	processMu.Unlock()
+	if p != nil {
+		_ = p.Process.Kill()
+	}
+}

@@ -4,5 +4,4 @@ use (
 	./core
 	./clients
 	./clients/cli
-	./oneclick
 )

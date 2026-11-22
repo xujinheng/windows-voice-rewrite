@@ -10,7 +10,7 @@ import sys
 
 
 def classify(paths):
-    scope = {"core": False, "macos": False, "windows": False, "oneclick": False,
+    scope = {"core": False, "macos": False, "windows": False,
              "ui": False, "direct2d": False}
     for raw in paths:
         path = raw.strip()
@@ -47,9 +47,7 @@ def classify(paths):
                 or path.startswith("scripts/test_ci_")):
             return dict.fromkeys(scope, True)
         if path.startswith("core/"):
-            if path.startswith("core/asrtext/"):
-                scope.update(core=True, macos=True, windows=True, oneclick=True)
-            elif path.startswith("core/meeting/"):
+            if path.startswith("core/meeting/"):
                 scope.update(core=True, windows=True)
             else:
                 scope.update(core=True, macos=True, windows=True)
@@ -65,9 +63,7 @@ def classify(paths):
             scope["core"] = True
         elif path in ("go.work", "clients/go.mod") or path.startswith(("voice-rewrite/", "macos/", "cli/")):
             # Removed legacy paths and module workspace changes affect every host.
-            scope.update(core=True, macos=True, windows=True, oneclick=True)
-        elif path.startswith("oneclick/"):
-            scope["oneclick"] = True
+            scope.update(core=True, macos=True, windows=True)
         elif path.startswith("installer/"):
             scope["windows"] = True
         elif path.startswith("scripts/"):
