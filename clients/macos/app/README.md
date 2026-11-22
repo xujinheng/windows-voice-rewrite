@@ -66,7 +66,7 @@ approval; only Developer ID signing and Apple notarization can fix that.
 Settings are rendered from the shared Windows Go Core catalog and geometry.
 AppKit owns only native input widgets, local file persistence and Quartz events.
 The current macOS adapter supports left/right Command, Option, Control, F1–F20 and Mouse4/Mouse5,
-the default microphone, and hold-to-record; other input options are not editable
+selectable input microphones, and hold-to-record; other input options are not editable
 because this native host cannot yet apply them. No Meeting or full history panel.
 Go Core supplies the
 result text, title and `insert`/`replace`/`preview` route. macOS checks the

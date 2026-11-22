@@ -61,7 +61,7 @@ func ConnectionForm() NativeForm {
 		for _, control := range controls {
 			item := NativeControl{ID: control.ID, Page: page.ID, Label: control.Label, Kind: control.Kind}
 			switch control.Kind {
-			case contract.Text, contract.Secret, contract.Shortcut, contract.Stepper:
+			case contract.Text, contract.Secret, contract.Shortcut, contract.Stepper, contract.Choice:
 				item.LabelRect, item.Rect = FieldLabel(row), FieldEdit(row)
 				if control.Kind == contract.Shortcut {
 					item.Rect = ShortcutEdit()
@@ -86,7 +86,7 @@ func ConnectionForm() NativeForm {
 				item.Rect = ProbeStatusBox()
 				item.Label = serviceprobe.StatusIdle
 			case contract.Note:
-				item.Rect = Rect{X: 226, Y: 338, W: 565, H: 74}
+				item.Rect = Rect{X: 226, Y: 374, W: 565, H: 34}
 			}
 			form.Controls = append(form.Controls, item)
 			if control.Stacked {
@@ -131,6 +131,10 @@ func Update(cfg coreconfig.Config, values map[string]string) (coreconfig.Config,
 			cfg.DictationHotkey = value
 		case "asr_deploy_dir":
 			cfg.ASRDeployDir = value
+		case "microphone":
+			if cfg.AudioDeviceID, err = strconv.Atoi(value); err != nil {
+				return cfg, errors.New("录音设备编号无效")
+			}
 		case "max_record_seconds":
 			if cfg.MaxRecordSeconds, err = coreconfig.RecordingSeconds(value); err != nil {
 				return cfg, err
@@ -170,6 +174,7 @@ func ConnectionAction(ctx context.Context, raw []byte) (any, error) {
 			"llm_base_url": cfg.LLMBaseURL, "text_model": cfg.TextModel, "llm_api_key": cfg.LLMAPIKey,
 			"rewrite_shortcut": cfg.HotkeyRecord, "dictation_shortcut": cfg.DictationHotkey,
 			"max_record_seconds": strconv.Itoa(cfg.MaxRecordSeconds),
+			"microphone": strconv.Itoa(cfg.AudioDeviceID),
 			"asr_deploy_dir":     directory,
 		}}, nil
 	}

@@ -1,5 +1,7 @@
 import AppKit
 import AVFoundation
+import AudioToolbox
+import CoreAudio
 import ApplicationServices
 import CoreGraphics
 import Foundation
@@ -34,7 +36,7 @@ struct PillSpec: Decodable {
 }
 
 private struct HostProfile: Decodable {
-    let maximumSeconds, modifierDelayMS, mouseDelayMS, pasteRestoreMS: Int
+    let maximumSeconds, microphoneID, modifierDelayMS, mouseDelayMS, pasteRestoreMS: Int
     let copyLabel, applyLabel, applyUnsafeLabel: String
     let pill: PillSpec
 }
@@ -52,9 +54,43 @@ private final class Microphone {
     }
     private(set) var running = false
 
-    func start(maximumSeconds: Int) throws {
+    static func inputDevices() -> [(name: String, id: AudioDeviceID)] {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices,
+                            mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        let system = AudioObjectID(kAudioObjectSystemObject)
+        guard AudioObjectGetPropertyDataSize(system, &address, 0, nil, &size) == noErr else { return [] }
+        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(system, &address, 0, nil, &size, &ids) == noErr else { return [] }
+        return ids.compactMap { id in
+            var streams = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams,
+                               mScope: kAudioDevicePropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+            var bytes: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(id, &streams, 0, nil, &bytes) == noErr,
+                  bytes > 0 else { return nil }
+            var nameAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyDeviceNameCFString,
+                                   mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+            var name: CFString = "" as CFString
+            var nameBytes = UInt32(MemoryLayout<CFString>.size)
+            guard AudioObjectGetPropertyData(id, &nameAddress, 0, nil, &nameBytes, &name) == noErr else { return nil }
+            return (name: name as String, id: id)
+        }
+    }
+
+    func start(maximumSeconds: Int, deviceIndex: Int) throws {
         guard !running else { throw HostError.microphone("already recording") }
         let input = engine.inputNode
+        if deviceIndex >= 0 {
+            let devices = Self.inputDevices()
+            guard devices.indices.contains(deviceIndex), let unit = input.audioUnit else {
+                throw HostError.microphone("selected microphone unavailable")
+            }
+            var selected = devices[deviceIndex].id
+            guard AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
+                  kAudioUnitScope_Global, 0, &selected, UInt32(MemoryLayout<AudioDeviceID>.size)) == noErr else {
+                throw HostError.microphone("cannot select microphone")
+            }
+        }
         let format = input.outputFormat(forBus: 0)
         guard format.channelCount > 0, format.sampleRate > 0,
               format.commonFormat == .pcmFormatFloat32 else {
@@ -272,6 +308,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
     private var settingsPanel: NSPanel?
     private var settingsProgressTimer: Timer?
     private var settingsInputs: [String: NSTextField] = [:]
+    private var settingsMicrophone: NSPopUpButton?
     private var settingsPages: [String: NSView] = [:]
     private var settingsStatuses: [String: NSTextField] = [:]
     private var settingsHint: NSTextField?
@@ -430,6 +467,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
             let height = form.height
             let content = panel.contentView!
             settingsInputs = [:]
+            settingsMicrophone = nil
             settingsPages = [:]
             settingsStatuses = [:]
             settingsDeployDirectory = values["asr_deploy_dir"] ?? ""
@@ -467,6 +505,20 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
                     field.identifier = NSUserInterfaceItemIdentifier(entry.id)
                     parent.addSubview(field)
                     settingsInputs[entry.id] = field
+                case "choice" where entry.id == "microphone":
+                    let label = NSTextField(labelWithString: entry.label)
+                    label.frame = entry.labelRect.native(height)
+                    parent.addSubview(label)
+                    let picker = NSPopUpButton(frame: entry.rect.native(height), pullsDown: false)
+                    picker.addItem(withTitle: "系统默认麦克风")
+                    picker.lastItem?.tag = -1
+                    for (index, device) in Microphone.inputDevices().prefix(256).enumerated() {
+                        picker.addItem(withTitle: device.name)
+                        picker.lastItem?.tag = index
+                    }
+                    picker.selectItem(withTag: Int(values["microphone"] ?? "-1") ?? -1)
+                    parent.addSubview(picker)
+                    settingsMicrophone = picker
                 case "note":
                     let note = NSTextField(wrappingLabelWithString: entry.label)
                     note.frame = entry.rect.native(height)
@@ -602,7 +654,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
             }
         case "save", "probe_asr", "probe_llm", "discover_asr_models", "discover_llm_models":
             guard let json = try? String(contentsOf: configURL, encoding: .utf8) else { return }
-            let values = settingsInputs.mapValues { $0.stringValue }
+            var values = settingsInputs.mapValues { $0.stringValue }
+            if let picker = settingsMicrophone { values["microphone"] = String(picker.selectedItem?.tag ?? -1) }
             settingsSerial += 1
             let serial = settingsSerial
             if id == "save" {
@@ -831,7 +884,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
             targetWindow = focusedWindow()
             selectedAtPress = nil
             taskID = 0
-            do { try microphone.start(maximumSeconds: config.maximumSeconds) }
+            do { try microphone.start(maximumSeconds: config.maximumSeconds, deviceIndex: config.microphoneID) }
             catch { VRCommand(Int32(VR_COMMAND_ABANDON), 0, 0, 0); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return true }
             if press.role == 2 {
                 // Snapshot while the original selection is still active. Do not

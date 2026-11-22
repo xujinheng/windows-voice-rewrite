@@ -74,12 +74,12 @@ func headlessProfile(raw json.RawMessage) response {
 	}
 	cfg.DictationHotkey, cfg.HotkeyRecord = dictation, rewrite
 	cfg, err = coreconfig.Normalize(cfg)
-	if err != nil || cfg.RecordMode != "hold" || cfg.AudioDeviceID != -1 {
+	if err != nil || cfg.RecordMode != "hold" {
 		return failure("invalid_config", msgInvalidConfig)
 	}
 	result := map[string]any{"profile": map[string]any{
 		"dictation": cfg.DictationHotkey, "rewrite": cfg.HotkeyRecord,
-		"maximumSeconds": cfg.MaxRecordSeconds, "modifierDelayMS": 200,
+		"maximumSeconds": cfg.MaxRecordSeconds, "microphoneID": cfg.AudioDeviceID, "modifierDelayMS": 200,
 		"pasteRestoreMS":   ux.PasteReceiptMinimumMilliseconds,
 		"mouseDelayMS":     int(voice.SideHoldThreshold / time.Millisecond),
 		"pill":             indicator.HostSpec(),
