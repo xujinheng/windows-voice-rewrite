@@ -197,7 +197,7 @@ private struct BridgeReply: Decodable {
         let config: String?
         let status: String?
         let directory: String?
-        let busy: Bool?
+        let phase: String?
         let models: [String]?
         let capture: [String: String]?
     }
@@ -210,30 +210,6 @@ private let onCoreEvent: @convention(c) (Int32, UInt64) -> Void = { kind, token 
 }
 
 private enum GoCore {
-    static func request(config: String? = nil, rewrite: Bool? = nil, audio: Data,
-                        selection: String?, token: UInt64 = 0) throws -> BridgeReply.Output {
-        let result: UnsafeMutablePointer<CChar>?
-        if let rewrite {
-            result = (selection ?? "").withCString { selected in
-                audio.withUnsafeBytes { pcm in
-                    VRRun(rewrite ? 1 : 0, pcm.bindMemory(to: UInt8.self).baseAddress,
-                          Int32(audio.count), selected, token, onCoreEvent)
-                }
-            }
-        } else {
-            result = (config ?? "").withCString { VRProfile($0) }
-        }
-        return try decode(result)
-    }
-
-    static func asrProgress() throws -> BridgeReply.Output {
-        try decode(VRASRProgress())
-    }
-
-    static func deploy(_ directory: String) throws -> BridgeReply.Output {
-        try decode(directory.withCString { VRDeploy($0) })
-    }
-
     static func settings(_ action: String, config: String, values: [String: String] = [:],
                          kind: String = "") throws -> BridgeReply.Output {
         let current = try JSONSerialization.jsonObject(with: Data(config.utf8))
@@ -242,7 +218,7 @@ private enum GoCore {
         return try decode(json.withCString { VRSettings($0) })
     }
 
-    private static func decode(_ result: UnsafeMutablePointer<CChar>?) throws -> BridgeReply.Output {
+    static func decode(_ result: UnsafeMutablePointer<CChar>?) throws -> BridgeReply.Output {
         guard let result else { throw HostError.bridge("Go Core returned no response") }
         defer { VRFree(result) }
         let reply = try JSONDecoder().decode(BridgeReply.self,
@@ -265,6 +241,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var settingsPanel: NSPanel?
     private var settingsProgressTimer: Timer?
     private var settingsInputs: [String: NSTextField] = [:]
+    private var settingsInitialValues: [String: String] = [:]
     private var settingsPages: [String: NSView] = [:]
     private var settingsStatuses: [String: NSTextField] = [:]
     private var settingsHint: NSTextField?
@@ -333,7 +310,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 json = "{}" // Go Core owns the persisted defaults and macOS shortcut bindings.
                 needsDefaults = true
             }
-            let output = try GoCore.request(config: json, audio: Data(), selection: nil)
+            let output = try GoCore.decode(json.withCString { VRProfile($0) })
             guard let profile = output.profile else { throw HostError.config("missing Go host profile") }
             if needsDefaults {
                 firstRun = true
@@ -370,10 +347,11 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             let height = form.height
             let content = panel.contentView!
             settingsInputs = [:]
+            settingsInitialValues = values
             settingsPages = [:]
             settingsStatuses = [:]
             settingsDeployDirectory = values["asr_deploy_dir"] ?? ""
-            let deployStatus = try? GoCore.asrProgress()
+            let deployStatus = try? GoCore.decode(VRASRProgress())
             settingsRunning = form.running
             settingsBusy = form.busy
             settingsCaptureHint = form.captureHint
@@ -444,8 +422,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     timer.invalidate()
                     return
                 }
-                if let progress = try? GoCore.asrProgress(), progress.busy == true {
-                    self.settingsHint?.stringValue = progress.status ?? "ASR 正在部署中"
+                if let progress = try? GoCore.decode(VRASRProgress()), progress.directory == self.settingsDeployDirectory {
+                    self.settingsHint?.stringValue = progress.status ?? "部署位置：" + self.settingsDeployDirectory
                 }
             }
             panel.center()
@@ -458,10 +436,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func settingsShowDeployError() {
-        guard settingsHint?.stringValue == "ASR 部署失败（点击查看原因）",
-              let progress = try? GoCore.asrProgress(),
-              let message = progress.status,
-              message.hasPrefix("ASR 部署失败：") else { return }
+        guard let progress = try? GoCore.decode(VRASRProgress()),
+              progress.phase == "failed", progress.directory == settingsDeployDirectory,
+              let message = progress.status else { return }
         let alert = NSAlert()
         alert.messageText = "ASR 部署失败"
         alert.informativeText = message
@@ -513,36 +490,17 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 }
             }
         case "deploy_asr":
-            if let progress = try? GoCore.asrProgress(), progress.busy == true {
-                settingsHint?.stringValue = progress.status ?? "ASR 正在部署中"
-                return
-            }
-            guard VRSnapshot(0, 0).armed == 0 && !pending else {
-                settingsHint?.stringValue = settingsBusy
-                return
-            }
-            settingsHint?.stringValue = "ASR 正在下载与部署（首次需要数 GB 空间）…"
-            let directory = settingsDeployDirectory
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let result = Result { try GoCore.deploy(directory) }
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    switch result {
-                    case .failure:
-                        if let active = try? GoCore.asrProgress(), active.busy == true {
-                            self.settingsHint?.stringValue = active.status ?? "ASR 正在部署中"
-                        } else {
-                            self.settingsHint?.stringValue = "ASR 部署失败（点击查看原因）"
-                            if self.settingsPanel?.isVisible == true { self.settingsShowDeployError() }
-                        }
-                    case .success(let output):
-                        self.settingsHint?.stringValue = output.status ?? "ASR 已部署"
-                    }
-                }
+            do {
+                settingsHint?.stringValue = try GoCore.decode(settingsDeployDirectory.withCString { VRDeploy($0) }).status ?? "ASR 正在准备部署"
+            } catch {
+                settingsHint?.stringValue = String(describing: error)
             }
         case "save", "probe_asr", "probe_llm", "discover_asr_models", "discover_llm_models":
             guard let json = try? String(contentsOf: configURL, encoding: .utf8) else { return }
-            let values = settingsInputs.mapValues { $0.stringValue }
+            let currentValues = settingsInputs.mapValues { $0.stringValue }
+            let values = id == "save"
+                ? currentValues.filter { settingsInitialValues[$0.key] != $0.value }
+                : currentValues
             settingsSerial += 1
             let serial = settingsSerial
             if id == "save" {
@@ -554,6 +512,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     let output = try GoCore.settings("save", config: json, values: values)
                     guard let updated = output.config else { return }
                     try updated.write(to: configURL, atomically: true, encoding: .utf8)
+                    settingsInitialValues = currentValues
                     reload()
                     firstRun = false
                     settingsHint?.stringValue = output.status ?? ""
@@ -828,8 +787,13 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                     let result = Result {
                         let pcm = try Microphone.pcm(capture)
-                        return try GoCore.request(rewrite: rewrite, audio: pcm,
-                                                 selection: selected?.text, token: token)
+                        return try (selected?.text ?? "").withCString { source in
+                            try pcm.withUnsafeBytes { bytes in
+                                try GoCore.decode(VRRun(rewrite ? 1 : 0,
+                                    bytes.bindMemory(to: UInt8.self).baseAddress,
+                                    Int32(pcm.count), source, token, onCoreEvent))
+                            }
+                        }
                     }
                     DispatchQueue.main.async {
                         guard let self, VRSnapshot(0, token).valid == 1 else { return }
@@ -839,7 +803,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                             fputs("VoiceRewrite: \(error)\n", stderr)
                         case .success(let value):
                             guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
-                            if value.route == "replace", let selected {
+                            let action = (value.route ?? "").withCString {
+                                VRDeliveryAction($0, self.targetStillValid() ? 1 : 0, selected == nil ? 0 : 1)
+                            }
+                            if action == Int32(VR_DELIVERY_REPLACE), let selected {
                                 self.pill.working(.applying)
                                 self.show(self.config.pill.applyingLabel)
                                 self.pasteSelection(selected, with: text, token: token) { [weak self] sent in
@@ -849,10 +816,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                 }
                                 return
                             }
-                            if value.route == "insert" && self.targetStillValid() {
+                            if action == Int32(VR_DELIVERY_INSERT) {
                                 if !self.paste(text) { self.presentPreview(text, title: value.title) }
                             } else {
-                                self.presentPreview(text, title: value.title)
+                                // A replace result remains manually applicable after focus moves.
+                                self.presentPreview(text, title: value.title,
+                                                    selection: action == Int32(VR_DELIVERY_PREVIEW_APPLY) ? selected : nil)
                             }
                             self.clearSession()
                         }

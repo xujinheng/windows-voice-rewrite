@@ -69,15 +69,15 @@ func validSHA(path, expected string) bool {
 
 // Retain .part across interrupted transfers; publish only verified content.
 func downloadVerified(ctx context.Context, dest string, spec downloadSpec) error {
-	report("正在校验 " + spec.filename)
+	report(PhaseVerifying, "正在校验 "+spec.filename)
 	if validSHA(dest, spec.sha) {
-		report("已缓存 " + spec.filename)
+		report(PhaseVerifying, "已缓存 "+spec.filename)
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
 		return err
 	}
-	report("正在校验未完成下载 " + spec.filename)
+	report(PhaseVerifying, "正在校验未完成下载 "+spec.filename)
 	if validSHA(dest+".part", spec.sha) {
 		if err := os.Remove(dest); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
@@ -86,13 +86,13 @@ func downloadVerified(ctx context.Context, dest string, spec downloadSpec) error
 	}
 	var last error
 	for _, source := range spec.urls {
-		report("正在连接 " + spec.filename)
+		report(PhaseDownloading, "正在连接 "+spec.filename)
 		if err := downloadFrom(ctx, source, dest+".part", spec.filename); err != nil {
 			last = err
-			report("下载源不可用，正在切换：" + spec.filename)
+			report(PhaseDownloading, "下载源不可用，正在切换："+spec.filename)
 			continue
 		}
-		report("正在校验 " + spec.filename)
+		report(PhaseVerifying, "正在校验 "+spec.filename)
 		if !validSHA(dest+".part", spec.sha) {
 			last = fmt.Errorf("%s 下载内容 SHA-256 不匹配", spec.filename)
 			_ = os.Remove(dest + ".part")
@@ -104,7 +104,7 @@ func downloadVerified(ctx context.Context, dest string, spec downloadSpec) error
 		if err := os.Rename(dest+".part", dest); err != nil {
 			return err
 		}
-		report("下载完成 " + spec.filename)
+		report(PhaseVerifying, "下载完成 "+spec.filename)
 		return nil
 	}
 	return fmt.Errorf("下载 %s 失败：%w。请检查网络/代理后重试；或从 %s 手动下载同名文件放到 %s，再点 Deploy（会校验 SHA-256）", spec.filename, last, spec.urls[len(spec.urls)-1], dest)
@@ -150,7 +150,7 @@ func downloadFrom(ctx context.Context, source, part, filename string) error {
 	} else {
 		offset = 0
 	}
-	report("正在下载 " + filename)
+	report(PhaseDownloading, "正在下载 "+filename)
 	buffer := make([]byte, 256*1024)
 	for {
 		n, readErr := resp.Body.Read(buffer)
@@ -161,12 +161,7 @@ func downloadFrom(ctx context.Context, source, part, filename string) error {
 			received += int64(n)
 			if time.Since(lastUpdate) >= 500*time.Millisecond {
 				done := received + offset
-				if total > 0 {
-					report(fmt.Sprintf("下载 %s：%.1f / %.1f MB (%.0f%%)",
-						filename, float64(done)/1e6, float64(total)/1e6, 100*float64(done)/float64(total)))
-				} else {
-					report(fmt.Sprintf("下载 %s：已下载 %.1f MB", filename, float64(done)/1e6))
-				}
+				reportProgress(filename, done, total)
 				lastUpdate = time.Now()
 			}
 		}
@@ -218,7 +213,7 @@ func installRuntime(ctx context.Context, root, flavor string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 		return "", err
 	}
-	report("正在解压 llama.cpp 运行时")
+	report(PhaseInstalling, "正在解压 llama.cpp 运行时")
 	stage, err := os.MkdirTemp(filepath.Dir(target), ".unpack-")
 	if err != nil {
 		return "", err
@@ -333,28 +328,59 @@ type Installation struct {
 	GPULayers int
 }
 
-var deploymentMu sync.Mutex
+type Phase string
 
-// Progress is an in-memory snapshot, surviving settings-window closure while
-// the host process remains alive. Native clients display this same state.
-type Progress struct {
+const (
+	PhaseIdle        Phase = ""
+	PhasePreparing   Phase = "preparing"
+	PhaseDownloading Phase = "downloading"
+	PhaseVerifying   Phase = "verifying"
+	PhaseInstalling  Phase = "installing"
+	PhaseStarting    Phase = "starting"
+	PhaseReady       Phase = "ready"
+	PhaseFailed      Phase = "failed"
+)
+
+// Status is the sole in-process deployment state, independent of UI windows.
+type Status struct {
+	Phase     Phase
 	Text      string
 	Directory string
 	Busy      bool
+	File      string
+	Received  int64
+	Total     int64
+	ErrorCode string
 }
 
 var progressMu sync.RWMutex
-var progress Progress
+var progress Status
 
-func ProgressSnapshot() Progress {
+func DeploymentStatus() Status {
 	progressMu.RLock()
 	defer progressMu.RUnlock()
 	return progress
 }
 
-func report(text string) {
+func report(phase Phase, text string) {
 	progressMu.Lock()
-	progress.Text = text
+	progress.Phase, progress.Text = phase, text
+	if phase != PhaseDownloading {
+		progress.File, progress.Received, progress.Total = "", 0, 0
+	}
+	progressMu.Unlock()
+}
+
+func reportProgress(filename string, received, total int64) {
+	progressMu.Lock()
+	progress.Phase = PhaseDownloading
+	progress.File, progress.Received, progress.Total = filename, received, total
+	if total > 0 {
+		progress.Text = fmt.Sprintf("下载 %s：%.1f / %.1f MB (%.0f%%)", filename,
+			float64(received)/1e6, float64(total)/1e6, 100*float64(received)/float64(total))
+	} else {
+		progress.Text = fmt.Sprintf("下载 %s：已下载 %.1f MB", filename, float64(received)/1e6)
+	}
 	progressMu.Unlock()
 }
 

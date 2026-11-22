@@ -51,6 +51,8 @@ unsigned int VRSpinner(int index, unsigned int tick);
 void VRDuration(long long seconds, char *buffer, int capacity);
 void VRFree(void *ptr);
 char *VRLatestResult(void);
+enum { VR_DELIVERY_PREVIEW = 1, VR_DELIVERY_INSERT, VR_DELIVERY_REPLACE, VR_DELIVERY_PREVIEW_APPLY };
+int VRDeliveryAction(const char *route, int target, int selected);
 char *VRProfile(const char *config);
 char *VRSettings(const char *request);
 char *VRDeploy(const char *directory);

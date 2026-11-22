@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 )
@@ -72,14 +74,28 @@ func TestUnpackZipCannotEscapeFolder(t *testing.T) {
 }
 
 func TestDeployFailureReportsStatus(t *testing.T) {
-	err := Deploy(context.Background(), "", nil)
-	if err == nil {
-		t.Fatal("expected failure for empty deployment directory")
+	if err := BeginDeploy(context.Background(), "", nil); err == nil {
+		t.Fatal("empty directory should fail without creating a job")
 	}
-	progress := ProgressSnapshot()
-	if progress.Busy || !strings.Contains(progress.Text, err.Error()) {
-		t.Fatalf("failed Deploy lost its error details: %+v, %v", progress, err)
+	parent := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(parent, []byte("file"), 0600); err != nil {
+		t.Fatal(err)
 	}
+	if err := BeginDeploy(context.Background(), parent, nil); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		p := DeploymentStatus()
+		if !p.Busy {
+			if p.Directory != parent || p.Phase != PhaseFailed || p.ErrorCode == "" || !strings.Contains(p.Text, "失败") {
+				t.Fatalf("failed deployment lost diagnostics: %+v", p)
+			}
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("deployment did not publish terminal status")
 }
 
 func TestResumeDoesNotStartForRemoteASR(t *testing.T) {
@@ -110,7 +126,7 @@ func TestDownloadProgressAfterResume(t *testing.T) {
 	if err := downloadFrom(context.Background(), server.URL, part, "model.gguf"); err != nil {
 		t.Fatal(err)
 	}
-	if got := ProgressSnapshot().Text; !strings.Contains(got, "model.gguf") || !strings.Contains(got, "%") {
+	if got := DeploymentStatus().Text; !strings.Contains(got, "model.gguf") || !strings.Contains(got, "%") {
 		t.Fatalf("download byte progress unavailable: %q", got)
 	}
 	if contents, err := os.ReadFile(part); err != nil || !bytes.Equal(contents, data) {
@@ -119,11 +135,19 @@ func TestDownloadProgressAfterResume(t *testing.T) {
 }
 
 func TestConcurrentDeployDoesNotStartAnotherDownload(t *testing.T) {
-	deploymentMu.Lock()
-	defer deploymentMu.Unlock()
-	err := Deploy(context.Background(), t.TempDir(), nil)
-	if err == nil || !strings.Contains(err.Error(), "正在部署") {
-		t.Fatalf("repeated Deploy should leave existing task unchanged: %v", err)
+	progressMu.Lock()
+	old := progress
+	progress = Status{Directory: "/one", Busy: true, Phase: PhaseDownloading}
+	progressMu.Unlock()
+	defer func() { progressMu.Lock(); progress = old; progressMu.Unlock() }()
+	if err := BeginDeploy(context.Background(), "/one", nil); err != nil {
+		t.Fatalf("same task should join: %v", err)
+	}
+	if err := BeginDeploy(context.Background(), "/other", nil); !errors.Is(err, ErrBusyDifferentDirectory) {
+		t.Fatalf("different path should conflict without replacing task: %v", err)
+	}
+	if DeploymentStatus().Directory != "/one" {
+		t.Fatal("active deployment was replaced")
 	}
 }
 
@@ -132,5 +156,22 @@ func TestRuntimeDownloadHasVerifiedOfficialFallback(t *testing.T) {
 	if spec.sha != macArmTarSHA || spec.urls[len(spec.urls)-1] !=
 		"https://github.com/ggml-org/llama.cpp/releases/download/"+llamaRelease+"/"+spec.filename {
 		t.Fatalf("official verified fallback missing: %+v", spec)
+	}
+}
+
+func TestIntentionalStopDoesNotReportRuntimeFailure(t *testing.T) {
+	progressMu.Lock()
+	prior := progress
+	progress = Status{Phase: PhaseReady, Directory: "/test", Text: "ASR 已部署并启动"}
+	progressMu.Unlock()
+	defer func() {
+		progressMu.Lock()
+		progress = prior
+		progressMu.Unlock()
+	}()
+	Stop()
+	state := DeploymentStatus()
+	if state.Phase != PhaseIdle || state.ErrorCode != "" || state.Busy {
+		t.Fatalf("intentional stop reported as a deployment failure: %+v", state)
 	}
 }

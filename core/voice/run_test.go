@@ -143,3 +143,23 @@ func TestCoreRetainsCompletedResultWithoutHostState(t *testing.T) {
 		t.Fatalf("the sole Go Core must own result history: %+v", entries)
 	}
 }
+
+// Every generation may start exactly one portable speech task, even on error.
+func TestCoreExecuteSingleAttemptPerGeneration(t *testing.T) {
+	c := &Core{}
+	token := c.Apply(Command{Kind: CommandStart}).Token
+	cfg := coreconfig.Defaults()
+	_, err := c.Execute(token, cfg, nil, "", false, nil)
+	var pcm *PCMError
+	if !errors.As(err, &pcm) {
+		t.Fatalf("expected PCM rejection, got %v", err)
+	}
+	_, err = c.Execute(token, cfg, nil, "", false, nil)
+	if err == nil || errors.As(err, &pcm) {
+		t.Fatalf("second execution must not reenter the pipeline: %v", err)
+	}
+	c.Apply(Command{Kind: CommandStart})
+	if _, err := c.Execute(token, cfg, nil, "", false, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("superseded token executed: %v", err)
+	}
+}

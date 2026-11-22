@@ -75,6 +75,13 @@ func VRSnapshot(code C.int, token C.uint64_t) C.VRCoreState {
 	return r
 }
 
+//export VRDeliveryAction
+func VRDeliveryAction(route *C.char, target, selected C.int) C.int {
+	if route == nil { return C.int(voice.DeliveryPreview) }
+	return C.int(voice.DecideDelivery(C.GoString(route),
+		voice.DeliveryFacts{TargetCurrent: target != 0, SelectionCaptured: selected != 0}))
+}
+
 //export VRClipboardSnapshotFits
 func VRClipboardSnapshotFits(size, total C.ulonglong) C.int {
 	if clipboard.SnapshotFits(uintptr(size), uintptr(total)) {
@@ -147,8 +154,8 @@ func VRProfile(config *C.char) *C.char {
 
 //export VRASRProgress
 func VRASRProgress() *C.char {
-	p := localasr.ProgressSnapshot()
-	return nativeJSON(success(map[string]any{"status": p.Text, "directory": p.Directory, "busy": p.Busy}))
+	p := localasr.DeploymentStatus()
+	return nativeJSON(success(map[string]any{"status": p.Text, "directory": p.Directory, "phase": p.Phase}))
 }
 
 //export VRDeploy
@@ -156,10 +163,10 @@ func VRDeploy(directory *C.char) *C.char {
 	if directory == nil {
 		return nativeJSON(failure("invalid_directory", "missing directory"))
 	}
-	if err := localasr.Deploy(context.Background(), C.GoString(directory), nil); err != nil {
+	if err := localasr.BeginDeploy(context.Background(), C.GoString(directory), nil); err != nil {
 		return nativeJSON(failure("deploy_failed", err.Error()))
 	}
-	return nativeJSON(success(map[string]string{"status": "ASR 已部署"}))
+	return nativeJSON(success(map[string]string{"status": localasr.DeploymentStatus().Text}))
 }
 
 //export VRStopASR

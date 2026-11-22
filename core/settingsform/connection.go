@@ -114,8 +114,8 @@ func ConnectionForm() NativeForm {
 // belong to the host, not this business decision.
 func Update(cfg coreconfig.Config, values map[string]string) (coreconfig.Config, error) {
 	fields := [6]string{cfg.ASRBaseURL, cfg.ASRModel, cfg.ASRAPIKey, cfg.LLMBaseURL, cfg.TextModel, cfg.LLMAPIKey}
-	for id, value := range values {
-		if index, ok := contract.InputIndex(id); ok {
+	for index, id := range [...]string{"asr_base_url", "asr_model", "asr_api_key", "llm_base_url", "text_model", "llm_api_key"} {
+		if value, ok := values[id]; ok {
 			fields[index] = value
 		}
 	}

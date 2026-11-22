@@ -54,7 +54,6 @@ const (
 	uxEMSetMargins            = 0x00D3
 	uxWMProbeDone             = 0x8000 + 104
 	uxWMModelsDone            = 0x8000 + 106
-	uxWMDeployDone           = 0x8000 + 107
 	uxShortcutInput           = 9106
 	uxRewriteInput            = 9108
 	WM_SETTINGS_CAPTURE_MOUSE = 0x8000 + 105
@@ -434,13 +433,16 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	switch uint32(msg) {
 	case uxWMTimer:
 		if p != nil && p.window == hwnd && wParam == 1 && p.hint != 0 {
-			state := localasr.ProgressSnapshot()
+			state := localasr.DeploymentStatus()
 			text := "部署位置：" + p.deployDir
 			if state.Text != "" && (state.Busy || state.Directory == p.deployDir) {
 				text = state.Text
 			}
 			if text != uxWinText(p.hint) {
 				uxSetText(p.hint, text)
+				if state.Phase == localasr.PhaseFailed && state.Directory == p.deployDir {
+					winErr(state.Text)
+				}
 			}
 		}
 		return 0
@@ -595,18 +597,6 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			}
 		}
 		return 0
-	case uxWMDeployDone:
-		if p != nil && p.window == hwnd {
-			state := localasr.ProgressSnapshot()
-			if strings.HasPrefix(state.Text, "ASR 部署失败：") {
-				uxSetText(p.hint, "ASR 部署失败，请查看错误提示并重试")
-				winErr(state.Text)
-			} else if !state.Busy {
-				if cfg, loadErr := loadConfig(); loadErr == nil { p.app.cfg = cfg }
-				uxSetText(p.hint, state.Text)
-			}
-		}
-		return 0
 	case uxWMModelsDone:
 		if p != nil && p.window == hwnd && wParam < 2 {
 			p.completeModelDiscovery(int(wParam), uint64(lParam))
@@ -695,7 +685,9 @@ func (p *uxSettings) chooseDeployDirectory() {
 		directory := syscall.UTF16ToString(selected[:])
 		cfg, err := loadConfig()
 		if err == nil {
-			cfg.ASRDeployDir = directory
+			cfg, err = settingsform.Update(cfg, map[string]string{"asr_deploy_dir": directory})
+		}
+		if err == nil {
 			err = saveConfig(cfg)
 		}
 		if err != nil {
@@ -704,34 +696,20 @@ func (p *uxSettings) chooseDeployDirectory() {
 			return
 		}
 		p.deployDir = directory
-		p.app.cfg.ASRDeployDir = directory
+		p.app.cfg = cfg
 		uxSetText(p.hint, "部署位置已保存："+directory)
 	}
 }
 
 func (p *uxSettings) deployASR() {
-	if p.app.busy.Load() {
-		uxSetText(p.hint, "请在当前语音任务结束后部署 ASR")
+	if err := localasr.BeginDeploy(context.Background(), p.deployDir, protectChild); err != nil {
+		uxSetText(p.hint, err.Error())
 		return
 	}
-	state := localasr.ProgressSnapshot()
-	if state.Busy {
-		uxSetText(p.hint, state.Text)
-		return
-	}
-	directory := p.deployDir
-	hwnd := p.window
-	uxSetText(p.hint, "ASR 正在下载与部署（首次需要数 GB 空间）…")
-	go func() {
-		_ = localasr.Deploy(context.Background(), directory, protectChild)
-		procPostMessage.Call(hwnd, uxWMDeployDone, 0, 0)
-	}()
+	uxSetText(p.hint, localasr.DeploymentStatus().Text)
 }
 
 func (p *uxSettings) save() error {
-	if p.app.busy.Load() {
-		return errors.New(ux.SaveWhileBusy)
-	}
 	if p.capturingShortcut != 0 {
 		return errors.New(shortcut.CapturePendingMessage)
 	}
@@ -1267,7 +1245,7 @@ func showNativeSettings(app *appState) error {
 	}
 	hint := settingsform.SettingsHint()
 	initialHint := "部署位置：" + p.deployDir
-	if state := localasr.ProgressSnapshot(); state.Text != "" && (state.Busy || state.Directory == p.deployDir) {
+	if state := localasr.DeploymentStatus(); state.Text != "" && (state.Busy || state.Directory == p.deployDir) {
 		initialHint = state.Text
 	}
 	p.hint = makeOne("STATIC", initialHint, stat, hint.X, hint.Y, hint.W, hint.H, 0, false)

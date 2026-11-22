@@ -47,39 +47,56 @@ var (
 // lifetime. Core owns when it is used; the host owns the OS API.
 type ChildGuard func(pid int) (func(), error)
 
-// Deploy installs and starts local ASR. Configuration is saved separately
-// when the user chooses a directory, so concurrent settings edits stay intact.
-func Deploy(ctx context.Context, directory string, guard ChildGuard) (err error) {
-	if !deploymentMu.TryLock() {
-		return errors.New("ASR 正在部署中；请查看当前下载进度")
+// ErrBusyDifferentDirectory preserves a running task on conflicting requests.
+var ErrBusyDifferentDirectory = errors.New("ASR deployment already running in another directory")
+
+// BeginDeploy starts one non-blocking application-owned deployment. Repeated
+// requests for the same busy or ready directory reuse the existing task.
+func BeginDeploy(ctx context.Context, directory string, guard ChildGuard) error {
+	if ctx == nil || directory == "" {
+		return errors.New("choose an ASR directory")
 	}
 	progressMu.Lock()
-	progress = Progress{Text: "正在准备 ASR 部署", Directory: directory, Busy: true}
+	if progress.Directory == directory && (progress.Busy || progress.Phase == PhaseReady) {
+		progressMu.Unlock()
+		return nil
+	}
+	if progress.Busy {
+		progressMu.Unlock()
+		return ErrBusyDifferentDirectory
+	}
+	progress = Status{Directory: directory, Phase: PhasePreparing,
+		Text: "正在准备 ASR 部署", Busy: true}
 	progressMu.Unlock()
-	defer func() {
-		if err != nil {
-			report("ASR 部署失败：" + err.Error())
-		} else {
-			report("ASR 已部署并启动")
+	go func() {
+		installation, err := install(ctx, directory)
+		if err == nil {
+			progressMu.Lock()
+			progress.Phase = PhaseStarting
+			progress.Text = "正在启动识别服务，加载模型中…"
+			progressMu.Unlock()
+			err = Start(ctx, installation, guard)
 		}
 		progressMu.Lock()
 		progress.Busy = false
+		if err != nil {
+			progress.Phase = PhaseFailed
+			progress.ErrorCode = "deploy_failed"
+			progress.Text = "ASR 部署失败：" + err.Error()
+		} else {
+			progress.Phase = PhaseReady
+			progress.Text = "ASR 已部署并启动"
+		}
 		progressMu.Unlock()
-		deploymentMu.Unlock()
 	}()
-	installation, err := install(ctx, directory)
-	if err != nil {
-		return err
-	}
-	report("正在启动识别服务，加载模型中…")
-	return Start(ctx, installation, guard)
+	return nil
 }
 
 // Resume starts a previously deployed local ASR only when the configured
 // endpoint is the managed local service, never for a custom/remote endpoint.
 func Resume(ctx context.Context, cfg coreconfig.Config, guard ChildGuard) error {
 	// A settings save must not kill a server while its model is loading.
-	if ProgressSnapshot().Busy {
+	if DeploymentStatus().Busy {
 		return nil
 	}
 	if cfg.ASRBaseURL != coreconfig.Defaults().ASRBaseURL {
@@ -157,11 +174,21 @@ func Start(ctx context.Context, install Installation, guard ChildGuard) error {
 				release()
 			}
 			processMu.Lock()
-			if process == cmd {
+			wasCurrent := process == cmd
+			if wasCurrent {
 				process = nil
 				file.Close()
 			}
 			processMu.Unlock()
+			if wasCurrent {
+				progressMu.Lock()
+				if progress.Phase == PhaseReady {
+					progress.Phase = PhaseFailed
+					progress.ErrorCode = "runtime_exited"
+					progress.Text = "ASR 服务意外停止，请重新 Deploy"
+				}
+				progressMu.Unlock()
+			}
 			exited <- e
 		}()
 	}
@@ -201,6 +228,12 @@ func Start(ctx context.Context, install Installation, guard ChildGuard) error {
 
 // Stop leaves the downloaded files intact and stops only the managed child.
 func Stop() {
+	// Mark intentional shutdown before the waiter observes process exit.
+	progressMu.Lock()
+	if !progress.Busy && progress.Phase == PhaseReady {
+		progress.Phase, progress.Text = PhaseIdle, "ASR 已停止"
+	}
+	progressMu.Unlock()
 	processMu.Lock()
 	p := process
 	processMu.Unlock()

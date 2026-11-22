@@ -2,6 +2,7 @@ package voice
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -282,11 +283,18 @@ func (c *Core) cancelLocked() {
 // an expired task or circumvent the shared model deadlines and result routes.
 func (c *Core) Execute(token uint64, cfg coreconfig.Config, pcm []byte, selected string, rewrite bool, emit func(Event)) (Result, error) {
 	c.mu.Lock()
-	if token != 0 && c.currentID == token && c.ctx != nil && !c.closed {
-		c.phase = EventProcessing
+	if token == 0 || c.currentID != token || c.ctx == nil || c.closed {
+		c.mu.Unlock()
+		return Result{}, context.Canceled
 	}
+	if c.phase != EventStarted {
+		c.mu.Unlock()
+		return Result{}, errors.New("voice task has already been executed")
+	}
+	c.phase = EventProcessing
+	ctx := c.ctx
 	c.mu.Unlock()
-	result, err := run(c.ContextFor(token), cfg, pcm, selected, rewrite, func(text string) {
+	result, err := run(ctx, cfg, pcm, selected, rewrite, func(text string) {
 		c.mu.Lock()
 		valid := token != 0 && c.currentID == token && !c.closed && c.ctx != nil
 		if valid {
@@ -301,6 +309,13 @@ func (c *Core) Execute(token uint64, cfg coreconfig.Config, pcm []byte, selected
 	valid := token != 0 && c.currentID == token && !c.closed && c.ctx != nil
 	if valid {
 		if err == nil {
+			title := ux.DictationHistoryTitle
+			result.Title = title
+			if rewrite {
+				title = ux.HistoryTitle(result.Intent)
+				result.Title = ux.ResultCardTitle(result.Intent)
+			}
+			c.History.Remember(title, result.Text)
 			c.phase = EventFinished
 		} else {
 			c.phase = EventFailed
@@ -308,21 +323,14 @@ func (c *Core) Execute(token uint64, cfg coreconfig.Config, pcm []byte, selected
 	}
 	c.mu.Unlock()
 	if !valid {
-		return result, err
+		return Result{}, context.Canceled
 	}
-	if err == nil {
-		title := ux.DictationHistoryTitle
-		result.Title = ux.DictationHistoryTitle
-		if rewrite {
-			title = ux.HistoryTitle(result.Intent)
-			result.Title = ux.ResultCardTitle(result.Intent)
-		}
-		c.History.Remember(title, result.Text)
-		if emit != nil {
+	if emit != nil {
+		if err == nil {
 			emit(Event{Kind: EventFinished, Token: token, Result: result})
+		} else {
+			emit(Event{Kind: EventFailed, Token: token, Error: err.Error()})
 		}
-	} else if emit != nil {
-		emit(Event{Kind: EventFailed, Token: token, Error: err.Error()})
 	}
 	return result, err
 }
