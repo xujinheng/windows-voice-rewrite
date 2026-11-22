@@ -8,6 +8,8 @@ const (
 	ProbeLLMButton    = 9105
 	DiscoverASRButton = 9150
 	DiscoverLLMButton = 9151
+	SelectASRDirectory = 9152
+	DeployASRButton = 9153
 	NavSpeech         = 9120
 	NavAI             = 9121
 	NavInput          = 9122
@@ -33,6 +35,8 @@ const (
 	ActionProbeLLM
 	ActionDiscoverASR
 	ActionDiscoverLLM
+	ActionSelectASRDirectory
+	ActionDeployASR
 )
 
 // InputIndex is the Windows settings text-field position for this catalog id.
@@ -106,6 +110,10 @@ func Command(id int) (Action, int) {
 		return ActionDiscoverASR, 0
 	case DiscoverLLMButton:
 		return ActionDiscoverLLM, 0
+	case SelectASRDirectory:
+		return ActionSelectASRDirectory, 0
+	case DeployASRButton:
+		return ActionDeployASR, 0
 	default:
 		return ActionNone, 0
 	}
@@ -130,6 +138,10 @@ func ButtonLabel(id int, capturing bool) (string, bool) {
 		return controlLabel("discover_asr_models"), false
 	case DiscoverLLMButton:
 		return controlLabel("discover_llm_models"), false
+	case SelectASRDirectory:
+		return controlLabel("select_asr_directory"), false
+	case DeployASRButton:
+		return controlLabel("deploy_asr"), true
 	case CaptureRewrite, CaptureDictation:
 		if capturing {
 			return WaitingForShortcut, false
