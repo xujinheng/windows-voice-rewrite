@@ -190,9 +190,6 @@ private struct BridgeReply: Decodable {
         let text: String?
         let route: String?
         let title: String?
-        let action: Int?
-        let attemptID: UInt64?
-        let outcome: Int?
         let profile: HostProfile?
         let defaultConfig: String?
         let form: SettingsForm?
@@ -231,18 +228,6 @@ private enum GoCore {
             result = (config ?? "").withCString { VRProfile($0) }
         }
         return try decode(result)
-    }
-
-    static func deliveryPlan(token: UInt64, target: Int32, selection: Int32,
-                             manual: Bool = false) throws -> BridgeReply.Output {
-        try decode(VRPlanDelivery(token, target, selection,
-                                  manual ? Int32(VR_DELIVERY_USER_APPLY) : Int32(VR_DELIVERY_AUTOMATIC)))
-    }
-
-    static func deliveryReceipt(token: UInt64, attempt: UInt64, sent: Bool) {
-        // A native failure may have partially dispatched the key event.
-        _ = try? decode(VRReportDelivery(token, attempt,
-                                         sent ? Int32(VR_RECEIPT_SENT_UNVERIFIED) : Int32(VR_RECEIPT_UNKNOWN)))
     }
 
     static func asrProgress() throws -> BridgeReply.Output {
@@ -853,10 +838,11 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                 return
                             }
                             let target: Int32 = self.targetStillValid() ? Int32(VR_MATCH_SAME) : Int32(VR_MATCH_DIFFERENT)
-                            if let plan = try? GoCore.deliveryPlan(token: token, target: target, selection: Int32(VR_MATCH_UNKNOWN)),
-                               plan.action == Int(VR_DELIVERY_INSERT), let attempt = plan.attemptID {
+                            let plan = VRPlanDelivery(token, target, Int32(VR_MATCH_UNKNOWN), Int32(VR_DELIVERY_AUTOMATIC))
+                            if plan.action == Int32(VR_DELIVERY_INSERT), plan.attempt != 0 {
                                 let sent = self.paste(text)
-                                GoCore.deliveryReceipt(token: token, attempt: attempt, sent: sent)
+                                _ = VRReportDelivery(token, plan.attempt,
+                                                     sent ? Int32(VR_RECEIPT_SENT_UNVERIFIED) : Int32(VR_RECEIPT_UNKNOWN))
                                 if !sent { self.presentPreview(text, title: value.title) }
                             } else {
                                 self.presentPreview(text, title: value.title)
@@ -1035,14 +1021,15 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                 completed: @escaping (Bool) -> Void) {
         guard targetStillValid() else { completed(false); return }
         let deliver = { [weak self] in
-            guard let self, self.targetStillValid(),
-                  let plan = try? GoCore.deliveryPlan(token: token, target: Int32(VR_MATCH_SAME),
-                                                    selection: Int32(VR_MATCH_SAME), manual: manual),
-                  plan.action == Int(VR_DELIVERY_REPLACE), let attempt = plan.attemptID else {
+            guard let self, self.targetStillValid() else { completed(false); return }
+            let trigger = manual ? Int32(VR_DELIVERY_USER_APPLY) : Int32(VR_DELIVERY_AUTOMATIC)
+            let plan = VRPlanDelivery(token, Int32(VR_MATCH_SAME), Int32(VR_MATCH_SAME), trigger)
+            guard plan.action == Int32(VR_DELIVERY_REPLACE), plan.attempt != 0 else {
                 completed(false); return
             }
             let sent = self.paste(text)
-            GoCore.deliveryReceipt(token: token, attempt: attempt, sent: sent)
+            _ = VRReportDelivery(token, plan.attempt,
+                                 sent ? Int32(VR_RECEIPT_SENT_UNVERIFIED) : Int32(VR_RECEIPT_UNKNOWN))
             completed(sent)
         }
         if selected.matches(selectionFromAX()) {
