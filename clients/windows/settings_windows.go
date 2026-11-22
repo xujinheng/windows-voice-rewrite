@@ -697,7 +697,7 @@ func (p *uxSettings) deployASR() {
 	go func() {
 		cfg, err := loadConfig()
 		if err == nil {
-			cfg, err = localasr.DeployConfigured(context.Background(), cfg, directory)
+			cfg, err = localasr.DeployConfigured(context.Background(), cfg, directory, protectChild)
 		}
 		if err == nil {
 			err = saveConfig(cfg)
@@ -751,7 +751,7 @@ func (p *uxSettings) save() error {
 	}
 	p.app.cfg = cfg
 	go func() {
-		if err := localasr.Resume(context.Background(), cfg); err != nil {
+		if err := localasr.Resume(context.Background(), cfg, protectChild); err != nil {
 			p.app.logger.Printf("local ASR config update: %v", err)
 		}
 	}()
