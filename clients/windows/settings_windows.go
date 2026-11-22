@@ -740,22 +740,7 @@ func (p *uxSettings) deployASR() {
 	hwnd := p.window
 	uxSetText(p.hint, "ASR 正在下载与部署（首次需要数 GB 空间）…")
 	go func() {
-		started, err := loadConfig()
-		if err == nil {
-			var deployed Config
-			deployed, err = localasr.DeployConfigured(context.Background(), started, directory, protectChild)
-			if err == nil {
-				var latest Config
-				latest, err = loadConfig()
-				if err == nil {
-					latest = localasr.ReconcileDeployed(started, latest, deployed)
-					err = saveConfig(latest)
-					if err == nil {
-						go func() { _ = localasr.Resume(context.Background(), latest, protectChild) }()
-					}
-				}
-			}
-		}
+		err := localasr.Deploy(context.Background(), directory, protectChild)
 		p.deployMu.Lock()
 		p.deployResult = err
 		p.deployMu.Unlock()
