@@ -468,6 +468,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 settingsHint?.stringValue = "部署位置：" + url.path
             }
         case "deploy_asr":
+            guard VRSnapshot(0, 0).armed == 0 && !pending else {
+                settingsHint?.stringValue = settingsBusy
+                return
+            }
             guard !settingsDeploying else { return }
             settingsDeploying = true
             settingsHint?.stringValue = "ASR 正在下载与部署（首次需要数 GB 空间）…"
