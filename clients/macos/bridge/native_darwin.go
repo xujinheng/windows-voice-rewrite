@@ -121,7 +121,7 @@ func VRFree(value unsafe.Pointer) { C.free(value) }
 
 //export VRRecordError
 func VRRecordError(message *C.char) {
-	if message != nil { nativeCore.RecordError(C.GoString(message)) }
+	if message != nil { nativeCore.RecordError(errors.New(C.GoString(message))) }
 }
 
 //export VRLastError

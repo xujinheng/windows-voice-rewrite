@@ -231,11 +231,7 @@ func (a *appState) fail(e error) {
 		return
 	}
 	a.logger.Printf("ERROR: %v", e)
-	message := e.Error()
-	if friendly, ok := ux.Classify(e); ok {
-		message = friendly
-	}
-	a.core.RecordError(message)
+	a.core.RecordError(e)
 	a.setStatus(trayError) // nonmodal; available via tray's last-error command
 }
 
