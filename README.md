@@ -49,7 +49,7 @@
 
 下载 ZIP 后**双击解压**，将 `VoiceRewrite.app` 拖进「应用程序」，再尝试打开。此实验版未经过 Apple Developer ID 签名及公证；macOS 可能拦截启动，请先核对下载来源，了解安全风险，不要直接关闭系统安全保护。它还需要授予麦克风、辅助功能和输入监控权限。
 
-**注意：Windows OneClick 不能在 Mac 上运行。** macOS 需要自行启动兼容的语音识别 API 服务并配置 `~/.config/voicerewrite/config.json`，**尚不是双击即用**。已配置后按住**右 Command** 听写，按住**右 Option** 对选中文字发出改写指令。详见 [macOS 安装与配置说明](clients/macos/app/README.md)。
+**Mac ASR OneClick 已加入源码，将在后续版本提供 `Qwen3-ASR-OneClick-Mac-arm64.zip`。** 解压到可写文件夹，双击 `Start OneClick.command` 即可自动下载 Metal 运行时和 Qwen3-ASR 模型；停止程序并删除整个解压文件夹即可清理。**上面的 v0.1.1 下载尚不包含 Mac OneClick**。使用 Mac VoiceRewrite 时，仍需按其配置要求连接 ASR 服务；按住**右 Command** 听写，按住**右 Option** 改写。详见 [OneClick 说明](oneclick/README.md) 和 [macOS 配置](clients/macos/app/README.md)。
 
 ## 其他
 
