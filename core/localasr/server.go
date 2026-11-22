@@ -43,16 +43,20 @@ var (
 	process   *exec.Cmd
 )
 
+// ChildGuard is the native host callback that binds a launched process to its
+// lifetime. Core owns when it is used; the host owns the OS API.
+type ChildGuard func(pid int) (func(), error)
+
 // DeployConfigured is the single portable deployment decision for both desktop
 // hosts. Native clients only choose a directory and persist the returned config.
-func DeployConfigured(ctx context.Context, cfg coreconfig.Config, directory string) (coreconfig.Config, error) {
+func DeployConfigured(ctx context.Context, cfg coreconfig.Config, directory string, guard ChildGuard) (coreconfig.Config, error) {
 	if !deploymentMu.TryLock() {
 		return cfg, errors.New("ASR is already deploying")
 	}
 	defer deploymentMu.Unlock()
 	install, err := install(ctx, directory)
 	if err == nil {
-		err = Start(ctx, install)
+		err = Start(ctx, install, guard)
 	}
 	if err != nil {
 		return cfg, err
@@ -66,7 +70,7 @@ func DeployConfigured(ctx context.Context, cfg coreconfig.Config, directory stri
 
 // Resume starts a previously deployed local ASR only when the configured
 // endpoint is the managed local service, never for a custom/remote endpoint.
-func Resume(ctx context.Context, cfg coreconfig.Config) error {
+func Resume(ctx context.Context, cfg coreconfig.Config, guard ChildGuard) error {
 	if cfg.ASRBaseURL != coreconfig.Defaults().ASRBaseURL {
 		Stop()
 		return nil
@@ -79,12 +83,12 @@ func Resume(ctx context.Context, cfg coreconfig.Config) error {
 	if !ok {
 		return nil
 	}
-	return Start(ctx, install)
+	return Start(ctx, install, guard)
 }
 
 // Start serves the built-in Qwen ASR model on the existing default endpoint.
 // Clients directly use llama.cpp; Core already normalizes ASR transcript markers.
-func Start(ctx context.Context, install Installation) error {
+func Start(ctx context.Context, install Installation, guard ChildGuard) error {
 	for {
 		processMu.Lock()
 		if process == nil || process.Path == install.Server {
@@ -123,13 +127,16 @@ func Start(ctx context.Context, install Installation) error {
 			processMu.Unlock()
 			return err
 		}
-		release, err := protectChild(cmd.Process.Pid)
-		if err != nil {
-			_ = cmd.Process.Kill()
-			_ = cmd.Wait()
-			_ = file.Close()
-			processMu.Unlock()
-			return fmt.Errorf("cannot bind ASR child lifetime: %w", err)
+		var release func()
+		if guard != nil {
+			release, err = guard(cmd.Process.Pid)
+			if err != nil {
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+				_ = file.Close()
+				processMu.Unlock()
+				return fmt.Errorf("cannot bind ASR child lifetime: %w", err)
+			}
 		}
 		process = cmd
 		exited = make(chan error, 1)
