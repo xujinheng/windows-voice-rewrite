@@ -232,10 +232,9 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 			return
 		}
 		app.logger.Printf("auto replacement failed; preview instead: %v", err)
-		action = voice.DecideDelivery(answer.Route, voice.DeliveryFacts{SelectionCaptured: sel.Text != ""})
 	}
 	app.showAnswer(answer.Title, answer.Text, sel.Anchor,
-		&sel, action == voice.DeliveryPreviewApply, generation)
+		&sel, action == voice.DeliveryReplace || action == voice.DeliveryPreviewApply, generation)
 	app.setStatus(traySuccess)
 	app.logger.Printf("popup result queued; chars=%d", utf8.RuneCountInString(answer.Text))
 }
