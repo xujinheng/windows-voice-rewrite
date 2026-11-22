@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
-	"time"
 
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/contract"
@@ -143,33 +142,6 @@ func Update(cfg coreconfig.Config, values map[string]string) (coreconfig.Config,
 	return coreconfig.Normalize(cfg)
 }
 
-// Service owns probe and model-discovery semantics. Native clients only own
-// selecting the fields, cancelling stale UI requests, and displaying results.
-func Service(ctx context.Context, action, kind, base, key, model string) (string, []string, error) {
-	if kind != "ASR" && kind != "LLM" {
-		return "", nil, errors.New("unknown service")
-	}
-	if action == "probe" {
-		return serviceprobe.ProbeModel(ctx, kind, base, key, model), nil, nil
-	}
-	if action != "discover" {
-		return "", nil, errors.New("unknown settings action")
-	}
-	query, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	models, err := provider.ListModels(query, base, key)
-	if err != nil {
-		return "", nil, err
-	}
-	if len(models) == 0 {
-		return ux.NoModelsFound, []string{}, nil
-	}
-	if len(models) > MaxModelMenuChoices {
-		models = models[:MaxModelMenuChoices]
-	}
-	return "", models, nil
-}
-
 // ConnectionAction runs settings updates and diagnostics with exactly the same
 // config, provider and probe owners called by the Windows settings window.
 // The caller owns the configuration file and native widgets.
@@ -224,14 +196,20 @@ func ConnectionAction(ctx context.Context, raw []byte) (any, error) {
 		default:
 			return nil, errors.New("unknown service")
 		}
-		status, models, err := Service(ctx, req.Action, req.Kind, base, key, model)
+		if req.Action == "probe" {
+			return map[string]string{"status": serviceprobe.ProbeModel(ctx, req.Kind, base, key, model)}, nil
+		}
+		models, err := provider.ListModels(ctx, base, key)
 		if err != nil {
 			return nil, err
 		}
-		if req.Action == "probe" {
-			return map[string]string{"status": status}, nil
+		if len(models) > MaxModelMenuChoices {
+			models = models[:MaxModelMenuChoices]
 		}
-		return map[string]any{"models": models, "status": status}, nil
+		if len(models) == 0 {
+			return map[string]any{"models": models, "status": ux.NoModelsFound}, nil
+		}
+		return map[string]any{"models": models}, nil
 	default:
 		return nil, errors.New("unknown settings action")
 	}
