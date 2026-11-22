@@ -194,7 +194,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 	if task.dictation {
 		app.logger.Printf("stage=asr flow=dictation ms=%d", time.Since(started).Milliseconds())
 		text := answer.Text
-		if voice.DecideDelivery(answer, voice.DeliveryFacts{TargetCurrent: isSameForegroundWindow(task.target)}) != voice.DeliveryInsert {
+		if voice.DecideDelivery(answer.Route, voice.DeliveryFacts{TargetCurrent: isSameForegroundWindow(task.target)}) != voice.DeliveryInsert {
 			app.showAnswer(ux.DictationNotInserted, text, currentCursorPoint(), nil, false, generation)
 			app.postHandyPhase(indicator.Fallback, generation)
 			return
@@ -216,7 +216,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 
 	app.logger.Printf("stage=spoken_selection ms=%d intent=%s route=%s",
 		time.Since(started).Milliseconds(), answer.Intent, answer.Route)
-	if voice.DecideDelivery(answer, voice.DeliveryFacts{TargetCurrent: isSameForegroundWindow(sel.TargetWindow), SelectionCaptured: sel.Text != ""}) == voice.DeliveryReplace {
+	if voice.DecideDelivery(answer.Route, voice.DeliveryFacts{TargetCurrent: isSameForegroundWindow(sel.TargetWindow), SelectionCaptured: sel.Text != ""}) == voice.DeliveryReplace {
 		app.postHandyPhase(indicator.Applying, generation)
 		started = time.Now()
 		// Native editability determines whether to verify the pasted selection.
