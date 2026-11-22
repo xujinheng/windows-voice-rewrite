@@ -483,11 +483,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     case .success(let output):
                         do {
                             let json = try String(contentsOf: self.configURL, encoding: .utf8)
-                            let saved = try GoCore.settings("save", config: json, values: [
-                                "asr_deploy_dir": directory,
-                                "asr_base_url": "http://127.0.0.1:8080/v1",
-                                "asr_model": "qwen3-asr"
-                            ])
+                            let saved = try GoCore.settings("save", config: json, values: output.values ?? [:])
                             if let updated = saved.config {
                                 try updated.write(to: self.configURL, atomically: true, encoding: .utf8)
                                 self.reload()
