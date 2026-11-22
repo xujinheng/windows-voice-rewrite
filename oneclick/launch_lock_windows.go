@@ -10,7 +10,7 @@ import (
 )
 
 // A kernel mutex cannot get stale after a crash, unlike a lock file.
-func acquireLaunchLock() (func(), error) {
+func acquireLaunchLock(_ string) (func(), error) {
 	kernel := syscall.NewLazyDLL("kernel32.dll")
 	create := kernel.NewProc("CreateMutexW")
 	wait := kernel.NewProc("WaitForSingleObject")
