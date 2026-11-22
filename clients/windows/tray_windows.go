@@ -377,29 +377,12 @@ func (t *trayIndicator) contextMenu(meetingActive bool) (uintptr, error) {
 		procPostMessage.Call(t.hwnd, WM_TRAY_HISTORY_ITEM, uintptr(entry.ID), 0)
 		return selected, nil
 	}
-	switch selected {
-	case 10:
-		procPostMessage.Call(t.hwnd, WM_MEETING_STOP, 0, 0)
-	case 11:
-		procPostMessage.Call(t.hwnd, WM_MEETING_DEMO, 0, 0)
-	case 9:
-		procPostMessage.Call(t.hwnd, WM_TRAY_CLEAR_HISTORY, 0, 0)
-	case 1:
-		procPostMessage.Call(t.hwnd, WM_TRAY_EXIT, 0, 0)
-	case 2:
-		procPostMessage.Call(t.hwnd, WM_TRAY_CONFIG, 0, 0)
-	case 3:
-		procPostMessage.Call(t.hwnd, WM_TRAY_LOG, 0, 0)
-	case 4:
-		procPostMessage.Call(t.hwnd, WM_TRAY_CLOSE_POPUP, 0, 0)
-	case 5:
-		procPostMessage.Call(t.hwnd, WM_TRAY_LAST_ERROR, 0, 0)
-	case 6:
-		procPostMessage.Call(t.hwnd, WM_TRAY_TOGGLE_PAUSE, 0, 0)
-	case 7:
-		procPostMessage.Call(t.hwnd, WM_TRAY_LAST_RESULT, 0, 0)
-	case 8:
-		procPostMessage.Call(t.hwnd, WM_TRAY_CHECK_UPDATE, 0, 0)
+	commands := [...]uint32{0, WM_TRAY_EXIT, WM_TRAY_CONFIG, WM_TRAY_LOG,
+		WM_TRAY_CLOSE_POPUP, WM_TRAY_LAST_ERROR, WM_TRAY_TOGGLE_PAUSE,
+		WM_TRAY_LAST_RESULT, WM_TRAY_CHECK_UPDATE, WM_TRAY_CLEAR_HISTORY,
+		WM_MEETING_STOP, WM_MEETING_DEMO}
+	if selected > 0 && selected < uintptr(len(commands)) {
+		procPostMessage.Call(t.hwnd, uintptr(commands[selected]), 0, 0)
 	}
 	return selected, nil
 }
