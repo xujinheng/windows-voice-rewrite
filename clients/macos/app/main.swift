@@ -218,7 +218,12 @@ private struct SettingsControl: Decodable {
     let rect, labelRect: SettingsRect
 }
 
-private struct HistoryItem: Decodable { let id: UInt64; let label: String }
+private struct TrayItem: Decodable {
+    let id: Int
+    let title: String
+    let resultID: UInt64?
+    let children: [TrayItem]?
+}
 
 private struct BridgeReply: Decodable {
     let ok: Bool
@@ -240,7 +245,7 @@ private struct BridgeReply: Decodable {
         let capture: [String: String]?
         let newer: Bool?
         let url: String?
-        let entries: [HistoryItem]?
+        let menu: [TrayItem]?
     }
     struct Failure: Decodable { let code: String; let message: String }
 }
@@ -265,6 +270,10 @@ private enum GoCore {
             result = (config ?? "").withCString { VRProfile($0) }
         }
         return try decode(result)
+    }
+
+    static func menu() throws -> [TrayItem] {
+        try decode(VRMenu()).menu ?? []
     }
 
     static func history(_ action: String, id: UInt64 = 0) throws -> BridgeReply.Output {
@@ -368,37 +377,38 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        let paused = VRSnapshot(0, 0).paused != 0
-        for (title, action) in [
-            ("复制最近一次结果", #selector(copyResult)),
-            (paused ? "恢复语音操作" : "暂停语音操作", #selector(togglePause)),
-            ("关闭 AI 结果窗口", #selector(closePreview)),
-            ("最近一次错误与解决方法", #selector(showLastError)),
-            ("在 Console 查看日志…", #selector(openDiagnostics)),
-            ("检查更新…", #selector(checkUpdates)),
-            ("设置…", #selector(openSettings)),
-            ("Reload config", #selector(reload)),
-            ("Show config in Finder", #selector(showConfig)),
-            ("Quit", #selector(quit))
-        ] {
-            let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
-            entry.target = self
-            menu.addItem(entry)
-        }
-        if let entries = try? GoCore.history("list").entries, !entries.isEmpty {
-            let submenu = NSMenu()
-            for value in entries {
-                let item = NSMenuItem(title: value.label, action: #selector(openHistory), keyEquivalent: "")
-                item.representedObject = NSNumber(value: value.id)
-                item.target = self
-                submenu.addItem(item)
+        let callbacks: [Int: Selector] = [
+            1: #selector(quit), 2: #selector(openSettings),
+            3: #selector(openDiagnostics), 4: #selector(closePreview),
+            5: #selector(showLastError), 6: #selector(togglePause),
+            7: #selector(copyResult), 8: #selector(checkUpdates),
+            9: #selector(clearHistory)
+        ]
+        for item in (try? GoCore.menu()) ?? [] {
+            if item.id == 1 {
+                for (title, action) in [
+                    ("Reload config", #selector(reload)),
+                    ("Show config in Finder", #selector(showConfig))
+                ] {
+                    let native = NSMenuItem(title: title, action: action, keyEquivalent: "")
+                    native.target = self
+                    menu.addItem(native)
+                }
+                menu.addItem(.separator())
             }
-            let recent = NSMenuItem(title: "最近语音结果", action: nil, keyEquivalent: "")
-            recent.submenu = submenu
-            menu.insertItem(recent, at: 2)
-            let clear = NSMenuItem(title: "清空本次会话历史", action: #selector(clearHistory), keyEquivalent: "")
-            clear.target = self
-            menu.insertItem(clear, at: 3)
+            let entry = NSMenuItem(title: item.title, action: callbacks[item.id], keyEquivalent: "")
+            entry.target = self
+            if let children = item.children {
+                let submenu = NSMenu()
+                for child in children {
+                    let result = NSMenuItem(title: child.title, action: #selector(openHistory), keyEquivalent: "")
+                    result.target = self
+                    result.representedObject = NSNumber(value: child.resultID ?? 0)
+                    submenu.addItem(result)
+                }
+                entry.submenu = submenu
+            }
+            menu.addItem(entry)
         }
     }
 
