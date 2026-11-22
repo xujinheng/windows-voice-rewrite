@@ -3,7 +3,7 @@
 package main
 
 import (
-	"github.com/xujinheng/windows-voice-rewrite/core/voice"
+	"errors"
 	"io"
 	"log"
 	"runtime"
@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 	"unsafe"
+
+	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 )
 
 func TestCanceledVoiceWorkerReleasesBusy(t *testing.T) {
@@ -83,5 +85,22 @@ func TestRecordingWatchersPostTaskGeneration(t *testing.T) {
 	}
 	if len(want) != 0 {
 		t.Fatalf("recording watchers did not post expected epoch-tagged notices: %v", want)
+	}
+}
+
+func TestEarlySelectionSurvivesReleaseWithoutRecopy(t *testing.T) {
+	app := &appState{logger: log.New(io.Discard, "", 0)}
+	token := app.core.Apply(voice.Command{Kind: voice.CommandStart}).Token
+	early := make(chan selectedText, 1)
+	early <- selectedText{Text: "original", TargetWindow: 123}
+	rec := &audioRecorder{result: make(chan audioResult, 1)}
+	rec.result <- audioResult{err: errors.New("audio sentinel")}
+	app.busy.Store(true)
+	processRecording(app, rec, recordingTask{cfg: defaults(), earlySelection: early}, token)
+	if app.lastError != "audio sentinel" {
+		t.Fatalf("early selection did not bypass release-time clipboard capture: %q", app.lastError)
+	}
+	if app.busy.Load() {
+		t.Fatal("early selection worker did not release busy state")
 	}
 }
