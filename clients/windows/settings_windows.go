@@ -440,6 +440,9 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			}
 			if text != uxWinText(p.hint) {
 				uxSetText(p.hint, text)
+				if state.Phase == localasr.PhaseFailed && state.Directory == p.deployDir {
+					winErr(state.Text)
+				}
 			}
 		}
 		return 0
