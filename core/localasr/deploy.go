@@ -161,12 +161,7 @@ func downloadFrom(ctx context.Context, source, part, filename string) error {
 			received += int64(n)
 			if time.Since(lastUpdate) >= 500*time.Millisecond {
 				done := received + offset
-				if total > 0 {
-					report(fmt.Sprintf("下载 %s：%.1f / %.1f MB (%.0f%%)",
-						filename, float64(done)/1e6, float64(total)/1e6, 100*float64(done)/float64(total)))
-				} else {
-					report(fmt.Sprintf("下载 %s：已下载 %.1f MB", filename, float64(done)/1e6))
-				}
+				reportProgress(filename, done, total)
 				lastUpdate = time.Now()
 			}
 		}
@@ -333,20 +328,38 @@ type Installation struct {
 	GPULayers int
 }
 
-var deploymentMu sync.Mutex
+type JobID uint64
 
-// Progress is an in-memory snapshot, surviving settings-window closure while
-// the host process remains alive. Native clients display this same state.
-type Progress struct {
+type Phase string
+
+const (
+	PhaseIdle        Phase = ""
+	PhasePreparing   Phase = "preparing"
+	PhaseDownloading Phase = "downloading"
+	PhaseVerifying   Phase = "verifying"
+	PhaseInstalling  Phase = "installing"
+	PhaseStarting    Phase = "starting"
+	PhaseReady       Phase = "ready"
+	PhaseFailed      Phase = "failed"
+)
+
+// Status is the sole in-process deployment state, independent of UI windows.
+type Status struct {
+	ID        JobID
+	Phase     Phase
 	Text      string
 	Directory string
 	Busy      bool
+	File      string
+	Received  int64
+	Total     int64
+	ErrorCode string
 }
 
 var progressMu sync.RWMutex
-var progress Progress
+var progress Status
 
-func ProgressSnapshot() Progress {
+func DeploymentStatus() Status {
 	progressMu.RLock()
 	defer progressMu.RUnlock()
 	return progress
@@ -355,6 +368,19 @@ func ProgressSnapshot() Progress {
 func report(text string) {
 	progressMu.Lock()
 	progress.Text = text
+	progressMu.Unlock()
+}
+
+func reportProgress(filename string, received, total int64) {
+	progressMu.Lock()
+	progress.Phase = PhaseDownloading
+	progress.File, progress.Received, progress.Total = filename, received, total
+	if total > 0 {
+		progress.Text = fmt.Sprintf("下载 %s：%.1f / %.1f MB (%.0f%%)", filename,
+			float64(received)/1e6, float64(total)/1e6, 100*float64(received)/float64(total))
+	} else {
+		progress.Text = fmt.Sprintf("下载 %s：已下载 %.1f MB", filename, float64(received)/1e6)
+	}
 	progressMu.Unlock()
 }
 
