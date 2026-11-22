@@ -297,7 +297,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func reload() {
-        guard VRSnapshot(0, 0).armed == 0 && !pending else { show("Reload after current task"); return }
+        guard VRSnapshot(0, 0).armed == 0 && !pending else { reloadAfterTask = true; show("Reload after current task"); return }
+        reloadAfterTask = false
         do {
             let json: String
             var needsDefaults = false
@@ -483,8 +484,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     guard let updated = saved.config else { throw HostError.config("部署目录未保存") }
                     try updated.write(to: configURL, atomically: true, encoding: .utf8)
                     settingsDeployDirectory = url.path
-                    if VRSnapshot(0, 0).armed == 0 && !pending { reload() }
-                    else { reloadAfterTask = true }
+                    reload()
                     settingsHint?.stringValue = "部署位置已保存：" + url.path
                 } catch {
                     settingsHint?.stringValue = "保存部署目录失败：" + String(describing: error)
@@ -510,8 +510,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     guard let updated = output.config else { return }
                     try updated.write(to: configURL, atomically: true, encoding: .utf8)
                     settingsInitialValues = currentValues
-                    if VRSnapshot(0, 0).armed == 0 && !pending { reload() }
-                    else { reloadAfterTask = true }
+                    reload()
                     firstRun = false
                     settingsHint?.stringValue = reloadAfterTask ? "设置已保存，任务结束后生效" : output.status ?? ""
                 } catch { settingsHint?.stringValue = String(describing: error) }
