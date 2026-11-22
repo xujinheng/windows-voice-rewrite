@@ -81,3 +81,14 @@ func TestFreshMacConfigUsesCoreMarshalWithoutEchoingUserSettings(t *testing.T) {
 		t.Fatal("existing user config must not be echoed")
 	}
 }
+
+func TestMacPhysicalKeyNamespaceDoesNotOverlapMouse(t *testing.T) {
+	keys := make(map[int]string)
+	for name := range macShortcutCodes {
+		code := macKeyCode(name)
+		if prior, found := keys[code]; found {
+			t.Fatalf("%s and %s collide at %d", name, prior, code)
+		}
+		keys[code] = name
+	}
+}
