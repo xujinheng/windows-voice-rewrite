@@ -132,13 +132,15 @@ func ConnectionAction(ctx context.Context, raw []byte) (any, error) {
 	}
 	if req.Action == "form" {
 		directory := cfg.ASRDeployDir
-		if directory == "" { directory = localasr.DefaultDirectory() }
+		if directory == "" {
+			directory = localasr.DefaultDirectory()
+		}
 		return map[string]any{"form": ConnectionForm(), "values": map[string]string{
 			"asr_base_url": cfg.ASRBaseURL, "asr_model": cfg.ASRModel, "asr_api_key": cfg.ASRAPIKey,
 			"llm_base_url": cfg.LLMBaseURL, "text_model": cfg.TextModel, "llm_api_key": cfg.LLMAPIKey,
 			"rewrite_shortcut": cfg.HotkeyRecord, "dictation_shortcut": cfg.DictationHotkey,
 			"max_record_seconds": strconv.Itoa(cfg.MaxRecordSeconds),
-			"asr_deploy_dir": directory,
+			"asr_deploy_dir":     directory,
 		}}, nil
 	}
 	fields := [6]string{cfg.ASRBaseURL, cfg.ASRModel, cfg.ASRAPIKey, cfg.LLMBaseURL, cfg.TextModel, cfg.LLMAPIKey}
@@ -157,7 +159,9 @@ func ConnectionAction(ctx context.Context, raw []byte) (any, error) {
 	if value, ok := req.Values["dictation_shortcut"]; ok {
 		cfg.DictationHotkey = value
 	}
-	if value, ok := req.Values["asr_deploy_dir"]; ok { cfg.ASRDeployDir = value }
+	if value, ok := req.Values["asr_deploy_dir"]; ok {
+		cfg.ASRDeployDir = value
+	}
 	if value, ok := req.Values["max_record_seconds"]; ok {
 		cfg.MaxRecordSeconds, err = coreconfig.RecordingSeconds(value)
 		if err != nil {
