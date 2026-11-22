@@ -2,7 +2,6 @@ package voice
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"time"
 
@@ -15,22 +14,17 @@ import (
 // facts, audio and final OS effects; the core owns holds, task generations,
 // cancellation, inference and output routing.
 type Core struct {
-	History          history.Store
-	mu               sync.Mutex
-	keys             map[int]*keyState
-	owner            int
-	roles            map[int]int
-	nextToken        uint64
-	currentID        uint64
-	closed           bool
-	phase            EventKind
-	completed        Result
-	completedToken   uint64
-	deliveryAttempt  uint64
-	deliverySequence uint64
-	deliveryStatus   DeliveryReceiptStatus
-	ctx              context.Context
-	cancel           context.CancelFunc
+	History   history.Store
+	mu        sync.Mutex
+	keys      map[int]*keyState
+	owner     int
+	roles     map[int]int
+	nextToken uint64
+	currentID uint64
+	closed    bool
+	phase     EventKind
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 type keyState struct {
 	down, active bool
@@ -238,8 +232,6 @@ func (c *Core) Apply(cmd Command) Event {
 			c.cancel()
 		}
 		c.currentID++
-		c.completedToken = 0
-		c.deliveryAttempt = 0
 		c.ctx, c.cancel = context.WithCancel(context.Background())
 		c.phase = EventStarted
 		return Event{Kind: EventStarted, Token: c.currentID}
@@ -272,8 +264,6 @@ func (c *Core) ContextFor(id uint64) context.Context {
 // Cancel stops a task and drops any held key ownership, including late timers.
 func (c *Core) cancelLocked() {
 	c.currentID++
-	c.completedToken = 0
-	c.deliveryAttempt = 0
 	if c.cancel != nil {
 		c.cancel()
 		c.cancel = nil
@@ -288,25 +278,13 @@ func (c *Core) cancelLocked() {
 	}
 }
 
-// ErrInvalidTask identifies a duplicate or invalid voice task.
-var ErrInvalidTask = errors.New("invalid voice task")
-
-// ErrStaleTask identifies a canceled or superseded generation.
-var ErrStaleTask = errors.New("stale voice task")
-
 // Execute is the platform-independent task entrypoint. No client can execute
 // an expired task or circumvent the shared model deadlines and result routes.
 func (c *Core) Execute(token uint64, cfg coreconfig.Config, pcm []byte, selected string, rewrite bool, emit func(Event)) (Result, error) {
 	c.mu.Lock()
-	if token == 0 || token != c.currentID || c.ctx == nil || c.closed {
-		c.mu.Unlock()
-		return Result{}, ErrStaleTask
+	if token != 0 && c.currentID == token && c.ctx != nil && !c.closed {
+		c.phase = EventProcessing
 	}
-	if c.phase != EventStarted {
-		c.mu.Unlock()
-		return Result{}, ErrInvalidTask
-	}
-	c.phase = EventProcessing
 	c.mu.Unlock()
 	result, err := run(c.ContextFor(token), cfg, pcm, selected, rewrite, func(text string) {
 		c.mu.Lock()
@@ -319,20 +297,10 @@ func (c *Core) Execute(token uint64, cfg coreconfig.Config, pcm []byte, selected
 			emit(Event{Kind: EventTranscribed, Token: token, Text: text})
 		}
 	})
-	if err == nil {
-		result.Title = ux.DictationHistoryTitle
-		if rewrite {
-			result.Title = ux.ResultCardTitle(result.Intent)
-		}
-	}
 	c.mu.Lock()
 	valid := token != 0 && c.currentID == token && !c.closed && c.ctx != nil
 	if valid {
 		if err == nil {
-			c.completed = result
-			c.completedToken = token
-			c.deliveryAttempt = 0
-			c.deliveryStatus = 0
 			c.phase = EventFinished
 		} else {
 			c.phase = EventFailed
@@ -344,8 +312,10 @@ func (c *Core) Execute(token uint64, cfg coreconfig.Config, pcm []byte, selected
 	}
 	if err == nil {
 		title := ux.DictationHistoryTitle
+		result.Title = ux.DictationHistoryTitle
 		if rewrite {
 			title = ux.HistoryTitle(result.Intent)
+			result.Title = ux.ResultCardTitle(result.Intent)
 		}
 		c.History.Remember(title, result.Text)
 		if emit != nil {
