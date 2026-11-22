@@ -221,8 +221,8 @@ func VRSettings(request *C.char) *C.char {
 		if output, ok := value.(map[string]any); ok {
 			if _, isForm := output["form"]; isForm {
 				capture := map[string]string{}
-				for name, code := range macShortcutCodes {
-					capture[strconv.Itoa(code)] = name
+				for name := range macShortcutCodes {
+					capture[strconv.Itoa(macKeyCode(name))] = name
 				}
 				output["capture"] = capture
 			}
