@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -78,7 +79,9 @@ func TestBootstrapZipSlip(t *testing.T) {
 	}
 	writeZip("../outside.exe")
 	if err:=unpackZip(archivePath,filepath.Join(dir,"out"));err==nil{t.Fatal("allowed zip-slip")}
-	writeZip("llama-server.exe")
+	serverName := "llama-server.exe"
+	if runtime.GOOS == "darwin" { serverName = "llama-server" }
+	writeZip(serverName)
 	if err:=unpackZip(archivePath,filepath.Join(dir,"out"));err!=nil{t.Fatal(err)}
 	if locateServer(filepath.Join(dir,"out"))==""{t.Fatal("missing server after extraction")}
 }
@@ -133,4 +136,27 @@ func TestBootstrapDomesticSources(t *testing.T) {
 		if strings.HasPrefix(u,"https://github.com/"){t.Fatal(u)}
 	}
 	if alreadyRunning("0.0.0.0:8081"){t.Fatal("never check public network")}
+}
+
+func TestMacRuntimePinAndDefaults(t *testing.T) {
+	if macArmTarSHA != "e88d7e91198d0de6ceb3d33711ac01ee0d5b519cd9ba4e81854e3bba84f22214" {
+		t.Fatal("macOS release must be pinned to the upstream digest")
+	}
+	asset := "llama-" + llamaRelease + "-bin-macos-arm64.tar.gz"
+	spec := releaseDownload(asset, macArmTarSHA)
+	if spec.filename != asset || len(spec.urls) == 0 { t.Fatalf("missing macOS download: %+v", spec) }
+	if runtime.GOOS == "darwin" && defaultConfig().LlamaServerPath != "llama-server" {
+		t.Fatalf("macOS default server = %q", defaultConfig().LlamaServerPath)
+	}
+}
+
+func TestOneClickLockLivesBesideExecutable(t *testing.T) {
+	if runtime.GOOS == "windows" { t.Skip("Windows mutex has no lock file") }
+	dir := t.TempDir()
+	unlock, err := acquireLaunchLock(dir)
+	if err != nil { t.Fatal(err) }
+	defer unlock()
+	if _, err := os.Stat(filepath.Join(dir, ".oneclick.lock")); err != nil { t.Fatal(err) }
+	another, err := acquireLaunchLock(dir)
+	if err == nil { another(); t.Fatal("simultaneous launch was not rejected") }
 }
