@@ -40,21 +40,12 @@ func success(value any) response {
 // Quartz codes remain physical facts owned by the native adapter.
 // Quartz virtual-key codes are OS facts; shortcut validation belongs to Core.
 var macShortcutCodes = map[string]int{
-	macDefaultDictation: 54, macDefaultRewrite: 61, "Mouse4": 103, "Mouse5": 104,
-	"LeftCommand": 55, "LeftOption": 58, "LeftCtrl": 59, "RightCtrl": 62,
-	"F1": 122, "F2": 120, "F3": 99, "F4": 118, "F5": 96,
-	"F6": 97, "F7": 98, "F8": 100, "F9": 101, "F10": 109,
-	"F11": 103, "F12": 111, "F13": 105, "F14": 107, "F15": 113,
-	"F16": 106, "F17": 64, "F18": 79, "F19": 80, "F20": 90,
-}
-
-func macKeyCode(s string) int {
-	code, ok := macShortcutCodes[s]
-	if !ok { return 0 }
-	// Keyboard and otherMouse button numbers occupy separate Quartz namespaces.
-	// Never allow F11 (physical key 103) to collide with Mouse4 (button 103).
-	if s != "Mouse4" && s != "Mouse5" { return code + 512 }
-	return code
+	macDefaultDictation: 512 + 54, macDefaultRewrite: 512 + 61, "Mouse4": 103, "Mouse5": 104,
+	"LeftCommand": 512 + 55, "LeftOption": 512 + 58, "LeftCtrl": 512 + 59, "RightCtrl": 512 + 62,
+	"F1": 512 + 122, "F2": 512 + 120, "F3": 512 + 99, "F4": 512 + 118, "F5": 512 + 96,
+	"F6": 512 + 97, "F7": 512 + 98, "F8": 512 + 100, "F9": 512 + 101, "F10": 512 + 109,
+	"F11": 512 + 103, "F12": 512 + 111, "F13": 512 + 105, "F14": 512 + 107, "F15": 512 + 113,
+	"F16": 512 + 106, "F17": 512 + 64, "F18": 512 + 79, "F19": 512 + 80, "F20": 512 + 90,
 }
 
 // headlessProfile shares the existing config normalizer and indicator with
@@ -76,7 +67,7 @@ func headlessProfile(raw json.RawMessage) response {
 	}
 	dictation, _, _, _, errDictation := shortcut.Parse(cfg.DictationHotkey)
 	rewrite, _, _, _, errRewrite := shortcut.Parse(cfg.HotkeyRecord)
-	if errDictation != nil || errRewrite != nil || macKeyCode(dictation) == 0 || macKeyCode(rewrite) == 0 || dictation == rewrite {
+	if errDictation != nil || errRewrite != nil || macShortcutCodes[dictation] == 0 || macShortcutCodes[rewrite] == 0 || dictation == rewrite {
 		return failure("invalid_config", msgInvalidConfig)
 	}
 	cfg.DictationHotkey, cfg.HotkeyRecord = dictation, rewrite
