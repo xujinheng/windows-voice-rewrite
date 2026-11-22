@@ -190,6 +190,9 @@ private struct BridgeReply: Decodable {
         let text: String?
         let route: String?
         let title: String?
+        let action: Int?
+        let attemptID: UInt64?
+        let outcome: Int?
         let profile: HostProfile?
         let defaultConfig: String?
         let form: SettingsForm?
@@ -224,6 +227,16 @@ private enum GoCore {
             result = (config ?? "").withCString { VRProfile($0) }
         }
         return try decode(result)
+    }
+
+    static func deliveryPlan(token: UInt64, target: Int32, selection: Int32,
+                             manual: Bool = false) throws -> BridgeReply.Output {
+        try decode(VRPlanDelivery(token, target, selection, manual ? 2 : 1))
+    }
+
+    static func deliveryReceipt(token: UInt64, attempt: UInt64, sent: Bool) {
+        // A native failure may have partially dispatched the key event.
+        _ = try? decode(VRReportDelivery(token, attempt, sent ? 2 : 4))
     }
 
     static func asrProgress() throws -> BridgeReply.Output {
@@ -621,7 +634,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             self.targetPID = request.pid
             self.targetWindow = request.window
             self.taskID = request.token
-            self.pasteSelection(request.selection, with: request.text, token: request.token) { [weak self] sent in
+            self.pasteSelection(request.selection, with: request.text, token: request.token, manual: true) { [weak self] sent in
                 guard let self, self.taskID == request.token else { return }
                 if sent {
                     self.resultPanel?.close()
@@ -849,8 +862,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                 }
                                 return
                             }
-                            if value.route == "insert" && self.targetStillValid() {
-                                if !self.paste(text) { self.presentPreview(text, title: value.title) }
+                            let target: Int32 = self.targetStillValid() ? 1 : 2
+                            if let plan = try? GoCore.deliveryPlan(token: token, target: target, selection: 0),
+                               plan.action == 2, let attempt = plan.attemptID {
+                                let sent = self.paste(text)
+                                GoCore.deliveryReceipt(token: token, attempt: attempt, sent: sent)
+                                if !sent { self.presentPreview(text, title: value.title) }
                             } else {
                                 self.presentPreview(text, title: value.title)
                             }
@@ -1024,14 +1041,26 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     // One native replacement path for automatic delivery and the result's Apply button.
     // Windows likewise checks the current selection by copying before replacing.
     private func pasteSelection(_ selected: AXSelection, with text: String,
-                                token: UInt64, completed: @escaping (Bool) -> Void) {
+                                token: UInt64, manual: Bool = false,
+                                completed: @escaping (Bool) -> Void) {
         guard targetStillValid() else { completed(false); return }
+        let deliver = { [weak self] in
+            guard let self, self.targetStillValid(),
+                  let plan = try? GoCore.deliveryPlan(token: token, target: 1, selection: 1, manual: manual),
+                  plan.action == 3, let attempt = plan.attemptID else {
+                completed(false); return
+            }
+            let sent = self.paste(text)
+            GoCore.deliveryReceipt(token: token, attempt: attempt, sent: sent)
+            completed(sent)
+        }
         if selected.matches(selectionFromAX()) {
-            completed(paste(text))
+            deliver()
         } else {
             copySelection(token: token) { [weak self] current in
                 guard let self, self.taskID == token, VRSnapshot(0, token).valid == 1 else { return }
-                completed(current == selected.text && self.targetStillValid() && self.paste(text))
+                if current == selected.text && self.targetStillValid() { deliver() }
+                else { completed(false) }
             }
         }
     }

@@ -51,6 +51,8 @@ unsigned int VRSpinner(int index, unsigned int tick);
 void VRDuration(long long seconds, char *buffer, int capacity);
 void VRFree(void *ptr);
 char *VRLatestResult(void);
+char *VRPlanDelivery(uint64_t token, int target, int selection, int trigger);
+char *VRReportDelivery(uint64_t token, uint64_t attempt, int status);
 char *VRProfile(const char *config);
 char *VRSettings(const char *request);
 char *VRDeploy(const char *directory);

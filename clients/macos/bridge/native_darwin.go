@@ -75,6 +75,27 @@ func VRSnapshot(code C.int, token C.uint64_t) C.VRCoreState {
 	return r
 }
 
+//export VRPlanDelivery
+func VRPlanDelivery(token C.uint64_t, target, selection, trigger C.int) *C.char {
+	plan, err := nativeCore.PlanDelivery(voice.DeliveryRequest{Token: uint64(token),
+		Observation: voice.TargetObservation{Target: voice.Match(target), Selection: voice.Match(selection)},
+		Trigger: voice.DeliveryTrigger(trigger)})
+	if err != nil {
+		return nativeJSON(failure("delivery_conflict", err.Error()))
+	}
+	return nativeJSON(success(plan))
+}
+
+//export VRReportDelivery
+func VRReportDelivery(token, attempt C.uint64_t, status C.int) *C.char {
+	outcome, err := nativeCore.ReportDelivery(voice.DeliveryReceipt{Token: uint64(token),
+		AttemptID: uint64(attempt), Status: voice.DeliveryReceiptStatus(status)})
+	if err != nil {
+		return nativeJSON(failure("delivery_conflict", err.Error()))
+	}
+	return nativeJSON(success(map[string]any{"outcome": outcome}))
+}
+
 //export VRClipboardSnapshotFits
 func VRClipboardSnapshotFits(size, total C.ulonglong) C.int {
 	if clipboard.SnapshotFits(uintptr(size), uintptr(total)) {
