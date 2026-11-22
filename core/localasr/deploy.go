@@ -51,7 +51,7 @@ func modelDownload(filename, sha string) downloadSpec {
 
 func releaseDownload(asset, sha string) downloadSpec {
 	upstream := "https://github.com/ggml-org/llama.cpp/releases/download/" + llamaRelease + "/" + asset
-	return downloadSpec{asset, sha, []string{"https://ghfast.top/" + upstream, "https://gh-proxy.com/" + upstream, "https://ghproxy.net/" + upstream, upstream}}
+	return downloadSpec{asset, sha, []string{"https://ghfast.top/" + upstream, "https://gh-proxy.com/" + upstream, upstream}}
 }
 
 func validSHA(path, expected string) bool {
