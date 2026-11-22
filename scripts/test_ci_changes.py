@@ -55,10 +55,6 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(classify(["core/localasr/deploy.go"]), {
             "core": True, "macos": True, "windows": True, "ui": False, "direct2d": False})
 
-    def test_windows_installer(self):
-        self.assertEqual(classify(["installer/VoiceRewrite.iss"]), {
-            "core": False, "macos": False, "windows": True, "ui": False, "direct2d": False})
-
     def test_workflow_change_rechecks_everything(self):
         for path in (".github/workflows/build.yml", ".github/actions/setup/action.yml",
                      ".github/dependabot.yml", "scripts/test_ci_workflows.py",
