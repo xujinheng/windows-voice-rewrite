@@ -11,7 +11,7 @@
 ## 🚀 Quick start
 
 1. **Download the app.** On Windows, get `VoiceRewrite-Windows.exe` and double-click it—no installer. On M-series Macs, get `VoiceRewrite-Mac.dmg` and drag the app into Applications. For Intel Macs, get `VoiceRewrite-Mac-Intel.dmg`.
-2. **Deploy speech recognition.** Open VoiceRewrite **Settings → Speech Recognition**. Select a download folder (defaults beside the application) and click **Deploy**. VoiceRewrite automatically downloads Qwen3-ASR-1.7B and a native llama.cpp CUDA/CPU/Metal runtime. No separate OneClick, Python or Homebrew. First use requires internet access and several GB of disk space.
+2. **Deploy speech recognition.** Open VoiceRewrite **Settings → Speech Recognition**. Select a download folder (beside the EXE on Windows; the home directory for Macs installed under Applications) and click **Deploy**. VoiceRewrite automatically downloads Qwen3-ASR-1.7B and a native llama.cpp CUDA/CPU/Metal runtime. No separate OneClick, Python or Homebrew. First use requires internet access and several GB of disk space.
 3. **Dictate.** On Windows, hold Mouse4 (lower side button), speak and release. On Mac, hold Right Command. Customize shortcuts in Settings.
 
 All managed downloads stay in **`<selected folder>/Qwen3-ASR/`**: model weights, runtime, download cache and server log. Quit VoiceRewrite and delete that folder to remove the model environment. Subsequent launches reuse installed files and restart the local ASR server.
