@@ -306,7 +306,7 @@ func RecordingSeconds(value string) (int, error) {
 }
 
 // WithConnectionFields applies the six ASR/LLM settings fields identically on
-// Windows and macOS. The order follows contract.Stacked for those two pages.
+// Windows and macOS. The order is ASR URL/model/key, then LLM URL/model/key.
 func WithConnectionFields(old Config, values [6]string) (Config, error) {
 	endpoints, err := CanonicalEndpoints(values[0], values[1], values[3], values[4])
 	if err != nil {
