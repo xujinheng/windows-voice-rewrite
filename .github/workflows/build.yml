@@ -120,8 +120,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {runner: macos-15, arch: arm64}
-          - {runner: macos-15-intel, arch: x86_64}
+          - {runner: macos-15, arch: arm64, asset: VoiceRewrite-Mac}
+          - {runner: macos-15-intel, arch: x86_64, asset: VoiceRewrite-Mac-Intel}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -180,7 +180,7 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          out="$RUNNER_TEMP/headless/VoiceRewrite-Mac${{ matrix.arch == 'arm64' && '' || '-Intel' }}.dmg"
+          out="$RUNNER_TEMP/headless/${{ matrix.asset }}.dmg"
           bash scripts/package-macos-dmg.sh "$RUNNER_TEMP/headless/VoiceRewrite.app" "$out" '${{ matrix.arch }}'
           bash scripts/verify-macos-package.sh dmg "$out" '${{ matrix.arch }}' "$version" dev
       - name: Package verified drag-install DMG on main
@@ -188,14 +188,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          dmg="$RUNNER_TEMP/headless/VoiceRewrite-Mac${{ matrix.arch == 'arm64' && '' || '-Intel' }}.dmg"
+          dmg="$RUNNER_TEMP/headless/${{ matrix.asset }}.dmg"
           bash scripts/package-macos-dmg.sh "$RUNNER_TEMP/headless/VoiceRewrite.app" "$dmg" '${{ matrix.arch }}'
           bash scripts/verify-macos-package.sh dmg "$dmg" '${{ matrix.arch }}' 0.1.0 dev
       - name: Upload Mac DMG for the versioned Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: VoiceRewrite-Mac${{ matrix.arch == 'arm64' && '' || '-Intel' }}
+          name: ${{ matrix.asset }}
           path: ${{ runner.temp }}/headless/VoiceRewrite-Mac*.dmg
           retention-days: 7
           if-no-files-found: error
@@ -203,7 +203,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: VoiceRewrite-Mac${{ matrix.arch == 'arm64' && '' || '-Intel' }}
+          name: ${{ matrix.asset }}
           path: ${{ runner.temp }}/headless/VoiceRewrite-Mac*.dmg
           retention-days: 7
           if-no-files-found: error
