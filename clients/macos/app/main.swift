@@ -242,6 +242,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var settingsProgressTimer: Timer?
     private var settingsInputs: [String: NSTextField] = [:]
     private var settingsInitialValues: [String: String] = [:]
+    private var reloadAfterTask = false
     private var settingsPages: [String: NSView] = [:]
     private var settingsStatuses: [String: NSTextField] = [:]
     private var settingsHint: NSTextField?
@@ -504,18 +505,15 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             settingsSerial += 1
             let serial = settingsSerial
             if id == "save" {
-                guard VRSnapshot(0, 0).armed == 0 && !pending else {
-                    settingsHint?.stringValue = settingsBusy
-                    return
-                }
                 do {
                     let output = try GoCore.settings("save", config: json, values: values)
                     guard let updated = output.config else { return }
                     try updated.write(to: configURL, atomically: true, encoding: .utf8)
                     settingsInitialValues = currentValues
-                    reload()
+                    if VRSnapshot(0, 0).armed == 0 && !pending { reload() }
+                    else { reloadAfterTask = true }
                     firstRun = false
-                    settingsHint?.stringValue = output.status ?? ""
+                    settingsHint?.stringValue = reloadAfterTask ? "设置已保存，任务结束后生效" : output.status ?? ""
                 } catch { settingsHint?.stringValue = String(describing: error) }
                 return
             }
@@ -1087,6 +1085,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         targetWindow = nil
         selectedAtPress = nil
         taskID = 0
+        if reloadAfterTask {
+            reloadAfterTask = false
+            reload()
+        }
     }
 }
 
