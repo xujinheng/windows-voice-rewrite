@@ -138,7 +138,7 @@ func VRProfile(config *C.char) *C.char {
 	reply := headlessProfile(json.RawMessage(C.GoString(config)))
 	if reply.OK {
 		nativeConfig.Store(&reply.cfg)
-		go func() { _ = localasr.Resume(context.Background(), reply.cfg) }()
+		go func() { _ = localasr.Resume(context.Background(), reply.cfg, nil) }()
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
 		nativeCore.Apply(voice.Command{Kind: voice.CommandBind, Dictation: []int{macKeyCode(profile["dictation"].(string))}, Rewrite: []int{macKeyCode(profile["rewrite"].(string))}})
 	}
@@ -152,7 +152,7 @@ func VRDeploy(rawConfig, directory *C.char) *C.char {
 	}
 	cfg, err := coreconfig.Parse([]byte(C.GoString(rawConfig)))
 	if err == nil {
-		cfg, err = localasr.DeployConfigured(context.Background(), cfg, C.GoString(directory))
+		cfg, err = localasr.DeployConfigured(context.Background(), cfg, C.GoString(directory), nil)
 	}
 	if err != nil {
 		return nativeJSON(failure("deploy_failed", err.Error()))
