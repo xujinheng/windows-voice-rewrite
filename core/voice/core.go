@@ -299,9 +299,6 @@ func (c *Core) cancelLocked() {
 // RecordError and LastError are the single cross-platform diagnostic state.
 // Hosts supply native error facts; Core owns their lifetime and retrieval.
 func (c *Core) RecordError(err error) {
-	if err == nil {
-		return
-	}
 	message := err.Error()
 	if friendly, ok := ux.Classify(err); ok {
 		message = friendly
