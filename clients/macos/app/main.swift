@@ -786,8 +786,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
         show(NSPasteboard.general.setString(text, forType: .string) ? "Copied" : "Copy failed")
     }
     @objc private func copyResult() {
-        guard let result = try? GoCore.history("latest"), let text = result.text else {
-            show("当前没有语音结果")
+        let result = try? GoCore.history("latest")
+        guard let text = result?.text else {
+            show(result?.status ?? "无法读取语音结果")
             return
         }
         copyText(text)
