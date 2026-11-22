@@ -62,5 +62,5 @@ Do not weaken credential security or cancellation to mask broken input; remove n
 - `core/` is the **only** portable business owner; `core/internal/` is private to Core.
 - `clients/windows/`, `clients/macos/`, and `clients/cli/` are peer adapters; all call public Core contracts.
 - `clients/macos/bridge/` is a native C ABI adapter only, never another business engine.
-- `oneclick/` is a separate deployment utility, not a voice client.
+- `core/localasr/` owns shared self-contained ASR deployment. Do not reintroduce a separate OneClick process or duplicate the download/runtime rules in hosts.
 - Never reintroduce `voice-rewrite/`, `macos/Headless/`, or `cli/` as compatibility copies.
