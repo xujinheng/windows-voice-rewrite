@@ -72,8 +72,7 @@ const (
 	CommandStart
 	CommandCancel
 	CommandShutdown
-	CommandPause
-	CommandResume
+	CommandTogglePause
 )
 
 type Command struct {
@@ -187,17 +186,14 @@ func (c *Core) Apply(cmd Command) Event {
 		}
 		c.roles = roles
 		return Event{Kind: EventBound}
-	case CommandPause:
-		if cmd.Busy || c.owner != 0 || c.phase == EventStarted || c.phase == EventProcessing || c.phase == EventTranscribed {
+	case CommandTogglePause:
+		if cmd.Busy || !c.paused && (c.owner != 0 || c.phase == EventStarted || c.phase == EventProcessing || c.phase == EventTranscribed) {
 			break
 		}
-		c.paused = true
-		return Event{Kind: EventPaused}
-	case CommandResume:
-		if cmd.Busy {
-			break
+		c.paused = !c.paused
+		if c.paused {
+			return Event{Kind: EventPaused}
 		}
-		c.paused = false
 		return Event{Kind: EventResumed}
 	case CommandPress:
 		h := c.key(cmd.Code)
