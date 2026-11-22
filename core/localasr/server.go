@@ -18,7 +18,9 @@ import (
 // DefaultDirectory is beside the executable, or beside the .app bundle on Mac.
 func DefaultDirectory() string {
 	exe, err := os.Executable()
-	if err != nil { return "" }
+	if err != nil {
+		return ""
+	}
 	dir := filepath.Dir(exe)
 	if runtime.GOOS == "darwin" && filepath.Base(dir) == "MacOS" &&
 		filepath.Base(filepath.Dir(dir)) == "Contents" {
@@ -29,7 +31,7 @@ func DefaultDirectory() string {
 
 var (
 	processMu sync.Mutex
-	process *exec.Cmd
+	process   *exec.Cmd
 )
 
 // Start serves the built-in Qwen ASR model on the existing default endpoint.
@@ -48,7 +50,10 @@ func Start(ctx context.Context, install Installation) error {
 	}
 	logPath := filepath.Join(filepath.Dir(filepath.Dir(install.Model)), "server.log")
 	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
-	if err != nil { processMu.Unlock(); return err }
+	if err != nil {
+		processMu.Unlock()
+		return err
+	}
 	cmd := exec.Command(install.Server, "-m", install.Model, "--mmproj", install.Projector,
 		"--alias", "qwen3-asr", "-ngl", fmt.Sprint(install.GPULayers),
 		"-c", "8192", "-np", "1", "--host", "127.0.0.1", "--port", "8080")
@@ -75,7 +80,7 @@ func Start(ctx context.Context, install Installation) error {
 	client := http.Client{Timeout: 1200 * time.Millisecond}
 	timeout, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
-	ticker := time.NewTicker(800*time.Millisecond)
+	ticker := time.NewTicker(800 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		req, _ := http.NewRequestWithContext(timeout, http.MethodGet, "http://127.0.0.1:8080/health", nil)
@@ -83,7 +88,9 @@ func Start(ctx context.Context, install Installation) error {
 		if e == nil {
 			io.Copy(io.Discard, io.LimitReader(res.Body, 256))
 			res.Body.Close()
-			if res.StatusCode == http.StatusOK { return nil }
+			if res.StatusCode == http.StatusOK {
+				return nil
+			}
 		}
 		select {
 		case e := <-exited:
@@ -101,7 +108,9 @@ func Stop() {
 	processMu.Lock()
 	p := process
 	processMu.Unlock()
-	if p != nil { _ = p.Process.Kill() }
+	if p != nil {
+		_ = p.Process.Kill()
+	}
 }
 
 // Ready returns true only for a managed process already started in this session.
@@ -110,4 +119,3 @@ func Ready() bool {
 	defer processMu.Unlock()
 	return process != nil
 }
-
