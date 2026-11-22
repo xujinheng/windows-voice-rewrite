@@ -12,6 +12,7 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
 	"github.com/xujinheng/windows-voice-rewrite/core/provider"
 	"github.com/xujinheng/windows-voice-rewrite/core/serviceprobe"
+	"github.com/xujinheng/windows-voice-rewrite/core/shortcut"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 )
 
@@ -136,6 +137,13 @@ func Update(cfg coreconfig.Config, values map[string]string) (coreconfig.Config,
 				return cfg, err
 			}
 		}
+	}
+	// One shortcut validation owner for both typed Windows and JSON macOS saves.
+	// Native hosts still decide which physical key codes their OS supports.
+	cfg.HotkeyRecord, cfg.DictationHotkey, _, err = shortcut.AssignPair(
+		cfg.HotkeyRecord, cfg.DictationHotkey, cfg.HotkeyExit, cfg.HotkeyRecord, cfg.DictationHotkey)
+	if err != nil {
+		return cfg, err
 	}
 	return coreconfig.Normalize(cfg)
 }

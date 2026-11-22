@@ -102,3 +102,16 @@ func TestDeployDirectoryAndEndpointSaveIndependently(t *testing.T) {
 		t.Fatalf("saving endpoint overwrote selected Deploy directory: %+v", cfg)
 	}
 }
+
+func TestPortableShortcutCollisionRejectsBothSettingsEntryPoints(t *testing.T) {
+	cfg := coreconfig.Defaults()
+	values := map[string]string{"dictation_shortcut": "Mouse5"}
+	if _, err := Update(cfg, values); err == nil {
+		t.Fatal("typed client accepted colliding shortcuts")
+	}
+	raw, _ := json.Marshal(cfg)
+	request, _ := json.Marshal(map[string]any{"action": "save", "config": json.RawMessage(raw), "values": values})
+	if _, err := ConnectionAction(context.Background(), request); err == nil {
+		t.Fatal("JSON ABI accepted shortcuts rejected by Windows")
+	}
+}
