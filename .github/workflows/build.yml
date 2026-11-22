@@ -26,7 +26,6 @@ jobs:
       core: ${{ steps.scope.outputs.core }}
       macos: ${{ steps.scope.outputs.macos }}
       windows: ${{ steps.scope.outputs.windows }}
-      oneclick: ${{ steps.scope.outputs.oneclick }}
       ui: ${{ steps.scope.outputs.ui }}
       direct2d: ${{ steps.scope.outputs.direct2d }}
     steps:
@@ -62,11 +61,11 @@ jobs:
               --jq 'if (.files | length) >= 300 then ".github/workflows/_large_commit.yml" else .files[] | .filename, (.previous_filename // empty) end' |
               python3 scripts/ci_changes.py --output "$RUNNER_TEMP/ci-scope.txt"
             source "$RUNNER_TEMP/ci-scope.txt"
-            printf 'core=true\nmacos=true\nwindows=true\noneclick=true\nui=%s\ndirect2d=%s\n' "$ui" "$direct2d" >> "$GITHUB_OUTPUT"
+            printf 'core=true\nmacos=true\nwindows=true\nui=%s\ndirect2d=%s\n' "$ui" "$direct2d" >> "$GITHUB_OUTPUT"
           else
             # Tags and explicit workflow dispatch validate every host; release
             # signing is gated separately by a trusted v* ref.
-            printf 'core=true\nmacos=true\nwindows=true\noneclick=true\nui=false\ndirect2d=false\n' >> "$GITHUB_OUTPUT"
+            printf 'core=true\nmacos=true\nwindows=true\nui=false\ndirect2d=false\n' >> "$GITHUB_OUTPUT"
           fi
   test-core:
     needs: changes
@@ -114,7 +113,7 @@ jobs:
   build-macos-headless:
     name: macOS headless ${{ matrix.arch }} Go + Swift
     needs: changes
-    if: needs.changes.outputs.macos == 'true' || needs.changes.outputs.oneclick == 'true'
+    if: needs.changes.outputs.macos == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     strategy:
@@ -132,7 +131,6 @@ jobs:
           go-version: '1.23'
           cache-dependency-path: clients/go.mod
       - name: Build headless app with in-process Go Core
-        if: needs.changes.outputs.macos == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -141,10 +139,8 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then version="${GITHUB_REF_NAME#v}"; fi
           bash scripts/build-macos-headless.sh '${{ matrix.arch }}' "$RUNNER_TEMP/headless" "$version"
       - name: Verify Go-linked production source share
-        if: needs.changes.outputs.macos == 'true'
         run: python3 scripts/check_headless_scope.py
       - name: Verify signed binary and basic configuration
-        if: needs.changes.outputs.macos == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -155,7 +151,6 @@ jobs:
           nm -g "$app/Contents/MacOS/VoiceRewrite" | grep ' _VRCommand' >/dev/null
           codesign --verify --deep --strict "$app"
       - name: Smoke native Go ABI and benchmark real Swift-to-Go call overhead
-        if: needs.changes.outputs.macos == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -179,75 +174,37 @@ jobs:
             "$RUNNER_TEMP/main.swift" clients/macos/app/RecordingPill.swift \
             "$RUNNER_TEMP/headless/libvoicecore.a"
           "$RUNNER_TEMP/voicecore-focus-test"
-      - name: Test and build portable Apple Silicon OneClick
-        if: matrix.arch == 'arm64' && needs.changes.outputs.oneclick == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(uname -m)" = arm64
-          cd oneclick
-          go test ./...
-          go vet ./...
-          bundle="$RUNNER_TEMP/Qwen3-ASR-OneClick-Mac-arm64"
-          mkdir -p "$bundle"
-          go build -trimpath -ldflags '-s -w' -o "$bundle/Qwen3-ASR-OneClick" .
-          cp ../LICENSE "$bundle/LICENSE"
-          printf '%s\n' '#!/bin/sh' 'cd "$(dirname "$0")" || exit 1' 'exec ./Qwen3-ASR-OneClick' > "$bundle/Start OneClick.command"
-          chmod +x "$bundle/Start OneClick.command" "$bundle/Qwen3-ASR-OneClick"
-          /usr/bin/codesign --force --sign - --timestamp=none "$bundle/Qwen3-ASR-OneClick"
-          /usr/bin/codesign --verify "$bundle/Qwen3-ASR-OneClick"
-          if [[ "$GITHUB_REF" == refs/heads/main || "$GITHUB_REF" == refs/tags/v* ]]; then
-            /usr/bin/ditto -c -k --keepParent "$bundle" "$RUNNER_TEMP/Qwen3-ASR-OneClick-Mac-arm64.zip"
-            extracted="$(mktemp -d)"
-            /usr/bin/ditto -x -k "$RUNNER_TEMP/Qwen3-ASR-OneClick-Mac-arm64.zip" "$extracted"
-            test -x "$extracted/Qwen3-ASR-OneClick-Mac-arm64/Qwen3-ASR-OneClick"
-            test -x "$extracted/Qwen3-ASR-OneClick-Mac-arm64/Start OneClick.command"
-            test -f "$extracted/Qwen3-ASR-OneClick-Mac-arm64/LICENSE"
-            rm -rf "$extracted"
-          fi
-      - name: Upload portable Apple Silicon OneClick
-        if: matrix.arch == 'arm64' && needs.changes.outputs.oneclick == 'true' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: VoiceRewrite-ASR-OneClick-macOS-AppleSilicon-ZIP
-          path: ${{ runner.temp }}/Qwen3-ASR-OneClick-Mac-arm64.zip
-          retention-days: 7
-          if-no-files-found: error
-      - name: Package experimental ZIP for tagged Release
+      - name: Package experimental Mac DMG for tagged Release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          out="$RUNNER_TEMP/headless/VoiceRewrite-$version-macOS-${{ matrix.arch }}-Experimental.zip"
-          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/headless/VoiceRewrite.app" "$out"
-          unpacked="$(mktemp -d)"
-          trap 'rm -rf "$unpacked"' EXIT
-          /usr/bin/ditto -x -k "$out" "$unpacked"
-          test -x "$unpacked/VoiceRewrite.app/Contents/MacOS/VoiceRewrite"
-          /usr/bin/codesign --verify --deep --strict "$unpacked/VoiceRewrite.app"
+          out="$RUNNER_TEMP/headless/VoiceRewrite-Mac${{ matrix.arch == 'arm64' && '' || '-Intel' }}.dmg"
+          bash scripts/package-macos-dmg.sh "$RUNNER_TEMP/headless/VoiceRewrite.app" "$out" '${{ matrix.arch }}'
+          bash scripts/verify-macos-package.sh dmg "$out" '${{ matrix.arch }}' "$version" dev
       - name: Package verified drag-install DMG on main
         if: github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
-          dmg="$RUNNER_TEMP/headless/VoiceRewrite-Dev-macOS-${{ matrix.arch }}.dmg"
+          dmg="$RUNNER_TEMP/headless/VoiceRewrite-Mac${{ matrix.arch == 'arm64' && '' || '-Intel' }}.dmg"
           bash scripts/package-macos-dmg.sh "$RUNNER_TEMP/headless/VoiceRewrite.app" "$dmg" '${{ matrix.arch }}'
           bash scripts/verify-macos-package.sh dmg "$dmg" '${{ matrix.arch }}' 0.1.0 dev
-      - name: Upload experimental Mac ZIP for the versioned Release
+      - name: Upload Mac DMG for the versioned Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: VoiceRewrite-Experimental-macOS-${{ matrix.arch }}
-          path: ${{ runner.temp }}/headless/VoiceRewrite-*-macOS-${{ matrix.arch }}-Experimental.zip
+          name: VoiceRewrite-Mac${{ matrix.arch == 'arm64' && '' || '-Intel' }}
+          path: ${{ runner.temp }}/headless/VoiceRewrite-Mac*.dmg
           retention-days: 7
           if-no-files-found: error
       - name: Upload developer DMG on main
         if: github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: VoiceRewrite-App-macOS-${{ matrix.arch == 'arm64' && 'AppleSilicon' || 'Intel' }}-DMG
-          path: ${{ runner.temp }}/headless/VoiceRewrite-Dev-macOS-${{ matrix.arch }}.dmg
+          name: VoiceRewrite-Mac${{ matrix.arch == 'arm64' && '' || '-Intel' }}
+          path: ${{ runner.temp }}/headless/VoiceRewrite-Mac*.dmg
           retention-days: 7
           if-no-files-found: error
   build:
@@ -289,114 +246,18 @@ jobs:
         shell: pwsh
         run: |
           $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.29.0-dev' }
-          go build -trimpath -ldflags "-H=windowsgui -s -w -X main.buildID=$version" -o VoiceRewrite.exe .
-      - name: Package portable Windows release
-        if: startsWith(github.ref, 'refs/tags/v')
-        working-directory: clients/windows
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path 'package/VoiceRewrite' -Force | Out-Null
-          Copy-Item -LiteralPath 'VoiceRewrite.exe' -Destination 'package/VoiceRewrite/'
-          Copy-Item -LiteralPath 'README.md' -Destination 'package/VoiceRewrite/'
-          Copy-Item -LiteralPath 'config.example.json' -Destination 'package/VoiceRewrite/'
-          Copy-Item -LiteralPath '../../LICENSE' -Destination 'package/VoiceRewrite/LICENSE'
-          Copy-Item -LiteralPath '../../docs/third-party-notices.md' -Destination 'package/VoiceRewrite/THIRD_PARTY_NOTICES.md'
-          Compress-Archive -Path 'package/VoiceRewrite' -DestinationPath 'VoiceRewrite-windows-x64.zip' -Force
-          $hash = (Get-FileHash -LiteralPath 'VoiceRewrite-windows-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash *VoiceRewrite-windows-x64.zip" | Set-Content -LiteralPath 'SHA256SUMS.txt' -Encoding ascii
-      - name: Upload portable release package and checksum
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: VoiceRewrite-App-Windows-x64-PortableZIP
-          path: |
-            clients/windows/VoiceRewrite-windows-x64.zip
-            clients/windows/SHA256SUMS.txt
-          if-no-files-found: error
+          go build -trimpath -ldflags "-H=windowsgui -s -w -X main.buildID=$version" -o VoiceRewrite-Windows.exe .
       - name: Upload standalone EXE
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: VoiceRewrite-App-Windows-x64-EXE
-          path: clients/windows/VoiceRewrite.exe
-          if-no-files-found: error
-      - name: Ensure Inno Setup compiler
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
-        run: |
-          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-          if (Test-Path -LiteralPath $compiler) {
-            Write-Host 'Inno Setup is already installed.'
-          } else {
-            choco install innosetup --yes --no-progress --limit-output
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-      - name: Build per-user installer
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
-        run: |
-          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.29.0' }
-          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-          if (-not (Test-Path -LiteralPath $compiler)) { throw "Inno Setup compiler not found: $compiler" }
-          & $compiler "/DAppVersion=$version" 'installer\VoiceRewrite.iss'
-          if ($LASTEXITCODE -ne 0) { throw "ISCC failed: $LASTEXITCODE" }
-          $packages = @(Get-ChildItem -LiteralPath 'installer/output' -Filter 'VoiceRewrite-Setup-*-x64.exe' -File)
-          if ($packages.Count -ne 1) { throw 'Expected exactly one installer output' }
-          $hash = (Get-FileHash -LiteralPath $packages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash *$($packages[0].Name)" | Set-Content -LiteralPath 'installer/output/INSTALLER-SHA256SUMS.txt' -Encoding ascii
-      # On version tags, GitHub signs provenance for the built artifacts via
-      # short-lived OIDC credentials. This is NOT Authenticode publisher signing.
-      - name: Upload installer and checksum
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: VoiceRewrite-App-Windows-x64-Installer
-          path: installer/output/*
-          if-no-files-found: error
-  build-oneclick:
-    needs: changes
-    if: needs.changes.outputs.oneclick == 'true'
-    runs-on: windows-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7
-        with:
-          go-version: '1.23'
-          cache-dependency-path: oneclick/go.mod
-      - name: Test OneClick
-        working-directory: oneclick
-        run: go test ./...
-      - name: Vet OneClick
-        working-directory: oneclick
-        run: go vet ./...
-      - name: Build Qwen3-ASR OneClick Windows x64 EXE
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        working-directory: oneclick
-        shell: pwsh
-        run: go build -trimpath -ldflags '-s -w' -o Qwen3-ASR-OneClick-Windows-x64.exe .
-      - name: Stage OneClick executable and license
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path 'oneclick/package' -Force | Out-Null
-          Copy-Item -LiteralPath 'oneclick/Qwen3-ASR-OneClick-Windows-x64.exe' -Destination 'oneclick/package/'
-          Copy-Item -LiteralPath 'LICENSE' -Destination 'oneclick/package/'
-      - name: Upload Qwen3-ASR OneClick executable
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: VoiceRewrite-ASR-OneClick-Windows-x64-EXE
-          path: oneclick/package/*
+          name: VoiceRewrite-Windows
+          path: clients/windows/VoiceRewrite-Windows.exe
           if-no-files-found: error
   attest-windows-release:
-    name: Attest Windows release packages (trusted tag only)
+    name: Attest standalone Windows EXE (trusted tag only)
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, build-oneclick]
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -404,47 +265,18 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      # Download exactly the three Windows release artifacts from this workflow
-      # run. Do not download third-party or pull-request supplied artifacts.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: VoiceRewrite-App-Windows-x64-PortableZIP
+          name: VoiceRewrite-Windows
           path: provenance
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+      - name: Verify standalone Windows EXE
+        run: test -s provenance/VoiceRewrite-Windows.exe
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
-          name: VoiceRewrite-App-Windows-x64-Installer
-          path: provenance
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          name: VoiceRewrite-ASR-OneClick-Windows-x64-EXE
-          path: provenance
-      - name: Verify release artifacts before attestation
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -s provenance/VoiceRewrite-windows-x64.zip
-          test -s provenance/Qwen3-ASR-OneClick-Windows-x64.exe
-          shopt -s nullglob
-          installers=(provenance/VoiceRewrite-Setup-*-x64.exe)
-          test "${#installers[@]}" -eq 1
-          test -s "${installers[0]}"
-          (cd provenance && sha256sum -c SHA256SUMS.txt)
-          (cd provenance && sha256sum -c INSTALLER-SHA256SUMS.txt)
-      - name: Attest verified portable Windows package
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-path: provenance/VoiceRewrite-windows-x64.zip
-      - name: Attest verified Windows installer
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-path: provenance/VoiceRewrite-Setup-*-x64.exe
-      - name: Attest verified Windows OneClick executable
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-path: provenance/Qwen3-ASR-OneClick-Windows-x64.exe
+          subject-path: provenance/VoiceRewrite-Windows.exe
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test-core, build-macos-headless, build, build-oneclick, attest-windows-release]
+    needs: [test-core, build-macos-headless, build, attest-windows-release]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -476,14 +308,6 @@ jobs:
           pattern: VoiceRewrite-*
           path: release
           merge-multiple: true
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          name: VoiceRewrite-ASR-OneClick-Windows-x64-EXE
-          path: release
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          name: VoiceRewrite-ASR-OneClick-macOS-AppleSilicon-ZIP
-          path: release
       - name: Publish unsigned release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
@@ -492,14 +316,10 @@ jobs:
           generate_release_notes: false
           body_path: release-metadata/release-notes/${{ github.ref_name }}.md
           overwrite_files: true
-          # Public assets include the Windows OneClick ASR server and the two
-          # explicitly experimental unnotarized Mac builds; checksums stay in CI.
+          # Mac DMGs in this job are experimental and not Developer ID notarized.
           files: |
-            release/Qwen3-ASR-OneClick-Windows-x64.exe
-            release/Qwen3-ASR-OneClick-Mac-arm64.zip
-            release/VoiceRewrite-Setup-*-x64.exe
-            release/VoiceRewrite-windows-x64.zip
-            release/VoiceRewrite-*-macOS-*-Experimental.zip
+            release/VoiceRewrite-Windows.exe
+            release/VoiceRewrite-Mac*.dmg
           fail_on_unmatched_files: true
 
   # Single-use requested v0.1.1 publication. Only the specifically titled
@@ -510,7 +330,7 @@ jobs:
     name: Publish requested v0.1.1 tag after main validation
     if: >-
       ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'docs(release): prepare v0.1.1') }}
-    needs: [changes, test-core, build-macos-headless, build, build-oneclick]
+    needs: [changes, test-core, build-macos-headless, build]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -555,7 +375,7 @@ jobs:
     if: always() && github.event_name == 'pull_request'
     permissions:
       contents: read
-    needs: [changes, test-core, build-macos-headless, build, build-oneclick, windows-acceptance, direct2d-acceptance]
+    needs: [changes, test-core, build-macos-headless, build, windows-acceptance, direct2d-acceptance]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -569,8 +389,6 @@ jobs:
           MAC_RESULT: ${{ needs.build-macos-headless.result }}
           WIN_REQUIRED: ${{ needs.changes.outputs.windows }}
           WIN_RESULT: ${{ needs.build.result }}
-          ONECLICK_REQUIRED: ${{ needs.changes.outputs.oneclick }}
-          ONECLICK_RESULT: ${{ needs.build-oneclick.result }}
           UI_REQUIRED: ${{ needs.changes.outputs.ui }}
           UI_CAPTURE_RESULT: ${{ needs.windows-acceptance.result }}
           D2D_REQUIRED: ${{ needs.changes.outputs.direct2d }}
@@ -589,7 +407,6 @@ jobs:
           check 'Go core' "$CORE_REQUIRED" "$CORE_RESULT"
           check 'macOS headless both architectures' "$MAC_REQUIRED" "$MAC_RESULT"
           check 'Windows' "$WIN_REQUIRED" "$WIN_RESULT"
-          check 'OneClick' "$ONECLICK_REQUIRED" "$ONECLICK_RESULT"
           check 'Windows UI capture' "$UI_REQUIRED" "$UI_CAPTURE_RESULT"
           check 'Direct2D' "$D2D_REQUIRED" "$D2D_RESULT"
   macos-signed-distribution:
