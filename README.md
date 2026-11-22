@@ -11,7 +11,7 @@
 ## 🚀 开始使用
 
 1. **下载主程序。** Windows 下载 `VoiceRewrite-Windows.exe`，双击运行，不需要安装。M 系列 Mac 下载 `VoiceRewrite-Mac.dmg`，将应用拖到「应用程序」；Intel Mac 选择 `VoiceRewrite-Mac-Intel.dmg`。
-2. **部署语音模型。** 打开 VoiceRewrite「设置」→「语音识别」，选择下载目录（默认在主程序旁边），点击 **Deploy**。它会自动下载 Qwen3-ASR-1.7B 和对应的 llama.cpp CUDA/CPU/Metal 运行时，不需要单独安装 OneClick、Python 或 Homebrew。首次需要联网和数 GB 空间。
+2. **部署语音模型。** 打开 VoiceRewrite「设置」→「语音识别」，选择下载目录（Windows 默认在 EXE 旁边；Mac 安装在「应用程序」时默认为个人主目录），点击 **Deploy**。它会自动下载 Qwen3-ASR-1.7B 和对应的 llama.cpp CUDA/CPU/Metal 运行时，不需要单独安装 OneClick、Python 或 Homebrew。首次需要联网和数 GB 空间。
 3. **开始听写。** Windows 默认按住鼠标下侧键（Mouse4）说话，松开后输入；Mac 默认按住右 Command。快捷键可在设置中修改。
 
 安装的数据全部在 **`你选择的目录/Qwen3-ASR/`**，包含模型、运行时、下载缓存和服务日志。关闭 VoiceRewrite 后删除这个文件夹即可清理模型环境。已下载文件会复用，重启主程序自动恢复本地 ASR 服务。
