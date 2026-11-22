@@ -1043,6 +1043,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         }
         return true
     }
+    // nil means some Unicode chunks may have been sent; never offer another Apply.
     private func pasteUnicode(_ text: String) -> Bool? {
         let source = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: 49, keyDown: true),

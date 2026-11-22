@@ -87,7 +87,7 @@ type answerPopup struct {
 	app                *appState
 	selection          *selectedText
 	allowApply         bool
-	applyButton       uintptr
+	applyButton        uintptr
 	applyResult        chan error
 	generation         uint64
 	canceled           atomic.Bool
