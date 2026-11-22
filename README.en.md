@@ -49,7 +49,7 @@ Download and load a chat model in LM Studio, then turn on its local API server (
 
 **Extract the ZIP**, move `VoiceRewrite.app` to Applications, and try launching it. These experimental packages are not signed with an Apple Developer ID or notarized; macOS may block them. Verify their origin and consider the security implications rather than disabling system security protections. The app also requires Microphone, Accessibility, and Input Monitoring permissions.
 
-**Windows OneClick does not run on macOS.** You must separately start a compatible ASR API server and configure `~/.config/voicerewrite/config.json`; the Mac version is **not yet plug-and-play**. Once configured, hold **Right Command** to dictate or **Right Option** to issue a rewrite instruction for selected text. See [macOS setup details](clients/macos/app/README.md).
+**A portable Apple Silicon OneClick is now in source and will ship in a subsequent Release** as `Qwen3-ASR-OneClick-Mac-arm64.zip`. Extract it to a writable folder and double-click `Start OneClick.command` to download the Metal runtime and Qwen3-ASR models automatically. Stop it and delete the extracted folder to clean up. **The v0.1.1 downloads above do not include Mac OneClick.** VoiceRewrite itself still needs the ASR endpoint configured; hold **Right Command** to dictate or **Right Option** to rewrite. See [OneClick instructions](oneclick/README.md) and [macOS setup](clients/macos/app/README.md).
 
 ## More information
 
