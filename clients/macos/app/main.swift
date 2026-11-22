@@ -210,16 +210,6 @@ private let onCoreEvent: @convention(c) (Int32, UInt64) -> Void = { kind, token 
 }
 
 private enum GoCore {
-    static func run(audio: Data, selection: String?, rewrite: Bool, token: UInt64) throws -> BridgeReply.Output {
-        let result = (selection ?? "").withCString { selected in
-            audio.withUnsafeBytes { pcm in
-                VRRun(rewrite ? 1 : 0, pcm.bindMemory(to: UInt8.self).baseAddress,
-                      Int32(audio.count), selected, token, onCoreEvent)
-            }
-        }
-        return try decode(result)
-    }
-
     static func settings(_ action: String, config: String, values: [String: String] = [:],
                          kind: String = "") throws -> BridgeReply.Output {
         let current = try JSONSerialization.jsonObject(with: Data(config.utf8))
@@ -797,8 +787,13 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                     let result = Result {
                         let pcm = try Microphone.pcm(capture)
-                        return try GoCore.run(audio: pcm, selection: selected?.text,
-                                              rewrite: rewrite, token: token)
+                        return try (selected?.text ?? "").withCString { source in
+                            try pcm.withUnsafeBytes { bytes in
+                                try GoCore.decode(VRRun(rewrite ? 1 : 0,
+                                    bytes.bindMemory(to: UInt8.self).baseAddress,
+                                    Int32(pcm.count), source, token, onCoreEvent))
+                            }
+                        }
                     }
                     DispatchQueue.main.async {
                         guard let self, VRSnapshot(0, token).valid == 1 else { return }
