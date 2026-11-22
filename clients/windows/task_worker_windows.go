@@ -104,7 +104,8 @@ type recordingTask struct {
 	dictation bool
 	target    uintptr
 	anchor    trayPoint
-	selection *selectedText // set by toggle mode; hold mode reads on release
+	selection *selectedText // toggle mode owns this capture
+	earlySelection <-chan selectedText // confirmed side-button hold captures during recording
 }
 
 func processRecording(app *appState, rec *audioRecorder, task recordingTask, generation uint64) {
@@ -125,9 +126,17 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 		if task.selection != nil {
 			sel = *task.selection
 		} else {
+			if task.earlySelection != nil {
+				select {
+				case sel = <-task.earlySelection:
+				case <-app.core.ContextFor(generation).Done():
+					return
+				}
+			}
+			if sel.Text == "" {
 			started := time.Now()
-			// The physical shortcut must be released before native selection
-			// capture; a changed window is not a different edit target.
+			// A held keyboard chord needs release before injecting Ctrl+C.
+			// Side buttons already had a chance to capture at activation.
 			if !isSameForegroundWindow(task.target) {
 				rec.Stop()
 				app.fail(errors.New(ux.HoldWindowChanged))
@@ -146,6 +155,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 			}
 			app.logger.Printf("stage=selection mode=hold ms=%d chars=%d",
 				time.Since(started).Milliseconds(), utf8.RuneCountInString(sel.Text))
+			}
 			app.postHandyPhase(indicator.Processing, generation)
 		}
 		defer sel.ClipboardBackup.restoreIfOwned(app.Window)

@@ -507,6 +507,20 @@ func runApp() {
 			holdMeeting = app.meeting
 		}
 		activeGeneration = app.core.Apply(voice.Command{Kind: voice.CommandStart}).Token
+		if button != 0 && !dictation && holdMeeting == nil {
+			captured := make(chan selectedText, 1)
+			task.earlySelection = captured
+			go func(token uint64, config Config) {
+				defer close(captured)
+				if !app.core.Snapshot(0, token).Valid || !isSameForegroundWindow(target) { return }
+				sel, err := captureSelection(hwnd, config)
+				if restore := sel.ClipboardBackup.restoreIfOwned(hwnd); restore != nil { err = restore }
+				sel.ClipboardBackup = nil // Do not reserve the user's clipboard during recording.
+				if err == nil && sel.TargetWindow == target && app.core.Snapshot(0, token).Valid {
+					captured <- sel
+				}
+			}(activeGeneration, task.cfg)
+		}
 		active = rec
 		watchRecordingLimit(hwnd, rec, activeGeneration, l)
 		app.setStatus(trayRecording)
