@@ -172,7 +172,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, b
 					mu.Unlock()
 					return 1
 				}
-				if closed || buttons.Snapshot(0, 0).Paused {
+				if closed {
 					mu.Unlock()
 					return callNextMouseHook(hook, code, message, data)
 				}
@@ -191,7 +191,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, b
 				timers[button] = time.AfterFunc(voice.SideHoldThreshold, func() {
 					mu.Lock()
 					defer mu.Unlock()
-					if closed || buttons.Snapshot(0, 0).Paused || !buttons.Snapshot(int(button), token).CanActivate {
+					if closed || !buttons.Snapshot(int(button), token).CanActivate {
 						return
 					}
 					if ok, _, _ := procPostMessage.Call(hwnd, WM_SIDE_DOWN, uintptr(button), 0); ok != 0 {
