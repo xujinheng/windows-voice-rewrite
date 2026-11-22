@@ -1,5 +1,5 @@
 // Qwen3-ASR OneClick starts llama.cpp and exposes ASR and continuation APIs.
-// Windows x64 executable; no external dependencies, Python or pip.
+// Portable Windows and macOS executable; no Python, pip or package manager.
 package main
 
 import (
@@ -203,8 +203,10 @@ type config struct {
 }
 
 func defaultConfig() config {
+	server := "llama-server.exe"
+	if runtime.GOOS == "darwin" { server = "llama-server" }
 	return config{
-		LlamaServerPath: "llama-server.exe",
+		LlamaServerPath: server,
 		ModelPath:       "Qwen3-ASR-1.7B-Q8_0.gguf",
 		MMProjPath:      asrProjectorFilename,
 		ListenAddress:   "127.0.0.1:8080",
@@ -359,7 +361,7 @@ func waitForHealthy(ctx context.Context, port int, childExited <-chan error) err
 		}
 		select {
 		case err := <-childExited:
-			return fmt.Errorf("llama-server.exe exited before model was ready: %v", err)
+			return fmt.Errorf("llama-server exited before model was ready: %v", err)
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
@@ -403,7 +405,7 @@ func run(o options) error {
 	if !o.attach {
 		if con, err := net.DialTimeout("tcp", addr, 300*time.Millisecond); err == nil {
 			con.Close()
-			return fmt.Errorf("port %s is already occupied; close your old llama-server.exe first, or start with -attach to reuse it", addr)
+			return fmt.Errorf("port %s is already occupied; close your old llama-server first, or start with -attach to reuse it", addr)
 		}
 		if err := checkGPUs(o.llamaPath, filepath.Dir(o.llamaPath), o.allowCPU || o.gpuLayers == 0); err != nil {
 			return err
@@ -436,9 +438,9 @@ func run(o options) error {
 		child.Stdout = os.Stdout
 		child.Stderr = os.Stderr
 		child.Stdin = os.Stdin
-		fmt.Println("Launching llama-server.exe automatically ...")
+		fmt.Println("Launching llama-server automatically ...")
 		if err := child.Start(); err != nil {
-			return fmt.Errorf("failed to start llama-server.exe: %w", err)
+			return fmt.Errorf("failed to start llama-server: %w", err)
 		}
 		releaseJob, err = attachKillOnParentExit(child.Process.Pid)
 		if err != nil {
@@ -466,7 +468,7 @@ func run(o options) error {
 	case <-ctx.Done():
 		log.Println("Stopping launcher and llama.cpp")
 	case err := <-childExited:
-		return fmt.Errorf("llama-server.exe stopped unexpectedly: %v", err)
+		return fmt.Errorf("llama-server stopped unexpectedly: %v", err)
 	case err := <-errs:
 		return err
 	}
@@ -485,17 +487,17 @@ func main() {
 		name = filepath.Join(directory, "config.json")
 	}
 	cfg, err := loadConfig(name)
-	if err == nil && runtime.GOOS == "windows" && alreadyRunning(cfg.ListenAddress) {
+	if err == nil && alreadyRunning(cfg.ListenAddress) {
 		fmt.Println("Qwen3-ASR 服务已经在运行：http://" + cfg.ListenAddress + "/v1")
 		return
 	}
-	if err == nil && runtime.GOOS == "windows" {
+	if err == nil && (runtime.GOOS == "windows" || runtime.GOOS == "darwin") {
 		var unlock func()
-		unlock, err = acquireLaunchLock()
+		unlock, err = acquireLaunchLock(directory)
 		if err == nil { defer unlock() }
 	}
 	if err == nil {
-		cfg, err = bootstrapWindows(cfg, directory)
+		cfg, err = bootstrapLocal(cfg, directory)
 	}
 	if err == nil {
 		err = run(cfg.toOptions(filepath.Dir(name)))
