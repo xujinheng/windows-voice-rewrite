@@ -12,10 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
-	"time"
 	"unsafe"
 
-	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/contract"
 	"github.com/xujinheng/windows-voice-rewrite/core/desktop"
 	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
@@ -816,6 +814,14 @@ func (p *uxSettings) inputValue(id string) string {
 	return uxWinText(p.inputs[index])
 }
 
+func (p *uxSettings) bumpProbe(idx int) uint64 {
+	p.probeMu.Lock()
+	p.probeSerial[idx]++
+	serial := p.probeSerial[idx]
+	p.probeMu.Unlock()
+	return serial
+}
+
 func (p *uxSettings) probe(kind string) {
 	url, key, model, ok := contract.ProbeInputs(kind)
 	if !ok || p.window == 0 {
@@ -826,10 +832,7 @@ func (p *uxSettings) probe(kind string) {
 		return
 	}
 	base, secret, name := p.inputValue(url), p.inputValue(key), p.inputValue(model)
-	p.probeMu.Lock()
-	p.probeSerial[idx]++
-	serial := p.probeSerial[idx]
-	p.probeMu.Unlock()
+	serial := p.bumpProbe(idx)
 	uxSetText(p.probeStatus[idx], serviceprobe.StatusRunning)
 	hwnd := p.window
 	go func() {
