@@ -71,12 +71,9 @@ func TestUnpackZipCannotEscapeFolder(t *testing.T) {
 	}
 }
 
-func TestDeployConfiguredDoesNotMutateOnFailure(t *testing.T) {
-	cfg := coreconfig.Defaults()
-	cfg.ASRBaseURL = "http://127.0.0.1:4567/v1"
-	got, err := DeployConfigured(context.Background(), cfg, "", nil)
-	if err == nil || got != cfg {
-		t.Fatalf("failed deploy modified active ASR config: %+v, %v", got, err)
+func TestDeployFailureReportsStatus(t *testing.T) {
+	if err := Deploy(context.Background(), "", nil); err == nil {
+		t.Fatal("expected failure for empty deployment directory")
 	}
 	progress := ProgressSnapshot()
 	if progress.Busy || !strings.Contains(progress.Text, "失败") {
@@ -123,9 +120,16 @@ func TestDownloadProgressAfterResume(t *testing.T) {
 func TestConcurrentDeployDoesNotStartAnotherDownload(t *testing.T) {
 	deploymentMu.Lock()
 	defer deploymentMu.Unlock()
-	cfg := coreconfig.Defaults()
-	got, err := DeployConfigured(context.Background(), cfg, t.TempDir(), nil)
-	if err == nil || got != cfg || !strings.Contains(err.Error(), "正在部署") {
-		t.Fatalf("repeated Deploy should leave existing task unchanged: %+v, %v", got, err)
+	err := Deploy(context.Background(), t.TempDir(), nil)
+	if err == nil || !strings.Contains(err.Error(), "正在部署") {
+		t.Fatalf("repeated Deploy should leave existing task unchanged: %v", err)
+	}
+}
+
+func TestRuntimeDownloadHasVerifiedOfficialFallback(t *testing.T) {
+	spec := releaseDownload("llama-"+llamaRelease+"-bin-macos-arm64.tar.gz", macArmTarSHA)
+	if spec.sha != macArmTarSHA || spec.urls[len(spec.urls)-1] !=
+		"https://github.com/ggml-org/llama.cpp/releases/download/"+llamaRelease+"/"+spec.filename {
+		t.Fatalf("official verified fallback missing: %+v", spec)
 	}
 }

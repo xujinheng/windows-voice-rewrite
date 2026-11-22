@@ -47,18 +47,18 @@ var (
 // lifetime. Core owns when it is used; the host owns the OS API.
 type ChildGuard func(pid int) (func(), error)
 
-// DeployConfigured is the single portable deployment decision for both desktop
-// hosts. Native clients only choose a directory and persist the returned config.
-func DeployConfigured(ctx context.Context, cfg coreconfig.Config, directory string, guard ChildGuard) (updated coreconfig.Config, err error) {
+// Deploy installs and starts local ASR. Configuration is saved separately
+// when the user chooses a directory, so concurrent settings edits stay intact.
+func Deploy(ctx context.Context, directory string, guard ChildGuard) (err error) {
 	if !deploymentMu.TryLock() {
-		return cfg, errors.New("ASR 正在部署中；请查看当前下载进度")
+		return errors.New("ASR 正在部署中；请查看当前下载进度")
 	}
 	progressMu.Lock()
 	progress = Progress{Text: "正在准备 ASR 部署", Directory: directory, Busy: true}
 	progressMu.Unlock()
 	defer func() {
 		if err != nil {
-			report("ASR 部署失败：" + err.Error())
+			report("ASR 部署失败：检查网络或目录权限，然后重试 Deploy")
 		} else {
 			report("ASR 已部署并启动")
 		}
@@ -67,24 +67,21 @@ func DeployConfigured(ctx context.Context, cfg coreconfig.Config, directory stri
 		progressMu.Unlock()
 		deploymentMu.Unlock()
 	}()
-	install, err := install(ctx, directory)
-	if err == nil {
-		report("正在启动识别服务，加载模型中…")
-		err = Start(ctx, install, guard)
-	}
+	installation, err := install(ctx, directory)
 	if err != nil {
-		return cfg, err
+		return err
 	}
-	defaults := coreconfig.Defaults()
-	cfg.ASRDeployDir = directory
-	cfg.ASRBaseURL = defaults.ASRBaseURL
-	cfg.ASRModel = defaults.ASRModel
-	return cfg, nil
+	report("正在启动识别服务，加载模型中…")
+	return Start(ctx, installation, guard)
 }
 
 // Resume starts a previously deployed local ASR only when the configured
 // endpoint is the managed local service, never for a custom/remote endpoint.
 func Resume(ctx context.Context, cfg coreconfig.Config, guard ChildGuard) error {
+	// A settings save must not kill a server while its model is loading.
+	if ProgressSnapshot().Busy {
+		return nil
+	}
 	if cfg.ASRBaseURL != coreconfig.Defaults().ASRBaseURL {
 		Stop()
 		return nil

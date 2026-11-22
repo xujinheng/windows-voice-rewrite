@@ -448,7 +448,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			err := p.deployResult
 			p.deployMu.Unlock()
 			if err != nil && !state.Busy {
-				text = "ASR Deploy 失败：" + err.Error()
+				text = "ASR 部署失败，请查看错误提示并重试"
 			}
 			if text != uxWinText(p.hint) {
 				uxSetText(p.hint, text)
@@ -608,9 +608,12 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			p.deployMu.Lock()
 			err := p.deployResult
 			p.deployMu.Unlock()
-			if err != nil { uxSetText(p.hint, "ASR Deploy 失败："+err.Error()) } else {
+			if err != nil {
+				uxSetText(p.hint, "ASR 部署失败，请查看错误提示并重试")
+				winErr("ASR 部署失败：\n\n" + err.Error())
+			} else {
 				if cfg, loadErr := loadConfig(); loadErr == nil { p.app.cfg = cfg }
-				uxSetText(p.hint, "ASR 已部署，服务地址 http://127.0.0.1:8080/v1")
+				uxSetText(p.hint, "ASR 部署完成")
 			}
 		}
 		return 0
@@ -699,8 +702,20 @@ func (p *uxSettings) chooseDeployDirectory() {
 	if pidl == 0 { return }
 	defer procFreeFolder.Call(pidl)
 	if ok, _, _ := procGetFolderPath.Call(pidl, uintptr(unsafe.Pointer(&selected[0]))); ok != 0 {
-		p.deployDir = syscall.UTF16ToString(selected[:])
-		uxSetText(p.hint, "部署位置："+p.deployDir)
+		directory := syscall.UTF16ToString(selected[:])
+		cfg, err := loadConfig()
+		if err == nil {
+			cfg.ASRDeployDir = directory
+			err = saveConfig(cfg)
+		}
+		if err != nil {
+			uxSetText(p.hint, "保存部署目录失败")
+			winErr("保存部署目录失败：" + err.Error())
+			return
+		}
+		p.deployDir = directory
+		p.app.cfg.ASRDeployDir = directory
+		uxSetText(p.hint, "部署位置已保存："+directory)
 	}
 }
 
@@ -725,13 +740,7 @@ func (p *uxSettings) deployASR() {
 	hwnd := p.window
 	uxSetText(p.hint, "ASR 正在下载与部署（首次需要数 GB 空间）…")
 	go func() {
-		cfg, err := loadConfig()
-		if err == nil {
-			cfg, err = localasr.DeployConfigured(context.Background(), cfg, directory, protectChild)
-		}
-		if err == nil {
-			err = saveConfig(cfg)
-		}
+		err := localasr.Deploy(context.Background(), directory, protectChild)
 		p.deployMu.Lock()
 		p.deployResult = err
 		p.deployMu.Unlock()
@@ -741,9 +750,6 @@ func (p *uxSettings) deployASR() {
 }
 
 func (p *uxSettings) save() error {
-	if p.deployBusy.Load() || localasr.ProgressSnapshot().Busy {
-		return errors.New("请在 ASR 部署完成后保存设置")
-	}
 	if p.app.busy.Load() {
 		return errors.New(ux.SaveWhileBusy)
 	}
@@ -751,7 +757,11 @@ func (p *uxSettings) save() error {
 	for i, h := range p.inputs {
 		fields[i] = uxWinText(h)
 	}
-	cfg, err := coreconfig.WithConnectionFields(p.app.cfg, fields)
+	latest, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	cfg, err := coreconfig.WithConnectionFields(latest, fields)
 	if err != nil {
 		return err
 	}
@@ -1196,7 +1206,7 @@ func showNativeSettings(app *appState) error {
 		procSetForegroundWindow.Call(uxActiveSettings.window)
 		return nil
 	}
-	if !app.busy.Load() && !localasr.ProgressSnapshot().Busy {
+	if !app.busy.Load() {
 		if latest, err := loadConfig(); err == nil {
 			app.cfg = latest
 		}
@@ -1226,8 +1236,8 @@ func showNativeSettings(app *appState) error {
 	}
 	p := &uxSettings{window: h, app: app, scale: scale, focusRow: -1, cardStatics: make(map[uintptr]bool), probeEdits: make(map[uintptr]int), palette: resultCardPalette()}
 	p.deployDir = app.cfg.ASRDeployDir
-	if state := localasr.ProgressSnapshot(); state.Busy && state.Directory != "" {
-		p.deployDir = state.Directory
+	if latest, err := loadConfig(); err == nil {
+		p.deployDir = latest.ASRDeployDir
 	}
 	if p.deployDir == "" { p.deployDir = localasr.DefaultDirectory() }
 	uxActiveSettings = p
