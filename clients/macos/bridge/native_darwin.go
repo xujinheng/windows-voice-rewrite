@@ -11,7 +11,7 @@ typedef struct { int kind; uint64_t token; int role; int release; } VRCommandEve
 typedef struct {
     int role, held_role, down, armed, can_activate, valid;
     uint64_t current;
-    int phase, closed;
+    int phase, closed, paused;
 } VRCoreState;
 typedef void (*VREventCallback)(int kind, uint64_t token);
 static inline void vrReportEvent(VREventCallback fn, int kind, uint64_t token) { fn(kind, token); }
