@@ -266,11 +266,7 @@ func VRRun(rewrite C.int, audio *C.uchar, length C.int, selection *C.char, token
 			}
 		}
 	}()
-	mode := voice.TaskDictation
-	if rewrite != 0 {
-		mode = voice.TaskRewrite
-	}
-	outcome, err := nativeCore.Execute(ctx, voice.TaskRequest{Token: uint64(token), Config: *cfg, PCM: C.GoBytes(unsafe.Pointer(audio), length), SelectedText: selected, Mode: mode}, emit)
+	outcome, err := nativeCore.Execute(uint64(token), *cfg, C.GoBytes(unsafe.Pointer(audio), length), selected, rewrite != 0, emit)
 	if err == nil {
 		return nativeJSON(success(outcome))
 	}

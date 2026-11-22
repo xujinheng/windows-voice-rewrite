@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -79,11 +78,7 @@ func TestCLIAndDirectClientShareResultContract(t *testing.T) {
 			}
 			var direct voice.Core
 			defer direct.Apply(voice.Command{Kind: voice.CommandShutdown})
-			mode := voice.TaskDictation
-			if tc.rewrite {
-				mode = voice.TaskRewrite
-			}
-			viaCore, err := direct.Execute(context.Background(), voice.TaskRequest{Token: direct.Apply(voice.Command{Kind: voice.CommandStart}).Token, Config: cfg, PCM: pcm, SelectedText: selected, Mode: mode}, nil)
+			viaCore, err := direct.Execute(direct.Apply(voice.Command{Kind: voice.CommandStart}).Token, cfg, pcm, selected, tc.rewrite, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

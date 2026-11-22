@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/history"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 )
@@ -14,22 +15,22 @@ import (
 // facts, audio and final OS effects; the core owns holds, task generations,
 // cancellation, inference and output routing.
 type Core struct {
-	History          history.Store
-	mu               sync.Mutex
-	keys             map[int]*keyState
-	owner            int
-	roles            map[int]int
-	nextToken        uint64
-	currentID        uint64
-	closed           bool
-	phase            EventKind
-	completed        Result
-	completedToken   uint64
-	deliveryAttempt  uint64
+	History   history.Store
+	mu        sync.Mutex
+	keys      map[int]*keyState
+	owner     int
+	roles     map[int]int
+	nextToken uint64
+	currentID uint64
+	closed    bool
+	phase     EventKind
+	completed Result
+	completedToken uint64
+	deliveryAttempt uint64
 	deliverySequence uint64
-	deliveryStatus   DeliveryReceiptStatus
-	ctx              context.Context
-	cancel           context.CancelFunc
+	deliveryStatus DeliveryReceiptStatus
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 type keyState struct {
 	down, active bool
@@ -287,29 +288,17 @@ func (c *Core) cancelLocked() {
 	}
 }
 
-// ErrInvalidTask is returned for malformed voice operations.
+// ErrInvalidTask identifies a duplicate or invalid voice task.
 var ErrInvalidTask = errors.New("invalid voice task")
 
-// ErrStaleTask identifies a canceled or superseded task generation.
+// ErrStaleTask identifies a canceled or superseded generation.
 var ErrStaleTask = errors.New("stale voice task")
 
-// Execute is the synchronous portable task pipeline, with both caller and
-// generation cancellation. The host supplies audio and handles OS effects.
-func (c *Core) Execute(parent context.Context, req TaskRequest, emit func(Event)) (Result, error) {
-	if parent == nil || (req.Mode != TaskDictation && req.Mode != TaskRewrite) {
-		return Result{}, ErrInvalidTask
-	}
-	taskCtx := c.ContextFor(req.Token)
-	if taskCtx.Err() != nil {
-		return Result{}, ErrStaleTask
-	}
-	ctx, cancel := context.WithCancel(parent)
-	defer cancel()
-	stop := context.AfterFunc(taskCtx, cancel)
-	defer stop()
-
+// Execute is the platform-independent task entrypoint. No client can execute
+// an expired task or circumvent the shared model deadlines and result routes.
+func (c *Core) Execute(token uint64, cfg coreconfig.Config, pcm []byte, selected string, rewrite bool, emit func(Event)) (Result, error) {
 	c.mu.Lock()
-	if c.currentID != req.Token || c.ctx == nil || c.closed {
+	if token == 0 || token != c.currentID || c.ctx == nil || c.closed {
 		c.mu.Unlock()
 		return Result{}, ErrStaleTask
 	}
@@ -317,20 +306,17 @@ func (c *Core) Execute(parent context.Context, req TaskRequest, emit func(Event)
 		c.mu.Unlock()
 		return Result{}, ErrInvalidTask
 	}
-	c.completedToken = 0
 	c.phase = EventProcessing
 	c.mu.Unlock()
-
-	rewrite := req.Mode == TaskRewrite
-	result, err := run(ctx, req.Config, req.PCM, req.SelectedText, rewrite, func(text string) {
+	result, err := run(c.ContextFor(token), cfg, pcm, selected, rewrite, func(text string) {
 		c.mu.Lock()
-		valid := c.currentID == req.Token && !c.closed && c.ctx != nil
+		valid := token != 0 && c.currentID == token && !c.closed && c.ctx != nil
 		if valid {
 			c.phase = EventTranscribed
 		}
 		c.mu.Unlock()
-		if valid && ctx.Err() == nil && emit != nil {
-			emit(Event{Kind: EventTranscribed, Token: req.Token, Text: text})
+		if valid && emit != nil {
+			emit(Event{Kind: EventTranscribed, Token: token, Text: text})
 		}
 	})
 	if err == nil {
@@ -340,24 +326,21 @@ func (c *Core) Execute(parent context.Context, req TaskRequest, emit func(Event)
 		}
 	}
 	c.mu.Lock()
-	valid := c.currentID == req.Token && !c.closed && c.ctx != nil
+	valid := token != 0 && c.currentID == token && !c.closed && c.ctx != nil
 	if valid {
-		if err == nil && ctx.Err() == nil {
-			c.phase = EventFinished
+		if err == nil {
 			c.completed = result
-			c.completedToken = req.Token
+			c.completedToken = token
 			c.deliveryAttempt = 0
 			c.deliveryStatus = 0
+			c.phase = EventFinished
 		} else {
 			c.phase = EventFailed
 		}
 	}
 	c.mu.Unlock()
 	if !valid {
-		return Result{}, context.Canceled
-	}
-	if ctx.Err() != nil {
-		return Result{}, ctx.Err()
+		return result, err
 	}
 	if err == nil {
 		title := ux.DictationHistoryTitle
@@ -366,10 +349,10 @@ func (c *Core) Execute(parent context.Context, req TaskRequest, emit func(Event)
 		}
 		c.History.Remember(title, result.Text)
 		if emit != nil {
-			emit(Event{Kind: EventFinished, Token: req.Token, Result: result})
+			emit(Event{Kind: EventFinished, Token: token, Result: result})
 		}
 	} else if emit != nil {
-		emit(Event{Kind: EventFailed, Token: req.Token, Error: err.Error()})
+		emit(Event{Kind: EventFailed, Token: token, Error: err.Error()})
 	}
 	return result, err
 }

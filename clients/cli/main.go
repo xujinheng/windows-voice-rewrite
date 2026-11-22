@@ -3,7 +3,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -58,11 +57,7 @@ func execute(args []string, output io.Writer) error {
 	}
 	var core voice.Core
 	defer core.Apply(voice.Command{Kind: voice.CommandShutdown})
-	mode := voice.TaskDictation
-	if *rewrite {
-		mode = voice.TaskRewrite
-	}
-	result, err := core.Execute(context.Background(), voice.TaskRequest{Token: core.Apply(voice.Command{Kind: voice.CommandStart}).Token, Config: cfg, PCM: pcm, SelectedText: selected, Mode: mode}, nil)
+	result, err := core.Execute(core.Apply(voice.Command{Kind: voice.CommandStart}).Token, cfg, pcm, selected, *rewrite, nil)
 	if err != nil {
 		return err
 	}
