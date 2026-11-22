@@ -32,6 +32,7 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/core/audio"
 	"github.com/xujinheng/windows-voice-rewrite/core/clipboard"
 	"github.com/xujinheng/windows-voice-rewrite/core/indicator"
+	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
 	"github.com/xujinheng/windows-voice-rewrite/core/settingsform"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 	"github.com/xujinheng/windows-voice-rewrite/core/voice"
@@ -137,11 +138,30 @@ func VRProfile(config *C.char) *C.char {
 	reply := headlessProfile(json.RawMessage(C.GoString(config)))
 	if reply.OK {
 		nativeConfig.Store(&reply.cfg)
+		if reply.cfg.ASRBaseURL == coreconfig.Defaults().ASRBaseURL {
+			directory := reply.cfg.ASRDeployDir
+			if directory == "" { directory = localasr.DefaultDirectory() }
+			if install, ok := localasr.Installed(directory); ok {
+				go func() { _ = localasr.Start(context.Background(), install) }()
+			}
+		}
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
 		nativeCore.Apply(voice.Command{Kind: voice.CommandBind, Dictation: []int{macKeyCode(profile["dictation"].(string))}, Rewrite: []int{macKeyCode(profile["rewrite"].(string))}})
 	}
 	return nativeJSON(reply)
 }
+
+//export VRDeploy
+func VRDeploy(directory *C.char) *C.char {
+	if directory == nil { return nativeJSON(failure("invalid_directory", "choose a directory")) }
+	install, err := localasr.Deploy(context.Background(), C.GoString(directory))
+	if err == nil { err = localasr.Start(context.Background(), install) }
+	if err != nil { return nativeJSON(failure("deploy_failed", err.Error())) }
+	return nativeJSON(success(map[string]string{"status":"ASR ready: http://127.0.0.1:8080/v1"}))
+}
+
+//export VRStopASR
+func VRStopASR() { localasr.Stop() }
 
 //export VRSettings
 func VRSettings(request *C.char) *C.char {
