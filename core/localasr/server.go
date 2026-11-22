@@ -82,9 +82,27 @@ func DeployConfigured(ctx context.Context, cfg coreconfig.Config, directory stri
 	return cfg, nil
 }
 
+// ReconcileDeployed preserves settings saved while Deploy was downloading.
+// Only untouched local-ASR fields are updated; other application settings
+// always come from the latest configuration on disk.
+func ReconcileDeployed(started, latest, deployed coreconfig.Config) coreconfig.Config {
+	if latest.ASRDeployDir == started.ASRDeployDir {
+		latest.ASRDeployDir = deployed.ASRDeployDir
+	}
+	if latest.ASRBaseURL == started.ASRBaseURL && latest.ASRModel == started.ASRModel {
+		latest.ASRBaseURL = deployed.ASRBaseURL
+		latest.ASRModel = deployed.ASRModel
+	}
+	return latest
+}
+
 // Resume starts a previously deployed local ASR only when the configured
 // endpoint is the managed local service, never for a custom/remote endpoint.
 func Resume(ctx context.Context, cfg coreconfig.Config, guard ChildGuard) error {
+	// A settings save must not kill a server while its model is loading.
+	if ProgressSnapshot().Busy {
+		return nil
+	}
 	if cfg.ASRBaseURL != coreconfig.Defaults().ASRBaseURL {
 		Stop()
 		return nil
