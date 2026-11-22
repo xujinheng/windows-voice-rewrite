@@ -461,7 +461,6 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     @objc private func settingsShowDeployError() {
         guard let progress = try? GoCore.asrProgress(),
               let message = progress.status,
-              progress.directory == settingsDeployDirectory,
               message.hasPrefix("ASR 部署失败：") else { return }
         let alert = NSAlert()
         alert.messageText = "ASR 部署失败"
@@ -537,7 +536,9 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     switch result {
                     case .failure:
                         self.settingsHint?.stringValue = "ASR 部署失败（点击查看原因）"
-                        self.settingsShowDeployError()
+                        if self.settingsPanel?.isVisible == true {
+                            self.settingsShowDeployError()
+                        }
                     case .success(let output):
                         self.settingsHint?.stringValue = output.status ?? "ASR 已部署"
                     }
