@@ -695,17 +695,12 @@ func (p *uxSettings) deployASR() {
 	hwnd := p.window
 	uxSetText(p.hint, "ASR 正在下载与部署（首次需要数 GB 空间）…")
 	go func() {
-		inst, err := localasr.Deploy(context.Background(), directory)
-		if err == nil { err = localasr.Start(context.Background(), inst) }
+		cfg, err := loadConfig()
 		if err == nil {
-			cfg, e := loadConfig()
-			if e == nil {
-				cfg.ASRDeployDir = directory
-				cfg.ASRBaseURL = coreconfig.Defaults().ASRBaseURL
-				cfg.ASRModel = coreconfig.Defaults().ASRModel
-				e = saveConfig(cfg)
-			}
-			if e != nil { err = e }
+			cfg, err = localasr.DeployConfigured(context.Background(), cfg, directory)
+		}
+		if err == nil {
+			err = saveConfig(cfg)
 		}
 		p.deployMu.Lock()
 		p.deployResult = err
@@ -716,6 +711,9 @@ func (p *uxSettings) deployASR() {
 }
 
 func (p *uxSettings) save() error {
+	if p.deployBusy.Load() {
+		return errors.New("请在 ASR 部署完成后保存设置")
+	}
 	if p.app.busy.Load() {
 		return errors.New(ux.SaveWhileBusy)
 	}
