@@ -224,6 +224,10 @@ private enum GoCore {
         return try decode(result)
     }
 
+    static func deploy(_ directory: String) throws -> BridgeReply.Output {
+        try decode(directory.withCString { VRDeploy($0) })
+    }
+
     static func settings(_ action: String, config: String, values: [String: String] = [:],
                          kind: String = "") throws -> BridgeReply.Output {
         let current = try JSONSerialization.jsonObject(with: Data(config.utf8))
@@ -257,6 +261,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var settingsPages: [String: NSView] = [:]
     private var settingsStatuses: [String: NSTextField] = [:]
     private var settingsHint: NSTextField?
+    private var settingsDeployDirectory = ""
+    private var settingsDeploying = false
     private var settingsRunning = ""
     private var settingsBusy = ""
     private var settingsCaptureHint = ""
@@ -360,6 +366,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             settingsInputs = [:]
             settingsPages = [:]
             settingsStatuses = [:]
+            settingsDeployDirectory = values["asr_deploy_dir"] ?? ""
             settingsRunning = form.running
             settingsBusy = form.busy
             settingsCaptureHint = form.captureHint
@@ -414,7 +421,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 default: break
                 }
             }
-            let hint = NSTextField(labelWithString: "")
+            let hint = NSTextField(labelWithString: "部署位置：" + settingsDeployDirectory)
             hint.frame = form.hint.native(height)
             hint.textColor = .secondaryLabelColor
             content.addSubview(hint)
@@ -447,6 +454,51 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             settingsHint?.stringValue = settingsCaptureHint
         case "advanced":
             showConfig()
+        case "select_asr_directory":
+            let picker = NSOpenPanel()
+            picker.canChooseDirectories = true
+            picker.canChooseFiles = false
+            picker.canCreateDirectories = true
+            picker.allowsMultipleSelection = false
+            if !settingsDeployDirectory.isEmpty {
+                picker.directoryURL = URL(fileURLWithPath: settingsDeployDirectory, isDirectory: true)
+            }
+            if picker.runModal() == .OK, let url = picker.url {
+                settingsDeployDirectory = url.path
+                settingsHint?.stringValue = "部署位置：" + url.path
+            }
+        case "deploy_asr":
+            guard !settingsDeploying else { return }
+            settingsDeploying = true
+            settingsHint?.stringValue = "ASR 正在下载与部署（首次需要数 GB 空间）…"
+            let directory = settingsDeployDirectory
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let result = Result { try GoCore.deploy(directory) }
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.settingsDeploying = false
+                    switch result {
+                    case .failure(let error):
+                        self.settingsHint?.stringValue = "ASR Deploy 失败：" + String(describing: error)
+                    case .success(let output):
+                        do {
+                            let json = try String(contentsOf: self.configURL, encoding: .utf8)
+                            let saved = try GoCore.settings("save", config: json, values: [
+                                "asr_deploy_dir": directory,
+                                "asr_base_url": "http://127.0.0.1:8080/v1",
+                                "asr_model": "qwen3-asr"
+                            ])
+                            if let updated = saved.config {
+                                try updated.write(to: self.configURL, atomically: true, encoding: .utf8)
+                                self.reload()
+                            }
+                            self.settingsHint?.stringValue = output.status ?? "ASR ready"
+                        } catch {
+                            self.settingsHint?.stringValue = String(describing: error)
+                        }
+                    }
+                }
+            }
         case "save", "probe_asr", "probe_llm", "discover_asr_models", "discover_llm_models":
             guard let json = try? String(contentsOf: configURL, encoding: .utf8) else { return }
             let values = settingsInputs.mapValues { $0.stringValue }
@@ -542,6 +594,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         }
     }
     @objc private func quit() { VRCommand(Int32(VR_COMMAND_CANCEL), 0, 0, 0); NSApp.terminate(nil) }
+    func applicationWillTerminate(_ notification: Notification) { VRStopASR() }
     private func show(_ text: String) { item.button?.title = text }
     fileprivate func reportCoreEvent(_ kind: Int32, _ token: UInt64) { if kind == Int32(VR_EVENT_TRANSCRIBED) && pending && taskID == token && VRSnapshot(0, token).valid == 1 { pill.working(.rewriting); show(config.pill.rewritingLabel) } }
 
