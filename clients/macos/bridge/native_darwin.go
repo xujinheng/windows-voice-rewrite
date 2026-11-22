@@ -36,6 +36,7 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
 	"github.com/xujinheng/windows-voice-rewrite/core/settingsform"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
+	"github.com/xujinheng/windows-voice-rewrite/core/update"
 	"github.com/xujinheng/windows-voice-rewrite/core/voice"
 )
 
@@ -186,6 +187,18 @@ func VRDeploy(directory *C.char) *C.char {
 		return nativeJSON(failure("deploy_failed", err.Error()))
 	}
 	return nativeJSON(success(map[string]string{"status": "ASR 已部署"}))
+}
+
+//export VRCheckUpdate
+func VRCheckUpdate(installed *C.char) *C.char {
+	if installed == nil {
+		return nativeJSON(failure("invalid_version", "missing installed version"))
+	}
+	version := C.GoString(installed)
+	notice := update.Check(version)
+	return nativeJSON(success(map[string]any{
+		"status": notice.Summary(version), "newer": notice.AsksToOpen(), "url": update.ReleasesPage,
+	}))
 }
 
 //export VRStopASR

@@ -238,6 +238,8 @@ private struct BridgeReply: Decodable {
         let busy: Bool?
         let models: [String]?
         let capture: [String: String]?
+        let newer: Bool?
+        let url: String?
         let entries: [HistoryItem]?
     }
     struct Failure: Decodable { let code: String; let message: String }
@@ -267,6 +269,10 @@ private enum GoCore {
 
     static func history(_ action: String, id: UInt64 = 0) throws -> BridgeReply.Output {
         try decode(action.withCString { VRHistory($0, id) })
+    }
+
+    static func checkUpdate(_ installed: String) throws -> BridgeReply.Output {
+        try decode(installed.withCString { VRCheckUpdate($0) })
     }
 
     static func asrProgress() throws -> BridgeReply.Output {
@@ -305,6 +311,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
     private var microphone = Microphone()
     private let pill = RecordingPill()
     private var resultPanel: NSPanel?
+    private var previewText: String?
+    private var lastError = ""
     private var settingsPanel: NSPanel?
     private var settingsProgressTimer: Timer?
     private var settingsInputs: [String: NSTextField] = [:]
@@ -364,6 +372,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
         for (title, action) in [
             ("复制最近一次结果", #selector(copyResult)),
             (paused ? "恢复语音操作" : "暂停语音操作", #selector(togglePause)),
+            ("关闭 AI 结果窗口", #selector(closePreview)),
+            ("最近一次错误与解决方法", #selector(showLastError)),
+            ("在 Console 查看日志…", #selector(openDiagnostics)),
+            ("检查更新…", #selector(checkUpdates)),
             ("设置…", #selector(openSettings)),
             ("Reload config", #selector(reload)),
             ("Show config in Finder", #selector(showConfig)),
@@ -387,6 +399,53 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
             let clear = NSMenuItem(title: "清空本次会话历史", action: #selector(clearHistory), keyEquivalent: "")
             clear.target = self
             menu.insertItem(clear, at: 3)
+        }
+    }
+
+    @objc private func closePreview() {
+        resultPanel?.close()
+        previewText = nil
+    }
+
+    private func recordError(_ message: String) {
+        lastError = message
+        NSLog("%@", message)
+    }
+
+    @objc private func showLastError() {
+        let alert = NSAlert()
+        alert.messageText = "最近一次错误"
+        alert.informativeText = lastError.isEmpty ? "当前没有记录到错误。" : lastError
+        alert.runModal()
+    }
+
+    @objc private func openDiagnostics() {
+        NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Console.app"))
+    }
+
+    @objc private func checkUpdates() {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let response = Result { try GoCore.checkUpdate(version) }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let alert = NSAlert()
+                alert.messageText = "VoiceRewrite · 检查更新"
+                switch response {
+                case .failure(let error):
+                    self.recordError("检查更新失败：" + String(describing: error))
+                    alert.informativeText = String(describing: error)
+                case .success(let notice):
+                    alert.informativeText = notice.status ?? ""
+                    if notice.newer == true { alert.addButton(withTitle: "打开发布页面") }
+                }
+                alert.addButton(withTitle: "关闭")
+                if alert.runModal() == .alertFirstButtonReturn,
+                   case .success(let notice) = response, notice.newer == true,
+                   let link = notice.url, let url = URL(string: link) {
+                    NSWorkspace.shared.open(url)
+                }
+            }
         }
     }
 
@@ -444,7 +503,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
             if eventTapRetry == nil { show(VRSnapshot(0, 0).paused != 0 ? "已暂停" : "VoiceRewrite") }
         } catch {
             show("Config error")
-            fputs("VoiceRewrite config: \(error)\n", stderr)
+            recordError("VoiceRewrite config: \(error)")
         }
     }
     @objc private func showConfig() { NSWorkspace.shared.activateFileViewerSelecting([configURL]) }
@@ -565,7 +624,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
             panel.makeKeyAndOrderFront(nil)
         } catch {
             show("Config error")
-            fputs("VoiceRewrite settings: \(error)\n", stderr)
+            recordError("VoiceRewrite settings: \(error)")
         }
     }
 
@@ -714,13 +773,19 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
         settingsInputs[id]?.stringValue = item.title
     }
 
+    private func copyText(_ text: String) {
+        NSPasteboard.general.clearContents()
+        show(NSPasteboard.general.setString(text, forType: .string) ? "Copied" : "Copy failed")
+    }
     @objc private func copyResult() {
         guard let result = try? GoCore.history("latest"), let text = result.text else {
             show("当前没有语音结果")
             return
         }
-        NSPasteboard.general.clearContents()
-        show(NSPasteboard.general.setString(text, forType: .string) ? "Copied" : "Copy failed")
+        copyText(text)
+    }
+    @objc private func copyPreview() {
+        if let text = previewText { copyText(text) }
     }
     @objc private func applyResult() {
         guard let request = previewApply, taskID == 0,
@@ -885,7 +950,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
             selectedAtPress = nil
             taskID = 0
             do { try microphone.start(maximumSeconds: config.maximumSeconds, deviceIndex: config.microphoneID) }
-            catch { VRCommand(Int32(VR_COMMAND_ABANDON), 0, 0, 0); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return true }
+            catch { VRCommand(Int32(VR_COMMAND_ABANDON), 0, 0, 0); reset("Mic error"); recordError("Microphone: \(error)"); return true }
             if press.role == 2 {
                 // Snapshot while the original selection is still active. Do not
                 // block the CGEvent tap with synchronous Accessibility requests.
@@ -959,7 +1024,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
                         switch result {
                         case .failure(let error):
                             self.reset(self.config.pill.errorLabel)
-                            fputs("VoiceRewrite: \(error)\n", stderr)
+                            self.recordError("VoiceRewrite: \(error)")
                         case .success(let value):
                             guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
                             if value.route == "replace", let selected {
@@ -993,13 +1058,14 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
             } else {
                 submit(selected)
             }
-        } catch { reset("Audio error"); fputs("Audio: \(error)\n", stderr) }
+        } catch { reset("Audio error"); recordError("Audio: \(error)") }
     }
 
     // Native presentation only: Go Core retains the result and decides when
     // a preview is required; no clipboard mutation occurs until Copy is clicked.
     private func presentPreview(_ text: String, title: String?, selection: AXSelection? = nil) {
         resultPanel?.close()
+        previewText = text
         previewApply = nil
         if let selection, taskID != 0 {
             previewApply = (targetPID, targetWindow, selection, taskID, text)
@@ -1021,7 +1087,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate, NSMenuDelegate
             view.isSelectable = true
             view.font = .systemFont(ofSize: 14)
         }
-        let copy = NSButton(title: config.copyLabel, target: self, action: #selector(copyResult))
+        let copy = NSButton(title: config.copyLabel, target: self, action: #selector(copyPreview))
         copy.frame = NSRect(x: 16, y: 14, width: 120, height: 30)
         panel.contentView?.addSubview(scroll)
         panel.contentView?.addSubview(copy)
