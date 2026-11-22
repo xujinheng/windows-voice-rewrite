@@ -731,7 +731,11 @@ func (p *uxSettings) save() error {
 	if err != nil {
 		return err
 	}
-	changedShortcut := cfg.HotkeyRecord != latest.HotkeyRecord || cfg.DictationHotkey != latest.DictationHotkey
+	newRewrite, newDictation, changedShortcut, err := shortcut.AssignPair(latest.HotkeyRecord, latest.DictationHotkey, latest.HotkeyExit, cfg.HotkeyRecord, cfg.DictationHotkey)
+	if err != nil {
+		return err
+	}
+	cfg.HotkeyRecord, cfg.DictationHotkey = newRewrite, newDictation
 	changedDuration := cfg.MaxRecordSeconds != latest.MaxRecordSeconds
 	selected, _, _ := procSendMessage.Call(p.microphone, uxCBGetCurSel, 0, 0)
 	deviceID := cfg.AudioDeviceID
