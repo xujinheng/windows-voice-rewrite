@@ -40,33 +40,22 @@ class HeadlessWorkflowTests(unittest.TestCase):
                 self.assertNotIn("path: ${{ runner.temp }}/headless/VoiceRewrite.app", workflow)
         self.assertIn("VoiceRewrite-Ready-macOS-${{ matrix.arch }}.dmg", ready)
         self.assertNotIn("VoiceRewrite-Ready-macOS-${{ matrix.arch }}.zip", ready)
-        self.assertIn("VoiceRewrite-Dev-macOS-${{ matrix.arch }}.dmg", main)
-        self.assertIn("VoiceRewrite-*-macOS-${{ matrix.arch }}-Experimental.zip", main)
-        self.assertIn("ditto -c -k --sequesterRsrc --keepParent", main)
+        self.assertIn("VoiceRewrite-Mac", main)
+        self.assertIn("Package experimental Mac DMG for tagged Release", main)
+        self.assertIn("bash scripts/verify-macos-package.sh dmg", main)
 
-    def test_release_has_oneclick_and_experimental_mac_downloads(self):
+    def test_release_has_one_app_per_platform(self):
         workflow = (WORKFLOWS / "build.yml").read_text()
-        self.assertIn("release/Qwen3-ASR-OneClick-Windows-x64.exe", workflow)
-        self.assertIn("release/Qwen3-ASR-OneClick-Mac-arm64.zip", workflow)
-        self.assertIn("name: VoiceRewrite-ASR-OneClick-macOS-AppleSilicon-ZIP", workflow)
-        self.assertIn("Start OneClick.command", workflow)
-        self.assertIn("release/VoiceRewrite-*-macOS-*-Experimental.zip", workflow)
-        self.assertIn("ditto -c -k --sequesterRsrc --keepParent", workflow)
-        self.assertIn("name: VoiceRewrite-ASR-OneClick-Windows-x64-EXE", workflow)
-        self.assertIn("release/VoiceRewrite-Setup-*-x64.exe", workflow)
+        self.assertIn("release/VoiceRewrite-Windows.exe", workflow)
+        self.assertIn("release/VoiceRewrite-Mac*.dmg", workflow)
+        self.assertIn("name: VoiceRewrite-Windows", workflow)
+        self.assertNotIn("build-oneclick:", workflow)
+        self.assertNotIn("VoiceRewrite-Setup-", workflow)
+        self.assertNotIn("oneclick/package/", workflow)
         self.assertIn("gh api -X POST", workflow)
         for path in (ROOT / "README.md", ROOT / "README.en.md"):
             readme = path.read_text(encoding="utf-8")
             self.assertIn("docs/demo/voicerewrite-demo.mp4", readme)
-            for asset in (
-                "Qwen3-ASR-OneClick-Windows-x64.exe",
-                "VoiceRewrite-Setup-0.1.1-x64.exe",
-                "VoiceRewrite-0.1.1-macOS-arm64-Experimental.zip",
-                "VoiceRewrite-0.1.1-macOS-x86_64-Experimental.zip",
-            ):
-                self.assertIn(f"releases/download/v0.1.1/{asset}", readme)
-        self.assertIn("目前不稳定", (ROOT / "README.md").read_text(encoding="utf-8"))
-        self.assertIn("currently unstable", (ROOT / "README.en.md").read_text(encoding="utf-8"))
 
     def test_native_sources_and_user_path(self):
         sources = [ROOT / "clients/macos/app/main.swift",
