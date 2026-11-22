@@ -118,4 +118,3 @@ func Stop() {
 		_ = p.Process.Kill()
 	}
 }
-
