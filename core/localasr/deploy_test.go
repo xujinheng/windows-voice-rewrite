@@ -6,12 +6,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"sync/atomic"
 	"testing"
 
@@ -72,14 +74,25 @@ func TestUnpackZipCannotEscapeFolder(t *testing.T) {
 }
 
 func TestDeployFailureReportsStatus(t *testing.T) {
-	err := Deploy(context.Background(), "", nil)
-	if err == nil {
-		t.Fatal("expected failure for empty deployment directory")
+	if _, err := BeginDeploy(context.Background(), "", nil); err == nil {
+		t.Fatal("empty directory should fail without creating a job")
 	}
-	progress := ProgressSnapshot()
-	if progress.Busy || !strings.Contains(progress.Text, err.Error()) {
-		t.Fatalf("failed Deploy lost its error details: %+v, %v", progress, err)
+	parent := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(parent, []byte("file"), 0600); err != nil { t.Fatal(err) }
+	id, err := BeginDeploy(context.Background(), parent, nil)
+	if err != nil || id == 0 { t.Fatalf("start: %d %v", id, err) }
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		p := DeploymentStatus()
+		if !p.Busy {
+			if p.ID != id || p.Phase != PhaseFailed || p.ErrorCode == "" || !strings.Contains(p.Text, "失败") {
+				t.Fatalf("failed deployment lost diagnostics: %+v", p)
+			}
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
+	t.Fatal("deployment did not publish terminal status")
 }
 
 func TestResumeDoesNotStartForRemoteASR(t *testing.T) {
@@ -110,7 +123,7 @@ func TestDownloadProgressAfterResume(t *testing.T) {
 	if err := downloadFrom(context.Background(), server.URL, part, "model.gguf"); err != nil {
 		t.Fatal(err)
 	}
-	if got := ProgressSnapshot().Text; !strings.Contains(got, "model.gguf") || !strings.Contains(got, "%") {
+	if got := DeploymentStatus().Text; !strings.Contains(got, "model.gguf") || !strings.Contains(got, "%") {
 		t.Fatalf("download byte progress unavailable: %q", got)
 	}
 	if contents, err := os.ReadFile(part); err != nil || !bytes.Equal(contents, data) {
@@ -119,12 +132,17 @@ func TestDownloadProgressAfterResume(t *testing.T) {
 }
 
 func TestConcurrentDeployDoesNotStartAnotherDownload(t *testing.T) {
-	deploymentMu.Lock()
-	defer deploymentMu.Unlock()
-	err := Deploy(context.Background(), t.TempDir(), nil)
-	if err == nil || !strings.Contains(err.Error(), "正在部署") {
-		t.Fatalf("repeated Deploy should leave existing task unchanged: %v", err)
+	progressMu.Lock()
+	old := progress
+	progress = Status{ID: 88, Directory: "/one", Busy: true, Phase: PhaseDownloading}
+	progressMu.Unlock()
+	defer func() { progressMu.Lock(); progress = old; progressMu.Unlock() }()
+	id, err := BeginDeploy(context.Background(), "/one", nil)
+	if err != nil || id != 88 { t.Fatalf("same task should join: %d %v", id, err) }
+	if _, err := BeginDeploy(context.Background(), "/other", nil); !errors.Is(err, ErrBusyDifferentDirectory) {
+		t.Fatalf("different path should conflict without replacing task: %v", err)
 	}
+	if DeploymentStatus().Directory != "/one" { t.Fatal("active deployment was replaced") }
 }
 
 func TestRuntimeDownloadHasVerifiedOfficialFallback(t *testing.T) {

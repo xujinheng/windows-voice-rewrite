@@ -168,8 +168,9 @@ func VRProfile(config *C.char) *C.char {
 
 //export VRASRProgress
 func VRASRProgress() *C.char {
-	p := localasr.ProgressSnapshot()
-	return nativeJSON(success(map[string]any{"status": p.Text, "directory": p.Directory, "busy": p.Busy}))
+	p := localasr.DeploymentStatus()
+	return nativeJSON(success(map[string]any{"status": p.Text, "directory": p.Directory, "busy": p.Busy,
+		"phase": p.Phase, "received": p.Received, "total": p.Total, "file": p.File, "errorCode": p.ErrorCode}))
 }
 
 //export VRDeploy
@@ -177,10 +178,11 @@ func VRDeploy(directory *C.char) *C.char {
 	if directory == nil {
 		return nativeJSON(failure("invalid_directory", "missing directory"))
 	}
-	if err := localasr.Deploy(context.Background(), C.GoString(directory), nil); err != nil {
+	id, err := localasr.BeginDeploy(context.Background(), C.GoString(directory), nil)
+	if err != nil {
 		return nativeJSON(failure("deploy_failed", err.Error()))
 	}
-	return nativeJSON(success(map[string]string{"status": "ASR 已部署"}))
+	return nativeJSON(success(map[string]any{"status": localasr.DeploymentStatus().Text, "jobID": id}))
 }
 
 //export VRStopASR

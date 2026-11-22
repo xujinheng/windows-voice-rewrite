@@ -201,6 +201,10 @@ private struct BridgeReply: Decodable {
         let status: String?
         let directory: String?
         let busy: Bool?
+        let phase: String?
+        let received, total: Int64?
+        let file, errorCode: String?
+        let jobID: UInt64?
         let models: [String]?
         let capture: [String: String]?
     }
@@ -526,32 +530,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 }
             }
         case "deploy_asr":
-            if let progress = try? GoCore.asrProgress(), progress.busy == true {
-                settingsHint?.stringValue = progress.status ?? "ASR 正在部署中"
-                return
-            }
-            guard VRSnapshot(0, 0).armed == 0 && !pending else {
-                settingsHint?.stringValue = settingsBusy
-                return
-            }
-            settingsHint?.stringValue = "ASR 正在下载与部署（首次需要数 GB 空间）…"
-            let directory = settingsDeployDirectory
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let result = Result { try GoCore.deploy(directory) }
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    switch result {
-                    case .failure:
-                        if let active = try? GoCore.asrProgress(), active.busy == true {
-                            self.settingsHint?.stringValue = active.status ?? "ASR 正在部署中"
-                        } else {
-                            self.settingsHint?.stringValue = "ASR 部署失败（点击查看原因）"
-                            if self.settingsPanel?.isVisible == true { self.settingsShowDeployError() }
-                        }
-                    case .success(let output):
-                        self.settingsHint?.stringValue = output.status ?? "ASR 已部署"
-                    }
-                }
+            do {
+                settingsHint?.stringValue = try GoCore.deploy(settingsDeployDirectory).status ?? "ASR 正在准备部署"
+            } catch {
+                settingsHint?.stringValue = String(describing: error)
             }
         case "save", "probe_asr", "probe_llm", "discover_asr_models", "discover_llm_models":
             guard let json = try? String(contentsOf: configURL, encoding: .utf8) else { return }
