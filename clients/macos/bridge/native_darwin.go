@@ -166,7 +166,7 @@ func VRProfile(config *C.char) *C.char {
 		nativeConfig.Store(&reply.cfg)
 		go func() { _ = localasr.Resume(context.Background(), reply.cfg, nil) }()
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
-		nativeCore.Apply(voice.Command{Kind: voice.CommandBind, Dictation: []int{macKeyCode(profile["dictation"].(string))}, Rewrite: []int{macKeyCode(profile["rewrite"].(string))}})
+		nativeCore.Apply(voice.Command{Kind: voice.CommandBind, Dictation: []int{macShortcutCodes[profile["dictation"].(string))}, Rewrite: []int{macShortcutCodes[profile["rewrite"].(string))}})
 	}
 	return nativeJSON(reply)
 }
@@ -202,7 +202,7 @@ func VRSettings(request *C.char) *C.char {
 			if _, isForm := output["form"]; isForm {
 				capture := map[string]string{}
 				for name := range macShortcutCodes {
-					capture[strconv.Itoa(macKeyCode(name))] = name
+					capture[strconv.Itoa(macShortcutCodes[name])] = name
 				}
 				output["capture"] = capture
 			}
