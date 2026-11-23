@@ -4,7 +4,7 @@ import "testing"
 
 func TestPortableDeliveryDecision(t *testing.T) {
 	for _, tc := range []struct {
-		name, route      string
+		name, route                string
 		target, selected, readOnly bool
 		want                       DeliveryAction
 	}{
