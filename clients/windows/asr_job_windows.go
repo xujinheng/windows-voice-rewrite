@@ -4,9 +4,20 @@ package main
 
 import (
 	"fmt"
+	"os/exec"
 	"syscall"
 	"unsafe"
+
+	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
 )
+
+// Windows-only process options; all ASR deployment policy stays in Go Core.
+var asrChildHost = &localasr.ChildHost{
+	Prepare: func(cmd *exec.Cmd) {
+		cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000000} // CREATE_NO_WINDOW
+	},
+	Guard: protectChild,
+}
 
 const jobObjectExtendedLimitInformation = 9
 const jobObjectLimitKillOnJobClose = 0x00002000
