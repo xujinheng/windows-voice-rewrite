@@ -802,8 +802,15 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                             fputs("VoiceRewrite: \(error)\n", stderr)
                         case .success(let value):
                             guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
+                            // Terminal selection lives in scrollback, not in the shell's editable input.
+                            let bundle = NSRunningApplication(processIdentifier: self.targetPID)?.bundleIdentifier ?? ""
+                            let readOnly = ["com.apple.Terminal", "com.googlecode.iterm2",
+                                            "com.mitchellh.ghostty", "dev.warp.Warp-Stable",
+                                            "org.alacritty", "net.kovidgoyal.kitty",
+                                            "com.github.wez.wezterm"].contains(bundle)
                             let action = (value.route ?? "").withCString {
-                                VRDeliveryAction($0, self.targetStillValid() ? 1 : 0, selected == nil ? 0 : 1)
+                                VRDeliveryAction($0, self.targetStillValid() ? 1 : 0,
+                                                 selected == nil ? 0 : 1, readOnly ? 1 : 0)
                             }
                             if action == Int32(VR_DELIVERY_REPLACE), let selected {
                                 self.pill.working(.applying)
