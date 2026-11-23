@@ -41,7 +41,7 @@ func insertDictationText(hwnd, target uintptr, text string, valid func() bool) e
 	if !windowOK() {
 		return errors.New(ux.DictationWindowChanged)
 	}
-	if err = sendCombo('V'); err != nil {
+	if err = sendCombo('V', false); err != nil {
 		return err
 	}
 	time.Sleep(clipboard.WindowsPasteWaitMilliseconds * time.Millisecond)

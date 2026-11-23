@@ -40,20 +40,25 @@ func waitKeysReleased(max time.Duration, recordingKey bool) bool {
 	return false
 }
 
-func sendCombo(letter uint16) error {
-	keys := [4]winINPUT{
-		{Type: INPUT_KEYBOARD, Key: winKEYBDINPUT{Vk: VK_CONTROL}},
-		{Type: INPUT_KEYBOARD, Key: winKEYBDINPUT{Vk: letter}},
-		{Type: INPUT_KEYBOARD, Key: winKEYBDINPUT{Vk: letter, Flags: KEYEVENTF_KEYUP}},
-		{Type: INPUT_KEYBOARD, Key: winKEYBDINPUT{Vk: VK_CONTROL, Flags: KEYEVENTF_KEYUP}},
+func sendCombo(letter uint16, shift bool) error {
+	keys := []winINPUT{{Type: INPUT_KEYBOARD, Key: winKEYBDINPUT{Vk: VK_CONTROL}}}
+	if shift {
+		keys = append(keys, winINPUT{Type: INPUT_KEYBOARD, Key: winKEYBDINPUT{Vk: VK_SHIFT}})
 	}
+	keys = append(keys,
+		winINPUT{Type: INPUT_KEYBOARD, Key: winKEYBDINPUT{Vk: letter}},
+		winINPUT{Type: INPUT_KEYBOARD, Key: winKEYBDINPUT{Vk: letter, Flags: KEYEVENTF_KEYUP}})
+	if shift {
+		keys = append(keys, winINPUT{Type: INPUT_KEYBOARD, Key: winKEYBDINPUT{Vk: VK_SHIFT, Flags: KEYEVENTF_KEYUP}})
+	}
+	keys = append(keys, winINPUT{Type: INPUT_KEYBOARD, Key: winKEYBDINPUT{Vk: VK_CONTROL, Flags: KEYEVENTF_KEYUP}})
 	if unsafe.Sizeof(keys[0]) != 40 {
 		return fmt.Errorf("INPUT layout invalid: %d", unsafe.Sizeof(keys[0]))
 	}
 	n, _, e := procSendInput.Call(uintptr(len(keys)), uintptr(unsafe.Pointer(&keys[0])), unsafe.Sizeof(keys[0]))
 	runtime.KeepAlive(keys)
-	if n != 4 {
-		return fmt.Errorf("SendInput 失败(%d/4): %v。管理员权限的目标程序可能不接受普通权限模拟键盘", n, e)
+	if n != uintptr(len(keys)) {
+		return fmt.Errorf("SendInput 失败(%d/%d): %v。管理员权限的目标程序可能不接受普通权限模拟键盘", n, len(keys), e)
 	}
 	return nil
 }
@@ -131,9 +136,9 @@ func setClipboardText(hwnd uintptr, s string) (uintptr, error) {
 	return clipboardSeq(), nil
 }
 
-func clipboardCopy(hwnd uintptr, timeout time.Duration) (string, uintptr, error) {
+func clipboardCopy(hwnd uintptr, timeout time.Duration, terminal bool) (string, uintptr, error) {
 	old := clipboardSeq()
-	if err := sendCombo('C'); err != nil {
+	if err := sendCombo('C', terminal); err != nil {
 		return "", 0, err
 	}
 	deadline := time.Now().Add(timeout)
@@ -163,24 +168,38 @@ func isSameForegroundWindow(target uintptr) bool {
 	return valid != 0 && foreground == target
 }
 
+// Terminal scrollback is selectable but not an editable range. Never send plain
+// Ctrl+C to a console: it can interrupt a foreground command.
+func isTerminalWindow(hwnd uintptr) bool {
+	switch windowClassName(hwnd) {
+	case "cascadia_hosting_window_class", "consolewindowclass":
+		return true
+	}
+	return false
+}
+
 // Copy only while the original editor is foreground. Some applications update the
 // clipboard asynchronously, so retry without crossing application boundaries.
-
 func copySelectionWithRetry(hwnd, target uintptr, cfg Config) (string, uintptr, error) {
 	time.Sleep(clipboard.CopySettle) // Let mouse key-up and selection settle.
 	if !waitKeysReleased(clipboard.CopyModifierWait, false) {
 		return "", 0, errors.New(clipboard.CopyModifiersHeld)
 	}
+	terminal := isTerminalWindow(target)
+	attempts := cfg.SelectionCopyAttempts
+	if terminal {
+		attempts = 1 // Ctrl+Shift+C is safe for Windows Terminal; do not repeat unknown console shortcuts.
+	}
 	var lastErr error
-	for i := 0; i < cfg.SelectionCopyAttempts; i++ {
+	for i := 0; i < attempts; i++ {
 		if !isSameForegroundWindow(target) {
 			return "", 0, errors.New(clipboard.CopyWindowBefore)
 		}
-		// Two-attempt default: retry an ignored Ctrl+C sooner, reserving
+		// For normal editors, retry an ignored Ctrl+C sooner, reserving
 		// the remaining budget for a slow clipboard response. No extra
 		// delay on successful copies and no longer overall timeout.
-		timeout := clipboard.AttemptTimeout(time.Duration(cfg.SelectionCopyTimeoutMS)*time.Millisecond, i, cfg.SelectionCopyAttempts)
-		text, sequence, err := clipboardCopy(hwnd, timeout)
+		timeout := clipboard.AttemptTimeout(time.Duration(cfg.SelectionCopyTimeoutMS)*time.Millisecond, i, attempts)
+		text, sequence, err := clipboardCopy(hwnd, timeout, terminal)
 		if !isSameForegroundWindow(target) {
 			return "", 0, errors.New(clipboard.CopyWindowDuring)
 		}
@@ -188,11 +207,11 @@ func copySelectionWithRetry(hwnd, target uintptr, cfg Config) (string, uintptr, 
 			return text, sequence, nil
 		}
 		lastErr = err
-		if i+1 < cfg.SelectionCopyAttempts {
+		if i+1 < attempts {
 			time.Sleep(time.Duration(100*(i+1)) * time.Millisecond)
 		}
 	}
-	return "", 0, fmt.Errorf("复制选中文字失败（已尝试 %d 次）：%w", cfg.SelectionCopyAttempts, lastErr)
+	return "", 0, fmt.Errorf("复制选中文字失败（已尝试 %d 次）：%w", attempts, lastErr)
 }
 
 func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
@@ -229,6 +248,9 @@ func (e pasteAttemptedError) Unwrap() error { return e.error }
 // remains. If it does, the surface likely refused the paste, so show a preview.
 // This remains a heuristic: it cannot prove an application's content changed.
 func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement string, cfg Config, verifyBrowser bool, valid func() bool) error {
+	if isTerminalWindow(sel.TargetWindow) {
+		return errors.New(ux.ReplaceSelectionChanged)
+	}
 	taskValid := func() bool { return valid == nil || valid() }
 	if !taskValid() {
 		return errors.New(ux.ReplaceExpired)
@@ -279,7 +301,7 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 	if !taskValid() || !isSameForegroundWindow(sel.TargetWindow) {
 		return errors.New(ux.ReplacePasteStopped)
 	}
-	if err := sendCombo('V'); err != nil {
+	if err := sendCombo('V', false); err != nil {
 		return pasteAttemptedError{err}
 	}
 	time.Sleep(270 * time.Millisecond)
@@ -288,7 +310,7 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 			return pasteAttemptedError{errors.New(ux.ReplaceWindowAfterPaste)}
 		}
 		beforeProbe := clipboardSeq()
-		stillSelected, probedSequence, verifyErr := clipboardCopy(hwnd, 470*time.Millisecond)
+		stillSelected, probedSequence, verifyErr := clipboardCopy(hwnd, 470*time.Millisecond, false)
 		if verifyErr == nil {
 			if probedSequence != beforeProbe {
 				backup.markOwned(probedSequence)

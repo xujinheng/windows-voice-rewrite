@@ -226,7 +226,7 @@ func processRecording(app *appState, rec *audioRecorder, task recordingTask, gen
 
 	app.logger.Printf("stage=spoken_selection ms=%d intent=%s route=%s",
 		time.Since(started).Milliseconds(), answer.Intent, answer.Route)
-	action := voice.DecideDelivery(answer.Route, voice.DeliveryFacts{TargetCurrent: isSameForegroundWindow(sel.TargetWindow), SelectionCaptured: sel.Text != ""})
+	action := voice.DecideDelivery(answer.Route, voice.DeliveryFacts{TargetCurrent: isSameForegroundWindow(sel.TargetWindow), SelectionCaptured: sel.Text != "", SelectionReadOnly: isTerminalWindow(sel.TargetWindow)})
 	if action == voice.DeliveryReplace {
 		app.postHandyPhase(indicator.Applying, generation)
 		started = time.Now()
