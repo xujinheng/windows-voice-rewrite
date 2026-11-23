@@ -13,9 +13,9 @@ const (
 // DeliveryFacts are observed by the host. The native write path must recheck
 // the editor and selection immediately before any mutation.
 type DeliveryFacts struct {
-	TargetCurrent      bool
-	SelectionCaptured  bool
-	SelectionReadOnly  bool // Native selection is not an editable text range (e.g. terminal scrollback).
+	TargetCurrent     bool
+	SelectionCaptured bool
+	SelectionReadOnly bool // Native selection is not an editable text range (e.g. terminal scrollback).
 }
 
 // DecideDelivery owns the portable fallback policy for every client.
