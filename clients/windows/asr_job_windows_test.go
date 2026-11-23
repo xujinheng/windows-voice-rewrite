@@ -9,6 +9,14 @@ import (
 	"time"
 )
 
+func TestASRChildHasNoConsole(t *testing.T) {
+	cmd := exec.Command("llama-server.exe")
+	asrChildHost.Prepare(cmd)
+	if cmd.SysProcAttr == nil || cmd.SysProcAttr.CreationFlags&0x08000000 == 0 {
+		t.Fatal("ASR child would create a console window")
+	}
+}
+
 func TestWindowsJobClosesChildOnHostExit(t *testing.T) {
 	if os.Getenv("VOICEREWRITE_ASR_JOB_CHILD") == "1" {
 		time.Sleep(20 * time.Second)

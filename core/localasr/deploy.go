@@ -313,11 +313,13 @@ func locateServer(root string) string {
 	return found
 }
 
-func hasNVIDIA() bool {
+func hasNVIDIA(host *ChildHost) bool {
 	if runtime.GOOS != "windows" {
 		return false
 	}
-	return exec.Command("nvidia-smi", "-L").Run() == nil
+	cmd := exec.Command("nvidia-smi", "-L")
+	host.prepare(cmd)
+	return cmd.Run() == nil
 }
 
 // Installation is the local backend configuration shared by desktop hosts.
@@ -386,7 +388,7 @@ func reportProgress(filename string, received, total int64) {
 
 // install installs only into directory/Qwen3-ASR. No application data or
 // package-manager folders are modified.
-func install(ctx context.Context, directory string) (Installation, error) {
+func install(ctx context.Context, directory string, host *ChildHost) (Installation, error) {
 	if directory == "" {
 		return Installation{}, errors.New("choose an ASR directory")
 	}
@@ -407,7 +409,7 @@ func install(ctx context.Context, directory string) (Installation, error) {
 	flavor, gpu := "cpu", 0
 	if runtime.GOOS == "darwin" {
 		flavor, gpu = "metal", 99
-	} else if hasNVIDIA() {
+	} else if hasNVIDIA(host) {
 		flavor, gpu = "cuda", 99
 	}
 	server, err := installRuntime(ctx, root, flavor)
