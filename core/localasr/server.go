@@ -43,16 +43,25 @@ var (
 	process   *exec.Cmd
 )
 
-// ChildGuard is the native host callback that binds a launched process to its
-// lifetime. Core owns when it is used; the host owns the OS API.
-type ChildGuard func(pid int) (func(), error)
+// ChildHost supplies OS process settings and lifetime protection. Core owns
+// the shared launch, readiness and deployment decisions.
+type ChildHost struct {
+	Prepare func(*exec.Cmd)
+	Guard   func(pid int) (func(), error)
+}
+
+func (h *ChildHost) prepare(cmd *exec.Cmd) {
+	if h != nil && h.Prepare != nil {
+		h.Prepare(cmd)
+	}
+}
 
 // ErrBusyDifferentDirectory preserves a running task on conflicting requests.
 var ErrBusyDifferentDirectory = errors.New("ASR deployment already running in another directory")
 
 // BeginDeploy starts one non-blocking application-owned deployment. Repeated
 // requests for the same busy or ready directory reuse the existing task.
-func BeginDeploy(ctx context.Context, directory string, guard ChildGuard) error {
+func BeginDeploy(ctx context.Context, directory string, host *ChildHost) error {
 	if ctx == nil || directory == "" {
 		return errors.New("choose an ASR directory")
 	}
@@ -69,13 +78,13 @@ func BeginDeploy(ctx context.Context, directory string, guard ChildGuard) error 
 		Text: "正在准备 ASR 部署", Busy: true}
 	progressMu.Unlock()
 	go func() {
-		installation, err := install(ctx, directory)
+		installation, err := install(ctx, directory, host)
 		if err == nil {
 			progressMu.Lock()
 			progress.Phase = PhaseStarting
 			progress.Text = "正在启动识别服务，加载模型中…"
 			progressMu.Unlock()
-			err = Start(ctx, installation, guard)
+			err = Start(ctx, installation, host)
 		}
 		progressMu.Lock()
 		progress.Busy = false
@@ -94,7 +103,7 @@ func BeginDeploy(ctx context.Context, directory string, guard ChildGuard) error 
 
 // Resume starts a previously deployed local ASR only when the configured
 // endpoint is the managed local service, never for a custom/remote endpoint.
-func Resume(ctx context.Context, cfg coreconfig.Config, guard ChildGuard) error {
+func Resume(ctx context.Context, cfg coreconfig.Config, host *ChildHost) error {
 	// A settings save must not kill a server while its model is loading.
 	if DeploymentStatus().Busy {
 		return nil
@@ -111,12 +120,12 @@ func Resume(ctx context.Context, cfg coreconfig.Config, guard ChildGuard) error 
 	if !ok {
 		return nil
 	}
-	return Start(ctx, install, guard)
+	return Start(ctx, install, host)
 }
 
 // Start serves the built-in Qwen ASR model on the existing default endpoint.
 // Clients directly use llama.cpp; Core already normalizes ASR transcript markers.
-func Start(ctx context.Context, install Installation, guard ChildGuard) error {
+func Start(ctx context.Context, install Installation, host *ChildHost) error {
 	for {
 		processMu.Lock()
 		if process == nil || process.Path == install.Server {
@@ -150,15 +159,15 @@ func Start(ctx context.Context, install Installation, guard ChildGuard) error {
 			"-c", "8192", "-np", "1", "--host", "127.0.0.1", "--port", "8080")
 		cmd.Dir = filepath.Dir(install.Server)
 		cmd.Stdout, cmd.Stderr = file, file
-		hideChildConsole(cmd)
+		host.prepare(cmd)
 		if err = cmd.Start(); err != nil {
 			file.Close()
 			processMu.Unlock()
 			return err
 		}
 		var release func()
-		if guard != nil {
-			release, err = guard(cmd.Process.Pid)
+		if host != nil && host.Guard != nil {
+			release, err = host.Guard(cmd.Process.Pid)
 			if err != nil {
 				_ = cmd.Process.Kill()
 				_ = cmd.Wait()
