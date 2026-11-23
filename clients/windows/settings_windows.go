@@ -702,7 +702,7 @@ func (p *uxSettings) chooseDeployDirectory() {
 }
 
 func (p *uxSettings) deployASR() {
-	if err := localasr.BeginDeploy(context.Background(), p.deployDir, protectChild); err != nil {
+	if err := localasr.BeginDeploy(context.Background(), p.deployDir, asrChildHost); err != nil {
 		uxSetText(p.hint, err.Error())
 		return
 	}
@@ -749,7 +749,7 @@ func (p *uxSettings) save() error {
 	}
 	p.app.cfg = cfg
 	go func() {
-		if err := localasr.Resume(context.Background(), cfg, protectChild); err != nil {
+		if err := localasr.Resume(context.Background(), cfg, asrChildHost); err != nil {
 			p.app.logger.Printf("local ASR config update: %v", err)
 		}
 	}()
