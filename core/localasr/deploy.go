@@ -317,7 +317,9 @@ func hasNVIDIA() bool {
 	if runtime.GOOS != "windows" {
 		return false
 	}
-	return exec.Command("nvidia-smi", "-L").Run() == nil
+	cmd := exec.Command("nvidia-smi", "-L")
+	hideChildConsole(cmd)
+	return cmd.Run() == nil
 }
 
 // Installation is the local backend configuration shared by desktop hosts.
