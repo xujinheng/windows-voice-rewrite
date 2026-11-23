@@ -150,6 +150,7 @@ func Start(ctx context.Context, install Installation, guard ChildGuard) error {
 			"-c", "8192", "-np", "1", "--host", "127.0.0.1", "--port", "8080")
 		cmd.Dir = filepath.Dir(install.Server)
 		cmd.Stdout, cmd.Stderr = file, file
+		hideChildConsole(cmd)
 		if err = cmd.Start(); err != nil {
 			file.Close()
 			processMu.Unlock()
