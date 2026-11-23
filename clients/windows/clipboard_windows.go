@@ -195,7 +195,7 @@ func copySelectionWithRetry(hwnd, target uintptr, cfg Config) (string, uintptr, 
 		if !isSameForegroundWindow(target) {
 			return "", 0, errors.New(clipboard.CopyWindowBefore)
 		}
-		// Two-attempt default: retry an ignored Ctrl+C sooner, reserving
+		// For normal editors, retry an ignored Ctrl+C sooner, reserving
 		// the remaining budget for a slow clipboard response. No extra
 		// delay on successful copies and no longer overall timeout.
 		timeout := clipboard.AttemptTimeout(time.Duration(cfg.SelectionCopyTimeoutMS)*time.Millisecond, i, attempts)
