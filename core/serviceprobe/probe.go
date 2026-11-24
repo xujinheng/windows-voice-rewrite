@@ -29,7 +29,7 @@ const (
 // A service health response and a compatible model are two separate facts.
 // Only synthetic test input is sent; no microphone audio or user text.
 func ProbeModel(ctx context.Context, kind, base, apiKey, configuredModel string) string {
-	if kind == "ASR" && strings.TrimSpace(configuredModel) != "" {
+	if kind == "ASR" {
 		return ProbeASRAudio(ctx, base, apiKey, configuredModel)
 	}
 	if coreconfig.ValidateBaseURL(base) != nil {
@@ -56,42 +56,7 @@ func ProbeModel(ctx context.Context, kind, base, apiKey, configuredModel string)
 		}
 		return "LLM：文本模型测试失败；请检查 API 地址、模型 ID 及服务日志"
 	}
-	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
-	defer cancel()
-	models, err := provider.ListModels(ctx, strings.TrimSpace(base), apiKey)
-	if err != nil {
-		var status *provider.HTTPStatusError
-		switch {
-		case errors.As(err, &status):
-			switch status.Status {
-			case http.StatusNotFound, http.StatusMethodNotAllowed:
-				return kind + "：服务可达；此接口不提供模型列表，请实际试用"
-			case http.StatusUnauthorized, http.StatusForbidden:
-				return kind + "：API Key 无效或没有权限"
-			case http.StatusServiceUnavailable:
-				return kind + "：服务暂时不可用（503）"
-			default:
-				return fmt.Sprintf("%s：API 返回 HTTP %d", kind, status.Status)
-			}
-		case errors.Is(err, provider.ErrInvalidModelsResponse):
-			return kind + "：API 可达 · HTTP 200，但模型列表格式无法识别；请试用实际功能"
-		default:
-			return kind + "：无法连接，请检查 API 地址及网络"
-		}
-	}
-	if len(models) == 0 {
-		return kind + "：API 可达 · HTTP 200，模型列表为空；请检查是否已加载模型"
-	}
-	chosen := strings.TrimSpace(configuredModel)
-	if chosen != "" && chosen != "auto" {
-		for _, model := range models {
-			if model == chosen {
-				return kind + "：模型 " + chosen + " 已在服务中发现（未验证实际任务）"
-			}
-		}
-		return kind + "：服务可达，但模型 " + chosen + " 未列出；请核对 ID 或服务别名"
-	}
-	return fmt.Sprintf("%s：已连接 · 可发现 %d 个模型（未验证实际任务）", kind, len(models))
+	return "未知服务类型"
 }
 
 // ProbeASRAudio exercises the actual provider.Endpoint and request format used by

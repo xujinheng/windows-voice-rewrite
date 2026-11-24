@@ -3,7 +3,6 @@ package serviceprobe
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,37 +13,6 @@ import (
 func TestProbeStatusLines(t *testing.T) {
 	if StatusIdle != "尚未检测连接" || StatusRunning != "正在检测服务…" || StatusStale != "连接配置已修改 · 请重新检测" {
 		t.Fatal("probe status")
-	}
-}
-
-func TestProbeModelMatchesWindowsStatusAndBearerHandling(t *testing.T) {
-	for _, tc := range []struct {
-		status int
-		want   string
-	}{
-		{200, "可发现 1 个模型"},
-		{204, "HTTP 204"},
-		{401, "API Key"},
-		{404, "不提供模型列表"},
-		{503, "暂时不可用"},
-		{429, "HTTP 429"},
-	} {
-		t.Run(fmt.Sprint(tc.status), func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != "GET" || r.URL.Path != "/v1/models" || r.Header.Get("Authorization") != "Bearer token" {
-					t.Errorf("unexpected models request: %s %s %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
-				}
-				w.WriteHeader(tc.status)
-				if tc.status == 200 {
-					_, _ = io.WriteString(w, `{"data":[{"id":"text-model"}]}`)
-				}
-			}))
-			defer server.Close()
-			got := ProbeModel(context.Background(), "ASR", server.URL+"/v1", "token", "")
-			if !strings.Contains(got, tc.want) {
-				t.Fatalf("probe result %q missing %q", got, tc.want)
-			}
-		})
 	}
 }
 
@@ -95,6 +63,9 @@ func TestProbeASRSendsOnlySilentWAVThroughSharedSpeechCore(t *testing.T) {
 }
 
 func TestProbeReportsInvalidURLAndContextCancellation(t *testing.T) {
+	if got := ProbeModel(context.Background(), "ASR", "http://127.0.0.1:1/v1", "", ""); !strings.Contains(got, "模型 ID") {
+		t.Fatalf("empty ASR model should require a model ID, got %q", got)
+	}
 	if got := ProbeModel(context.Background(), "LLM", "https://name:secret@example.com/v1", "", "auto"); !strings.Contains(got, "服务地址无效") {
 		t.Fatalf("url accepted: %q", got)
 	}
@@ -102,28 +73,6 @@ func TestProbeReportsInvalidURLAndContextCancellation(t *testing.T) {
 	cancel()
 	if got := ProbeModel(ctx, "ASR", "http://127.0.0.1:1/v1", "", "qwen3-asr"); !strings.Contains(got, "超时") && !strings.Contains(got, "无法连接") {
 		t.Fatalf("cancel returned unexpected result: %q", got)
-	}
-}
-
-func TestProbeModelsReuseProviderValidationAndDeduplication(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/models" {
-			_, _ = io.WriteString(w, `{"data":[{"id":"chat"},{"id":"chat"},{"id":"\ninvalid"},{"id":"text-model"}]}`)
-		}
-	}))
-	defer srv.Close()
-	if got := ProbeModel(context.Background(), "ASR", srv.URL+"/v1", "", ""); !strings.Contains(got, "2 个模型") {
-		t.Fatalf("probe should count usable deduplicated provider models, got %q", got)
-	}
-}
-
-func TestProbeModelsKeepMalformedResponseHint(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.WriteString(w, `{"data":`)
-	}))
-	defer srv.Close()
-	if got := ProbeModel(context.Background(), "ASR", srv.URL+"/v1", "", ""); !strings.Contains(got, "模型列表格式无法识别") {
-		t.Fatal(got)
 	}
 }
 
