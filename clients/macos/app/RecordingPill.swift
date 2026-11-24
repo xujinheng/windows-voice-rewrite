@@ -17,7 +17,8 @@ final class RecordingPill {
     var onRecordingSecond: ((Int) -> Void)?
     private var lastSecond = -1
 
-    var isVisible: Bool { panel?.isVisible == true }
+    // Presentation lifetime is independent of WindowServer's current Space visibility.
+    var isVisible: Bool { timer != nil }
 
     func configure(_ spec: PillSpec) {
         view.spec = spec
@@ -36,7 +37,7 @@ final class RecordingPill {
         window.hidesOnDeactivate = false
         window.isReleasedWhenClosed = false
         window.becomesKeyOnlyIfNeeded = true
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = false
@@ -78,9 +79,17 @@ final class RecordingPill {
 
     private func display() {
         prepare()
+        guard let panel else { return }
         reposition()
+        if !panel.isVisible || !panel.isOnActiveSpace {
+            // Re-register the reused panel with WindowServer after a Space change.
+            let behavior = panel.collectionBehavior
+            panel.orderOut(nil)
+            panel.collectionBehavior = []
+            panel.collectionBehavior = behavior
+        }
         view.needsDisplay = true
-        panel?.orderFrontRegardless()
+        panel.orderFrontRegardless()
         if timer == nil {
             let ticker = Timer(timeInterval: 0.07, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.tick() }
@@ -91,12 +100,13 @@ final class RecordingPill {
     }
 
     private func tick() {
-        guard isVisible else { dismiss(); return }
+        guard let panel else { dismiss(); return }
         if let terminalAt, let spec = view.spec,
            Date().timeIntervalSince(terminalAt) * 1000 >= Double(spec.terminalMS) {
             dismiss()
             return
         }
+        if !panel.isVisible || !panel.isOnActiveSpace { display() }
         if view.phase == .recording {
             let seconds = max(0, Int(Date().timeIntervalSince(view.started)))
             if seconds != lastSecond {
