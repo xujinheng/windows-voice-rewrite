@@ -215,6 +215,8 @@ private struct BridgeReply: Decodable {
         let status: String?
         let directory: String?
         let phase: String?
+        let toggleLabel: String?
+        let canDownload, canToggle, canChoose: Bool?
         let models: [String]?
         let capture: [String: String]?
     }
@@ -262,6 +264,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var reloadAfterTask = false
     private var settingsPages: [String: NSView] = [:]
     private var settingsStatuses: [String: NSTextField] = [:]
+    private var settingsASRButtons: [String: NSButton] = [:]
     private var settingsHint: NSTextField?
     private var settingsDeployDirectory = ""
     private var settingsRunning = ""
@@ -374,7 +377,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             settingsPages = [:]
             settingsStatuses = [:]
             settingsDeployDirectory = values["asr_deploy_dir"] ?? ""
-            let deployStatus = try? GoCore.decode(VRASRProgress())
+            settingsASRButtons = [:]
             settingsRunning = form.running
                 settingsCaptureHint = form.captureHint
             settingsCaptureCodes = output.capture ?? [:]
@@ -420,33 +423,30 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     field.textColor = .secondaryLabelColor
                     parent.addSubview(field)
                     settingsStatuses[entry.id] = field
+                    if entry.id == "deploy_asr_status" { field.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(settingsShowDeployError))) }
                 case "button":
                     let button = NSButton(title: entry.label, target: self, action: #selector(settingsAction))
                     button.identifier = NSUserInterfaceItemIdentifier(entry.id)
                     button.frame = entry.rect.native(height)
                     parent.addSubview(button)
+                    if ["download_asr", "deploy_asr", "select_asr_directory"].contains(entry.id) { settingsASRButtons[entry.id] = button }
                 default: break
                 }
             }
-            let previous = deployStatus?.directory == settingsDeployDirectory ? (deployStatus?.status ?? "") : ""
-            let initialHint = previous.hasPrefix("ASR 部署失败：") ? "ASR 部署失败（点击查看原因）"
-                : (previous.isEmpty ? "部署位置：" + settingsDeployDirectory : previous)
-            let hint = NSTextField(labelWithString: initialHint)
+            let hint = NSTextField(labelWithString: "")
             hint.frame = form.hint.native(height)
             hint.textColor = .secondaryLabelColor
-            hint.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(settingsShowDeployError)))
             content.addSubview(hint)
             settingsHint = hint
             settingsPanel = panel
+            refreshASR()
             settingsProgressTimer?.invalidate()
             settingsProgressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
                 guard let self, self.settingsPanel?.isVisible == true else {
                     timer.invalidate()
                     return
                 }
-                if let progress = try? GoCore.decode(VRASRProgress()), progress.directory == self.settingsDeployDirectory {
-                    self.settingsHint?.stringValue = progress.status ?? "部署位置：" + self.settingsDeployDirectory
-                }
+                self.refreshASR()
             }
             panel.center()
             NSApp.activate(ignoringOtherApps: true)
@@ -457,12 +457,21 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func refreshASR() {
+        guard let v = try? GoCore.decode(settingsDeployDirectory.withCString { VRASRProgress($0) }) else { return }
+        settingsStatuses["deploy_asr_status"]?.stringValue = (v.status ?? "") + "\n" + (v.directory ?? settingsDeployDirectory)
+        settingsASRButtons["deploy_asr"]?.title = v.toggleLabel ?? ""
+        settingsASRButtons["deploy_asr"]?.isEnabled = v.canToggle == true
+        settingsASRButtons["download_asr"]?.isEnabled = v.canDownload == true
+        settingsASRButtons["select_asr_directory"]?.isEnabled = v.canChoose == true
+    }
+
     @objc private func settingsShowDeployError() {
-        guard let progress = try? GoCore.decode(VRASRProgress()),
+        guard let progress = try? GoCore.decode(settingsDeployDirectory.withCString { VRASRProgress($0) }),
               progress.phase == "failed", progress.directory == settingsDeployDirectory,
               let message = progress.status else { return }
         let alert = NSAlert()
-        alert.messageText = "ASR 部署失败"
+        alert.messageText = "模型操作失败"
         alert.informativeText = message
         alert.addButton(withTitle: "复制错误")
         alert.addButton(withTitle: "关闭")
@@ -508,15 +517,22 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                     settingsDeployDirectory = url.path
                     reload()
                     settingsHint?.stringValue = "部署位置已保存：" + url.path
+                    refreshASR()
                 } catch {
                     settingsHint?.stringValue = "保存部署目录失败：" + String(describing: error)
                 }
             }
-        case "deploy_asr":
+        case "download_asr", "deploy_asr":
             do {
-                settingsHint?.stringValue = try GoCore.decode(settingsDeployDirectory.withCString { VRDeploy($0) }).status ?? "ASR 正在准备部署"
+                let action = id == "download_asr" ? "download" : "start_stop"
+                _ = try GoCore.decode(settingsDeployDirectory.withCString { directory in
+                    action.withCString { VRASRAction(directory, $0) }
+                })
+                refreshASR()
             } catch {
-                settingsHint?.stringValue = String(describing: error)
+                let alert = NSAlert()
+                alert.messageText = String(describing: error)
+                alert.runModal()
             }
         case "save", "probe_asr", "probe_llm", "discover_asr_models", "discover_llm_models":
             guard let json = try? String(contentsOf: configURL, encoding: .utf8) else { return }

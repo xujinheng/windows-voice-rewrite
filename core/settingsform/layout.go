@@ -6,9 +6,9 @@ import "github.com/xujinheng/windows-voice-rewrite/core/contract"
 
 const (
 	DesignWidth   int32 = 816
-	DesignHeight  int32 = 484
+	DesignHeight  int32 = 528
 	WindowWidth   int32 = 860
-	WindowHeight  int32 = 530
+	WindowHeight  int32 = 574
 	MinWidth            = 480
 	MinHeight           = 420
 	MinWorkMargin       = 12
