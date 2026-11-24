@@ -22,6 +22,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
+	"os"
+	"path/filepath"
+	"syscall"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -33,6 +37,7 @@ import (
 	"github.com/xujinheng/windows-voice-rewrite/core/clipboard"
 	"github.com/xujinheng/windows-voice-rewrite/core/indicator"
 	"github.com/xujinheng/windows-voice-rewrite/core/localasr"
+	"github.com/xujinheng/windows-voice-rewrite/core/logfile"
 	"github.com/xujinheng/windows-voice-rewrite/core/settingsform"
 	"github.com/xujinheng/windows-voice-rewrite/core/ux"
 	"github.com/xujinheng/windows-voice-rewrite/core/voice"
@@ -137,6 +142,30 @@ func nativeJSON(value response) *C.char {
 	return C.CString(string(data))
 }
 
+//export VRPrepareLog
+func VRPrepareLog(path *C.char) *C.char {
+	if path == nil {
+		return nativeJSON(failure("log_path", "日志路径无效"))
+	}
+	name := C.GoString(path)
+	if err := os.MkdirAll(filepath.Dir(name), 0700); err != nil {
+		return nativeJSON(failure("log_path", err.Error()))
+	}
+	if err := logfile.Rotate(name, logfile.MaxBytes, logfile.Backups); err != nil {
+		return nativeJSON(failure("log_rotate", err.Error()))
+	}
+	file, err := os.OpenFile(name, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return nativeJSON(failure("log_open", err.Error()))
+	}
+	defer file.Close()
+	if err := syscall.Dup2(int(file.Fd()), 2); err != nil {
+		return nativeJSON(failure("log_redirect", err.Error()))
+	}
+	log.Print("VoiceRewrite macOS started")
+	return nativeJSON(success(map[string]string{}))
+}
+
 //export VRProfile
 func VRProfile(config *C.char) *C.char {
 	if config == nil {
@@ -145,7 +174,7 @@ func VRProfile(config *C.char) *C.char {
 	reply := headlessProfile(json.RawMessage(C.GoString(config)))
 	if reply.OK {
 		nativeConfig.Store(&reply.cfg)
-		go func() { _ = localasr.Resume(context.Background(), reply.cfg, nil) }()
+		go func() { if err := localasr.Resume(context.Background(), reply.cfg, nil); err != nil { log.Printf("local ASR startup: %v", err) } }()
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
 		nativeCore.Apply(voice.Command{Kind: voice.CommandBind, Dictation: []int{macKeyCode(profile["dictation"].(string))}, Rewrite: []int{macKeyCode(profile["rewrite"].(string))}})
 	}

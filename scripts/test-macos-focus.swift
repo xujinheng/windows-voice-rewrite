@@ -44,7 +44,7 @@ extension HeadlessApp {
         try! "invalid JSON".write(to: configURL, atomically: true, encoding: .utf8)
         reload()
         precondition((try? String(contentsOf: configURL, encoding: .utf8)) == "invalid JSON")
-        precondition(item.button?.title == "Config error")
+        precondition(item.button?.title == "配置错误")
         NSStatusBar.system.removeStatusItem(item)
     }
 
@@ -79,7 +79,7 @@ extension HeadlessApp {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         targetPID = pid_t.max // The original editor vanished or lost focus during the hold threshold.
         begin(rewrite: false)
-        precondition(!microphone.running && item.button?.title == "Focus changed")
+        precondition(!microphone.running && item.button?.title == "焦点已变化")
         NSStatusBar.system.removeStatusItem(item)
     }
 
@@ -101,7 +101,7 @@ extension HeadlessApp {
         _ = VRCommand(Int32(VR_COMMAND_RELEASE), key, 0, 0).release
         cancelFromPill()
         precondition(!pending && taskID == 0 && VRSnapshot(0, processingToken).valid == 0) // In-flight work still cancels.
-        precondition(item.button?.title == "Cancelled")
+        precondition(item.button?.title == "已取消")
         NSStatusBar.system.removeStatusItem(item)
     }
 }
