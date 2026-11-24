@@ -238,12 +238,12 @@ private enum GoCore {
     }
 
     static func decode(_ result: UnsafeMutablePointer<CChar>?) throws -> BridgeReply.Output {
-        guard let result else { throw HostError.bridge("Go Core returned no response") }
+        guard let result else { throw HostError.bridge("核心未返回响应") }
         defer { VRFree(result) }
         let reply = try JSONDecoder().decode(BridgeReply.self,
                            from: Data(bytes: result, count: strlen(result)))
         guard reply.ok, let output = reply.result else {
-            throw HostError.bridge(reply.error?.message ?? "Go Core operation failed")
+            throw HostError.bridge(reply.error?.message ?? "核心操作失败")
         }
         return output
     }
@@ -293,7 +293,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "设置…", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "重新加载配置", action: #selector(reload), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "显示配置文件", action: #selector(showConfig), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "查看日志", action: #selector(showLog), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "查看诊断日志", action: #selector(showLog), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q"))
         for entry in menu.items where entry.action != nil { entry.target = self }
         item.menu = menu
@@ -336,10 +336,10 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                 needsDefaults = true
             }
             let output = try GoCore.decode(json.withCString { VRProfile($0) })
-            guard let profile = output.profile else { throw HostError.config("missing Go host profile") }
+            guard let profile = output.profile else { throw HostError.config("缺少运行配置") }
             if needsDefaults {
                 firstRun = true
-                guard let defaults = output.defaultConfig else { throw HostError.config("missing Go defaults") }
+                guard let defaults = output.defaultConfig else { throw HostError.config("缺少默认配置") }
                 try FileManager.default.createDirectory(at: configURL.deletingLastPathComponent(),
                                                         withIntermediateDirectories: true)
                 try defaults.write(to: configURL, atomically: true, encoding: .utf8)
@@ -599,7 +599,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard let result = VRLatestResult() else { show("暂无结果"); return }
         defer { VRFree(result) }
         NSPasteboard.general.clearContents()
-        show(NSPasteboard.general.setString(String(cString: result), forType: .string) ? "Copied" : "Copy failed")
+        show(NSPasteboard.general.setString(String(cString: result), forType: .string) ? "已复制" : "复制失败")
     }
     @objc private func applyResult() {
         guard let request = previewApply, taskID == 0,
@@ -709,7 +709,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                                 callback: callback,
                                 userInfo: Unmanaged.passUnretained(self).toOpaque())
         guard let tap else {
-            show(AXIsProcessTrusted() ? "Input unavailable" : "Allow Accessibility")
+            show(AXIsProcessTrusted() ? "输入不可用" : "请授予辅助功能权限")
             // TCC permission may be granted after this first attempt. Retry the
             // native event tap without restarting the app or rebinding Go Core.
             if eventTapRetry == nil {
@@ -795,7 +795,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     private func begin(rewrite: Bool) {
-        guard targetPID > 0 else { reset("No target"); return }
+        guard targetPID > 0 else { reset("没有目标窗口"); return }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { reset("焦点已变化"); return }
         // Do not require an AX editor for a browser selection: recording and
         // the fallback result must still work without it.
@@ -819,7 +819,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             let capture = try microphone.stop()
             let submit: (AXSelection?) -> Void = { [weak self] selected in
                 guard let self, VRSnapshot(0, token).valid == 1 else { return }
-                guard !rewrite || selected != nil else { self.reset("Select text"); return }
+                guard !rewrite || selected != nil else { self.reset("请选中文字"); return }
                 if rewrite { self.pill.working(.processing); self.show(self.config.pill.processingRewrite) }
                 DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                     let result = Result {
@@ -839,7 +839,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
                             self.reset(self.config.pill.errorLabel)
                             fputs("VoiceRewrite: \(error)\n", stderr)
                         case .success(let value):
-                            guard let text = value.text, !text.isEmpty else { self.reset("Empty"); return }
+                            guard let text = value.text, !text.isEmpty else { self.reset("模型返回空内容"); return }
                             let action = (value.route ?? "").withCString {
                                 VRDeliveryAction($0, self.targetStillValid() ? 1 : 0, selected == nil ? 0 : 1)
                             }
