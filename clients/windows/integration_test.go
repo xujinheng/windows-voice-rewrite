@@ -56,17 +56,23 @@ func TestConfigValuesValidation(t *testing.T) {
 }
 func TestNativeServiceProbe(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/models" {
-			w.WriteHeader(200)
-			return
+		if r.Method == "POST" {
+			switch r.URL.Path {
+			case "/v1/audio/transcriptions":
+				w.WriteHeader(200)
+				return
+			case "/v1/chat/completions":
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"HELLO"}}]}`))
+				return
+			}
 		}
 		http.NotFound(w, r)
 	}))
 	defer srv.Close()
-	if got := serviceprobe.ProbeModel(context.Background(), "ASR", srv.URL+"/v1", "", ""); !strings.Contains(got, "HTTP 200") {
+	if got := serviceprobe.ProbeModel(context.Background(), "ASR", srv.URL+"/v1", "", "speech-v2"); !strings.Contains(got, "静音测试成功") {
 		t.Fatal(got)
 	}
-	if got := serviceprobe.ProbeModel(context.Background(), "LLM", srv.URL+"/v1", "", ""); !strings.Contains(got, "HTTP 200") {
+	if got := serviceprobe.ProbeModel(context.Background(), "LLM", srv.URL+"/v1", "", "writer-v3"); !strings.Contains(got, "实际改写测试通过") {
 		t.Fatal(got)
 	}
 }

@@ -79,7 +79,7 @@ func TestProbeReportsInvalidURLAndContextCancellation(t *testing.T) {
 func TestWritingProbeUsesActualRewrite(t *testing.T) {
 	for _, tc := range []struct {
 		name, model, response, want string
-		status int
+		status                      int
 	}{
 		{"explicit", "chat", `{"choices":[{"message":{"content":"HELLO"}}]}`, "实际改写测试通过", 200},
 		{"auto", "auto", `{"choices":[{"message":{"content":"HELLO"}}]}`, "实际改写测试通过", 200},
@@ -105,7 +105,7 @@ func TestWritingProbeUsesActualRewrite(t *testing.T) {
 				}
 				posts++
 				var body struct {
-					Model string `json:"model"`
+					Model    string              `json:"model"`
 					Messages []map[string]string `json:"messages"`
 				}
 				if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Model != "chat" || len(body.Messages) != 2 || !strings.Contains(body.Messages[1]["content"], "hello") {
@@ -117,7 +117,9 @@ func TestWritingProbeUsesActualRewrite(t *testing.T) {
 			got := ProbeModel(context.Background(), "LLM", srv.URL+"/v1", "token", tc.model)
 			srv.Close()
 			wantLists := 0
-			if tc.model == "auto" { wantLists = 1 }
+			if tc.model == "auto" {
+				wantLists = 1
+			}
 			if !strings.Contains(got, tc.want) || posts != 1 || lists != wantLists {
 				t.Fatalf("got %q, POST=%d GET=%d", got, posts, lists)
 			}

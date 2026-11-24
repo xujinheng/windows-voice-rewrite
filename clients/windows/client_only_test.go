@@ -38,7 +38,7 @@ func TestClientOnlyConfigHasNoServerManagement(t *testing.T) {
 
 func TestClientOnlyAPIProbeAuthAndNonstandardModels(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/models" {
+		if r.Method != "POST" || r.URL.Path != "/v1/audio/transcriptions" {
 			t.Errorf("unexpected probe path: %s", r.URL.Path)
 		}
 		if r.Header.Get("Authorization") != "Bearer token123" {
@@ -48,15 +48,15 @@ func TestClientOnlyAPIProbeAuthAndNonstandardModels(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
-	if got := serviceprobe.ProbeModel(context.Background(), "ASR", srv.URL+"/v1", "token123", ""); !strings.Contains(got, "204") {
+	if got := serviceprobe.ProbeModel(context.Background(), "ASR", srv.URL+"/v1", "token123", "speech-v2"); !strings.Contains(got, "204") {
 		t.Fatalf("got %q", got)
 	}
-	if got := serviceprobe.ProbeModel(context.Background(), "ASR", srv.URL+"/v1", "", ""); !strings.Contains(got, "API Key") {
+	if got := serviceprobe.ProbeModel(context.Background(), "ASR", srv.URL+"/v1", "", "speech-v2"); !strings.Contains(got, "API Key") {
 		t.Fatalf("got %q", got)
 	}
 	fallback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }))
 	defer fallback.Close()
-	if got := serviceprobe.ProbeModel(context.Background(), "ASR", fallback.URL+"/v1", "", ""); !strings.Contains(got, "请实际试用") {
+	if got := serviceprobe.ProbeModel(context.Background(), "ASR", fallback.URL+"/v1", "", "speech-v2"); !strings.Contains(got, "HTTP 404") {
 		t.Fatalf("got %q", got)
 	}
 }
