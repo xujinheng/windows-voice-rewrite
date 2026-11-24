@@ -102,7 +102,7 @@ func Controls() []Control {
 		{ID: "save", Page: "save", Label: "保存设置", Kind: Button},
 		{ID: "advanced", Page: "save", Label: "高级配置", Kind: Button},
 		{ID: "close", Page: "save", Label: "关闭", Kind: Button},
-		{ID: "save_note", Page: "save", Label: "API Key 为可选项；需要认证时先保存再检测。连接检测共用 Windows 的 Go Core 规则：ASR 发送生成的静音 WAV，LLM 查询 /models，不发送用户录音或文本。密钥仅保存在 Keychain。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
+		{ID: "save_note", Page: "save", Label: "API Key 为可选项；需要认证时先保存再检测。连接检测共用 Windows 的 Go Core 规则：ASR 发送生成的静音 WAV，LLM 发送固定测试文本进行实际改写，不发送用户录音或文本。密钥仅保存在 Keychain。", Kind: Note, Platform: MacOS, Gap: "#61 #69"},
 	}
 }
 

@@ -1,6 +1,6 @@
 // Package serviceprobe owns cross-platform provider connection probes.
 // ASR uploads generated silence through the real transcription endpoint;
-// LLM checks the model discovery endpoint without sending user content.
+// LLM runs the real rewrite endpoint with a fixed, non-user test sentence.
 package serviceprobe
 
 import (
@@ -14,6 +14,7 @@ import (
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/internal/speech"
 	"github.com/xujinheng/windows-voice-rewrite/core/provider"
+	"github.com/xujinheng/windows-voice-rewrite/core/textedit"
 )
 
 const (
@@ -26,13 +27,34 @@ const (
 )
 
 // A service health response and a compatible model are two separate facts.
-// This probe never uploads microphone audio or sends text prompts.
+// Only synthetic test input is sent; no microphone audio or user text.
 func ProbeModel(ctx context.Context, kind, base, apiKey, configuredModel string) string {
 	if kind == "ASR" && strings.TrimSpace(configuredModel) != "" {
 		return ProbeASRAudio(ctx, base, apiKey, configuredModel)
 	}
 	if coreconfig.ValidateBaseURL(base) != nil {
 		return kind + "：服务地址无效"
+	}
+	if kind == "LLM" {
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		cfg := coreconfig.Defaults()
+		cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.TextModel = strings.TrimSpace(base), apiKey, configuredModel
+		_, err := textedit.Rewrite(ctx, cfg, "hello", "Convert the text to uppercase.")
+		if err == nil {
+			return "LLM：连接成功，文本模型实际改写测试通过"
+		}
+		var status *provider.HTTPStatusError
+		if errors.As(err, &status) {
+			if status.Status == http.StatusUnauthorized || status.Status == http.StatusForbidden {
+				return "LLM：API Key 无效或没有权限"
+			}
+			return fmt.Sprintf("LLM：模型请求失败（HTTP %d）", status.Status)
+		}
+		if ctx.Err() != nil {
+			return "LLM：文本模型测试超时或已取消"
+		}
+		return "LLM：文本模型测试失败；请检查 API 地址、模型 ID 及服务日志"
 	}
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
