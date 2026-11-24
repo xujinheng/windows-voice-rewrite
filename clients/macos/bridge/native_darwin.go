@@ -173,8 +173,10 @@ func VRProfile(config *C.char) *C.char {
 	}
 	reply := headlessProfile(json.RawMessage(C.GoString(config)))
 	if reply.OK {
-		nativeConfig.Store(&reply.cfg)
-		go func() { if err := localasr.Resume(context.Background(), reply.cfg, nil); err != nil { log.Printf("local ASR startup: %v", err) } }()
+		previous := nativeConfig.Swap(&reply.cfg)
+		if previous == nil {
+			go func() { if err := localasr.Resume(context.Background(), reply.cfg, nil); err != nil { log.Printf("local ASR startup: %v", err) } }()
+		}
 		profile := reply.Result.(map[string]any)["profile"].(map[string]any)
 		nativeCore.Apply(voice.Command{Kind: voice.CommandBind, Dictation: []int{macKeyCode(profile["dictation"].(string))}, Rewrite: []int{macKeyCode(profile["rewrite"].(string))}})
 	}
@@ -182,20 +184,19 @@ func VRProfile(config *C.char) *C.char {
 }
 
 //export VRASRProgress
-func VRASRProgress() *C.char {
-	p := localasr.DeploymentStatus()
-	return nativeJSON(success(map[string]any{"status": p.Text, "directory": p.Directory, "phase": p.Phase}))
+func VRASRProgress(directory *C.char) *C.char {
+	return nativeJSON(success(localasr.SettingsView(C.GoString(directory))))
 }
 
-//export VRDeploy
-func VRDeploy(directory *C.char) *C.char {
-	if directory == nil {
-		return nativeJSON(failure("invalid_directory", "missing directory"))
+//export VRASRAction
+func VRASRAction(directory, action *C.char) *C.char {
+	if directory == nil || action == nil {
+		return nativeJSON(failure("invalid_action", "模型操作无效"))
 	}
-	if err := localasr.BeginDeploy(context.Background(), C.GoString(directory), nil); err != nil {
-		return nativeJSON(failure("deploy_failed", err.Error()))
+	if err := localasr.Manage(context.Background(), C.GoString(directory), localasr.Action(C.GoString(action)), nil); err != nil {
+		return nativeJSON(failure("model_action_failed", err.Error()))
 	}
-	return nativeJSON(success(map[string]string{"status": localasr.DeploymentStatus().Text}))
+	return nativeJSON(success(localasr.SettingsView(C.GoString(directory))))
 }
 
 //export VRStopASR

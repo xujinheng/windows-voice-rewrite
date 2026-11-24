@@ -107,7 +107,7 @@ func downloadVerified(ctx context.Context, dest string, spec downloadSpec) error
 		report(PhaseVerifying, "下载完成 "+spec.filename)
 		return nil
 	}
-	return fmt.Errorf("下载 %s 失败：%w。请检查网络/代理后重试；或从 %s 手动下载同名文件放到 %s，再点 Deploy（会校验 SHA-256）", spec.filename, last, spec.urls[len(spec.urls)-1], dest)
+	return fmt.Errorf("下载 %s 失败：%w。请检查网络/代理后重试；或从 %s 手动下载同名文件放到 %s，再点下载（会校验 SHA-256）", spec.filename, last, spec.urls[len(spec.urls)-1], dest)
 }
 
 func downloadFrom(ctx context.Context, source, part, filename string) error {
@@ -193,7 +193,7 @@ func installRuntime(ctx context.Context, root, flavor string) (string, error) {
 		if runtime.GOARCH == "amd64" {
 			asset, sha = "llama-"+llamaRelease+"-bin-macos-x64.tar.gz", macIntelTarSHA
 		} else if runtime.GOARCH != "arm64" {
-			return "", errors.New("unsupported Mac architecture")
+			return "", errors.New("不支持的 Mac 芯片架构")
 		}
 		specs = []downloadSpec{releaseDownload(asset, sha)}
 	} else if flavor == "cuda" {
@@ -338,6 +338,7 @@ const (
 	PhaseDownloading Phase = "downloading"
 	PhaseVerifying   Phase = "verifying"
 	PhaseInstalling  Phase = "installing"
+	PhaseDownloaded  Phase = "downloaded"
 	PhaseStarting    Phase = "starting"
 	PhaseReady       Phase = "ready"
 	PhaseFailed      Phase = "failed"
@@ -390,10 +391,10 @@ func reportProgress(filename string, received, total int64) {
 // package-manager folders are modified.
 func install(ctx context.Context, directory string, host *ChildHost) (Installation, error) {
 	if directory == "" {
-		return Installation{}, errors.New("choose an ASR directory")
+		return Installation{}, errors.New("请选择模型保存目录")
 	}
 	if runtime.GOOS != "windows" && runtime.GOOS != "darwin" {
-		return Installation{}, errors.New("local ASR is supported on Windows and macOS")
+		return Installation{}, errors.New("本地语音识别仅支持 Windows 和 macOS")
 	}
 	root := filepath.Join(directory, "Qwen3-ASR")
 	model := filepath.Join(root, "models", "Qwen3-ASR-1.7B-Q8_0.gguf")
@@ -420,7 +421,7 @@ func install(ctx context.Context, directory string, host *ChildHost) (Installati
 	if err != nil {
 		return Installation{}, err
 	}
-	if gpu != 0 && !supportsGPU(server, flavor) {
+	if gpu != 0 && !supportsGPU(server, flavor, host) {
 		gpu = 0
 		if flavor == "cuda" {
 			server, err = installRuntime(ctx, root, "cpu")
@@ -458,7 +459,7 @@ func Installed(directory string) (Installation, bool) {
 		}
 		if server := locateServer(target); server != "" {
 			gpu := 0
-			if flavor != "cpu" && supportsGPU(server, flavor) {
+			if flavor != "cpu" {
 				gpu = 99
 			}
 			return Installation{Server: server, Model: model, Projector: projector, GPULayers: gpu}, true
@@ -467,8 +468,10 @@ func Installed(directory string) (Installation, bool) {
 	return Installation{}, false
 }
 
-func supportsGPU(server, flavor string) bool {
-	output, err := exec.Command(server, "--list-devices").CombinedOutput()
+func supportsGPU(server, flavor string, host *ChildHost) bool {
+	cmd := exec.Command(server, "--list-devices")
+	host.prepare(cmd)
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return false
 	}

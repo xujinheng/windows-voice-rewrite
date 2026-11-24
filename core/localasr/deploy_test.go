@@ -74,14 +74,14 @@ func TestUnpackZipCannotEscapeFolder(t *testing.T) {
 }
 
 func TestDeployFailureReportsStatus(t *testing.T) {
-	if err := BeginDeploy(context.Background(), "", nil); err == nil {
+	if err := Manage(context.Background(), "", Download, nil); err == nil {
 		t.Fatal("empty directory should fail without creating a job")
 	}
 	parent := filepath.Join(t.TempDir(), "not-a-directory")
 	if err := os.WriteFile(parent, []byte("file"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := BeginDeploy(context.Background(), parent, nil); err != nil {
+	if err := Manage(context.Background(), parent, Download, nil); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(3 * time.Second)
@@ -140,10 +140,10 @@ func TestConcurrentDeployDoesNotStartAnotherDownload(t *testing.T) {
 	progress = Status{Directory: "/one", Busy: true, Phase: PhaseDownloading}
 	progressMu.Unlock()
 	defer func() { progressMu.Lock(); progress = old; progressMu.Unlock() }()
-	if err := BeginDeploy(context.Background(), "/one", nil); err != nil {
+	if err := Manage(context.Background(), "/one", Download, nil); err != nil {
 		t.Fatalf("same task should join: %v", err)
 	}
-	if err := BeginDeploy(context.Background(), "/other", nil); !errors.Is(err, ErrBusyDifferentDirectory) {
+	if err := Manage(context.Background(), "/other", Download, nil); !errors.Is(err, ErrBusyDifferentDirectory) {
 		t.Fatalf("different path should conflict without replacing task: %v", err)
 	}
 	if DeploymentStatus().Directory != "/one" {
@@ -173,5 +173,35 @@ func TestIntentionalStopDoesNotReportRuntimeFailure(t *testing.T) {
 	state := DeploymentStatus()
 	if state.Phase != PhaseIdle || state.ErrorCode != "" || state.Busy {
 		t.Fatalf("intentional stop reported as a deployment failure: %+v", state)
+	}
+}
+
+func TestSettingsViewSeparatesDownloadStartAndStop(t *testing.T) {
+	directory := t.TempDir()
+	progressMu.Lock()
+	prior := progress
+	progress = Status{}
+	progressMu.Unlock()
+	defer func() { progressMu.Lock(); progress = prior; progressMu.Unlock() }()
+	v := SettingsView(directory)
+	if !v.CanDownload || v.CanToggle || v.ToggleLabel != "启动" {
+		t.Fatalf("missing model: %+v", v)
+	}
+	if err := Manage(context.Background(), directory, StartStop, nil); err == nil {
+		t.Fatal("start must not initiate download")
+	}
+	progressMu.Lock()
+	progress = Status{Directory: directory, Phase: PhaseDownloading, Busy: true, Text: "下载 50%"}
+	progressMu.Unlock()
+	v = SettingsView(directory)
+	if v.CanDownload || v.CanToggle || v.CanChoose || v.Status != "下载 50%" {
+		t.Fatalf("download in flight: %+v", v)
+	}
+	progressMu.Lock()
+	progress = Status{Directory: directory, Phase: PhaseReady, Text: "ASR 正在运行"}
+	progressMu.Unlock()
+	v = SettingsView(directory)
+	if v.CanDownload || !v.CanToggle || v.CanChoose || v.ToggleLabel != "停止" {
+		t.Fatalf("running: %+v", v)
 	}
 }

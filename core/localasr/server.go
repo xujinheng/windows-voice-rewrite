@@ -39,8 +39,9 @@ func DefaultDirectory() string {
 }
 
 var (
-	processMu sync.Mutex
-	process   *exec.Cmd
+	processMu   sync.Mutex
+	process     *exec.Cmd
+	processDone chan struct{}
 )
 
 // ChildHost supplies OS process settings and lifetime protection. Core owns
@@ -59,42 +60,118 @@ func (h *ChildHost) prepare(cmd *exec.Cmd) {
 // ErrBusyDifferentDirectory preserves a running task on conflicting requests.
 var ErrBusyDifferentDirectory = errors.New("ASR deployment already running in another directory")
 
-// BeginDeploy starts one non-blocking application-owned deployment. Repeated
-// requests for the same busy or ready directory reuse the existing task.
-func BeginDeploy(ctx context.Context, directory string, host *ChildHost) error {
+type Action string
+
+const (
+	Download  Action = "download"
+	StartStop Action = "start_stop"
+)
+
+// View is the shared settings presentation. A running child belongs to the
+// application, not to the selected directory or a settings window.
+type View struct {
+	Status      string `json:"status"`
+	Directory   string `json:"directory"`
+	Phase       Phase  `json:"phase"`
+	ToggleLabel string `json:"toggleLabel"`
+	CanDownload bool   `json:"canDownload"`
+	CanToggle   bool   `json:"canToggle"`
+	CanChoose   bool   `json:"canChoose"`
+}
+
+func SettingsView(directory string) View {
+	p := DeploymentStatus()
+	v := View{Directory: directory, ToggleLabel: "启动", CanDownload: true, CanChoose: true}
+	if p.Busy || p.Phase == PhaseReady {
+		v.Status, v.Directory, v.Phase = p.Text, p.Directory, p.Phase
+		v.CanDownload, v.CanChoose = false, false
+		if p.Phase == PhaseReady && !p.Busy {
+			v.ToggleLabel, v.CanToggle = "停止", true
+		}
+		return v
+	}
+	_, installed := Installed(directory)
+	v.CanToggle = installed
+	v.Status = "尚未下载"
+	if installed {
+		v.Status = "已下载，未启动"
+	}
+	if p.Directory == directory && p.Text != "" && p.Phase != PhaseIdle {
+		v.Status, v.Phase = p.Text, p.Phase
+	}
+	return v
+}
+
+// Manage is the only settings operation for both hosts. Download installs files
+// without launching; StartStop never downloads and only stops the owned child.
+func Manage(ctx context.Context, directory string, action Action, host *ChildHost) error {
 	if ctx == nil || directory == "" {
-		return errors.New("choose an ASR directory")
+		return errors.New("请选择模型保存目录")
+	}
+	if action != Download && action != StartStop {
+		return errors.New("未知模型操作")
 	}
 	progressMu.Lock()
-	if progress.Directory == directory && (progress.Busy || progress.Phase == PhaseReady) {
-		progressMu.Unlock()
-		return nil
-	}
 	if progress.Busy {
+		same := progress.Directory == directory
 		progressMu.Unlock()
+		if same {
+			return nil
+		}
 		return ErrBusyDifferentDirectory
 	}
-	progress = Status{Directory: directory, Phase: PhasePreparing,
-		Text: "正在准备 ASR 部署", Busy: true}
+	if progress.Phase == PhaseReady {
+		if action != StartStop {
+			progressMu.Unlock()
+			return errors.New("请先停止语音识别服务")
+		}
+		progress.Phase, progress.Text, progress.Busy = PhaseIdle, "正在停止语音识别服务…", true
+		progressMu.Unlock()
+		go func() {
+			Stop()
+			progressMu.Lock()
+			progress.Text, progress.Busy = "ASR 已停止", false
+			progressMu.Unlock()
+		}()
+		return nil
+	}
+	var installation Installation
+	if action == StartStop {
+		var ok bool
+		installation, ok = Installed(directory)
+		if !ok {
+			progressMu.Unlock()
+			return errors.New("请先下载模型和运行时")
+		}
+	}
+	progress = Status{Directory: directory, Phase: PhasePreparing, Text: "正在准备下载…", Busy: true}
+	if action == StartStop {
+		progress.Phase, progress.Text = PhaseStarting, "正在启动识别服务，加载模型中…"
+	}
 	progressMu.Unlock()
 	go func() {
-		installation, err := install(ctx, directory, host)
-		if err == nil {
-			progressMu.Lock()
-			progress.Phase = PhaseStarting
-			progress.Text = "正在启动识别服务，加载模型中…"
-			progressMu.Unlock()
+		var err error
+		if action == Download {
+			_, err = install(ctx, directory, host)
+		} else {
 			err = Start(ctx, installation, host)
 		}
 		progressMu.Lock()
 		progress.Busy = false
 		if err != nil {
-			progress.Phase = PhaseFailed
-			progress.ErrorCode = "deploy_failed"
-			progress.Text = "ASR 部署失败：" + err.Error()
+			progress.Phase, progress.ErrorCode = PhaseFailed, "model_action_failed"
+			progress.Text = "模型操作失败：" + err.Error()
+		} else if action == Download {
+			progress.Phase, progress.Text = PhaseDownloaded, "模型已下载，尚未启动"
 		} else {
-			progress.Phase = PhaseReady
-			progress.Text = "ASR 已部署并启动"
+			processMu.Lock()
+			alive := process != nil
+			processMu.Unlock()
+			if alive {
+				progress.Phase, progress.Text = PhaseReady, "ASR 正在运行"
+			} else {
+				progress.Phase, progress.ErrorCode, progress.Text = PhaseFailed, "runtime_exited", "ASR 服务意外停止，请重新启动"
+			}
 		}
 		progressMu.Unlock()
 	}()
@@ -116,16 +193,24 @@ func Resume(ctx context.Context, cfg coreconfig.Config, host *ChildHost) error {
 	if directory == "" {
 		directory = DefaultDirectory()
 	}
-	install, ok := Installed(directory)
-	if !ok {
+	if _, ok := Installed(directory); !ok {
 		return nil
 	}
-	return Start(ctx, install, host)
+	return Manage(ctx, directory, StartStop, host)
 }
 
 // Start serves the built-in Qwen ASR model on the existing default endpoint.
 // Clients directly use llama.cpp; Core already normalizes ASR transcript markers.
 func Start(ctx context.Context, install Installation, host *ChildHost) error {
+	if install.GPULayers != 0 {
+		flavor := "cuda"
+		if runtime.GOOS == "darwin" {
+			flavor = "metal"
+		}
+		if !supportsGPU(install.Server, flavor, host) {
+			install.GPULayers = 0
+		}
+	}
 	for {
 		processMu.Lock()
 		if process == nil || process.Path == install.Server {
@@ -146,7 +231,7 @@ func Start(ctx context.Context, install Installation, host *ChildHost) error {
 		if err == nil {
 			conn.Close()
 			processMu.Unlock()
-			return errors.New("ASR port 8080 is occupied; stop the other server before Deploy")
+			return errors.New("端口 8080 已被占用，请先停止其他服务")
 		}
 		logPath := filepath.Join(filepath.Dir(filepath.Dir(install.Model)), "server.log")
 		file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
@@ -178,7 +263,10 @@ func Start(ctx context.Context, install Installation, host *ChildHost) error {
 		}
 		process = cmd
 		exited = make(chan error, 1)
+		done := make(chan struct{})
+		processDone = done
 		go func() {
+			defer close(done)
 			e := cmd.Wait()
 			if release != nil {
 				release()
@@ -195,7 +283,7 @@ func Start(ctx context.Context, install Installation, host *ChildHost) error {
 				if progress.Phase == PhaseReady {
 					progress.Phase = PhaseFailed
 					progress.ErrorCode = "runtime_exited"
-					progress.Text = "ASR 服务意外停止，请重新 Deploy"
+					progress.Text = "ASR 服务意外停止，请重新启动"
 				}
 				progressMu.Unlock()
 			}
@@ -245,9 +333,10 @@ func Stop() {
 	}
 	progressMu.Unlock()
 	processMu.Lock()
-	p := process
+	p, done := process, processDone
 	processMu.Unlock()
 	if p != nil {
 		_ = p.Process.Kill()
+		<-done
 	}
 }

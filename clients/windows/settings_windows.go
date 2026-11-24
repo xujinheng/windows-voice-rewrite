@@ -82,6 +82,7 @@ var (
 	uxActiveSettings       *uxSettings
 	uxModelRequestSequence atomic.Uint64
 	uxSetTimer = user32.NewProc("SetTimer")
+	uxEnableWindow = user32.NewProc("EnableWindow")
 	uxKillTimer = user32.NewProc("KillTimer")
 	procBrowseFolder = shell32.NewProc("SHBrowseForFolderW")
 	procGetFolderPath = shell32.NewProc("SHGetPathFromIDListW")
@@ -112,6 +113,7 @@ type uxSettings struct {
 	recordDuration                          uintptr
 	microphoneIDs                           []int
 	hint                                    uintptr
+	asrStatus, asrDownload, asrToggle, asrDirectory uintptr
 	font, titleFont, sectionFont, mutedFont uintptr
 	background                              uintptr
 	cardBrush                               uintptr
@@ -438,18 +440,8 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	p := uxActiveSettings
 	switch uint32(msg) {
 	case uxWMTimer:
-		if p != nil && p.window == hwnd && wParam == 1 && p.hint != 0 {
-			state := localasr.DeploymentStatus()
-			text := "部署位置：" + p.deployDir
-			if state.Text != "" && (state.Busy || state.Directory == p.deployDir) {
-				text = state.Text
-			}
-			if text != uxWinText(p.hint) {
-				uxSetText(p.hint, text)
-				if state.Phase == localasr.PhaseFailed && state.Directory == p.deployDir {
-					winErr(state.Text)
-				}
-			}
+		if p != nil && p.window == hwnd && wParam == 1 {
+			p.refreshASR()
 		}
 		return 0
 	case uxWMSettingChange, uxWMThemeChanged:
@@ -556,6 +548,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				}
 			}
 			label, primary := contract.ButtonLabel(int(item.CtlID), p.capturingShortcut == uintptr(item.CtlID))
+			if item.CtlID == contract.DeployASRButton { label = uxWinText(p.asrToggle) }
 			if item.CtlID == contract.DiscoverASRButton || item.CtlID == contract.DiscoverLLMButton {
 				slot := 0
 				if item.CtlID == contract.DiscoverLLMButton {
@@ -575,7 +568,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMColorStatic:
 		if p != nil && p.window == hwnd && p.background != 0 {
 			color := p.palette.text
-			if lParam == p.hint || lParam == p.probeStatus[0] || lParam == p.probeStatus[1] {
+			if lParam == p.hint || lParam == p.asrStatus || lParam == p.probeStatus[0] || lParam == p.probeStatus[1] {
 				color = p.palette.muted
 			}
 			uxSetTextColor.Call(wParam, p.palette.color(color))
@@ -668,7 +661,10 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				p.chooseDeployDirectory()
 				return 0
 			case contract.ActionDeployASR:
-				p.deployASR()
+				p.manageASR(localasr.StartStop)
+				return 0
+			case contract.ActionDownloadASR:
+				p.manageASR(localasr.Download)
 				return 0
 			}
 		}
@@ -704,15 +700,33 @@ func (p *uxSettings) chooseDeployDirectory() {
 		p.deployDir = directory
 		p.app.cfg = cfg
 		uxSetText(p.hint, "部署位置已保存："+directory)
+		p.refreshASR()
 	}
 }
 
-func (p *uxSettings) deployASR() {
-	if err := localasr.BeginDeploy(context.Background(), p.deployDir, asrChildHost); err != nil {
-		uxSetText(p.hint, err.Error())
-		return
+func (p *uxSettings) refreshASR() {
+	v := localasr.SettingsView(p.deployDir)
+	text := v.Status + "\n" + v.Directory
+	if text != uxWinText(p.asrStatus) {
+		uxSetText(p.asrStatus, text)
+		if v.Phase == localasr.PhaseFailed { winErr(v.Status) }
 	}
-	uxSetText(p.hint, localasr.DeploymentStatus().Text)
+	if v.ToggleLabel != uxWinText(p.asrToggle) {
+		uxSetText(p.asrToggle, v.ToggleLabel)
+		refreshNativeWindow(p.asrToggle)
+	}
+	for hwnd, enabled := range map[uintptr]bool{p.asrDownload:v.CanDownload, p.asrToggle:v.CanToggle, p.asrDirectory:v.CanChoose} {
+		var flag uintptr
+		if enabled { flag = 1 }
+		uxEnableWindow.Call(hwnd, flag)
+	}
+}
+
+func (p *uxSettings) manageASR(action localasr.Action) {
+	if err := localasr.Manage(context.Background(), p.deployDir, action, asrChildHost); err != nil {
+		winErr(err.Error())
+	}
+	p.refreshASR()
 }
 
 func (p *uxSettings) save() error {
@@ -754,11 +768,6 @@ func (p *uxSettings) save() error {
 		return err
 	}
 	p.app.cfg = cfg
-	go func() {
-		if err := localasr.Resume(context.Background(), cfg, asrChildHost); err != nil {
-			p.app.logger.Printf("local ASR config update: %v", err)
-		}
-	}()
 	notice := ux.WindowsSaveImmediate
 	if changedShortcut || changedDuration || changedAudioDevice {
 		notice = ux.WindowsSaveRestart
@@ -1014,10 +1023,16 @@ func placeSettingsControl(p *uxSettings, app *appState, makeOne func(cls, t stri
 		placeProbeButton(makeOne, btn, control, contract.ProbeASRButton)
 	case "select_asr_directory":
 		box := settingsform.DeployFolderBox()
-		makeOne("BUTTON", control.Label, btn, box.X, box.Y, box.W, box.H, contract.SelectASRDirectory, false)
+		p.asrDirectory = makeOne("BUTTON", control.Label, btn, box.X, box.Y, box.W, box.H, contract.SelectASRDirectory, false)
 	case "deploy_asr":
 		box := settingsform.DeployButtonBox()
-		makeOne("BUTTON", control.Label, btn, box.X, box.Y, box.W, box.H, contract.DeployASRButton, false)
+		p.asrToggle = makeOne("BUTTON", control.Label, btn, box.X, box.Y, box.W, box.H, contract.DeployASRButton, false)
+	case "download_asr":
+		box := settingsform.DownloadButtonBox()
+		p.asrDownload = makeOne("BUTTON", control.Label, btn, box.X, box.Y, box.W, box.H, contract.DownloadASRButton, false)
+	case "deploy_asr_status":
+		box := settingsform.DeployStatusBox()
+		p.asrStatus = makeOne("STATIC", "", stat, box.X, box.Y, box.W, box.H, 0, false)
 	case "llm_base_url":
 		return placeLabeledEdit(p, makeOne, stat, edit, control, row, app.cfg.LLMBaseURL)
 	case "text_model":
@@ -1250,15 +1265,12 @@ func showNativeSettings(app *appState) error {
 		return err
 	}
 	hint := settingsform.SettingsHint()
-	initialHint := "部署位置：" + p.deployDir
-	if state := localasr.DeploymentStatus(); state.Text != "" && (state.Busy || state.Directory == p.deployDir) {
-		initialHint = state.Text
-	}
-	p.hint = makeOne("STATIC", initialHint, stat, hint.X, hint.Y, hint.W, hint.H, 0, false)
-	for _, hwnd := range [3]uintptr{p.hint, p.probeStatus[0], p.probeStatus[1]} {
+	p.hint = makeOne("STATIC", "", stat, hint.X, hint.Y, hint.W, hint.H, 0, false)
+	for _, hwnd := range [4]uintptr{p.hint, p.asrStatus, p.probeStatus[0], p.probeStatus[1]} {
 		setFont(hwnd, p.mutedFont)
 	}
 	p.switchPage(0)
+	p.refreshASR()
 	p.layout()
 	// Windows 11 DWM-rounded frame and non-activating status pill are separate.
 	rounding := uint32(2)

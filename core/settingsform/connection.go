@@ -76,6 +76,8 @@ func ConnectionForm() NativeForm {
 					item.Rect = DeployFolderBox()
 				case "deploy_asr":
 					item.Rect = DeployButtonBox()
+				case "download_asr":
+					item.Rect = DownloadButtonBox()
 				case "capture_rewrite", "capture_dictation":
 					item.Rect = CaptureButton(row - 1)
 				default:
@@ -84,6 +86,9 @@ func ConnectionForm() NativeForm {
 			case contract.Status:
 				item.Rect = ProbeStatusBox()
 				item.Label = serviceprobe.StatusIdle
+				if control.ID == "deploy_asr_status" {
+					item.Rect, item.Label = DeployStatusBox(), ""
+				}
 			case contract.Note:
 				item.Rect = Rect{X: 226, Y: 338, W: 565, H: 74}
 			}

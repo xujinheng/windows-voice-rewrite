@@ -56,8 +56,8 @@ int VRDeliveryAction(const char *route, int target, int selected);
 char *VRProfile(const char *config);
 char *VRPrepareLog(const char *path);
 char *VRSettings(const char *request);
-char *VRDeploy(const char *directory);
-char *VRASRProgress(void);
+char *VRASRAction(const char *directory, const char *action);
+char *VRASRProgress(const char *directory);
 void VRStopASR(void);
 typedef void (*VREventCallback)(int kind, uint64_t token);
 char *VRRun(int rewrite, const unsigned char *audio,
