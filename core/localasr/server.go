@@ -39,8 +39,8 @@ func DefaultDirectory() string {
 }
 
 var (
-	processMu sync.Mutex
-	process   *exec.Cmd
+	processMu   sync.Mutex
+	process     *exec.Cmd
 	processDone chan struct{}
 )
 
@@ -63,20 +63,20 @@ var ErrBusyDifferentDirectory = errors.New("ASR deployment already running in an
 type Action string
 
 const (
-	Download Action = "download"
+	Download  Action = "download"
 	StartStop Action = "start_stop"
 )
 
 // View is the shared settings presentation. A running child belongs to the
 // application, not to the selected directory or a settings window.
 type View struct {
-	Status string `json:"status"`
-	Directory string `json:"directory"`
-	Phase Phase `json:"phase"`
+	Status      string `json:"status"`
+	Directory   string `json:"directory"`
+	Phase       Phase  `json:"phase"`
 	ToggleLabel string `json:"toggleLabel"`
-	CanDownload bool `json:"canDownload"`
-	CanToggle bool `json:"canToggle"`
-	CanChoose bool `json:"canChoose"`
+	CanDownload bool   `json:"canDownload"`
+	CanToggle   bool   `json:"canToggle"`
+	CanChoose   bool   `json:"canChoose"`
 }
 
 func SettingsView(directory string) View {
@@ -115,7 +115,9 @@ func Manage(ctx context.Context, directory string, action Action, host *ChildHos
 	if progress.Busy {
 		same := progress.Directory == directory
 		progressMu.Unlock()
-		if same { return nil }
+		if same {
+			return nil
+		}
 		return ErrBusyDifferentDirectory
 	}
 	if progress.Phase == PhaseReady {
@@ -202,8 +204,12 @@ func Resume(ctx context.Context, cfg coreconfig.Config, host *ChildHost) error {
 func Start(ctx context.Context, install Installation, host *ChildHost) error {
 	if install.GPULayers != 0 {
 		flavor := "cuda"
-		if runtime.GOOS == "darwin" { flavor = "metal" }
-		if !supportsGPU(install.Server, flavor, host) { install.GPULayers = 0 }
+		if runtime.GOOS == "darwin" {
+			flavor = "metal"
+		}
+		if !supportsGPU(install.Server, flavor, host) {
+			install.GPULayers = 0
+		}
 	}
 	for {
 		processMu.Lock()

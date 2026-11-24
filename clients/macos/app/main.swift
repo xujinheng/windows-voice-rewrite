@@ -183,19 +183,19 @@ private struct SettingsControl: Decodable {
 }
 
 private final class SettingsPanel: NSPanel {
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if (modifiers == .command || modifiers == .control),
+    override func sendEvent(_ event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        if event.type == .keyDown, (modifiers == .command || modifiers == .control),
            let editor = firstResponder as? NSTextView, editor.isFieldEditor {
             switch event.charactersIgnoringModifiers?.lowercased() {
-            case "a": editor.selectAll(nil); return true
-            case "c": editor.copy(nil); return true
-            case "v": editor.paste(nil); return true
-            case "x": editor.cut(nil); return true
+            case "a": editor.selectAll(nil); return
+            case "c": editor.copy(nil); return
+            case "v": editor.paste(nil); return
+            case "x": editor.cut(nil); return
             default: break
             }
         }
-        return super.performKeyEquivalent(with: event)
+        super.sendEvent(event)
     }
 }
 
@@ -796,7 +796,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
 
     private func begin(rewrite: Bool) {
         guard targetPID > 0 else { reset("No target"); return }
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { reset("Focus changed"); return }
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { reset("焦点已变化"); return }
         // Do not require an AX editor for a browser selection: recording and
         // the fallback result must still work without it.
         guard microphone.running else { reset("麦克风错误"); return }
