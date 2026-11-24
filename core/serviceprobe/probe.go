@@ -1,6 +1,6 @@
 // Package serviceprobe owns cross-platform provider connection probes.
 // ASR uploads generated silence through the real transcription endpoint;
-// LLM checks the model discovery endpoint without sending user content.
+// LLM runs the real rewrite endpoint with a fixed, non-user test sentence.
 package serviceprobe
 
 import (
@@ -14,6 +14,7 @@ import (
 	coreconfig "github.com/xujinheng/windows-voice-rewrite/core/config"
 	"github.com/xujinheng/windows-voice-rewrite/core/internal/speech"
 	"github.com/xujinheng/windows-voice-rewrite/core/provider"
+	"github.com/xujinheng/windows-voice-rewrite/core/textedit"
 )
 
 const (
@@ -26,50 +27,36 @@ const (
 )
 
 // A service health response and a compatible model are two separate facts.
-// This probe never uploads microphone audio or sends text prompts.
+// Only synthetic test input is sent; no microphone audio or user text.
 func ProbeModel(ctx context.Context, kind, base, apiKey, configuredModel string) string {
-	if kind == "ASR" && strings.TrimSpace(configuredModel) != "" {
+	if kind == "ASR" {
 		return ProbeASRAudio(ctx, base, apiKey, configuredModel)
 	}
 	if coreconfig.ValidateBaseURL(base) != nil {
 		return kind + "：服务地址无效"
 	}
-	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
-	defer cancel()
-	models, err := provider.ListModels(ctx, strings.TrimSpace(base), apiKey)
-	if err != nil {
+	if kind == "LLM" {
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		cfg := coreconfig.Defaults()
+		cfg.LLMBaseURL, cfg.LLMAPIKey, cfg.TextModel = strings.TrimSpace(base), apiKey, configuredModel
+		_, err := textedit.Rewrite(ctx, cfg, "hello", "Convert the text to uppercase.")
+		if err == nil {
+			return "LLM：连接成功，文本模型实际改写测试通过"
+		}
 		var status *provider.HTTPStatusError
-		switch {
-		case errors.As(err, &status):
-			switch status.Status {
-			case http.StatusNotFound, http.StatusMethodNotAllowed:
-				return kind + "：服务可达；此接口不提供模型列表，请实际试用"
-			case http.StatusUnauthorized, http.StatusForbidden:
-				return kind + "：API Key 无效或没有权限"
-			case http.StatusServiceUnavailable:
-				return kind + "：服务暂时不可用（503）"
-			default:
-				return fmt.Sprintf("%s：API 返回 HTTP %d", kind, status.Status)
+		if errors.As(err, &status) {
+			if status.Status == http.StatusUnauthorized || status.Status == http.StatusForbidden {
+				return "LLM：API Key 无效或没有权限"
 			}
-		case errors.Is(err, provider.ErrInvalidModelsResponse):
-			return kind + "：API 可达 · HTTP 200，但模型列表格式无法识别；请试用实际功能"
-		default:
-			return kind + "：无法连接，请检查 API 地址及网络"
+			return fmt.Sprintf("LLM：模型请求失败（HTTP %d）", status.Status)
 		}
-	}
-	if len(models) == 0 {
-		return kind + "：API 可达 · HTTP 200，模型列表为空；请检查是否已加载模型"
-	}
-	chosen := strings.TrimSpace(configuredModel)
-	if chosen != "" && chosen != "auto" {
-		for _, model := range models {
-			if model == chosen {
-				return kind + "：模型 " + chosen + " 已在服务中发现（未验证实际任务）"
-			}
+		if ctx.Err() != nil {
+			return "LLM：文本模型测试超时或已取消"
 		}
-		return kind + "：服务可达，但模型 " + chosen + " 未列出；请核对 ID 或服务别名"
+		return "LLM：文本模型测试失败；请检查 API 地址、模型 ID 及服务日志"
 	}
-	return fmt.Sprintf("%s：已连接 · 可发现 %d 个模型（未验证实际任务）", kind, len(models))
+	return "未知服务类型"
 }
 
 // ProbeASRAudio exercises the actual provider.Endpoint and request format used by
