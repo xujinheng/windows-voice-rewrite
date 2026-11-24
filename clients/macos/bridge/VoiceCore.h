@@ -54,6 +54,7 @@ char *VRLatestResult(void);
 enum { VR_DELIVERY_PREVIEW = 1, VR_DELIVERY_INSERT, VR_DELIVERY_REPLACE, VR_DELIVERY_PREVIEW_APPLY };
 int VRDeliveryAction(const char *route, int target, int selected);
 char *VRProfile(const char *config);
+char *VRPrepareLog(const char *path);
 char *VRSettings(const char *request);
 char *VRDeploy(const char *directory);
 char *VRASRProgress(void);

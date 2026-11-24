@@ -182,6 +182,23 @@ private struct SettingsControl: Decodable {
     let rect, labelRect: SettingsRect
 }
 
+private final class SettingsPanel: NSPanel {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if (modifiers == .command || modifiers == .control),
+           let editor = firstResponder as? NSTextView, editor.isFieldEditor {
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "a": editor.selectAll(nil); return true
+            case "c": editor.copy(nil); return true
+            case "v": editor.paste(nil); return true
+            case "x": editor.cut(nil); return true
+            default: break
+            }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+}
+
 private struct BridgeReply: Decodable {
     let ok: Bool
     let result: Output?
@@ -257,6 +274,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     private var previewApply: (pid: pid_t, window: AXUIElement?, selection: AXSelection, token: UInt64, text: String)?
     private var config: HostProfile!
     private var configURL: URL!
+    private var logURL: URL { configURL.deletingLastPathComponent().appendingPathComponent("VoiceRewrite.log") }
     private var taskID: UInt64 = 0
     private var targetPID: pid_t = 0
     private var targetWindow: AXUIElement?
@@ -268,11 +286,12 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "VoiceRewrite"
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Copy last result", action: #selector(copyResult), keyEquivalent: "c"))
+        menu.addItem(NSMenuItem(title: "复制上次结果", action: #selector(copyResult), keyEquivalent: "c"))
         menu.addItem(NSMenuItem(title: "设置…", action: #selector(openSettings), keyEquivalent: ","))
-        menu.addItem(NSMenuItem(title: "Reload config", action: #selector(reload), keyEquivalent: "r"))
-        menu.addItem(NSMenuItem(title: "Show config in Finder", action: #selector(showConfig), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "重新加载配置", action: #selector(reload), keyEquivalent: "r"))
+        menu.addItem(NSMenuItem(title: "显示配置文件", action: #selector(showConfig), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "查看日志", action: #selector(showLog), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q"))
         for entry in menu.items where entry.action != nil { entry.target = self }
         item.menu = menu
         pill.onCancel = { [weak self] in self?.cancelFromPill() }
@@ -283,6 +302,8 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         configURL = ProcessInfo.processInfo.arguments.dropFirst().first.map {
             URL(fileURLWithPath: $0)
         } ?? defaultPath
+        do { _ = try GoCore.decode(logURL.path.withCString { VRPrepareLog($0) }) }
+        catch { fputs("VoiceRewrite log: \(error)\n", stderr) }
         reload()
         guard config != nil else { return }
         if firstRun { DispatchQueue.main.async { [weak self] in self?.openSettings() } }
@@ -291,13 +312,13 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 guard let self else { return }
                 if allowed { self.startEventTap() }
-                else { self.show("Mic denied") }
+                else { self.show("麦克风权限未授予") }
             }
         }
     }
 
     @objc private func reload() {
-        guard VRSnapshot(0, 0).armed == 0 && !pending else { reloadAfterTask = true; show("Reload after current task"); return }
+        guard VRSnapshot(0, 0).armed == 0 && !pending else { reloadAfterTask = true; show("当前任务结束后重新加载"); return }
         reloadAfterTask = false
         do {
             let json: String
@@ -324,10 +345,11 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             pill.configure(profile.pill)
             if eventTapRetry == nil { show("VoiceRewrite") }
         } catch {
-            show("Config error")
+            show("配置错误")
             fputs("VoiceRewrite config: \(error)\n", stderr)
         }
     }
+    @objc private func showLog() { NSWorkspace.shared.open(logURL) }
     @objc private func showConfig() { NSWorkspace.shared.activateFileViewerSelecting([configURL]) }
     @objc private func openSettings() {
         if let panel = settingsPanel, panel.isVisible {
@@ -341,7 +363,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             let json = try String(contentsOf: configURL, encoding: .utf8)
             let output = try GoCore.settings("form", config: json)
             guard let form = output.form, let values = output.values else { return }
-            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: CGFloat(form.width), height: CGFloat(form.height)),
+            let panel = SettingsPanel(contentRect: NSRect(x: 0, y: 0, width: CGFloat(form.width), height: CGFloat(form.height)),
                                 styleMask: [.titled, .closable], backing: .buffered, defer: false)
             panel.title = "VoiceRewrite"
             panel.isReleasedWhenClosed = false
@@ -430,7 +452,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             NSApp.activate(ignoringOtherApps: true)
             panel.makeKeyAndOrderFront(nil)
         } catch {
-            show("Config error")
+            show("配置错误")
             fputs("VoiceRewrite settings: \(error)\n", stderr)
         }
     }
@@ -558,7 +580,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func copyResult() {
-        guard let result = VRLatestResult() else { show("No result"); return }
+        guard let result = VRLatestResult() else { show("暂无结果"); return }
         defer { VRFree(result) }
         NSPasteboard.general.clearContents()
         show(NSPasteboard.general.setString(String(cString: result), forType: .string) ? "Copied" : "Copy failed")
@@ -720,7 +742,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             selectedAtPress = nil
             taskID = 0
             do { try microphone.start(maximumSeconds: config.maximumSeconds) }
-            catch { VRCommand(Int32(VR_COMMAND_ABANDON), 0, 0, 0); reset("Mic error"); fputs("Microphone: \(error)\n", stderr); return true }
+            catch { VRCommand(Int32(VR_COMMAND_ABANDON), 0, 0, 0); reset("麦克风错误"); fputs("Microphone: \(error)\n", stderr); return true }
             if press.role == 2 {
                 // Snapshot while the original selection is still active. Do not
                 // block the CGEvent tap with synchronous Accessibility requests.
@@ -761,7 +783,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { reset("Focus changed"); return }
         // Do not require an AX editor for a browser selection: recording and
         // the fallback result must still work without it.
-        guard microphone.running else { reset("Mic error"); return }
+        guard microphone.running else { reset("麦克风错误"); return }
         taskID = VRCommand(Int32(VR_COMMAND_START), 0, 0, 0).token
         pill.recording(rewrite: rewrite, started: Date(),
                        meter: { [weak self] in self?.microphone.meterLevel ?? 0 })
@@ -841,7 +863,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
             } else {
                 submit(selected)
             }
-        } catch { reset("Audio error"); fputs("Audio: \(error)\n", stderr) }
+        } catch { reset("音频错误"); fputs("Audio: \(error)\n", stderr) }
     }
 
     // Native presentation only: Go Core retains the result and decides when
@@ -1075,7 +1097,7 @@ private final class HeadlessApp: NSObject, NSApplicationDelegate {
         if microphone.running { _ = try? microphone.stop(discard: true) }
         clearSession()
         pill.dismiss()
-        show("Cancelled")
+        show("已取消")
     }
 
     private func reset(_ message: String, phase: PillAppearance = .error) {

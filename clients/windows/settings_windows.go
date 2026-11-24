@@ -395,6 +395,12 @@ func uxSettingsKeyMessage(msg winMSG) bool {
 		}
 		return true
 	}
+	if msg.Message == WM_KEYDOWN && msg.WParam == 'A' && uxCurrentShortcutModifiers() == shortcut.Ctrl {
+		if _, ok := p.probeEdits[msg.Hwnd]; ok {
+			procSendMessage.Call(msg.Hwnd, 0x00B1, 0, ^uintptr(0)) // EM_SETSEL: native select all
+			return true
+		}
+	}
 	if msg.Message == WM_KEYDOWN && msg.WParam == VK_ESCAPE {
 		procDestroyWindow.Call(p.window)
 		return true
